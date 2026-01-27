@@ -25,6 +25,7 @@ export const config = {
   collections: {
     webApps: 'cabohealth_apps',
     config: 'cabohealth_config',
+    accessCodes: 'access_codes',
   },
 
   // Storage keys
@@ -37,6 +38,8 @@ export const config = {
     hapticEnabled: '@cabohealth_haptic_enabled',
     hasSeenOnboarding: '@cabohealth_has_seen_onboarding',
     lastBackgroundTime: '@cabohealth_last_background_time',
+    accessCode: '@cabohealth_access_code',
+    clientName: '@cabohealth_client_name',
   },
 
   // Timeouts

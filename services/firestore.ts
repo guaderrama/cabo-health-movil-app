@@ -17,6 +17,41 @@ import { config } from '../constants';
 const COLLECTION_NAME = config.collections.webApps;
 
 /**
+ * Validate that Firestore data has required fields
+ */
+function isValidWebAppData(data: unknown): data is Omit<WebAppFirestore, 'id'> {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Record<string, unknown>;
+  return (
+    typeof d.name === 'string' &&
+    typeof d.url === 'string' &&
+    typeof d.order === 'number'
+  );
+}
+
+/**
+ * Safely convert Firestore document to WebApp
+ */
+function toWebApp(docId: string, data: unknown): WebApp | null {
+  if (!isValidWebAppData(data)) {
+    console.warn(`Invalid WebApp data for document ${docId}:`, data);
+    return null;
+  }
+  return {
+    id: docId,
+    name: data.name || 'Untitled',
+    description: data.description || '',
+    url: data.url,
+    icon: data.icon,
+    color: data.color,
+    category: data.category,
+    order: data.order ?? 999,
+    isActive: Boolean(data.isActive),
+    isNew: Boolean(data.isNew),
+  };
+}
+
+/**
  * Obtiene todas las web apps activas de Firestore
  */
 export async function fetchWebApps(): Promise<WebApp[]> {
@@ -33,19 +68,10 @@ export async function fetchWebApps(): Promise<WebApp[]> {
     const apps: WebApp[] = [];
 
     snapshot.forEach((doc) => {
-      const data = doc.data() as Omit<WebAppFirestore, 'id'>;
-      apps.push({
-        id: doc.id,
-        name: data.name,
-        description: data.description,
-        url: data.url,
-        icon: data.icon,
-        color: data.color,
-        category: data.category,
-        order: data.order,
-        isActive: Boolean(data.isActive),
-        isNew: Boolean(data.isNew),
-      });
+      const app = toWebApp(doc.id, doc.data());
+      if (app) {
+        apps.push(app);
+      }
     });
 
     return apps;
@@ -76,19 +102,10 @@ export function subscribeToWebApps(
       (snapshot) => {
         const apps: WebApp[] = [];
         snapshot.forEach((doc) => {
-          const data = doc.data() as Omit<WebAppFirestore, 'id'>;
-          apps.push({
-            id: doc.id,
-            name: data.name,
-            description: data.description,
-            url: data.url,
-            icon: data.icon,
-            color: data.color,
-            category: data.category,
-            order: data.order,
-            isActive: Boolean(data.isActive),
-            isNew: Boolean(data.isNew),
-          });
+          const app = toWebApp(doc.id, doc.data());
+          if (app) {
+            apps.push(app);
+          }
         });
         onUpdate(apps);
       },

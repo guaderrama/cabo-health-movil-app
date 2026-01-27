@@ -6,6 +6,7 @@ export { useNetworkStatus } from './useNetworkStatus';
 export { useFavorites } from './useFavorites';
 export { useBiometry, getBiometryTypeName, getBiometryIcon } from './useBiometry';
 export type { BiometryType } from './useBiometry';
+export { useAccessCode } from './useAccessCode';
 
 // Theme hook (re-export from context)
 export { useTheme, ThemeProvider } from '../context/ThemeContext';

@@ -1,5 +1,5 @@
 // hooks/useBiometry.ts
-// Hook para manejar autenticación biométrica (Face ID / Touch ID)
+// Hook for biometric authentication (Face ID / Touch ID)
 
 import { useState, useEffect, useCallback } from 'react';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -20,6 +20,7 @@ interface UseBiometryResult {
   enableBiometry: () => Promise<void>;
   disableBiometry: () => Promise<void>;
   checkIfEnabled: () => Promise<boolean>;
+  resetAuthentication: () => void;
 }
 
 export function useBiometry(): UseBiometryResult {
@@ -76,7 +77,7 @@ export function useBiometry(): UseBiometryResult {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
       console.error('Error enabling biometry:', err);
-      setError('No se pudo habilitar la biometría');
+      setError('Could not enable biometry');
     }
   }, []);
 
@@ -88,7 +89,7 @@ export function useBiometry(): UseBiometryResult {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (err) {
       console.error('Error disabling biometry:', err);
-      setError('No se pudo deshabilitar la biometría');
+      setError('Could not disable biometry');
     }
   }, []);
 
@@ -98,9 +99,9 @@ export function useBiometry(): UseBiometryResult {
 
     try {
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Verificar identidad',
-        cancelLabel: 'Cancelar',
-        fallbackLabel: 'Usar código',
+        promptMessage: 'Verify your identity',
+        cancelLabel: 'Cancel',
+        fallbackLabel: 'Use passcode',
         disableDeviceFallback: false,
       });
 
@@ -112,22 +113,28 @@ export function useBiometry(): UseBiometryResult {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
 
         if (result.error === 'user_cancel') {
-          setError('Autenticación cancelada');
+          setError('Authentication cancelled');
         } else if (result.error === 'user_fallback') {
-          setError('Usando método alternativo');
+          setError('Using alternative method');
         } else if (result.error === 'lockout') {
-          setError('Demasiados intentos. Intenta más tarde.');
+          setError('Too many attempts. Try again later.');
         } else {
-          setError('Autenticación fallida');
+          setError('Authentication failed');
         }
         return false;
       }
     } catch (err) {
       console.error('Error during authentication:', err);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setError('Error de autenticación');
+      setError('Authentication error');
       return false;
     }
+  }, []);
+
+  // Reset authentication state (call when app goes to background or on logout)
+  const resetAuthentication = useCallback(() => {
+    setIsAuthenticated(false);
+    setError(null);
   }, []);
 
   // Inicialización
@@ -153,10 +160,11 @@ export function useBiometry(): UseBiometryResult {
     enableBiometry,
     disableBiometry,
     checkIfEnabled,
+    resetAuthentication,
   };
 }
 
-// Helper para obtener el nombre del tipo de biometría
+// Helper to get biometry type name
 export function getBiometryTypeName(type: BiometryType): string {
   switch (type) {
     case 'facial':
@@ -166,11 +174,11 @@ export function getBiometryTypeName(type: BiometryType): string {
     case 'iris':
       return 'Iris';
     default:
-      return 'Biometría';
+      return 'Biometry';
   }
 }
 
-// Helper para obtener el icono del tipo de biometría
+// Helper to get biometry type icon
 export function getBiometryIcon(type: BiometryType): string {
   switch (type) {
     case 'facial':

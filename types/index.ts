@@ -70,3 +70,31 @@ export interface WebViewState {
   canGoBack: boolean;
   canGoForward: boolean;
 }
+
+// Access Code types
+export interface AccessCode {
+  id?: string;
+  code: string;
+  clientName: string;
+  isActive: boolean;
+  createdAt: Date;
+  expiresAt?: Date;
+  lastUsedAt?: Date;
+  deviceId?: string;
+  notes?: string;
+}
+
+export interface AccessCodeResult {
+  isValid: boolean;
+  clientName?: string;
+  error?: 'invalid' | 'expired' | 'revoked' | 'network_error';
+  expiresAt?: Date;
+}
+
+export interface AccessCodeState {
+  hasValidCode: boolean;
+  isLoading: boolean;
+  clientName: string | null;
+  code: string | null;
+  error: string | null;
+}

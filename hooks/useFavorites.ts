@@ -63,23 +63,34 @@ export function useFavorites() {
     return favorites.includes(appId);
   }, [favorites]);
 
-  // Agregar a favoritos
+  // Agregar a favoritos (using functional update to avoid stale closure)
   const addFavorite = useCallback(async (appId: string) => {
-    if (!favorites.includes(appId)) {
-      const newFavorites = [...favorites, appId];
-      setFavorites(newFavorites);
+    let newFavorites: string[] = [];
+    setFavorites((current) => {
+      if (current.includes(appId)) {
+        newFavorites = current;
+        return current;
+      }
+      newFavorites = [...current, appId];
+      return newFavorites;
+    });
+    // Only save and provide feedback if actually added
+    if (newFavorites.length > 0 && newFavorites[newFavorites.length - 1] === appId) {
       await saveFavorites(newFavorites);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-  }, [favorites, saveFavorites]);
+  }, [saveFavorites]);
 
-  // Remover de favoritos
+  // Remover de favoritos (using functional update to avoid stale closure)
   const removeFavorite = useCallback(async (appId: string) => {
-    const newFavorites = favorites.filter((id) => id !== appId);
-    setFavorites(newFavorites);
+    let newFavorites: string[] = [];
+    setFavorites((current) => {
+      newFavorites = current.filter((id) => id !== appId);
+      return newFavorites;
+    });
     await saveFavorites(newFavorites);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [favorites, saveFavorites]);
+  }, [saveFavorites]);
 
   // Cargar al montar
   useEffect(() => {

@@ -17,9 +17,10 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.cabohealth.app",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Usa Face ID para proteger el acceso a tus apps de salud"
+        "NSFaceIDUsageDescription": "Use Face ID to secure access to your health apps",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -28,7 +29,11 @@
         "backgroundColor": "#0D9488"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.cabohealth.app"
+      "package": "com.cabohealth.app",
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -44,8 +49,10 @@
     },
     "extra": {
       "eas": {
-        "projectId": "TU_PROJECT_ID"
-      }
-    }
+        "projectId": "3ebd1d12-4aeb-4d65-8e17-b7726c65018d"
+      },
+      "router": {}
+    },
+    "owner": "guaderrama"
   }
 }

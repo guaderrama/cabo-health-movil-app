@@ -1,7 +1,7 @@
 // app/(main)/webview/[id].tsx
 // WebView Screen - CaboHealth Brand
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,10 @@ import {
   TouchableOpacity,
   Share,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
+import type { WebViewErrorEvent, WebViewHttpErrorEvent } from 'react-native-webview/lib/WebViewTypes';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useWebApps, useFavorites } from '../../../hooks';
@@ -28,10 +30,36 @@ export default function WebViewScreen() {
   const [progress, setProgress] = useState(0);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const app = apps.find((a) => a.id === id);
-  const url = app?.url || 'https://www.google.com';
-  const title = app?.name || 'Cargando...';
+  const url = app?.url;
+  const title = app?.name || 'Loading...';
+
+  // Handle WebView errors
+  const handleError = (event: WebViewErrorEvent) => {
+    const { nativeEvent } = event;
+    console.error('WebView error:', nativeEvent);
+    setError(nativeEvent.description || 'Failed to load page');
+    setLoading(false);
+  };
+
+  // Handle HTTP errors (4xx, 5xx)
+  const handleHttpError = (event: WebViewHttpErrorEvent) => {
+    const { nativeEvent } = event;
+    console.error('WebView HTTP error:', nativeEvent.statusCode, nativeEvent.url);
+    if (nativeEvent.statusCode >= 400) {
+      setError(`HTTP Error ${nativeEvent.statusCode}`);
+    }
+  };
+
+  // Retry loading
+  const handleRetry = () => {
+    setError(null);
+    setLoading(true);
+    setProgress(0);
+    webViewRef.current?.reload();
+  };
   const appIsFavorite = id ? isFavorite(id) : false;
 
   const handleShare = async () => {
@@ -87,20 +115,56 @@ export default function WebViewScreen() {
         </View>
       )}
 
+      {/* Error State */}
+      {error && (
+        <View style={styles.errorContainer}>
+          <Ionicons name="cloud-offline-outline" size={64} color={colors.error} />
+          <Text style={styles.errorTitle}>Failed to load</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+            <Ionicons name="refresh" size={20} color={colors.white} />
+            <Text style={styles.retryText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* App Not Found */}
+      {!url && !error && (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={64} color={colors.warning} />
+          <Text style={styles.errorTitle}>App not found</Text>
+          <Text style={styles.errorMessage}>This app may have been removed.</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={20} color={colors.white} />
+            <Text style={styles.retryText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* WebView */}
-      <WebView
-        ref={webViewRef}
-        source={{ uri: url }}
-        style={styles.webview}
-        onLoadStart={() => setLoading(true)}
-        onLoadProgress={(e) => setProgress(e.nativeEvent.progress)}
-        onLoadEnd={() => { setLoading(false); setProgress(1); }}
-        onNavigationStateChange={handleNavStateChange}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        allowsBackForwardNavigationGestures={true}
-        allowsInlineMediaPlayback={true}
-      />
+      {url && !error && (
+        <WebView
+          ref={webViewRef}
+          source={{ uri: url }}
+          style={styles.webview}
+          onLoadStart={() => { setLoading(true); setError(null); }}
+          onLoadProgress={(e) => setProgress(e.nativeEvent.progress)}
+          onLoadEnd={() => { setLoading(false); setProgress(1); }}
+          onNavigationStateChange={handleNavStateChange}
+          onError={handleError}
+          onHttpError={handleHttpError}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          allowsBackForwardNavigationGestures={true}
+          allowsInlineMediaPlayback={true}
+          startInLoadingState={true}
+          renderLoading={() => (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+          )}
+        />
+      )}
 
       {/* Bottom Bar */}
       <View style={styles.bottomBar}>
@@ -201,5 +265,49 @@ const styles = StyleSheet.create({
   },
   navBtn: {
     padding: 10,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+    backgroundColor: colors.background,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.text,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  retryText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.white,
+  },
+  loadingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
   },
 });

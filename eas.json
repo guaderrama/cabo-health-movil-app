@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 5.0.0"
+    "version": ">= 5.0.0",
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -15,16 +16,16 @@
     },
     "production": {
       "ios": {
-        "resourceClass": "m1-medium"
+        "resourceClass": "m-medium"
       }
     }
   },
   "submit": {
     "production": {
       "ios": {
-        "appleId": "tu-email@example.com",
-        "ascAppId": "TU_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "TU_TEAM_ID"
+        "appleId": "criticas_de_arte@hotmail.com",
+        "ascAppId": "6758285327",
+        "appleTeamId": "DQ8PH2DZ3R"
       }
     }
   }

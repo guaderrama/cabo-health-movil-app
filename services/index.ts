@@ -18,3 +18,13 @@ export {
   clearAllStorage,
   getLocalState,
 } from './storage';
+export {
+  validateAccessCode,
+  checkStoredCode,
+  getStoredCode,
+  getStoredClientName,
+  clearStoredCode,
+  formatAccessCode,
+  parseAccessCodeInput,
+  isAdminCode,
+} from './accessCode';

@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { useBiometry, getBiometryTypeName, getBiometryIcon, useTheme } from '../../hooks';
 import { layout, config } from '../../constants';
 import type { ThemeMode } from '../../hooks';
+import { clearStoredCode, getStoredClientName } from '../../services/accessCode';
 
 // Número de taps para acceso admin
 const ADMIN_TAP_COUNT = 5;
@@ -123,14 +124,25 @@ export default function SettingsScreen() {
     enableBiometry,
     disableBiometry,
     authenticate,
+    resetAuthentication,
   } = useBiometry();
 
   const [hapticEnabled, setHapticEnabled] = useState(true);
   const [cacheSize, setCacheSize] = useState('0 KB');
+  const [clientName, setClientName] = useState<string | null>(null);
 
   // Estado para acceso admin secreto
   const [adminTapCount, setAdminTapCount] = useState(0);
-  const adminTapTimeout = useRef<NodeJS.Timeout | null>(null);
+  const adminTapTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (adminTapTimeout.current) {
+        clearTimeout(adminTapTimeout.current);
+      }
+    };
+  }, []);
 
   // Handler para tap secreto en versión
   const handleVersionTap = useCallback(() => {
@@ -167,6 +179,10 @@ export default function SettingsScreen() {
       try {
         const haptic = await AsyncStorage.getItem(config.storageKeys.hapticEnabled);
         setHapticEnabled(haptic !== 'false');
+
+        // Cargar nombre del cliente
+        const storedClientName = await getStoredClientName();
+        setClientName(storedClientName);
 
         // Calcular tamaño de caché (aproximado)
         const cachedApps = await AsyncStorage.getItem(config.storageKeys.cachedApps);
@@ -273,6 +289,32 @@ export default function SettingsScreen() {
   const handleSupport = useCallback(() => {
     Linking.openURL('mailto:ivan@ivanguaderrama.com?subject=CaboHealth%20Support');
   }, []);
+
+  // Logout - clear access code and reset authentication state
+  const handleLogout = useCallback(() => {
+    Alert.alert(
+      'Log Out',
+      'Your access code will be removed and you will need to enter it again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearStoredCode();
+              resetAuthentication(); // Reset biometry authentication state
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              router.replace('/');
+            } catch (error) {
+              console.error('Error logging out:', error);
+              Alert.alert('Error', 'Could not log out.');
+            }
+          },
+        },
+      ]
+    );
+  }, [router, resetAuthentication]);
 
   const biometryName = getBiometryTypeName(biometryType);
   const biometryIcon = getBiometryIcon(biometryType) as keyof typeof Ionicons.glyphMap;
@@ -399,6 +441,34 @@ export default function SettingsScreen() {
               title="Contact Support"
               subtitle="ivan@ivanguaderrama.com"
               onPress={handleSupport}
+              showChevron
+              colors={colors}
+            />
+          </View>
+        </View>
+
+        {/* Section: Account */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account</Text>
+          <View style={[styles.sectionContent, { backgroundColor: colors.cardBackground }]}>
+            {clientName && (
+              <>
+                <SettingItem
+                  icon="person-outline"
+                  iconColor={colors.primary}
+                  title="Client"
+                  subtitle={clientName}
+                  colors={colors}
+                />
+                <View style={[styles.separator, { backgroundColor: colors.border }]} />
+              </>
+            )}
+            <SettingItem
+              icon="log-out-outline"
+              iconColor={colors.error}
+              title="Log Out"
+              subtitle="Remove access code"
+              onPress={handleLogout}
               showChevron
               colors={colors}
             />

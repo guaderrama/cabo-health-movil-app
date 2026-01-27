@@ -8,6 +8,47 @@ import { config } from '../constants';
 const KEYS = config.storageKeys;
 
 /**
+ * Safe JSON parse with type validation
+ */
+function safeJsonParse<T>(
+  data: string | null,
+  validator: (parsed: unknown) => parsed is T,
+  defaultValue: T
+): T {
+  if (!data) return defaultValue;
+  try {
+    const parsed = JSON.parse(data);
+    if (validator(parsed)) {
+      return parsed;
+    }
+    console.warn('JSON parse validation failed, returning default');
+    return defaultValue;
+  } catch (error) {
+    console.error('JSON parse error:', error);
+    return defaultValue;
+  }
+}
+
+// Type validators
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+function isWebAppArray(value: unknown): value is WebApp[] {
+  if (!Array.isArray(value)) return false;
+  return value.every(item =>
+    item && typeof item === 'object' &&
+    typeof (item as WebApp).id === 'string' &&
+    typeof (item as WebApp).name === 'string' &&
+    typeof (item as WebApp).url === 'string'
+  );
+}
+
+function isBoolean(value: unknown): value is boolean {
+  return typeof value === 'boolean';
+}
+
+/**
  * Guarda los favoritos en storage local
  */
 export async function saveFavorites(favorites: string[]): Promise<void> {
@@ -25,7 +66,7 @@ export async function saveFavorites(favorites: string[]): Promise<void> {
 export async function getFavorites(): Promise<string[]> {
   try {
     const data = await AsyncStorage.getItem(KEYS.favorites);
-    return data ? JSON.parse(data) : [];
+    return safeJsonParse(data, isStringArray, []);
   } catch (error) {
     console.error('Error getting favorites:', error);
     return [];
@@ -51,7 +92,7 @@ export async function cacheWebApps(apps: WebApp[]): Promise<void> {
 export async function getCachedWebApps(): Promise<WebApp[]> {
   try {
     const data = await AsyncStorage.getItem(KEYS.cachedApps);
-    return data ? JSON.parse(data) : [];
+    return safeJsonParse(data, isWebAppArray, []);
   } catch (error) {
     console.error('Error getting cached web apps:', error);
     return [];
@@ -89,7 +130,7 @@ export async function setBiometryEnabled(enabled: boolean): Promise<void> {
 export async function getBiometryEnabled(): Promise<boolean> {
   try {
     const data = await AsyncStorage.getItem(KEYS.biometryEnabled);
-    return data ? JSON.parse(data) : false;
+    return safeJsonParse(data, isBoolean, false);
   } catch (error) {
     console.error('Error getting biometry preference:', error);
     return false;
@@ -114,7 +155,9 @@ export async function setHapticEnabled(enabled: boolean): Promise<void> {
 export async function getHapticEnabled(): Promise<boolean> {
   try {
     const data = await AsyncStorage.getItem(KEYS.hapticEnabled);
-    return data !== null ? JSON.parse(data) : true; // Default: enabled
+    // Default: enabled (true) if no data
+    if (data === null) return true;
+    return safeJsonParse(data, isBoolean, true);
   } catch (error) {
     console.error('Error getting haptic preference:', error);
     return true;

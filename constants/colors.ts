@@ -125,5 +125,6 @@ export const darkColors = {
 // Default export para compatibilidad (Light Mode)
 export const colors = lightColors;
 
-export type ThemeColors = typeof lightColors;
-export type ColorKey = keyof ThemeColors;
+// Type that allows both light and dark color palettes
+export type ThemeColors = typeof lightColors | typeof darkColors;
+export type ColorKey = keyof typeof lightColors;

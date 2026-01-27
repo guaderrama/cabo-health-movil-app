@@ -21,9 +21,10 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../../hooks';
 import { CATEGORIES, AVAILABLE_CATEGORIES, getCategoryConfig, layout } from '../../constants';
-import { WebApp } from '../../types';
+import { WebApp, AccessCode } from '../../types';
 import {
   collection,
   getDocs,
@@ -34,8 +35,10 @@ import {
   serverTimestamp,
   query,
   orderBy,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
+import { config } from '../../constants';
 
 // PIN de acceso (cambiar por uno seguro)
 const ADMIN_PIN = '1234';
@@ -60,6 +63,31 @@ const emptyForm: CardFormData = {
   isNew: false,
 };
 
+// Access Code form
+interface CodeFormData {
+  code: string;
+  clientName: string;
+  notes: string;
+  isActive: boolean;
+}
+
+const emptyCodeForm: CodeFormData = {
+  code: '',
+  clientName: '',
+  notes: '',
+  isActive: true,
+};
+
+// Generate random code
+const generateCode = (): string => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = 'CABO-';
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+};
+
 export default function AdminScreen() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -67,11 +95,20 @@ export default function AdminScreen() {
   // Estados
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
+  const [activeTab, setActiveTab] = useState<'cards' | 'codes'>('cards');
+
+  // Cards state
   const [cards, setCards] = useState<WebApp[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingCard, setEditingCard] = useState<WebApp | null>(null);
   const [formData, setFormData] = useState<CardFormData>(emptyForm);
+
+  // Access Codes state
+  const [accessCodes, setAccessCodes] = useState<AccessCode[]>([]);
+  const [showCodeForm, setShowCodeForm] = useState(false);
+  const [editingCode, setEditingCode] = useState<AccessCode | null>(null);
+  const [codeFormData, setCodeFormData] = useState<CodeFormData>(emptyCodeForm);
 
   // Cargar cards
   const loadCards = useCallback(async () => {
@@ -92,11 +129,37 @@ export default function AdminScreen() {
     }
   }, []);
 
+  // Load access codes
+  const loadAccessCodes = useCallback(async () => {
+    try {
+      const q = query(collection(db, config.collections.accessCodes), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      const loadedCodes: AccessCode[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        loadedCodes.push({
+          id: docSnap.id,
+          code: data.code,
+          clientName: data.clientName,
+          isActive: data.isActive,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          expiresAt: data.expiresAt?.toDate(),
+          lastUsedAt: data.lastUsedAt?.toDate(),
+          notes: data.notes,
+        } as AccessCode);
+      });
+      setAccessCodes(loadedCodes);
+    } catch (error) {
+      console.error('Error loading access codes:', error);
+    }
+  }, []);
+
   useEffect(() => {
     if (isAuthenticated) {
       loadCards();
+      loadAccessCodes();
     }
-  }, [isAuthenticated, loadCards]);
+  }, [isAuthenticated, loadCards, loadAccessCodes]);
 
   // Verify PIN
   const handlePinSubmit = () => {
@@ -275,6 +338,123 @@ export default function AdminScreen() {
     }
   };
 
+  // ========== ACCESS CODE FUNCTIONS ==========
+
+  // Add new code
+  const handleAddCode = () => {
+    setEditingCode(null);
+    setCodeFormData({
+      ...emptyCodeForm,
+      code: generateCode(),
+    });
+    setShowCodeForm(true);
+  };
+
+  // Edit code
+  const handleEditCode = (code: AccessCode) => {
+    setEditingCode(code);
+    setCodeFormData({
+      code: code.code,
+      clientName: code.clientName,
+      notes: code.notes || '',
+      isActive: code.isActive,
+    });
+    setShowCodeForm(true);
+  };
+
+  // Save code
+  const handleSaveCode = async () => {
+    if (!codeFormData.code.trim() || !codeFormData.clientName.trim()) {
+      Alert.alert('Error', 'Code and Client Name are required');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const codeData = {
+        code: codeFormData.code.trim().toUpperCase(),
+        clientName: codeFormData.clientName.trim(),
+        notes: codeFormData.notes.trim(),
+        isActive: codeFormData.isActive,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (editingCode) {
+        await updateDoc(doc(db, config.collections.accessCodes, editingCode.id!), codeData);
+      } else {
+        await addDoc(collection(db, config.collections.accessCodes), {
+          ...codeData,
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      setShowCodeForm(false);
+      setTimeout(() => {
+        setEditingCode(null);
+        setCodeFormData(emptyCodeForm);
+        loadAccessCodes();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Success', editingCode ? 'Code updated' : 'Code created');
+      }, 200);
+    } catch (error) {
+      console.error('Error saving code:', error);
+      Alert.alert('Error', 'Could not save code');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Toggle code active
+  const handleToggleCodeActive = async (code: AccessCode) => {
+    try {
+      await updateDoc(doc(db, config.collections.accessCodes, code.id!), {
+        isActive: !code.isActive,
+        updatedAt: serverTimestamp(),
+      });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      loadAccessCodes();
+    } catch (error) {
+      console.error('Error toggling code:', error);
+    }
+  };
+
+  // Delete code
+  const handleDeleteCode = (code: AccessCode) => {
+    Alert.alert(
+      'Delete Code',
+      `Are you sure you want to delete code for "${code.clientName}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, config.collections.accessCodes, code.id!));
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              loadAccessCodes();
+            } catch (error) {
+              console.error('Error deleting code:', error);
+              Alert.alert('Error', 'Could not delete');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Copy code to clipboard
+  const handleCopyCode = async (code: string) => {
+    try {
+      await Clipboard.setStringAsync(code);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Copied!', `Code "${code}" copied to clipboard`, [{ text: 'OK' }]);
+    } catch (error) {
+      console.error('Error copying:', error);
+      Alert.alert('Error', 'Could not copy to clipboard');
+    }
+  };
+
   // PIN Screen
   if (!isAuthenticated) {
     return (
@@ -327,16 +507,63 @@ export default function AdminScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Admin Panel</Text>
-        <TouchableOpacity onPress={handleAddCard} style={styles.headerAdd}>
+        <TouchableOpacity
+          onPress={activeTab === 'cards' ? handleAddCard : handleAddCode}
+          style={styles.headerAdd}
+        >
           <Ionicons name="add-circle" size={28} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
-      {/* Card List */}
+      {/* Tabs */}
+      <View style={[styles.tabContainer, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === 'cards' ? { borderBottomColor: colors.primary } : { borderBottomColor: 'transparent' },
+          ]}
+          onPress={() => setActiveTab('cards')}
+        >
+          <Ionicons
+            name="apps"
+            size={18}
+            color={activeTab === 'cards' ? colors.primary : colors.textSecondary}
+          />
+          <Text style={[
+            styles.tabText,
+            { color: activeTab === 'cards' ? colors.primary : colors.textSecondary }
+          ]}>
+            Cards
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === 'codes' ? { borderBottomColor: colors.primary } : { borderBottomColor: 'transparent' },
+          ]}
+          onPress={() => setActiveTab('codes')}
+        >
+          <Ionicons
+            name="key"
+            size={18}
+            color={activeTab === 'codes' ? colors.primary : colors.textSecondary}
+          />
+          <Text style={[
+            styles.tabText,
+            { color: activeTab === 'codes' ? colors.primary : colors.textSecondary }
+          ]}>
+            Access Codes
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Content based on active tab */}
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-          CARDS ({cards.length})
-        </Text>
+        {activeTab === 'cards' ? (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+              CARDS ({cards.length})
+            </Text>
 
         {cards.map((card) => {
           const catConfig = getCategoryConfig(card.category);
@@ -387,11 +614,90 @@ export default function AdminScreen() {
             </View>
           );
         })}
+          </>
+        ) : (
+          <>
+            {/* ACCESS CODES TAB */}
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+              ACCESS CODES ({accessCodes.length})
+            </Text>
+
+            {accessCodes.length === 0 ? (
+              <View style={[styles.emptyState, { backgroundColor: colors.cardBackground }]}>
+                <Ionicons name="key-outline" size={48} color={colors.textTertiary} />
+                <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+                  No access codes yet
+                </Text>
+                <Text style={[styles.emptyStateSubtext, { color: colors.textTertiary }]}>
+                  Tap + to create your first code
+                </Text>
+              </View>
+            ) : (
+              accessCodes.map((code) => (
+                <View
+                  key={code.id}
+                  style={[styles.cardItem, {
+                    backgroundColor: colors.cardBackground,
+                    borderColor: colors.border,
+                    opacity: code.isActive ? 1 : 0.5,
+                  }]}
+                >
+                  <TouchableOpacity
+                    style={[styles.cardIcon, { backgroundColor: code.isActive ? colors.success + '20' : colors.error + '20' }]}
+                    onPress={() => handleCopyCode(code.code)}
+                  >
+                    <Ionicons
+                      name="key"
+                      size={24}
+                      color={code.isActive ? colors.success : colors.error}
+                    />
+                  </TouchableOpacity>
+                  <View style={styles.cardInfo}>
+                    <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>
+                      {code.clientName}
+                    </Text>
+                    <Text style={[styles.codeText, { color: colors.primary }]}>
+                      {code.code}
+                    </Text>
+                    <Text style={[styles.cardCategory, { color: colors.textSecondary }]}>
+                      {code.isActive ? 'Active' : 'Inactive'}
+                      {code.lastUsedAt && ` • Last used: ${code.lastUsedAt.toLocaleDateString()}`}
+                    </Text>
+                  </View>
+                  <View style={styles.cardActions}>
+                    <TouchableOpacity
+                      onPress={() => handleToggleCodeActive(code)}
+                      style={styles.actionButton}
+                    >
+                      <Ionicons
+                        name={code.isActive ? 'checkmark-circle' : 'close-circle'}
+                        size={20}
+                        color={code.isActive ? colors.success : colors.error}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleEditCode(code)}
+                      style={styles.actionButton}
+                    >
+                      <Ionicons name="pencil" size={20} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteCode(code)}
+                      style={styles.actionButton}
+                    >
+                      <Ionicons name="trash" size={20} color={colors.error} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
+          </>
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Form Modal */}
+      {/* Card Form Modal */}
       <Modal visible={showForm} animationType="slide" transparent onRequestClose={handleCloseForm}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity
@@ -545,6 +851,125 @@ export default function AdminScreen() {
 
               {/* Extra space for keyboard */}
               <View style={{ height: 50 }} />
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* Access Code Form Modal */}
+      <Modal
+        visible={showCodeForm}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowCodeForm(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalDismiss}
+            activeOpacity={1}
+            onPress={() => setShowCodeForm(false)}
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
+            style={styles.keyboardAvoid}
+          >
+            <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>
+                  {editingCode ? 'Edit Access Code' : 'New Access Code'}
+                </Text>
+                <TouchableOpacity onPress={() => setShowCodeForm(false)}>
+                  <Ionicons name="close" size={24} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                showsVerticalScrollIndicator={true}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.formScrollContent}
+              >
+                {/* Code */}
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Access Code *</Text>
+                <View style={styles.codeInputRow}>
+                  <TextInput
+                    style={[styles.input, styles.codeInput, {
+                      backgroundColor: colors.background,
+                      color: colors.text,
+                      borderColor: colors.border,
+                    }]}
+                    value={codeFormData.code}
+                    onChangeText={(text) => setCodeFormData({ ...codeFormData, code: text.toUpperCase() })}
+                    placeholder="CABO-XXXXXXXX"
+                    placeholderTextColor={colors.textTertiary}
+                    autoCapitalize="characters"
+                  />
+                  <TouchableOpacity
+                    style={[styles.generateButton, { backgroundColor: colors.primary }]}
+                    onPress={() => setCodeFormData({ ...codeFormData, code: generateCode() })}
+                  >
+                    <Ionicons name="refresh" size={20} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Client Name */}
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Client Name *</Text>
+                <TextInput
+                  style={[styles.input, {
+                    backgroundColor: colors.background,
+                    color: colors.text,
+                    borderColor: colors.border,
+                  }]}
+                  value={codeFormData.clientName}
+                  onChangeText={(text) => setCodeFormData({ ...codeFormData, clientName: text })}
+                  placeholder="Dr. García - Clínica Los Cabos"
+                  placeholderTextColor={colors.textTertiary}
+                />
+
+                {/* Notes */}
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Notes</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea, {
+                    backgroundColor: colors.background,
+                    color: colors.text,
+                    borderColor: colors.border,
+                  }]}
+                  value={codeFormData.notes}
+                  onChangeText={(text) => setCodeFormData({ ...codeFormData, notes: text })}
+                  placeholder="Premium Plan, Annual subscription..."
+                  placeholderTextColor={colors.textTertiary}
+                  multiline
+                  numberOfLines={2}
+                />
+
+                {/* Active Switch */}
+                <View style={styles.switchRow}>
+                  <Text style={[styles.switchLabel, { color: colors.text }]}>Active</Text>
+                  <TouchableOpacity
+                    onPress={() => setCodeFormData({ ...codeFormData, isActive: !codeFormData.isActive })}
+                    style={[styles.switch, {
+                      backgroundColor: codeFormData.isActive ? colors.success : colors.border
+                    }]}
+                  >
+                    <View style={[styles.switchThumb, {
+                      transform: [{ translateX: codeFormData.isActive ? 20 : 0 }]
+                    }]} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Save Button */}
+                <TouchableOpacity
+                  style={[styles.saveButton, { backgroundColor: colors.primary }]}
+                  onPress={handleSaveCode}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.saveButtonText}>
+                    {isLoading ? 'Saving...' : 'Save Code'}
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={{ height: 50 }} />
               </ScrollView>
             </View>
           </KeyboardAvoidingView>
@@ -760,5 +1185,60 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Tabs
+  tabContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 6,
+    borderBottomWidth: 2,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Access Codes
+  codeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  codeInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  codeInput: {
+    flex: 1,
+  },
+  generateButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    borderRadius: 12,
+    marginTop: 20,
+  },
+  emptyStateText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    marginTop: 8,
   },
 });

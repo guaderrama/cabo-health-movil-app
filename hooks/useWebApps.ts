@@ -1,7 +1,7 @@
 // hooks/useWebApps.ts
 // Hook para obtener y gestionar web apps
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { WebApp } from '../types';
 import {
   fetchWebApps,
@@ -28,15 +28,25 @@ export function useWebApps(): UseWebAppsResult {
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
 
-  // Combina apps con estado de favoritos
-  const appsWithFavorites = apps.map((app) => ({
-    ...app,
-    isFavorite: favorites.includes(app.id),
-  }));
+  // Combina apps con estado de favoritos (memoized to prevent unnecessary recalculations)
+  const appsWithFavorites = useMemo(() =>
+    apps.map((app) => ({
+      ...app,
+      isFavorite: favorites.includes(app.id),
+    })),
+    [apps, favorites]
+  );
 
-  // Separa favoritos de no favoritos
-  const favoriteApps = appsWithFavorites.filter((app) => app.isFavorite);
-  const nonFavoriteApps = appsWithFavorites.filter((app) => !app.isFavorite);
+  // Separa favoritos de no favoritos (memoized)
+  const favoriteApps = useMemo(() =>
+    appsWithFavorites.filter((app) => app.isFavorite),
+    [appsWithFavorites]
+  );
+
+  const nonFavoriteApps = useMemo(() =>
+    appsWithFavorites.filter((app) => !app.isFavorite),
+    [appsWithFavorites]
+  );
 
   // Carga inicial
   const loadApps = useCallback(async () => {
@@ -107,12 +117,16 @@ export function useWebApps(): UseWebAppsResult {
   // Actualizar favoritos cuando cambien
   useEffect(() => {
     const loadFavorites = async () => {
-      const storedFavorites = await getFavorites();
-      setFavorites(storedFavorites);
+      try {
+        const storedFavorites = await getFavorites();
+        setFavorites(storedFavorites);
+      } catch (err) {
+        console.error('Error loading favorites:', err);
+      }
     };
 
-    // Recargar favoritos periódicamente (simple polling)
-    const interval = setInterval(loadFavorites, 1000);
+    // Recargar favoritos periódicamente (30 seconds - was 1s which caused performance issues)
+    const interval = setInterval(loadFavorites, 30000);
     return () => clearInterval(interval);
   }, []);
 
