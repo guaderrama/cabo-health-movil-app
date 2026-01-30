@@ -242,7 +242,7 @@ export default function AccessCodeScreen() {
             placeholderTextColor={colors.textTertiary}
             autoCapitalize="characters"
             autoCorrect={false}
-            maxLength={13} // XXXX-XXXXXXXX
+            maxLength={18} // Supports codes up to CABO-ADMIN2024
             keyboardType="default"
             returnKeyType="done"
             onSubmitEditing={handleSubmit}
