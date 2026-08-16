@@ -11,10 +11,14 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { getFirestoreDB } from './firebase';
-import { WebApp, WebAppFirestore } from '../types';
-import { config } from '../constants';
+import { WebApp } from '../types';
 
-const COLLECTION_NAME = config.collections.webApps;
+interface WebAppFirestore extends WebApp {
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const COLLECTION_NAME = 'cabohealth_apps';
 
 /**
  * Validate that Firestore data has required fields

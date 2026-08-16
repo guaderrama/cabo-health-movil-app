@@ -1,227 +1,42 @@
-// services/storage.ts
-// AsyncStorage helpers para WebApp Launcher
-
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { WebApp, LocalStorage } from '../types';
 import { config } from '../constants';
 
 const KEYS = config.storageKeys;
 
-/**
- * Safe JSON parse with type validation
- */
-function safeJsonParse<T>(
-  data: string | null,
-  validator: (parsed: unknown) => parsed is T,
-  defaultValue: T
-): T {
-  if (!data) return defaultValue;
+function parseFavorites(data: string | null): string[] {
+  if (!data) return [];
+
   try {
-    const parsed = JSON.parse(data);
-    if (validator(parsed)) {
-      return parsed;
-    }
-    console.warn('JSON parse validation failed, returning default');
-    return defaultValue;
-  } catch (error) {
-    console.error('JSON parse error:', error);
-    return defaultValue;
+    const parsed: unknown = JSON.parse(data);
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')
+      ? parsed
+      : [];
+  } catch {
+    return [];
   }
 }
 
-// Type validators
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(item => typeof item === 'string');
-}
-
-function isWebAppArray(value: unknown): value is WebApp[] {
-  if (!Array.isArray(value)) return false;
-  return value.every(item =>
-    item && typeof item === 'object' &&
-    typeof (item as WebApp).id === 'string' &&
-    typeof (item as WebApp).name === 'string' &&
-    typeof (item as WebApp).url === 'string'
-  );
-}
-
-function isBoolean(value: unknown): value is boolean {
-  return typeof value === 'boolean';
-}
-
-/**
- * Guarda los favoritos en storage local
- */
 export async function saveFavorites(favorites: string[]): Promise<void> {
-  try {
-    await AsyncStorage.setItem(KEYS.favorites, JSON.stringify(favorites));
-  } catch (error) {
-    console.error('Error saving favorites:', error);
-    throw error;
-  }
+  await AsyncStorage.setItem(KEYS.favorites, JSON.stringify(favorites));
 }
 
-/**
- * Obtiene los favoritos del storage local
- */
 export async function getFavorites(): Promise<string[]> {
   try {
-    const data = await AsyncStorage.getItem(KEYS.favorites);
-    return safeJsonParse(data, isStringArray, []);
-  } catch (error) {
-    console.error('Error getting favorites:', error);
+    return parseFavorites(await AsyncStorage.getItem(KEYS.favorites));
+  } catch {
     return [];
   }
 }
 
-/**
- * Guarda las apps en caché para modo offline
- */
-export async function cacheWebApps(apps: WebApp[]): Promise<void> {
-  try {
-    await AsyncStorage.setItem(KEYS.cachedApps, JSON.stringify(apps));
-    await AsyncStorage.setItem(KEYS.lastSync, Date.now().toString());
-  } catch (error) {
-    console.error('Error caching web apps:', error);
-    throw error;
-  }
-}
-
-/**
- * Obtiene las apps del caché
- */
-export async function getCachedWebApps(): Promise<WebApp[]> {
-  try {
-    const data = await AsyncStorage.getItem(KEYS.cachedApps);
-    return safeJsonParse(data, isWebAppArray, []);
-  } catch (error) {
-    console.error('Error getting cached web apps:', error);
-    return [];
-  }
-}
-
-/**
- * Obtiene el timestamp de la última sincronización
- */
-export async function getLastSyncTime(): Promise<number | null> {
-  try {
-    const data = await AsyncStorage.getItem(KEYS.lastSync);
-    return data ? parseInt(data, 10) : null;
-  } catch (error) {
-    console.error('Error getting last sync time:', error);
-    return null;
-  }
-}
-
-/**
- * Guarda la preferencia de biometría
- */
-export async function setBiometryEnabled(enabled: boolean): Promise<void> {
-  try {
-    await AsyncStorage.setItem(KEYS.biometryEnabled, JSON.stringify(enabled));
-  } catch (error) {
-    console.error('Error saving biometry preference:', error);
-    throw error;
-  }
-}
-
-/**
- * Obtiene la preferencia de biometría
- */
-export async function getBiometryEnabled(): Promise<boolean> {
-  try {
-    const data = await AsyncStorage.getItem(KEYS.biometryEnabled);
-    return safeJsonParse(data, isBoolean, false);
-  } catch (error) {
-    console.error('Error getting biometry preference:', error);
-    return false;
-  }
-}
-
-/**
- * Guarda la preferencia de haptic feedback
- */
 export async function setHapticEnabled(enabled: boolean): Promise<void> {
-  try {
-    await AsyncStorage.setItem(KEYS.hapticEnabled, JSON.stringify(enabled));
-  } catch (error) {
-    console.error('Error saving haptic preference:', error);
-    throw error;
-  }
+  await AsyncStorage.setItem(KEYS.hapticEnabled, JSON.stringify(enabled));
 }
 
-/**
- * Obtiene la preferencia de haptic feedback
- */
 export async function getHapticEnabled(): Promise<boolean> {
   try {
     const data = await AsyncStorage.getItem(KEYS.hapticEnabled);
-    // Default: enabled (true) if no data
-    if (data === null) return true;
-    return safeJsonParse(data, isBoolean, true);
-  } catch (error) {
-    console.error('Error getting haptic preference:', error);
+    return data === null ? true : JSON.parse(data) === true;
+  } catch {
     return true;
-  }
-}
-
-/**
- * Guarda el timestamp de cuando la app fue al background
- */
-export async function setLastBackgroundTime(time: number): Promise<void> {
-  try {
-    await AsyncStorage.setItem(KEYS.lastBackgroundTime, time.toString());
-  } catch (error) {
-    console.error('Error saving last background time:', error);
-    throw error;
-  }
-}
-
-/**
- * Obtiene el timestamp de cuando la app fue al background
- */
-export async function getLastBackgroundTime(): Promise<number | null> {
-  try {
-    const data = await AsyncStorage.getItem(KEYS.lastBackgroundTime);
-    return data ? parseInt(data, 10) : null;
-  } catch (error) {
-    console.error('Error getting last background time:', error);
-    return null;
-  }
-}
-
-/**
- * Limpia todo el storage (para debug/reset)
- */
-export async function clearAllStorage(): Promise<void> {
-  try {
-    const keys = Object.values(KEYS);
-    await AsyncStorage.multiRemove(keys);
-  } catch (error) {
-    console.error('Error clearing storage:', error);
-    throw error;
-  }
-}
-
-/**
- * Obtiene todo el estado local
- */
-export async function getLocalState(): Promise<Partial<LocalStorage>> {
-  try {
-    const [favorites, cachedApps, lastSync, biometryEnabled] = await Promise.all([
-      getFavorites(),
-      getCachedWebApps(),
-      getLastSyncTime(),
-      getBiometryEnabled(),
-    ]);
-
-    return {
-      favorites,
-      cachedApps,
-      lastSync: lastSync || 0,
-      biometryEnabled,
-    };
-  } catch (error) {
-    console.error('Error getting local state:', error);
-    return {};
   }
 }

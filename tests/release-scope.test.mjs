@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const verifierPath = fileURLToPath(new URL('../scripts/verify-minimal-v1.mjs', import.meta.url));
+const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
 function writeFixtureFile(root, relativePath, contents) {
   const target = join(root, relativePath);
@@ -53,6 +55,50 @@ function withFixture(mutate, assertion) {
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+test('actual Expo route inventory packages no legacy auth or admin screen', () => {
+  for (const route of [
+    'app/(auth)/_layout.tsx',
+    'app/(auth)/access-code.tsx',
+    'app/(auth)/biometry.tsx',
+    'app/(auth)/code-expired.tsx',
+    'app/(main)/admin.tsx',
+  ]) {
+    assert.equal(existsSync(join(projectRoot, route)), false, `${route} must not be packaged`);
+  }
+});
+
+test('actual public Expo config requests no biometric capability', () => {
+  const appConfig = JSON.parse(readFileSync(join(projectRoot, 'app.json'), 'utf8'));
+  const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
+
+  assert.equal('NSFaceIDUsageDescription' in appConfig.expo.ios.infoPlist, false);
+  assert.deepEqual(appConfig.expo.android.permissions ?? [], []);
+  assert.equal(appConfig.expo.plugins.includes('expo-local-authentication'), false);
+  assert.equal('expo-local-authentication' in packageJson.dependencies, false);
+});
+
+test('runtime config exposes only public local-state settings and no remote catalog endpoint', async () => {
+  const configSource = readFileSync(join(projectRoot, 'constants/config.ts'), 'utf8');
+  const compiledConfig = ts.transpileModule(configSource, {
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  const { config } = await import(
+    `data:text/javascript;base64,${Buffer.from(compiledConfig).toString('base64')}`
+  );
+
+  assert.equal('firebase' in config, false);
+  assert.equal('collections' in config, false);
+  assert.deepEqual(config.storageKeys, {
+    favorites: '@cabohealth_favorites',
+    favoritesOrder: '@cabohealth_favorites_order',
+    hapticEnabled: '@cabohealth_haptic_enabled',
+    hasSeenOnboarding: '@cabohealth_has_seen_onboarding',
+  });
+});
 
 test('release scope verifier accepts a two-module public release artifact', () => {
   withFixture(

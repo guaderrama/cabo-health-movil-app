@@ -164,7 +164,7 @@ export default function HomeScreen() {
       {isOffline && (
         <View style={[styles.offlineBanner, { backgroundColor: colors.warning }]}>
           <Ionicons name="cloud-offline-outline" size={16} color={colors.white} />
-          <Text style={[styles.offlineText, { color: colors.white }]}> Offline mode - cached data</Text>
+          <Text style={[styles.offlineText, { color: colors.white }]}> Web content is unavailable offline</Text>
         </View>
       )}
 

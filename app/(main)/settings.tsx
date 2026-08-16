@@ -1,29 +1,22 @@
-// app/(main)/settings.tsx
-// Settings Screen - Configuración de la app con Dark Mode Premium
-
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  ScrollView,
-  Switch,
   Alert,
   Linking,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
-import { useBiometry, getBiometryTypeName, getBiometryIcon, useTheme } from '../../hooks';
-import { layout, config } from '../../constants';
+import { useTheme } from '../../hooks';
 import type { ThemeMode } from '../../hooks';
-import { clearStoredCode, getStoredClientName } from '../../services/accessCode';
-
-// Número de taps para acceso admin
-const ADMIN_TAP_COUNT = 5;
+import { config, layout } from '../../constants';
 
 interface SettingItemProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -63,15 +56,12 @@ function SettingItem({
         {subtitle && <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>}
       </View>
       {rightElement}
-      {showChevron && (
-        <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-      )}
+      {showChevron && <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />}
     </TouchableOpacity>
   );
 }
 
-// Componente para selección de tema
-function ThemeSelector({ colors, theme, setTheme }: { colors: any; theme: ThemeMode; setTheme: (t: ThemeMode) => void }) {
+function ThemeSelector({ colors, theme, setTheme }: { colors: any; theme: ThemeMode; setTheme: (theme: ThemeMode) => void }) {
   const options: { value: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { value: 'light', label: 'Light', icon: 'sunny-outline' },
     { value: 'dark', label: 'Dark', icon: 'moon-outline' },
@@ -100,12 +90,7 @@ function ThemeSelector({ colors, theme, setTheme }: { colors: any; theme: ThemeM
             size={20}
             color={theme === option.value ? colors.white : colors.textSecondary}
           />
-          <Text
-            style={[
-              styles.themeOptionText,
-              { color: theme === option.value ? colors.white : colors.text },
-            ]}
-          >
+          <Text style={[styles.themeOptionText, { color: theme === option.value ? colors.white : colors.text }]}>
             {option.label}
           </Text>
         </TouchableOpacity>
@@ -117,211 +102,45 @@ function ThemeSelector({ colors, theme, setTheme }: { colors: any; theme: ThemeM
 export default function SettingsScreen() {
   const router = useRouter();
   const { colors, theme, setTheme, isDark } = useTheme();
-  const {
-    isAvailable: biometryAvailable,
-    biometryType,
-    isEnabled: biometryEnabled,
-    enableBiometry,
-    disableBiometry,
-    authenticate,
-    resetAuthentication,
-  } = useBiometry();
-
   const [hapticEnabled, setHapticEnabled] = useState(true);
-  const [cacheSize, setCacheSize] = useState('0 KB');
-  const [clientName, setClientName] = useState<string | null>(null);
 
-  // Estado para acceso admin secreto
-  const [adminTapCount, setAdminTapCount] = useState(0);
-  const adminTapTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Cleanup timeout on unmount
   useEffect(() => {
-    return () => {
-      if (adminTapTimeout.current) {
-        clearTimeout(adminTapTimeout.current);
-      }
-    };
+    AsyncStorage.getItem(config.storageKeys.hapticEnabled)
+      .then((haptic) => setHapticEnabled(haptic !== 'false'))
+      .catch(() => setHapticEnabled(true));
   }, []);
 
-  // Handler para tap secreto en versión
-  const handleVersionTap = useCallback(() => {
-    // Limpiar timeout anterior
-    if (adminTapTimeout.current) {
-      clearTimeout(adminTapTimeout.current);
-    }
-
-    const newCount = adminTapCount + 1;
-    setAdminTapCount(newCount);
-
-    // Feedback sutil
-    if (newCount >= 3) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-
-    // Si llegó a los taps necesarios, ir a admin
-    if (newCount >= ADMIN_TAP_COUNT) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setAdminTapCount(0);
-      router.push('/(main)/admin');
-      return;
-    }
-
-    // Resetear contador después de 2 segundos de inactividad
-    adminTapTimeout.current = setTimeout(() => {
-      setAdminTapCount(0);
-    }, 2000);
-  }, [adminTapCount, router]);
-
-  // Cargar preferencias
-  useEffect(() => {
-    const loadPreferences = async () => {
-      try {
-        const haptic = await AsyncStorage.getItem(config.storageKeys.hapticEnabled);
-        setHapticEnabled(haptic !== 'false');
-
-        // Cargar nombre del cliente
-        const storedClientName = await getStoredClientName();
-        setClientName(storedClientName);
-
-        // Calcular tamaño de caché (aproximado)
-        const cachedApps = await AsyncStorage.getItem(config.storageKeys.cachedApps);
-        const favorites = await AsyncStorage.getItem(config.storageKeys.favorites);
-        const totalSize = (cachedApps?.length || 0) + (favorites?.length || 0);
-        setCacheSize(totalSize > 1024 ? `${(totalSize / 1024).toFixed(1)} KB` : `${totalSize} bytes`);
-      } catch (error) {
-        console.error('Error loading preferences:', error);
-      }
-    };
-
-    loadPreferences();
-  }, []);
-
-  // Toggle biometría
-  const handleBiometryToggle = useCallback(async (value: boolean) => {
-    if (value) {
-      // Turning ON - authenticate first
-      const success = await authenticate();
-      if (success) {
-        await enableBiometry();
-        Alert.alert('Enabled', 'Biometric authentication is now enabled.');
-      }
-    } else {
-      // Turning OFF - confirm then disable
-      Alert.alert(
-        'Disable Security',
-        'Are you sure you want to disable biometric authentication?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Disable',
-            style: 'destructive',
-            onPress: async () => {
-              await disableBiometry();
-              Alert.alert('Disabled', 'Biometric authentication has been disabled.');
-            },
-          },
-        ]
-      );
-    }
-  }, [authenticate, enableBiometry, disableBiometry]);
-
-  // Toggle haptic
   const handleHapticToggle = useCallback(async (value: boolean) => {
     setHapticEnabled(value);
     await AsyncStorage.setItem(config.storageKeys.hapticEnabled, value.toString());
-    if (value) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    if (value) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, []);
 
-  // Clear cache
-  const handleClearCache = useCallback(() => {
-    Alert.alert(
-      'Clear Cache',
-      'This will delete locally saved data. Apps will be reloaded from the server.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await AsyncStorage.removeItem(config.storageKeys.cachedApps);
-              setCacheSize('0 bytes');
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert('Cache Cleared', 'Local data has been deleted.');
-            } catch (error) {
-              console.error('Error clearing cache:', error);
-              Alert.alert('Error', 'Could not clear cache.');
-            }
-          },
-        },
-      ]
-    );
-  }, []);
-
-  // Reset favorites
   const handleResetFavorites = useCallback(() => {
-    Alert.alert(
-      'Reset Favorites',
-      'Are you sure you want to delete all your favorites?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await AsyncStorage.removeItem(config.storageKeys.favorites);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert('Favorites Deleted', 'Your favorites have been reset.');
-            } catch (error) {
-              console.error('Error resetting favorites:', error);
-            }
-          },
+    Alert.alert('Reset Favorites', 'Are you sure you want to delete all your favorites?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Reset',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await AsyncStorage.removeItem(config.storageKeys.favorites);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert('Favorites Deleted', 'Your favorites have been reset.');
+          } catch {
+            Alert.alert('Error', 'Could not reset favorites.');
+          }
         },
-      ]
-    );
+      },
+    ]);
   }, []);
 
-  // Open support
-  const handleSupport = useCallback(() => {
-    Linking.openURL('mailto:ivan@ivanguaderrama.com?subject=CaboHealth%20Support');
+  const openUrl = useCallback((url: string) => {
+    Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open this page.'));
   }, []);
-
-  // Logout - clear access code and reset authentication state
-  const handleLogout = useCallback(() => {
-    Alert.alert(
-      'Log Out',
-      'Your access code will be removed and you will need to enter it again.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Log Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await clearStoredCode();
-              resetAuthentication(); // Reset biometry authentication state
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              router.replace('/');
-            } catch (error) {
-              console.error('Error logging out:', error);
-              Alert.alert('Error', 'Could not log out.');
-            }
-          },
-        },
-      ]
-    );
-  }, [router, resetAuthentication]);
-
-  const biometryName = getBiometryTypeName(biometryType);
-  const biometryIcon = getBiometryIcon(biometryType) as keyof typeof Ionicons.glyphMap;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.cardBackground }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
@@ -332,7 +151,6 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Section: Appearance */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Appearance</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.cardBackground }]}>
@@ -351,39 +169,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Section: Security */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Security</Text>
-          <View style={[styles.sectionContent, { backgroundColor: colors.cardBackground }]}>
-            {biometryAvailable ? (
-              <SettingItem
-                icon={biometryIcon}
-                iconColor={colors.primary}
-                title={biometryName}
-                subtitle={biometryEnabled ? 'Enabled' : 'Disabled'}
-                colors={colors}
-                rightElement={
-                  <Switch
-                    value={Boolean(biometryEnabled)}
-                    onValueChange={handleBiometryToggle}
-                    trackColor={{ false: colors.border, true: colors.primary }}
-                    thumbColor={colors.white}
-                  />
-                }
-              />
-            ) : (
-              <SettingItem
-                icon="lock-closed-outline"
-                iconColor={colors.textTertiary}
-                title="Biometry not available"
-                subtitle="Your device does not support biometric authentication"
-                colors={colors}
-              />
-            )}
-          </View>
-        </View>
-
-        {/* Section: General */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>General</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.cardBackground }]}>
@@ -395,7 +180,7 @@ export default function SettingsScreen() {
               colors={colors}
               rightElement={
                 <Switch
-                  value={Boolean(hapticEnabled)}
+                  value={hapticEnabled}
                   onValueChange={handleHapticToggle}
                   trackColor={{ false: colors.border, true: colors.success }}
                   thumbColor={colors.white}
@@ -405,20 +190,9 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Section: Data */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Data</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Saved</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.cardBackground }]}>
-            <SettingItem
-              icon="trash-outline"
-              iconColor={colors.warning}
-              title="Clear Cache"
-              subtitle={`Current size: ${cacheSize}`}
-              onPress={handleClearCache}
-              showChevron
-              colors={colors}
-            />
-            <View style={[styles.separator, { backgroundColor: colors.border }]} />
             <SettingItem
               icon="star-outline"
               iconColor={colors.error}
@@ -431,59 +205,21 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Section: Support */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Support</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Information</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.cardBackground }]}>
-            <SettingItem
-              icon="mail-outline"
-              iconColor={colors.info}
-              title="Contact Support"
-              subtitle="ivan@ivanguaderrama.com"
-              onPress={handleSupport}
-              showChevron
-              colors={colors}
-            />
+            <SettingItem icon="help-circle-outline" title="Support" onPress={() => openUrl(config.urls.support)} showChevron colors={colors} />
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
+            <SettingItem icon="shield-checkmark-outline" title="Privacy" onPress={() => openUrl(config.urls.privacy)} showChevron colors={colors} />
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
+            <SettingItem icon="document-text-outline" title="Terms" onPress={() => openUrl(config.urls.terms)} showChevron colors={colors} />
           </View>
         </View>
 
-        {/* Section: Account */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account</Text>
-          <View style={[styles.sectionContent, { backgroundColor: colors.cardBackground }]}>
-            {clientName && (
-              <>
-                <SettingItem
-                  icon="person-outline"
-                  iconColor={colors.primary}
-                  title="Client"
-                  subtitle={clientName}
-                  colors={colors}
-                />
-                <View style={[styles.separator, { backgroundColor: colors.border }]} />
-              </>
-            )}
-            <SettingItem
-              icon="log-out-outline"
-              iconColor={colors.error}
-              title="Log Out"
-              subtitle="Remove access code"
-              onPress={handleLogout}
-              showChevron
-              colors={colors}
-            />
-          </View>
-        </View>
-
-        {/* App info - Tap 5 times on version for admin access */}
         <View style={styles.appInfo}>
           <Text style={[styles.appName, { color: colors.text }]}>{config.app.name}</Text>
-          <TouchableOpacity onPress={handleVersionTap} activeOpacity={0.7}>
-            <Text style={[styles.appVersion, { color: colors.textSecondary }]}>
-              Version {config.app.version}
-            </Text>
-          </TouchableOpacity>
-          <Text style={[styles.appCopyright, { color: colors.textTertiary }]}>© 2024 CaboHealth</Text>
+          <Text style={[styles.appVersion, { color: colors.textSecondary }]}>Version {config.app.version}</Text>
+          <Text style={[styles.appCopyright, { color: colors.textTertiary }]}>© 2026 CaboHealth</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -491,9 +227,7 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -502,26 +236,12 @@ const styles = StyleSheet.create({
     paddingVertical: layout.spacing.md,
     borderBottomWidth: 1,
   },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  backText: {
-    fontSize: layout.fontSize.md,
-  },
-  title: {
-    fontSize: layout.fontSize.lg,
-    fontWeight: layout.fontWeight.semibold,
-  },
-  headerSpacer: {
-    width: 70,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  section: {
-    marginTop: layout.spacing.lg,
-  },
+  backButton: { flexDirection: 'row', alignItems: 'center' },
+  backText: { fontSize: layout.fontSize.md },
+  title: { fontSize: layout.fontSize.lg, fontWeight: layout.fontWeight.semibold },
+  headerSpacer: { width: 70 },
+  scrollView: { flex: 1 },
+  section: { marginTop: layout.spacing.lg },
   sectionTitle: {
     fontSize: layout.fontSize.sm,
     fontWeight: layout.fontWeight.semibold,
@@ -535,11 +255,7 @@ const styles = StyleSheet.create({
     borderRadius: layout.borderRadius.lg,
     ...layout.shadow.sm,
   },
-  settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: layout.spacing.md,
-  },
+  settingItem: { flexDirection: 'row', alignItems: 'center', padding: layout.spacing.md },
   iconContainer: {
     width: 36,
     height: 36,
@@ -548,21 +264,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: layout.spacing.md,
   },
-  settingContent: {
-    flex: 1,
-  },
-  settingTitle: {
-    fontSize: layout.fontSize.md,
-    fontWeight: layout.fontWeight.medium,
-  },
-  settingSubtitle: {
-    fontSize: layout.fontSize.sm,
-    marginTop: 2,
-  },
-  separator: {
-    height: 1,
-    marginLeft: 52 + layout.spacing.md,
-  },
+  settingContent: { flex: 1 },
+  settingTitle: { fontSize: layout.fontSize.md, fontWeight: layout.fontWeight.medium },
+  settingSubtitle: { fontSize: layout.fontSize.sm, marginTop: 2 },
+  separator: { height: 1, marginLeft: 52 + layout.spacing.md },
   themeSelector: {
     flexDirection: 'row',
     paddingHorizontal: layout.spacing.md,
@@ -580,25 +285,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 6,
   },
-  themeOptionText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  appInfo: {
-    alignItems: 'center',
-    paddingVertical: layout.spacing.xxl,
-    marginTop: layout.spacing.lg,
-  },
-  appName: {
-    fontSize: layout.fontSize.lg,
-    fontWeight: layout.fontWeight.bold,
-    marginBottom: layout.spacing.xs,
-  },
-  appVersion: {
-    fontSize: layout.fontSize.sm,
-    marginBottom: layout.spacing.xs,
-  },
-  appCopyright: {
-    fontSize: layout.fontSize.xs,
-  },
+  themeOptionText: { fontSize: 13, fontWeight: '600' },
+  appInfo: { alignItems: 'center', paddingVertical: layout.spacing.xxl, marginTop: layout.spacing.lg },
+  appName: { fontSize: layout.fontSize.lg, fontWeight: layout.fontWeight.bold, marginBottom: layout.spacing.xs },
+  appVersion: { fontSize: layout.fontSize.sm, marginBottom: layout.spacing.xs },
+  appCopyright: { fontSize: layout.fontSize.xs },
 });
