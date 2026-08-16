@@ -20,9 +20,9 @@ La versión nueva conserva el objetivo original: una plataforma vertical de Cabo
 4. El catálogo muestra juntas las miniapps públicas y las miniapps para clientes.
 5. Las miniapps públicas abren sin cuenta ni código.
 6. Las miniapps para clientes permanecen visibles con nombre, descripción y candado. Un código de cliente desbloquea únicamente los módulos asignados.
-7. Los códigos se entregan a pacientes o clientes existentes de CaboHealth. No se venden como licencias separadas para desbloquear contenido digital.
+7. Los códigos se entregan a pacientes o clientes existentes de CaboHealth y autentican una relación con servicios médicos presenciales consumidos fuera de la app; no tienen cargo digital separado, no se venden como licencias y no existe CTA de compra. Este modelo debe documentarse y pasar el gate 3.1 antes del envío; si no encaja inequívocamente, Client Resources será público o usará IAP.
 8. App Review recibe una credencial estable, no expirable y capaz de abrir todas las funciones enviadas a revisión.
-9. El panel administrativo se conserva, pero deja de depender de gestos secretos, PIN local o escritura Firestore anónima. Se protege mediante identidad de personal, rol administrativo y operaciones de servidor auditadas.
+9. El panel administrativo se conserva, pero deja de depender de gestos secretos, PIN local o escritura Firestore anónima. Se protege mediante identidad de personal, MFA, rol administrativo y operaciones auditadas. Como Staff Sign In es visible, App Review recibe desde el inicio una cuenta no expirable en el mismo sistema Firebase Auth, con scope servidor `reviewSandbox` y acceso exclusivo a repositorios `review_sandbox_*`; nunca puede leer ni mutar recursos de producción.
 10. Ninguna miniapp se activa silenciosamente después de la revisión. Cada incorporación material se documenta y se incluye en el proceso de release correspondiente.
 
 ## 3. Objetivos
@@ -93,7 +93,7 @@ Las tres miniapps se sirven desde el dominio propio para mantener una relación 
 
 Los builds web son artefactos estáticos separados del tema y se despliegan bajo `public_html/apps/` después de crear un respaldo verificable. WordPress conserva el sitio principal. Cada ruta tiene un universal link correspondiente y `/.well-known/apple-app-site-association` declara únicamente los paths de miniapps aprobados.
 
-El bundle de Client Resources puede ser público, pero ningún contenido exclusivo se incluye en él. La miniapp canjea un launch nonce de un solo uso con Access API, elimina inmediatamente el nonce de la barra de dirección y obtiene los recursos autorizados desde el servidor. El nonce expira en sesenta segundos y no puede reutilizarse.
+El bundle de Client Resources puede ser público, pero ningún contenido exclusivo se incluye en él. La miniapp envía por POST un launch nonce de un solo uso al broker CaboHealth; el nonce nunca aparece en URL/referrer. El broker crea una sesión web opaca y revocable y obtiene recursos autorizados desde un release privado fuera del docroot. El nonce expira en sesenta segundos y no puede reutilizarse.
 
 ## 6. Experiencia e información arquitectónica
 
@@ -102,7 +102,7 @@ El bundle de Client Resources puede ser público, pero ningún contenido exclusi
 La navegación inferior mantiene tres destinos:
 
 - **Apps:** catálogo completo, búsqueda y filtros;
-- **Saved:** recetas, guías o miniapps favoritas;
+- **Saved:** miniapps favoritas; los favoritos internos de recetas permanecen dentro de Healthy Recipes, sin puente JavaScript nativo;
 - **Settings:** idioma, tema, biometría, reducir movimiento, soporte, privacidad, términos, cierre de sesión y acceso de personal.
 
 El catálogo incluye filtros `All`, `Open` y `For clients`. Las tarjetas públicas muestran `Open`; las privadas muestran `Client` o `Secure`.
@@ -167,18 +167,18 @@ Existe una sola instancia compartida del catálogo. Sus responsabilidades son:
 
 El código se valida mediante una API de servidor. El cliente nunca consulta directamente la colección de códigos y nunca contiene un bypass maestro.
 
-Access API se implementa con Firebase Cloud Functions v2, Firestore privado y App Check. Expone operaciones limitadas para redimir código, renovar sesión, consultar entitlements, crear launch nonce y cerrar sesión. No ofrece lectura genérica de códigos o clientes.
+Access API se implementa con Firebase Cloud Functions v2, Firestore privado y App Check. Expone operaciones limitadas para redimir código, renovar sesión, consultar entitlements, crear launch nonce, revocar y eliminar la identidad técnica. No ofrece lectura genérica de códigos o clientes. El catálogo sanitizado se sirve aparte mediante HTTP GET público/cacheable para que el contenido público no dependa de App Attest.
 
 La redención produce:
 
-- un token de sesión de corta duración;
+- un principal técnico Firebase pseudónimo y token de sesión de corta duración;
 - una lista de entitlements permitidos;
-- un token de renovación revocable almacenado en iOS Keychain mediante SecureStore;
+- credenciales ID/refresh administradas por Firebase Auth nativo dentro de iOS Keychain, nunca leídas o serializadas por la app;
 - nombre descriptivo opcional del programa, sin PHI.
 
-El token de acceso dura sesenta minutos. El token de renovación nunca supera `expiresAt` del código; la única excepción es la credencial demo de App Review, que no expira pero sigue siendo revocable desde el servidor. El código original no se conserva. El servidor aplica normalización, hash con salt, expiración, revocación, rate limiting y auditoría. Cinco intentos fallidos dentro de quince minutos bloquean nuevos intentos durante quince minutos en ese dispositivo y origen.
+El ID token dura aproximadamente sesenta minutos y cada operación vuelve a validar el grant. La credencial demo de App Review no expira durante Review pero sigue siendo revocable. El código original no se conserva. El servidor aplica normalización, HMAC versionado con pepper de Secret Manager, CSPRNG para nuevos códigos, expiración, revocación, rate limiting y auditoría. Cinco intentos fallidos dentro de quince minutos bloquean nuevos intentos durante quince minutos en ese dispositivo y origen.
 
-Redimir un código no crea una cuenta de usuario. Settings ofrece `Remove Client Access`, que revoca el token local, borra la caché privada y regresa las tarjetas al estado bloqueado. Si una versión futura permite crear cuentas, también deberá ofrecer eliminación de cuenta dentro de la aplicación.
+Redimir un código no crea perfil, contraseña ni cuenta comercial, pero sí un principal técnico pseudónimo de Firebase. Settings ofrece `Remove Client Access`, que revoca grant, sesiones web y credenciales locales. También ofrece `Delete account and data`, que elimina el principal técnico y los datos deletables dentro de la app, y pseudonimiza únicamente auditoría sujeta a retención legal.
 
 El acceso offline a contenido de cliente no se concede si la sesión nunca fue validada. Una sesión previamente válida puede usar caché no sensible durante un máximo de 24 horas; después requiere conexión. La revocación se aplica en la siguiente verificación y nunca se convierte en un bypass indefinido.
 
@@ -236,11 +236,15 @@ Cada miniapp publicada contiene:
 | `universalLink` | Enlace público estable a la miniapp |
 | `allowedHosts` | Hosts permitidos durante navegación |
 | `privacyUrl` | Política aplicable a la miniapp |
+| `reportUrl` | Canal visible para reportar contenido/problemas |
 | `dataUse` | Datos recopilados, compartidos y finalidad |
 | `permissions` | Cámara, micrófono, ubicación u otros; vacío en v1 |
 | `ageRating` | Clasificación mínima del contenido |
 | `status` | `draft`, `reviewReady`, `published` o `retired` |
 | `version` | Versión de contenido declarada |
+| `artifactHash` | SHA-256 del artefacto público/privado activado |
+| `releaseBinding` | `releaseId` + versión/build de App Store congelados para ese hash; no incluye estado ni submission ID mutable |
+| `editorialReviewedAt` | Fecha de última revisión editorial/clínica aplicable |
 | `order` | Posición estable en catálogo |
 | `updatedAt` | Timestamp de servidor |
 
@@ -262,9 +266,10 @@ Los documentos de catálogo público no contienen códigos, tokens, datos de pac
 3. El usuario introduce el código.
 4. Access API valida hash, vigencia, rate limit y entitlements.
 5. La app guarda tokens seguros, no el código.
-6. Launch Policy solicita un launch token de un solo uso y corta duración.
-7. La miniapp canjea el token por una cookie HttpOnly y abre el contenido asignado.
-8. Un código revocado o expirado elimina la sesión y vuelve a mostrar el candado.
+6. Launch Policy muestra disclosure por módulo y solicita consentimiento explícito antes de compartir el identificador pseudónimo/entitlement.
+7. Launch Policy solicita un nonce de un solo uso y lo envía por POST al broker.
+8. El broker crea una cookie HttpOnly path-scoped ligada a una sesión web revocable; la API introspecta el grant con caché máxima de treinta segundos.
+9. Un código revocado/expirado o Remove/Delete invalida sesión nativa y web y vuelve a mostrar el candado.
 
 ### 9.3 Publicar desde el panel
 
@@ -272,7 +277,7 @@ Los documentos de catálogo público no contienen códigos, tokens, datos de pac
 2. El servidor valida esquema, HTTPS, allowlist, metadata, privacidad y permisos.
 3. Una verificación automatizada comprueba disponibilidad y redirects.
 4. El administrador marca el módulo `reviewReady` y añade notas de release.
-5. Solo un módulo incluido en el release aprobado puede pasar a `published`.
+5. Solo un módulo incluido en el candidate congelado y con `releaseBinding` exacto puede pasar a `published` para que App Review lo pruebe; restaurar una versión anterior exige una attestation aprobada.
 6. La versión anterior queda registrada en Audit Log y puede restaurarse si el módulo falla.
 
 ## 10. Manejo de errores
@@ -287,7 +292,7 @@ Los documentos de catálogo público no contienen códigos, tokens, datos de pac
 | Miniapp no disponible | Pantalla propia con Retry, Back y Support |
 | Redirect no autorizado | Bloquea navegación y registra diagnóstico |
 | HTTP 4xx/5xx o timeout | Detiene spinner y muestra error accionable |
-| Documento de catálogo inválido | Omite el módulo, conserva catálogo previo y alerta al administrador |
+| Documento de catálogo inválido | Omite el documento inválido y conserva el último manifiesto válido; un manifiesto válido con subconjunto aprobado sí aplica como kill switch |
 | Error administrativo parcial | La mutación es atómica; no publica estados intermedios |
 
 ## 11. Privacidad y seguridad
@@ -330,6 +335,7 @@ El índice completo y las tarjetas bloqueadas permanecen visibles durante Review
 - Código demo abre todas las funciones revisables y no expira.
 - Código inválido, expirado, revocado y rate-limited produce el estado correcto.
 - Logout elimina tokens, caché privada, timestamps de sesión y entitlements.
+- Delete account and data elimina el principal técnico, grant y sesiones web y entrega confirmación dentro de la app.
 - Deep links hacia módulos privados respetan el mismo gate de acceso.
 - Favorites se actualiza inmediatamente en todas las pantallas.
 
@@ -380,7 +386,7 @@ El trabajo se divide en entregas verificables:
 6. **Hardening:** WebView, deep links, offline, caché, rate limits, privacidad y pruebas E2E.
 7. **Release:** deploy web/backend, TestFlight, pruebas del build exacto, metadata, carga y envío a Review.
 
-Antes de modificar WordPress se crea un respaldo verificable. Los despliegues web y backend se realizan antes del build iOS para que las URLs incluidas estén estables. Un catálogo versionado permite retirar inmediatamente un módulo roto y restaurar la versión anterior sin publicar contenido nuevo no revisado.
+Antes de modificar WordPress se crea un respaldo verificable. Los despliegues web y backend se realizan antes del build iOS para que las URLs incluidas estén estables. El manifiesto/catálogo inmutable guarda sólo `releaseId`, versión/build y hashes. Una `ReviewAttestation` privada del servidor agrega eventos append-only `candidate → submitted → approved` con submission ID; añadir esos eventos nunca cambia los bytes públicos. El catálogo puede retirar un módulo roto, pero sólo restaura hashes con attestation aprobada; cualquier cambio material incluso bajo el mismo slug crea otro candidate/release/revisión.
 
 ## 15. Resultado esperado
 
