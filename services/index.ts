@@ -6,4 +6,6 @@ export {
   getFavorites,
   setHapticEnabled,
   getHapticEnabled,
+  getOnboardingCompleted,
+  setOnboardingCompleted,
 } from './storage';

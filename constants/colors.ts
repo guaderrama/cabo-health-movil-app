@@ -125,6 +125,18 @@ export const darkColors = {
 // Default export para compatibilidad (Light Mode)
 export const colors = lightColors;
 
+// Approved A4 intro palette.
+export const introColors = {
+  ink: '#082A3C',
+  sea: '#0E5876',
+  paper: '#FBFAF7',
+  bronze: '#B8956A',
+  soft: '#4F7785',
+  gradientTop: '#E3F1F5',
+  gradientMiddle: '#EDF6F7',
+  gradientBottom: '#FBFAF7',
+} as const;
+
 // Type that allows both light and dark color palettes
 export type ThemeColors = typeof lightColors | typeof darkColors;
 export type ColorKey = keyof typeof lightColors;

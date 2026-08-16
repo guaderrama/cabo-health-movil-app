@@ -78,6 +78,20 @@ test('actual public Expo config requests no biometric capability', () => {
   assert.equal('expo-local-authentication' in packageJson.dependencies, false);
 });
 
+test('actual A4 intro reuses the native animation stack without a new runtime engine', () => {
+  const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
+
+  for (const dependency of [
+    'moti',
+    'lottie-react-native',
+    '@shopify/react-native-skia',
+    'framer-motion',
+    'gsap',
+  ]) {
+    assert.equal(dependency in packageJson.dependencies, false, `${dependency} must not ship for A4`);
+  }
+});
+
 test('runtime config exposes only public local-state settings and no remote catalog endpoint', async () => {
   const configSource = readFileSync(join(projectRoot, 'constants/config.ts'), 'utf8');
   const compiledConfig = ts.transpileModule(configSource, {

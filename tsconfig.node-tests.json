@@ -9,6 +9,8 @@
     "skipLibCheck": true
   },
   "files": [
-    "constants/publicMiniapps.ts"
+    "constants/publicMiniapps.ts",
+    "features/onboarding/introTiming.ts",
+    "features/onboarding/onboardingStore.ts"
   ]
 }

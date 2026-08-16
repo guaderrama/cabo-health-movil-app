@@ -1,8 +1,13 @@
-import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Dimensions, Animated, ViewStyle } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Animated,
+  AppState,
+  StyleSheet,
+  View,
+  ViewStyle,
+  useWindowDimensions,
+} from 'react-native';
 import Svg, { Circle, Line, Defs, LinearGradient, Stop, G } from 'react-native-svg';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface Particle {
   id: number;
@@ -12,8 +17,10 @@ interface Particle {
   colorType: 'dark' | 'medium' | 'light' | 'accent';
 }
 
-interface AnimatedMoleculesProps {
+export interface AnimatedMoleculesProps {
   isDark?: boolean;
+  active?: boolean;
+  reduceMotion?: boolean;
   style?: ViewStyle;
 }
 
@@ -34,7 +41,7 @@ const COLORS = {
 };
 
 // Generate DNA-style particles distributed across the screen
-const generateParticles = (): Particle[] => {
+const generateParticles = (width: number, height: number): Particle[] => {
   const particles: Particle[] = [];
   const colorTypes: Array<'dark' | 'medium' | 'light' | 'accent'> = ['dark', 'medium', 'light', 'accent'];
 
@@ -80,8 +87,8 @@ const generateParticles = (): Particle[] => {
   leftHelix.forEach((pos, i) => {
     particles.push({
       id: id++,
-      x: SCREEN_WIDTH * pos.x,
-      y: pos.y,
+      x: width * pos.x,
+      y: height * (pos.y / 900),
       size: i % 3 === 0 ? 7 : (i % 2 === 0 ? 5 : 4),
       colorType: colorTypes[i % 4],
     });
@@ -91,8 +98,8 @@ const generateParticles = (): Particle[] => {
   rightHelix.forEach((pos, i) => {
     particles.push({
       id: id++,
-      x: SCREEN_WIDTH * pos.x,
-      y: pos.y,
+      x: width * pos.x,
+      y: height * (pos.y / 900),
       size: i % 3 === 0 ? 6 : (i % 2 === 0 ? 4 : 5),
       colorType: colorTypes[(i + 2) % 4],
     });
@@ -102,8 +109,8 @@ const generateParticles = (): Particle[] => {
   floatingParticles.forEach((pos, i) => {
     particles.push({
       id: id++,
-      x: SCREEN_WIDTH * pos.x,
-      y: pos.y,
+      x: width * pos.x,
+      y: height * (pos.y / 900),
       size: i % 2 === 0 ? 3 : 4,
       colorType: colorTypes[(i + 1) % 4],
     });
@@ -113,8 +120,8 @@ const generateParticles = (): Particle[] => {
   accentParticles.forEach((pos, i) => {
     particles.push({
       id: id++,
-      x: SCREEN_WIDTH * pos.x,
-      y: pos.y,
+      x: width * pos.x,
+      y: height * (pos.y / 900),
       size: 2,
       colorType: i % 2 === 0 ? 'light' : 'accent',
     });
@@ -152,23 +159,44 @@ const generateConnections = (particles: Particle[]): { from: Particle; to: Parti
 
 export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
   isDark = false,
+  active = true,
+  reduceMotion = false,
   style,
 }) => {
-  const particles = generateParticles();
-  const connections = generateConnections(particles);
+  const { width, height } = useWindowDimensions();
+  const particles = useMemo(() => generateParticles(width, height), [height, width]);
+  const connections = useMemo(() => generateConnections(particles), [particles]);
   const colors = isDark ? COLORS.dark : COLORS.light;
+  const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
 
-  // Animated values for overall floating effect
   const floatAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    // Slow floating animation
-    Animated.loop(
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      setAppIsActive(nextState === 'active');
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    const shouldAnimate = active && appIsActive && !reduceMotion;
+    if (!shouldAnimate) {
+      loopRef.current?.stop();
+      loopRef.current = null;
+      floatAnim.stopAnimation();
+      floatAnim.setValue(0);
+      return;
+    }
+
+    if (loopRef.current) return;
+
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(floatAnim, {
           toValue: 1,
-          duration: 5000, // Slower - 5 seconds
+          duration: 5000,
           useNativeDriver: true,
         }),
         Animated.timing(floatAnim, {
@@ -176,25 +204,18 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
           duration: 5000,
           useNativeDriver: true,
         }),
-      ])
-    ).start();
+      ]),
+    );
+    loopRef.current = loop;
+    loop.start();
 
-    // Subtle pulse animation
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.02,
-          duration: 4000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 0.98,
-          duration: 4000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
+    return () => {
+      if (loopRef.current === loop) loopRef.current = null;
+      loop.stop();
+      floatAnim.stopAnimation();
+      floatAnim.setValue(0);
+    };
+  }, [active, appIsActive, floatAnim, reduceMotion]);
 
   const animatedStyle = {
     transform: [
@@ -203,9 +224,6 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
           inputRange: [0, 1],
           outputRange: [0, 8], // Subtle movement
         }),
-      },
-      {
-        scale: pulseAnim,
       },
     ],
   };
@@ -223,9 +241,14 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
   };
 
   return (
-    <View style={[styles.container, style]} pointerEvents="none">
+    <View
+      style={[styles.container, style]}
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
       <Animated.View style={[styles.svgContainer, animatedStyle]}>
-        <Svg width={SCREEN_WIDTH} height={SCREEN_HEIGHT} style={styles.svg}>
+        <Svg width={width} height={height} style={styles.svg}>
           <Defs>
             {/* Gradient definitions for different color intensities */}
             <LinearGradient id="gradientDark" x1="0%" y1="0%" x2="100%" y2="100%">

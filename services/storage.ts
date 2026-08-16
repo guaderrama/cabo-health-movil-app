@@ -1,5 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { config } from '../constants';
+import {
+  readOnboardingCompletion,
+  writeOnboardingCompletion,
+} from '../features/onboarding/onboardingStore';
 
 const KEYS = config.storageKeys;
 
@@ -39,4 +43,16 @@ export async function getHapticEnabled(): Promise<boolean> {
   } catch {
     return true;
   }
+}
+
+export async function getOnboardingCompleted(): Promise<boolean> {
+  try {
+    return await readOnboardingCompletion(AsyncStorage);
+  } catch {
+    return false;
+  }
+}
+
+export async function setOnboardingCompleted(): Promise<void> {
+  await writeOnboardingCompletion(AsyncStorage, true);
 }
