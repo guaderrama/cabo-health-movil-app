@@ -16,7 +16,11 @@
     "test": "node node_modules/typescript/bin/tsc --project tsconfig.node-tests.json && node --test tests/*.test.mjs",
     "test:scope": "node scripts/verify-minimal-v1.mjs",
     "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
-    "expo:config": "node node_modules/expo/bin/cli config --type public --json"
+    "expo:config": "node node_modules/expo/bin/cli config --type public --json",
+    "miniapps:build": "node scripts/build-miniapps.mjs --release",
+    "miniapps:build:healthy": "node scripts/build-miniapps.mjs --healthy",
+    "miniapps:serve": "node scripts/serve-miniapps.mjs",
+    "miniapps:verify": "node --test tests/miniapps-content.test.mjs tests/miniapps-build.test.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

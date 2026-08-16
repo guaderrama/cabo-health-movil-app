@@ -13,7 +13,7 @@ export type {
 } from './publicContactEligibility';
 
 export type ContentLanguage = 'en' | 'es-MX';
-export type RecipeCategory = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+export type RecipeCategory = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'beverage';
 
 export interface LocalizedText {
   en: string;

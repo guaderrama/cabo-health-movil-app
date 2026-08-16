@@ -30,6 +30,10 @@ test('English and Mexican Spanish expose the same non-empty public message contr
 
   assert.equal(translateMessage('en', 'catalog.title'), 'Explore CaboHealth');
   assert.equal(translateMessage('es-MX', 'catalog.title'), 'Explora CaboHealth');
+  assert.equal(MESSAGES.en['recipes.subtitle'], 'Twelve original food ideas bundled with this app.');
+  assert.equal(MESSAGES['es-MX']['recipes.subtitle'], 'Doce ideas originales de alimentación incluidas en esta app.');
+  assert.equal(MESSAGES.en['recipes.beverage'], 'Beverage');
+  assert.equal(MESSAGES['es-MX']['recipes.beverage'], 'Bebida');
 });
 
 test('main navigation is exactly Apps, Saved, and Settings in both languages', () => {

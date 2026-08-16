@@ -43,14 +43,23 @@ test('favorites discard unknown and duplicate values and unknown toggles are ine
 });
 
 test('bundled recipe model searches Spanish copy, filters, and returns complete detail offline', () => {
-  assert.equal(RECIPES.length, 6);
+  assert.equal(RECIPES.length, 12);
 
   const spanishMatches = searchRecipes('frijoles negros', 'es-MX');
   assert.deepEqual(spanishMatches.map((recipe) => recipe.slug), ['black-bean-corn-skillet']);
   assert.deepEqual(
     filterRecipes(RECIPES, { category: 'dinner', tags: ['plant-based'] })
       .map((recipe) => recipe.slug),
-    ['black-bean-corn-skillet', 'lentil-rice-tomato-bowl'],
+    [
+      'black-bean-corn-skillet',
+      'lentil-rice-tomato-bowl',
+      'roasted-sweet-potato-chickpea-quinoa-bowls',
+      'white-bean-tomato-pasta',
+    ],
+  );
+  assert.deepEqual(
+    filterRecipes(RECIPES, { category: 'beverage' }).map((recipe) => recipe.slug),
+    ['pineapple-lime-agua-fresca'],
   );
 
   const detail = getRecipeBySlug('black-bean-corn-skillet');

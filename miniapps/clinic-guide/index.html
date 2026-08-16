@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" data-build-template="clinic-guide-task-6b">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta http-equiv="Content-Security-Policy" content="{{CSP}}">
+  <link rel="stylesheet" href="../shared/styles.css">
+  <title>Clinic Guide build template | CaboHealth</title>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to guide / Ir a la guía</a>
+  <div class="page-shell">
+    <header class="site-header" data-network-region>
+      <canvas class="network-canvas" data-network-canvas aria-hidden="true"></canvas>
+      <div class="header-bar">
+        <span class="brand-link" aria-label="CaboHealth">
+          <img class="brand-logo" src="../shared/logo.png" width="500" height="500" alt="CaboHealth">
+        </span>
+        <nav class="language-control" aria-label="Language / Idioma">
+          <button type="button" data-language="en" aria-pressed="true" disabled>English</button>
+          <button type="button" data-language="es-MX" aria-pressed="false" disabled>Español</button>
+        </nav>
+      </div>
+      <div class="hero">
+        <section lang="en" data-locale="en">
+          <p class="eyebrow">CaboHealth · Build template</p>
+          <h1>Clinic Guide</h1>
+        </section>
+        <section lang="es-MX" data-locale="es-MX">
+          <p class="eyebrow">CaboHealth · Plantilla de construcción</p>
+          <h2>Guía de la clínica</h2>
+        </section>
+      </div>
+      <div class="motion-control">
+        <button type="button" data-motion-toggle disabled>Automatic motion unavailable / Movimiento no disponible</button>
+        <span data-motion-status aria-live="polite">Static composition / Composición estática</span>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="template-gate" aria-labelledby="release-gate-title">
+        <h2 id="release-gate-title">Task 6B release gate</h2>
+        <p>This source is a non-deployable semantic template. The production builder must verify all seven owner-confirmed public facts before rendering the canonical Clinic Guide.</p>
+        <p>Esta fuente es una plantilla semántica no desplegable. El constructor de producción debe verificar los siete datos públicos confirmados por el propietario antes de generar la Guía de la clínica canónica.</p>
+      </section>
+
+      <section aria-label="Confirmed public clinic facts build slot">
+{{CONFIRMED_PUBLIC_FACTS}}
+      </section>
+      <section aria-label="Bilingual visit checklist build slot">
+{{CLINIC_GUIDE_SECTIONS}}
+      </section>
+      <section aria-label="Bilingual emergency guidance build slot">
+{{EMERGENCY_GUIDANCE}}
+      </section>
+    </main>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

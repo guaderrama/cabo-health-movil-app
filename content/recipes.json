@@ -155,6 +155,132 @@
       "allergens": { "en": "Fish; packaged tostadas may contain wheat or other allergens.", "es-MX": "Pescado; las tostadas envasadas pueden contener trigo u otros alérgenos." },
       "foodSafety": { "en": "Refrigerate opened tuna and avocado mixture promptly; do not leave perishable foods out.", "es-MX": "Refrigera pronto el atún abierto y la mezcla; no dejes alimentos perecederos fuera." },
       "editorialNote": { "en": "Original general food idea.", "es-MX": "Idea original de alimentación general." }
+    },
+    {
+      "slug": "spinach-egg-corn-tacos",
+      "title": { "en": "Spinach & Egg Corn Tacos", "es-MX": "Tacos de huevo y espinaca" },
+      "summary": { "en": "Warm corn tortillas filled with scrambled egg, spinach, tomato, and a squeeze of lime.", "es-MX": "Tortillas de maíz calientes con huevo revuelto, espinaca, jitomate y un toque de limón." },
+      "categories": ["breakfast"],
+      "tags": ["contains-egg"],
+      "timeMinutes": 15,
+      "timeLabel": { "en": "15 min", "es-MX": "15 min" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["4 small corn tortillas", "4 eggs", "1 tsp cooking oil", "1 packed cup spinach", "1 small tomato, diced", "1/2 lime", "Black pepper, optional"],
+        "es-MX": ["4 tortillas chicas de maíz", "4 huevos", "1 cdita de aceite para cocinar", "1 taza de espinaca", "1 jitomate chico en cubos", "1/2 limón", "Pimienta negra, opcional"]
+      },
+      "steps": {
+        "en": ["Warm the tortillas and keep them covered.", "Whisk the eggs and cook in the oil, stirring until fully set.", "Stir in the spinach and tomato just until warm.", "Divide among the tortillas; add lime and optional pepper."],
+        "es-MX": ["Calienta las tortillas y mantenlas cubiertas.", "Bate los huevos y cocínalos en el aceite, moviendo hasta que estén completamente cocidos.", "Incorpora la espinaca y el jitomate sólo hasta calentar.", "Reparte en las tortillas; añade limón y pimienta opcional."]
+      },
+      "allergens": { "en": "Egg; packaged tortillas may contain wheat or other allergens.", "es-MX": "Huevo; las tortillas envasadas pueden contener trigo u otros alérgenos." },
+      "foodSafety": { "en": "Wash hands and produce; cook eggs thoroughly; refrigerate leftovers promptly and reheat only once.", "es-MX": "Lávate las manos y lava los productos; cocina bien los huevos; refrigera pronto los sobrantes y recalienta sólo una vez." },
+      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
+    },
+    {
+      "slug": "banana-tahini-cinnamon-toast",
+      "title": { "en": "Banana Tahini Cinnamon Toast", "es-MX": "Tostada de plátano, tahini y canela" },
+      "summary": { "en": "Toast with banana, sesame tahini, and cinnamon.", "es-MX": "Pan tostado con plátano, tahini de sésamo y canela." },
+      "categories": ["breakfast", "snack"],
+      "tags": ["contains-sesame"],
+      "timeMinutes": 10,
+      "timeLabel": { "en": "10 min", "es-MX": "10 min" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["2 slices whole-grain bread", "1 banana, sliced", "2 tsp tahini", "Cinnamon", "1 tsp chopped pumpkin seeds, optional"],
+        "es-MX": ["2 rebanadas de pan integral", "1 plátano rebanado", "2 cditas de tahini", "Canela", "1 cdita de pepitas picadas, opcional"]
+      },
+      "steps": {
+        "en": ["Toast the bread.", "Spread each slice with tahini.", "Add banana, cinnamon, and optional pumpkin seeds.", "Serve immediately."],
+        "es-MX": ["Tuesta el pan.", "Unta cada rebanada con tahini.", "Agrega plátano, canela y pepitas opcionales.", "Sirve de inmediato."]
+      },
+      "allergens": { "en": "Wheat or gluten; sesame; optional seeds. Check package labels.", "es-MX": "Trigo o gluten; sésamo; semillas opcionales. Revisa las etiquetas." },
+      "foodSafety": { "en": "Use a clean knife and surface; eat after preparing; refrigerate opened tahini according to its package.", "es-MX": "Usa un cuchillo y una superficie limpios; come después de preparar; refrigera el tahini abierto según su envase." },
+      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
+    },
+    {
+      "slug": "roasted-sweet-potato-chickpea-quinoa-bowls",
+      "title": { "en": "Roasted Sweet Potato, Chickpea & Quinoa Bowls", "es-MX": "Tazones de camote, garbanzo y quinoa al horno" },
+      "summary": { "en": "A warm bowl of roasted vegetables, chickpeas, quinoa, and lime.", "es-MX": "Tazón tibio de verduras asadas, garbanzos, quinoa y limón." },
+      "categories": ["lunch", "dinner"],
+      "tags": ["plant-based"],
+      "timeMinutes": 35,
+      "timeLabel": { "en": "35 min", "es-MX": "35 min" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["1 medium sweet potato, cubed", "1 cup cooked chickpeas, drained and rinsed", "1 bell pepper, sliced", "2 tsp cooking oil", "1/2 tsp smoked paprika", "1 cup cooked quinoa", "1 lime", "Cilantro, optional"],
+        "es-MX": ["1 camote mediano en cubos", "1 taza de garbanzos cocidos, escurridos y enjuagados", "1 pimiento morrón en tiras", "2 cditas de aceite para cocinar", "1/2 cdita de paprika ahumada", "1 taza de quinoa cocida", "1 limón", "Cilantro, opcional"]
+      },
+      "steps": {
+        "en": ["Heat the oven to 220 °C.", "Toss the sweet potato, chickpeas, pepper, oil, and paprika; roast for 25–30 minutes, stirring once.", "Divide the quinoa between bowls and add the roasted mixture.", "Finish with lime and optional cilantro."],
+        "es-MX": ["Calienta el horno a 220 °C.", "Mezcla el camote, los garbanzos, el pimiento, el aceite y la paprika; hornea de 25 a 30 minutos, moviendo una vez.", "Divide la quinoa entre los tazones y agrega la mezcla asada.", "Termina con limón y cilantro opcional."]
+      },
+      "allergens": { "en": "None intentionally included. Check packaged quinoa, chickpeas, and spices.", "es-MX": "No contiene alérgenos intencionalmente. Revisa la quinoa, los garbanzos y las especias envasados." },
+      "foodSafety": { "en": "Wash produce and use clean utensils; refrigerate leftovers promptly in a shallow container.", "es-MX": "Lava los productos y usa utensilios limpios; refrigera pronto los sobrantes en un recipiente poco profundo." },
+      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
+    },
+    {
+      "slug": "white-bean-tomato-pasta",
+      "title": { "en": "White Bean, Tomato & Spinach Pasta", "es-MX": "Pasta con frijoles blancos, jitomate y espinaca" },
+      "summary": { "en": "Pasta tossed with white beans, tomato, spinach, and herbs.", "es-MX": "Pasta con frijoles blancos, jitomate, espinaca y hierbas." },
+      "categories": ["lunch", "dinner"],
+      "tags": ["plant-based"],
+      "timeMinutes": 25,
+      "timeLabel": { "en": "25 min", "es-MX": "25 min" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["140 g dry whole-wheat pasta", "1 tsp cooking oil", "1 small garlic clove, minced", "1 1/2 cups diced tomatoes", "1 cup cooked white beans, drained and rinsed", "2 cups spinach", "1/2 tsp dried Italian herbs", "Black pepper, optional"],
+        "es-MX": ["140 g de pasta integral seca", "1 cdita de aceite para cocinar", "1 diente de ajo chico picado", "1 1/2 tazas de jitomate en cubos", "1 taza de frijoles blancos cocidos, escurridos y enjuagados", "2 tazas de espinaca", "1/2 cdita de hierbas italianas secas", "Pimienta negra, opcional"]
+      },
+      "steps": {
+        "en": ["Cook the pasta according to its package; reserve 1/4 cup cooking water.", "Warm the oil and garlic for 30 seconds, then add tomato, beans, and herbs; cook for 5 minutes.", "Add spinach and cook until wilted.", "Toss with the pasta, reserved water, and optional pepper."],
+        "es-MX": ["Cocina la pasta según su envase; reserva 1/4 de taza del agua de cocción.", "Calienta el aceite y el ajo por 30 segundos; agrega jitomate, frijoles y hierbas y cocina 5 minutos.", "Agrega la espinaca y cocina hasta que se suavice.", "Mezcla con la pasta, el agua reservada y pimienta opcional."]
+      },
+      "allergens": { "en": "Wheat or gluten; pasta may contain egg depending on the brand.", "es-MX": "Trigo o gluten; la pasta puede contener huevo según la marca." },
+      "foodSafety": { "en": "Wash hands and produce; refrigerate leftovers promptly and reheat until steaming.", "es-MX": "Lávate las manos y lava los productos; refrigera pronto los sobrantes y recalienta hasta que estén humeantes." },
+      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
+    },
+    {
+      "slug": "jicama-orange-lime-cup",
+      "title": { "en": "Jicama, Orange & Lime Cup", "es-MX": "Vaso de jícama, naranja y limón" },
+      "summary": { "en": "A crisp fruit-and-vegetable cup with lime and optional chili.", "es-MX": "Vaso fresco de fruta y verdura con limón y chile opcional." },
+      "categories": ["snack"],
+      "tags": ["plant-based"],
+      "timeMinutes": 10,
+      "timeLabel": { "en": "10 min", "es-MX": "10 min" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["2 cups peeled jicama sticks", "2 oranges, segmented", "Juice of 1/2 lime", "1 Tbsp chopped cilantro or mint", "Chili powder, optional"],
+        "es-MX": ["2 tazas de jícama pelada en bastones", "2 naranjas en gajos", "Jugo de 1/2 limón", "1 cda de cilantro o menta picados", "Chile en polvo, opcional"]
+      },
+      "steps": {
+        "en": ["Combine the jicama and orange.", "Add lime and the chopped herbs.", "Finish with optional chili and serve chilled."],
+        "es-MX": ["Mezcla la jícama y la naranja.", "Agrega limón y las hierbas picadas.", "Termina con chile opcional y sirve frío."]
+      },
+      "allergens": { "en": "None intentionally included. Check packaged chili for ingredients.", "es-MX": "No contiene alérgenos intencionalmente. Revisa los ingredientes del chile envasado." },
+      "foodSafety": { "en": "Wash produce before cutting; keep chilled and refrigerate leftovers promptly.", "es-MX": "Lava los productos antes de cortarlos; mantén frío y refrigera pronto los sobrantes." },
+      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
+    },
+    {
+      "slug": "pineapple-lime-agua-fresca",
+      "title": { "en": "Pineapple Lime Agua Fresca", "es-MX": "Agua fresca de piña y limón" },
+      "summary": { "en": "Blended pineapple, lime, water, and mint served over ice.", "es-MX": "Piña licuada con limón, agua y menta, servida con hielo." },
+      "categories": ["beverage"],
+      "tags": ["plant-based"],
+      "timeMinutes": 10,
+      "timeLabel": { "en": "10 min", "es-MX": "10 min" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["2 cups ripe pineapple chunks", "1 1/2 cups cold water", "Juice of 1 lime", "4 mint leaves", "Ice"],
+        "es-MX": ["2 tazas de piña madura en cubos", "1 1/2 tazas de agua fría", "Jugo de 1 limón", "4 hojas de menta", "Hielo"]
+      },
+      "steps": {
+        "en": ["Blend the pineapple, water, lime, and mint until smooth.", "Strain only if preferred.", "Serve over ice."],
+        "es-MX": ["Licúa la piña, el agua, el limón y la menta hasta integrar.", "Cuela sólo si lo prefieres.", "Sirve sobre hielo."]
+      },
+      "allergens": { "en": "None intentionally included.", "es-MX": "No contiene alérgenos intencionalmente." },
+      "foodSafety": { "en": "Wash produce and blender parts; serve immediately; refrigerate the remainder and use within 24 hours.", "es-MX": "Lava los productos y las piezas de la licuadora; sirve de inmediato; refrigera el resto y úsalo dentro de 24 horas." },
+      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
     }
   ]
 }

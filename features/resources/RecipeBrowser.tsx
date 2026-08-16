@@ -18,7 +18,7 @@ import {
   type RecipeCategory,
 } from './publicContent';
 
-const CATEGORIES: readonly (RecipeCategory | null)[] = [null, 'breakfast', 'lunch', 'dinner', 'snack'];
+const CATEGORIES: readonly (RecipeCategory | null)[] = [null, 'breakfast', 'lunch', 'dinner', 'snack', 'beverage'];
 
 export function RecipeBrowser() {
   const { colors } = useTheme();

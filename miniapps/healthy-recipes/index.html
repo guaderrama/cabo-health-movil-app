@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Twelve original bilingual recipes with ingredients, steps, allergens, and food-safety notes from CaboHealth.">
+  <meta name="theme-color" content="#eaf5f7">
+  <meta http-equiv="Content-Security-Policy" content="{{CSP}}">
+  <link rel="canonical" href="https://cabohealth.org/apps/healthy-recipes/">
+  <link rel="stylesheet" href="../shared/styles.css">
+  <title>Healthy Recipes | CaboHealth</title>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to recipes / Ir a las recetas</a>
+  <div class="page-shell">
+    <header class="site-header" data-network-region>
+      <canvas class="network-canvas" data-network-canvas aria-hidden="true"></canvas>
+      <div class="header-bar">
+        <a class="brand-link" href="https://cabohealth.org/apps/healthy-recipes/" aria-label="CaboHealth Healthy Recipes">
+          <img class="brand-logo" src="../shared/logo.png" width="500" height="500" alt="CaboHealth">
+        </a>
+        <nav class="language-control" aria-label="Language / Idioma">
+          <button type="button" data-language="en" aria-pressed="true" disabled>English</button>
+          <button type="button" data-language="es-MX" aria-pressed="false" disabled>Español</button>
+        </nav>
+      </div>
+      <div class="hero">
+        <section lang="en" data-locale="en" aria-labelledby="page-title-en">
+          <p class="eyebrow">CaboHealth · Everyday kitchen ideas</p>
+          <h1 id="page-title-en">Healthy Recipes</h1>
+          <p class="hero-copy">Simple bilingual recipes with clear ingredients, allergen notes, and practical food-safety reminders.</p>
+        </section>
+        <section lang="es-MX" data-locale="es-MX" aria-labelledby="page-title-es">
+          <p class="eyebrow">CaboHealth · Ideas para la cocina diaria</p>
+          <h2 id="page-title-es">Recetas saludables</h2>
+          <p class="hero-copy">Recetas bilingües sencillas con ingredientes claros, notas de alérgenos y recordatorios prácticos de seguridad alimentaria.</p>
+        </section>
+      </div>
+      <div class="motion-control">
+        <button type="button" data-motion-toggle disabled>Automatic motion unavailable / Movimiento no disponible</button>
+        <span data-motion-status aria-live="polite">Static composition / Composición estática</span>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <div class="section-heading">
+        <section lang="en" data-locale="en">
+          <p class="eyebrow">Explore all twelve</p>
+          <h2>Find an idea for today</h2>
+          <p>Search by ingredient or choose a meal. Saving a recipe stays only in this browser.</p>
+        </section>
+        <section lang="es-MX" data-locale="es-MX">
+          <p class="eyebrow">Explora las doce</p>
+          <h2>Encuentra una idea para hoy</h2>
+          <p>Busca por ingrediente o elige un tiempo de comida. Las recetas guardadas permanecen sólo en este navegador.</p>
+        </section>
+      </div>
+
+      <section class="tool-panel" aria-label="Recipe tools / Herramientas de recetas">
+        <label class="search-field" for="recipe-search">
+          <span lang="en" data-locale="en">Search recipes</span>
+          <span lang="es-MX" data-locale="es-MX">Buscar recetas</span>
+          <input id="recipe-search" type="search" inputmode="search" autocomplete="off" data-recipe-search disabled>
+        </label>
+        <ul class="filter-list" aria-label="Meal filters / Filtros">
+          <li><button type="button" data-recipe-filter="all" aria-pressed="true" disabled>All / Todas</button></li>
+          <li><button type="button" data-recipe-filter="breakfast" aria-pressed="false" disabled>Breakfast / Desayuno</button></li>
+          <li><button type="button" data-recipe-filter="lunch" aria-pressed="false" disabled>Lunch / Comida</button></li>
+          <li><button type="button" data-recipe-filter="dinner" aria-pressed="false" disabled>Dinner / Cena</button></li>
+          <li><button type="button" data-recipe-filter="snack" aria-pressed="false" disabled>Snack / Botana</button></li>
+          <li><button type="button" data-recipe-filter="beverage" aria-pressed="false" disabled>Beverage / Bebida</button></li>
+        </ul>
+        <p class="result-count" data-result-count aria-live="polite">12 recipes / 12 recetas</p>
+      </section>
+
+      <div class="recipe-grid">
+{{RECIPE_ARTICLES}}
+      </div>
+
+      <div class="information-grid">
+        <section class="information-panel" lang="en" data-locale="en" aria-labelledby="safety-en">
+          <p class="eyebrow">Keep food preparation safe</p>
+          <h2 id="safety-en">Food-safety reminder</h2>
+          <p>{{FOOD_SAFETY_EN}}</p>
+          <p>{{DISCLAIMER_EN}}</p>
+        </section>
+        <section class="information-panel" lang="es-MX" data-locale="es-MX" aria-labelledby="safety-es">
+          <p class="eyebrow">Prepara alimentos con seguridad</p>
+          <h2 id="safety-es">Recordatorio de seguridad alimentaria</h2>
+          <p>{{FOOD_SAFETY_ES}}</p>
+          <p>{{DISCLAIMER_ES}}</p>
+        </section>
+        <section class="information-panel" aria-labelledby="sources-title">
+          <p class="eyebrow">Editorial record</p>
+          <h2 id="sources-title">Sources / Fuentes</h2>
+          <p>Reviewed / Revisado: <time datetime="{{REVIEWED_ON_ISO}}">{{REVIEWED_ON}}</time></p>
+          <ul>
+{{SOURCE_ITEMS}}
+          </ul>
+          <p>Source names are shown as text so the app never sends you to an unapproved third-party destination.</p>
+        </section>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <nav class="footer-nav" aria-label="CaboHealth policies and support">
+        <ul>
+          <li><a href="https://cabohealth.org/app/privacy/">Privacy</a></li>
+          <li><a href="https://cabohealth.org/app/terms/">Terms</a></li>
+          <li><a href="https://cabohealth.org/app/support/">Support</a></li>
+          <li><a href="https://cabohealth.org/app/report-content/">Report Content</a></li>
+        </ul>
+      </nav>
+      <p class="footer-note">Educational food inspiration only; not medical or individualized dietary advice. / Ideas educativas de alimentación; no son consejo médico ni dietético personalizado.</p>
+    </footer>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
