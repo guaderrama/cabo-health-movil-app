@@ -8,7 +8,10 @@ import { Slot } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet } from 'react-native';
 import { ThemeProvider, useTheme } from '../hooks';
-import { removeLegacyPrivateState } from '../features/migrations/removeLegacyPrivateState';
+import {
+  removeLegacyPrivateState,
+  settleLegacyPrivateStateMigration,
+} from '../features/migrations/removeLegacyPrivateState';
 
 function ThemedLayout() {
   const { colors, isDark } = useTheme();
@@ -25,9 +28,12 @@ export default function RootLayout() {
   const [migrationComplete, setMigrationComplete] = useState(false);
 
   useEffect(() => {
-    removeLegacyPrivateState(AsyncStorage)
+    settleLegacyPrivateStateMigration(
+      () => removeLegacyPrivateState(AsyncStorage),
+      () => console.error('Unable to complete the public-v1 storage migration.'),
+    )
       .then(() => setMigrationComplete(true))
-      .catch(() => console.error('Unable to complete the public-v1 storage migration.'));
+      .catch(() => setMigrationComplete(true));
   }, []);
 
   if (!migrationComplete) return null;

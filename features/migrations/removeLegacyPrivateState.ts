@@ -47,3 +47,14 @@ export async function removeLegacyPrivateState(storage: LegacyStateStorage): Pro
 
   await storage.setItem(PUBLIC_V1_MIGRATION_MARKER, '1');
 }
+
+export async function settleLegacyPrivateStateMigration(
+  runMigration: () => Promise<void>,
+  reportFailure: () => void,
+): Promise<void> {
+  try {
+    await runMigration();
+  } catch {
+    reportFailure();
+  }
+}

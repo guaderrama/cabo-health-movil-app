@@ -17,6 +17,7 @@ const {
   LEGACY_PRIVATE_STATE_KEYS,
   PUBLIC_V1_MIGRATION_MARKER,
   removeLegacyPrivateState,
+  settleLegacyPrivateStateMigration,
 } = await import(`data:text/javascript;base64,${Buffer.from(compiledMigration).toString('base64')}`);
 
 const PRIVATE_KEYS = [
@@ -101,4 +102,20 @@ test('public-v1 migration is idempotent after its marker is stored', async () =>
     storage.operations.slice(operationCountAfterFirstRun),
     [['getItem', PUBLIC_V1_MIGRATION_MARKER]],
   );
+});
+
+test('migration bootstrap settles after rejection and reports no rejected value', async () => {
+  const reports = [];
+  const privateFailure = new Error('secret storage detail');
+  let settled = false;
+
+  await settleLegacyPrivateStateMigration(
+    async () => Promise.reject(privateFailure),
+    (...args) => reports.push(args),
+  ).then(() => {
+    settled = true;
+  });
+
+  assert.equal(settled, true);
+  assert.deepEqual(reports, [[]]);
 });

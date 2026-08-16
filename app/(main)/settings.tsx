@@ -17,6 +17,7 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../hooks';
 import type { ThemeMode } from '../../hooks';
 import { config, layout } from '../../constants';
+import { setFavoriteSnapshot } from '../../features/catalog/publicCatalogState';
 
 interface SettingItemProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -125,6 +126,7 @@ export default function SettingsScreen() {
         onPress: async () => {
           try {
             await AsyncStorage.removeItem(config.storageKeys.favorites);
+            setFavoriteSnapshot([]);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             Alert.alert('Favorites Deleted', 'Your favorites have been reset.');
           } catch {

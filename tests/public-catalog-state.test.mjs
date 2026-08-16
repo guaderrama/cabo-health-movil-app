@@ -1,0 +1,68 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import ts from 'typescript';
+
+const source = readFileSync(
+  new URL('../features/catalog/publicCatalogState.ts', import.meta.url),
+  'utf8',
+);
+const compiled = ts.transpileModule(source, {
+  compilerOptions: {
+    module: ts.ModuleKind.ESNext,
+    target: ts.ScriptTarget.ES2022,
+  },
+}).outputText;
+const {
+  createPublicCatalogState,
+  getFavoriteSnapshot,
+  setFavoriteSnapshot,
+  subscribeFavoriteSnapshot,
+  toggleFavoriteSnapshot,
+} = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+
+const MINIAPPS = [
+  {
+    slug: 'healthy-recipes',
+    title: { en: 'Healthy Recipes' },
+    summary: { en: 'Practical recipes.' },
+    canonicalUrl: 'https://cabohealth.org/apps/healthy-recipes/',
+  },
+  {
+    slug: 'clinic-guide',
+    title: { en: 'CaboHealth Clinic Guide' },
+    summary: { en: 'Plan a clinic visit.' },
+    canonicalUrl: 'https://cabohealth.org/apps/clinic-guide/',
+  },
+];
+
+test('favorite toggle synchronously propagates to a mounted catalog consumer', () => {
+  setFavoriteSnapshot([]);
+  let catalog = createPublicCatalogState(MINIAPPS, getFavoriteSnapshot());
+  const unsubscribe = subscribeFavoriteSnapshot(() => {
+    catalog = createPublicCatalogState(MINIAPPS, getFavoriteSnapshot());
+  });
+
+  toggleFavoriteSnapshot('healthy-recipes');
+
+  assert.deepEqual(catalog.favoriteApps.map(({ id }) => id), ['healthy-recipes']);
+  assert.deepEqual(catalog.nonFavoriteApps.map(({ id }) => id), ['clinic-guide']);
+  assert.equal(catalog.apps.find(({ id }) => id === 'healthy-recipes').isFavorite, true);
+  unsubscribe();
+});
+
+test('public catalog uses a synchronous timer-free initial connectivity state', () => {
+  const catalog = createPublicCatalogState(MINIAPPS, []);
+
+  assert.equal(catalog.isLoading, false);
+  assert.equal(catalog.error, null);
+  assert.equal(catalog.isOffline, false);
+  assert.deepEqual(catalog.apps.map(({ id }) => id), ['healthy-recipes', 'clinic-guide']);
+});
+
+test('offline web capability does not hide the synchronous local catalog', () => {
+  const catalog = createPublicCatalogState(MINIAPPS, [], true);
+
+  assert.equal(catalog.isOffline, true);
+  assert.deepEqual(catalog.apps.map(({ id }) => id), ['healthy-recipes', 'clinic-guide']);
+});

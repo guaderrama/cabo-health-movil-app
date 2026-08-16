@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import * as Network from 'expo-network';
 import { PUBLIC_MINIAPPS } from '../constants/publicMiniapps';
-import { getFavorites } from '../services/storage';
+import {
+  createPublicCatalogState,
+  getFavoriteSnapshot,
+  subscribeFavoriteSnapshot,
+} from '../features/catalog/publicCatalogState';
 import { WebApp } from '../types';
-import { useNetworkStatus } from './useNetworkStatus';
 
 interface UseWebAppsResult {
   apps: WebApp[];
@@ -14,48 +18,38 @@ interface UseWebAppsResult {
   refresh: () => Promise<void>;
 }
 
-const PUBLIC_WEB_APPS: WebApp[] = PUBLIC_MINIAPPS.map((miniapp, index) => ({
-  id: miniapp.slug,
-  name: miniapp.title.en,
-  description: miniapp.summary.en,
-  url: miniapp.canonicalUrl,
-  category: miniapp.slug === 'healthy-recipes' ? 'nutricion' : 'salud',
-  order: index,
-  isActive: true,
-}));
-
 export function useWebApps(): UseWebAppsResult {
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const { isConnected, isInternetReachable } = useNetworkStatus();
-
-  const loadFavorites = useCallback(async () => {
-    setFavorites(await getFavorites());
-    setIsLoading(false);
-  }, []);
+  const [isOffline, setIsOffline] = useState(false);
+  const favorites = useSyncExternalStore(
+    subscribeFavoriteSnapshot,
+    getFavoriteSnapshot,
+    getFavoriteSnapshot,
+  );
 
   useEffect(() => {
-    loadFavorites().catch(() => setIsLoading(false));
-  }, [loadFavorites]);
+    let isMounted = true;
+    Network.getNetworkStateAsync()
+      .then((networkState) => {
+        if (!isMounted) return;
+        setIsOffline(
+          networkState.isConnected === false
+          || networkState.isInternetReachable === false,
+        );
+      })
+      .catch(() => {});
 
-  const apps = useMemo(
-    () => PUBLIC_WEB_APPS.map((app) => ({ ...app, isFavorite: favorites.includes(app.id) })),
-    [favorites],
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const catalog = useMemo(
+    () => createPublicCatalogState(PUBLIC_MINIAPPS, favorites, isOffline),
+    [favorites, isOffline],
   );
-  const favoriteApps = useMemo(() => apps.filter((app) => app.isFavorite), [apps]);
-  const nonFavoriteApps = useMemo(() => apps.filter((app) => !app.isFavorite), [apps]);
-
   const refresh = useCallback(async () => {}, []);
 
-  return {
-    apps,
-    favoriteApps,
-    nonFavoriteApps,
-    isLoading,
-    error: null,
-    isOffline: !isConnected || isInternetReachable === false,
-    refresh,
-  };
+  return { ...catalog, refresh };
 }
 
 export default useWebApps;
