@@ -1,0 +1,50 @@
+# Keep the existing Git ignore semantics for EAS uploads.
+# dependencies
+node_modules/
+node_modules
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+.test-build/
+
+# Local isolated implementation worktrees
+.worktrees/
+
+# Development and private material not needed by the production upload
+docs/
+prototypes/
+tests/
+scripts/seed-firestore.ts
+screenshots-in-progress/
+private-notes/
+docs/operations/private/
