@@ -40,6 +40,19 @@ export function subscribeFavoriteSnapshot(listener: FavoriteListener): () => voi
   return () => favoriteListeners.delete(listener);
 }
 
+export async function settleFavoritePersistence(
+  persist: () => Promise<void>,
+  reportFailure: () => void,
+): Promise<void> {
+  try {
+    await persist();
+  } catch {
+    try {
+      reportFailure();
+    } catch {}
+  }
+}
+
 export function createPublicCatalogState(
   miniapps: readonly CatalogMiniapp[],
   favorites: readonly string[],

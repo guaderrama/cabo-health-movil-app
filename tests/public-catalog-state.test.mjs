@@ -17,6 +17,7 @@ const {
   createPublicCatalogState,
   getFavoriteSnapshot,
   setFavoriteSnapshot,
+  settleFavoritePersistence,
   subscribeFavoriteSnapshot,
   toggleFavoriteSnapshot,
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
@@ -65,4 +66,21 @@ test('offline web capability does not hide the synchronous local catalog', () =>
 
   assert.equal(catalog.isOffline, true);
   assert.deepEqual(catalog.apps.map(({ id }) => id), ['healthy-recipes', 'clinic-guide']);
+});
+
+test('favorite persistence rejection settles without reverting optimistic state or exposing values', async () => {
+  setFavoriteSnapshot(['healthy-recipes']);
+  const reports = [];
+  let settled = false;
+
+  await settleFavoritePersistence(
+    async () => Promise.reject(new Error('private favorite storage detail')),
+    (...args) => reports.push(args),
+  ).then(() => {
+    settled = true;
+  });
+
+  assert.equal(settled, true);
+  assert.deepEqual(getFavoriteSnapshot(), ['healthy-recipes']);
+  assert.deepEqual(reports, [[]]);
 });

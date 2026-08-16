@@ -3,10 +3,15 @@ import * as Haptics from 'expo-haptics';
 import {
   getFavoriteSnapshot,
   setFavoriteSnapshot,
+  settleFavoritePersistence,
   subscribeFavoriteSnapshot,
   toggleFavoriteSnapshot,
 } from '../features/catalog/publicCatalogState';
 import { getFavorites, saveFavorites } from '../services/storage';
+
+const reportFavoritePersistenceFailure = () => {
+  console.error('Unable to save favorites.');
+};
 
 export function useFavorites() {
   const favorites = useSyncExternalStore(
@@ -37,7 +42,10 @@ export function useFavorites() {
         ? Haptics.ImpactFeedbackStyle.Light
         : Haptics.ImpactFeedbackStyle.Medium,
     );
-    await saveFavorites([...nextFavorites]);
+    await settleFavoritePersistence(
+      () => saveFavorites([...nextFavorites]),
+      reportFavoritePersistenceFailure,
+    );
   }, []);
 
   const isFavorite = useCallback(
@@ -52,14 +60,20 @@ export function useFavorites() {
     const nextFavorites = [...current, appId];
     setFavoriteSnapshot(nextFavorites);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await saveFavorites(nextFavorites);
+    await settleFavoritePersistence(
+      () => saveFavorites(nextFavorites),
+      reportFavoritePersistenceFailure,
+    );
   }, []);
 
   const removeFavorite = useCallback(async (appId: string) => {
     const nextFavorites = getFavoriteSnapshot().filter((id) => id !== appId);
     setFavoriteSnapshot(nextFavorites);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await saveFavorites(nextFavorites);
+    await settleFavoritePersistence(
+      () => saveFavorites(nextFavorites),
+      reportFavoritePersistenceFailure,
+    );
   }, []);
 
   return {
