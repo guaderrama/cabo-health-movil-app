@@ -14,14 +14,17 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useWebApps, useFavorites, useTheme } from '../../hooks';
+import { useWebApps, useFavorites, useReducedMotion, useTheme } from '../../hooks';
 import { AppCard, ErrorScreen, SkeletonGrid, AnimatedMolecules } from '../../components';
 import { WebApp } from '../../types';
 import { layout } from '../../constants';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const isFocused = useIsFocused();
+  const reduceMotion = useReducedMotion();
   const { colors, isDark } = useTheme();
   const { apps, favoriteApps, nonFavoriteApps, isLoading, error, isOffline, refresh } = useWebApps();
   const { toggleFavorite, isFavorite } = useFavorites();
@@ -132,7 +135,11 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Animated Molecules Background */}
-      <AnimatedMolecules isDark={isDark} />
+      <AnimatedMolecules
+        active={isFocused}
+        isDark={isDark}
+        reduceMotion={reduceMotion}
+      />
 
       {/* Header Premium con Logo Destacado */}
       <LinearGradient

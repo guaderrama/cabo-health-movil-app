@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
+import { resolveReducedMotion } from '../features/motion/moleculeMotionPolicy';
 
 export function useReducedMotion(): boolean | null {
   const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
@@ -11,12 +12,9 @@ export function useReducedMotion(): boolean | null {
       setReduceMotion,
     );
 
-    AccessibilityInfo.isReduceMotionEnabled()
+    resolveReducedMotion(() => AccessibilityInfo.isReduceMotionEnabled())
       .then((enabled) => {
         if (mounted) setReduceMotion(enabled);
-      })
-      .catch(() => {
-        if (mounted) setReduceMotion(false);
       });
 
     return () => {

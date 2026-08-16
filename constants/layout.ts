@@ -78,13 +78,7 @@ export const layout = {
 
   // Approved A4 cover proportions.
   intro: {
-    logoTopRatio: 0.18,
-    identityTopRatio: 0.39,
-    messageTopRatio: 0.56,
-    horizontalInset: 27,
-    ctaBottom: 54,
     ctaMinHeight: 48,
-    logoMaxWidth: 230,
   },
 
   // Shadows

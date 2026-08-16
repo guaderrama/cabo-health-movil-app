@@ -93,6 +93,29 @@ test('CTA completion is idempotent and cancels the pending automatic path', asyn
   assert.deepEqual(cancelledHandles, [timerHandle]);
 });
 
+test('blur cancellation invalidates an already dequeued automatic callback', async () => {
+  let scheduledCallback;
+  let completionCount = 0;
+  const continuation = createIntroContinuation({
+    reduceMotion: false,
+    schedule(callback) {
+      scheduledCallback = callback;
+      return { id: 'focus-owned-timer' };
+    },
+    cancel() {},
+    async onComplete() {
+      completionCount += 1;
+    },
+  });
+
+  continuation.start();
+  continuation.cancelPending();
+  scheduledCallback();
+  await Promise.resolve();
+
+  assert.equal(completionCount, 0);
+});
+
 test('onboarding completion persists one boolean under the single onboarding key', async () => {
   const values = new Map();
   const operations = [];

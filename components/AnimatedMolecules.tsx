@@ -8,6 +8,11 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Svg, { Circle, Line, Defs, LinearGradient, Stop, G } from 'react-native-svg';
+import {
+  allowsMoleculeMotion,
+  createMoleculeLoopController,
+  type MoleculeLoopController,
+} from '../features/motion/moleculeMotionPolicy';
 
 interface Particle {
   id: number;
@@ -19,8 +24,8 @@ interface Particle {
 
 export interface AnimatedMoleculesProps {
   isDark?: boolean;
-  active?: boolean;
-  reduceMotion?: boolean;
+  active: boolean;
+  reduceMotion: boolean | null;
   style?: ViewStyle;
 }
 
@@ -159,8 +164,8 @@ const generateConnections = (particles: Particle[]): { from: Particle; to: Parti
 
 export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
   isDark = false,
-  active = true,
-  reduceMotion = false,
+  active,
+  reduceMotion,
   style,
 }) => {
   const { width, height } = useWindowDimensions();
@@ -170,7 +175,37 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
   const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
 
   const floatAnim = useRef(new Animated.Value(0)).current;
-  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const loopControllerRef = useRef<MoleculeLoopController | null>(null);
+
+  if (!loopControllerRef.current) {
+    loopControllerRef.current = createMoleculeLoopController({
+      start() {
+        const loop = Animated.loop(
+          Animated.sequence([
+            Animated.timing(floatAnim, {
+              toValue: 1,
+              duration: 5000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(floatAnim, {
+              toValue: 0,
+              duration: 5000,
+              useNativeDriver: true,
+            }),
+          ]),
+        );
+        loop.start();
+        return loop;
+      },
+      stop(loop) {
+        loop.stop();
+      },
+      showStatic() {
+        floatAnim.stopAnimation();
+        floatAnim.setValue(0);
+      },
+    });
+  }
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -181,41 +216,15 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
   }, []);
 
   useEffect(() => {
-    const shouldAnimate = active && appIsActive && !reduceMotion;
-    if (!shouldAnimate) {
-      loopRef.current?.stop();
-      loopRef.current = null;
-      floatAnim.stopAnimation();
-      floatAnim.setValue(0);
-      return;
-    }
-
-    if (loopRef.current) return;
-
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim, {
-          toValue: 1,
-          duration: 5000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(floatAnim, {
-          toValue: 0,
-          duration: 5000,
-          useNativeDriver: true,
-        }),
-      ]),
+    loopControllerRef.current?.reconcile(
+      allowsMoleculeMotion({ active, appActive: appIsActive, reduceMotion }),
     );
-    loopRef.current = loop;
-    loop.start();
+  }, [active, appIsActive, reduceMotion]);
 
-    return () => {
-      if (loopRef.current === loop) loopRef.current = null;
-      loop.stop();
-      floatAnim.stopAnimation();
-      floatAnim.setValue(0);
-    };
-  }, [active, appIsActive, floatAnim, reduceMotion]);
+  useEffect(() => {
+    const controller = loopControllerRef.current;
+    return () => controller?.destroy();
+  }, []);
 
   const animatedStyle = {
     transform: [

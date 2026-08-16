@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   AppState,
   Easing,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AnimatedMolecules } from '../../components';
 import { introColors, layout } from '../../constants';
@@ -19,6 +20,7 @@ import {
   createIntroContinuation,
   type IntroContinuation,
 } from './introTiming';
+import { calculateIntroLayout } from './introLayout';
 
 interface IntroScreenProps {
   onComplete: () => void | Promise<void>;
@@ -26,22 +28,19 @@ interface IntroScreenProps {
 
 export function IntroScreen({ onComplete }: IntroScreenProps) {
   const { isDark } = useTheme();
-  const { width, height } = useWindowDimensions();
+  const { width, height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
-  const [isFocused, setIsFocused] = useState(false);
+  const isFocused = useIsFocused();
   const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
   const continuationRef = useRef<IntroContinuation | null>(null);
   const completionRef = useRef<Promise<void> | null>(null);
   const logoProgress = useRef(new Animated.Value(1)).current;
   const logoEntranceStarted = useRef(false);
   const sceneActive = isFocused && appIsActive;
-
-  useFocusEffect(
-    useCallback(() => {
-      setIsFocused(true);
-      return () => setIsFocused(false);
-    }, []),
+  const introLayout = useMemo(
+    () => calculateIntroLayout({ width, height, fontScale, insets }),
+    [fontScale, height, insets, width],
   );
 
   useEffect(() => {
@@ -102,9 +101,6 @@ export function IntroScreen({ onComplete }: IntroScreenProps) {
     void (continuation ? continuation.complete() : completeOnce());
   }, [completeOnce]);
 
-  const logoWidth = Math.min(width * 0.58, layout.intro.logoMaxWidth);
-  const ctaBottom = layout.intro.ctaBottom + insets.bottom;
-
   return (
     <LinearGradient
       colors={[
@@ -118,71 +114,92 @@ export function IntroScreen({ onComplete }: IntroScreenProps) {
       <AnimatedMolecules
         active={sceneActive}
         isDark={isDark}
-        reduceMotion={reduceMotion !== false}
+        reduceMotion={reduceMotion}
       />
 
-      <Animated.Image
-        source={require('../../assets/logo.png')}
-        accessibilityLabel="CaboHealth"
-        resizeMode="contain"
-        style={[
-          styles.logo,
+      <ScrollView
+        alwaysBounceVertical={false}
+        bounces={introLayout.requiresScrolling}
+        contentContainerStyle={[
+          styles.scrollContent,
           {
-            top: height * layout.intro.logoTopRatio - logoWidth / 2,
-            width: logoWidth,
-            height: logoWidth,
-            opacity: logoProgress.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }),
-            transform: [
-              {
-                translateY: logoProgress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [8, 0],
-                }),
-              },
-            ],
+            paddingTop: introLayout.safeTop,
+            paddingBottom: introLayout.safeBottom,
           },
         ]}
-      />
-
-      <View style={[styles.identity, { top: height * layout.intro.identityTopRatio }]}>
-        <LinearGradient
-          colors={['transparent', introColors.bronze, 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.rule}
-        />
-        <Text style={styles.tagline}>PRECISION LONGEVITY MEDICINE</Text>
-      </View>
-
-      <View
-        style={[
-          styles.messageContainer,
-          { top: height * layout.intro.messageTopRatio },
-        ]}
+        showsVerticalScrollIndicator={false}
+        style={styles.scroll}
       >
-        <Text style={styles.message}>One thoughtful place to explore CaboHealth.</Text>
-      </View>
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Enter CaboHealth"
-        accessibilityHint="Opens the CaboHealth apps portal"
-        onPress={handleEnter}
-        style={({ pressed }) => [
-          styles.ctaOuter,
-          { bottom: ctaBottom },
-          pressed && styles.ctaPressed,
-        ]}
-      >
-        <LinearGradient
-          colors={[introColors.ink, introColors.sea]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={styles.ctaGradient}
+        <View
+          style={[
+            styles.flow,
+            {
+              minHeight: introLayout.contentMinHeight,
+              paddingLeft: introLayout.horizontalPaddingLeft,
+              paddingRight: introLayout.horizontalPaddingRight,
+            },
+          ]}
         >
-          <Text style={styles.ctaLabel}>ENTER CABOHEALTH</Text>
-        </LinearGradient>
-      </Pressable>
+          <View style={{ height: introLayout.topSpacer }} />
+
+          <Animated.Image
+            source={require('../../assets/logo.png')}
+            accessibilityLabel="CaboHealth"
+            resizeMode="contain"
+            style={[
+              styles.logo,
+              {
+                width: introLayout.logoSize,
+                height: introLayout.logoSize,
+                opacity: logoProgress.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }),
+                transform: [
+                  {
+                    translateY: logoProgress.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [8, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+
+          <View style={{ height: introLayout.identityGap }} />
+          <View style={styles.identity}>
+            <LinearGradient
+              colors={['transparent', introColors.bronze, 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.rule}
+            />
+            <Text style={styles.tagline}>PRECISION LONGEVITY MEDICINE</Text>
+          </View>
+
+          <View style={{ height: introLayout.messageGap }} />
+          <View style={styles.messageContainer}>
+            <Text style={styles.message}>One thoughtful place to explore CaboHealth.</Text>
+          </View>
+
+          <View style={[styles.flexSpacer, { minHeight: introLayout.messageCtaGap }]} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Enter CaboHealth"
+            accessibilityHint="Opens the CaboHealth apps portal"
+            onPress={handleEnter}
+            style={({ pressed }) => [styles.ctaOuter, pressed && styles.ctaPressed]}
+          >
+            <LinearGradient
+              colors={[introColors.ink, introColors.sea]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.ctaGradient}
+            >
+              <Text style={styles.ctaLabel}>ENTER CABOHEALTH</Text>
+            </LinearGradient>
+          </Pressable>
+          <View style={{ height: introLayout.bottomPadding }} />
+        </View>
+      </ScrollView>
     </LinearGradient>
   );
 }
@@ -192,17 +209,22 @@ const styles = StyleSheet.create({
     flex: 1,
     overflow: 'hidden',
   },
+  scroll: {
+    flex: 1,
+    zIndex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  flow: {
+    alignItems: 'center',
+  },
   logo: {
-    position: 'absolute',
-    alignSelf: 'center',
     tintColor: introColors.ink,
   },
   identity: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
+    width: '100%',
     alignItems: 'center',
-    transform: [{ translateY: -14 }],
   },
   rule: {
     width: 52,
@@ -217,11 +239,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   messageContainer: {
-    position: 'absolute',
-    left: layout.intro.horizontalInset,
-    right: layout.intro.horizontalInset,
+    width: '100%',
     alignItems: 'center',
-    transform: [{ translateY: -36 }],
   },
   message: {
     maxWidth: 320,
@@ -233,9 +252,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   ctaOuter: {
-    position: 'absolute',
-    left: layout.intro.horizontalInset,
-    right: layout.intro.horizontalInset,
+    width: '100%',
+    maxWidth: 520,
     minHeight: layout.intro.ctaMinHeight,
     borderRadius: 999,
     shadowColor: introColors.ink,
@@ -243,6 +261,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.23,
     shadowRadius: 18,
     elevation: 6,
+  },
+  flexSpacer: {
+    flexGrow: 1,
   },
   ctaPressed: {
     opacity: 0.9,

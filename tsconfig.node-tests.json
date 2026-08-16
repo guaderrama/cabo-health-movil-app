@@ -3,6 +3,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "target": "ES2022",
+    "jsx": "react-jsx",
     "outDir": ".test-build",
     "rootDir": ".",
     "strict": true,
@@ -10,7 +11,10 @@
   },
   "files": [
     "constants/publicMiniapps.ts",
+    "features/motion/moleculeMotionPolicy.ts",
+    "features/onboarding/introLayout.ts",
     "features/onboarding/introTiming.ts",
-    "features/onboarding/onboardingStore.ts"
+    "features/onboarding/onboardingStore.ts",
+    "tests/type-contracts/animated-molecules-props.ts"
   ]
 }

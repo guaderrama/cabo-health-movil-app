@@ -38,12 +38,15 @@ export function createIntroContinuation<Handle>({
   onComplete,
 }: IntroContinuationOptions<Handle>): IntroContinuation {
   let timer: Handle | undefined;
+  let timerGeneration = 0;
   let finishPromise: Promise<void> | undefined;
 
   function cancelPending() {
     if (timer === undefined) return;
-    cancel(timer);
+    const pendingTimer = timer;
     timer = undefined;
+    timerGeneration += 1;
+    cancel(pendingTimer);
   }
 
   function complete(): Promise<void> {
@@ -63,7 +66,9 @@ export function createIntroContinuation<Handle>({
       return;
     }
 
+    const owner = ++timerGeneration;
     timer = schedule(() => {
+      if (owner !== timerGeneration) return;
       timer = undefined;
       void complete();
     }, delayMs);
