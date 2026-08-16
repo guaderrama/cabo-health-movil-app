@@ -1,5 +1,17 @@
 # CaboHealth implementation order
 
+## Current App Store v1
+
+The canonical plan for the user-approved minimal public release is:
+
+- `2026-08-16-cabohealth-minimal-public-v1.md`
+
+It modifies the existing Expo app incrementally and ships exactly two public miniapps. It supersedes the four-plan sequence below for v1.
+
+The plans below remain design history for a later release with protected client access, authenticated administration and a secure backend. Do not execute them against the minimal v1 branch unless the user explicitly approves that expanded scope in a future App Store version.
+
+## Deferred platform program
+
 Los cuatro planes son independientes como documentos, pero no deben ejecutarse completos en orden arbitrario. Esta es la secuencia canónica:
 
 1. **App Store preflight:** App Store Release Task 0. Resolver historial, seller legal y modelo comercial antes de construir acceso protegido.
