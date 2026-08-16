@@ -18,8 +18,14 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.cabohealth.app",
       "buildNumber": "3",
+      "associatedDomains": [
+        "applinks:cabohealth.org"
+      ],
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "WKAppBoundDomains": [
+          "cabohealth.org"
+        ]
       }
     },
     "android": {

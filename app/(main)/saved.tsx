@@ -17,7 +17,7 @@ export default function SavedScreen() {
   const saved = PUBLIC_MINIAPPS.filter((miniapp) => favorites.includes(miniapp.slug));
   const cardColumns = resolveCatalogCardColumns(window);
   const openMiniapp = (miniapp: Readonly<PublicMiniapp>) => {
-    router.push({ pathname: '/(main)/webview/[id]', params: { id: miniapp.slug } });
+    router.push({ pathname: '/apps/[slug]', params: { slug: miniapp.slug } });
   };
 
   return (

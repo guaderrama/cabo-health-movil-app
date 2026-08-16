@@ -1,0 +1,19 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "DQ8PH2DZ3R.com.cabohealth.app"
+        ],
+        "components": [
+          {
+            "/": "/apps/healthy-recipes/"
+          },
+          {
+            "/": "/apps/clinic-guide/"
+          }
+        ]
+      }
+    ]
+  }
+}

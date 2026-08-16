@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import {
   Alert,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { config } from '../../constants';
+import { classifyMiniappNavigation } from '../../features/launch/navigationPolicy';
 import { usePreferences, useTheme, useTranslations } from '../../hooks';
 import type { ThemeMode } from '../../hooks';
 import type { AppLanguage } from '../../i18n/messages';
@@ -38,6 +40,18 @@ export default function SettingsScreen() {
   }, [setTheme, triggerHaptic]);
 
   const openUrl = useCallback(async (url: string) => {
+    const decision = classifyMiniappNavigation({
+      slug: 'healthy-recipes',
+      url,
+      platform: Platform.OS,
+      navigationType: 'click',
+      isTopFrame: true,
+      isPopup: false,
+    });
+    if (decision.decision !== 'open-external') {
+      Alert.alert(t('common.error'), t('settings.openLinkError'));
+      return;
+    }
     try {
       const state = await Network.getNetworkStateAsync();
       if (state.isConnected === false || state.isInternetReachable === false) {

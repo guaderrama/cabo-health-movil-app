@@ -32,7 +32,7 @@ export default function HomeScreen() {
   const cardColumns = resolveCatalogCardColumns(window);
 
   const openMiniapp = useCallback((miniapp: Readonly<PublicMiniapp>) => {
-    router.push({ pathname: '/(main)/webview/[id]', params: { id: miniapp.slug } });
+    router.push({ pathname: '/apps/[slug]', params: { slug: miniapp.slug } });
   }, [router]);
 
   return (

@@ -36,7 +36,7 @@ function makePublicReleaseFixture() {
   writeFixtureFile(
     root,
     'web-hosting/cabohealth.org/.well-known/apple-app-site-association',
-    JSON.stringify({ applinks: { details: [{ components: [{ '/': '/apps/healthy-recipes/*' }, { '/': '/apps/clinic-guide/*' }] }] } }),
+    JSON.stringify({ applinks: { details: [{ components: [{ '/': '/apps/healthy-recipes/' }, { '/': '/apps/clinic-guide/' }] }] } }),
   );
   writeFixtureFile(root, 'release/web-artifacts.json', JSON.stringify({ slugs: ['healthy-recipes', 'clinic-guide'] }));
   return root;
