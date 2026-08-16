@@ -27,9 +27,8 @@ import {
   applyNavigationDecision,
   applyPopupNavigation,
   getRestrictedSharePayload,
-  getRestrictedWebViewSource,
+  getRestrictedWebViewPolicyProps,
   handleRestrictedWebViewBack,
-  RESTRICTED_WEBVIEW_SECURITY_PROPS,
 } from './restrictedWebViewBehavior';
 
 export function RestrictedWebView({
@@ -126,6 +125,11 @@ export function RestrictedWebView({
     if (event.nativeEvent.statusCode >= 400) showGenericError();
   }, [showGenericError]);
 
+  const restrictedWebViewPolicyProps = getRestrictedWebViewPolicyProps(miniapp, {
+    onShouldStartLoadWithRequest: handleNavigationRequest,
+    onOpenWindow: handleOpenWindow,
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View
@@ -186,10 +190,7 @@ export function RestrictedWebView({
         <WebView
           key={`${miniapp.slug}:${reloadKey}`}
           ref={webViewRef}
-          source={getRestrictedWebViewSource(miniapp)}
           style={styles.webview}
-          onShouldStartLoadWithRequest={handleNavigationRequest}
-          onOpenWindow={handleOpenWindow}
           onLoadStart={() => {
             setLoading(true);
             setErrorMessage(null);
@@ -209,7 +210,7 @@ export function RestrictedWebView({
               <ActivityIndicator size="large" color={colors.primary} />
             </View>
           )}
-          {...RESTRICTED_WEBVIEW_SECURITY_PROPS}
+          {...restrictedWebViewPolicyProps}
         />
 
         {errorMessage && (

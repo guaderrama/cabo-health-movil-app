@@ -73,6 +73,21 @@ export function getRestrictedWebViewSource(miniapp: Readonly<PublicMiniapp>) {
   return { uri: miniapp.canonicalUrl };
 }
 
+export function getRestrictedWebViewPolicyProps<ShouldStart, OpenWindow>(
+  miniapp: Readonly<PublicMiniapp>,
+  callbacks: Readonly<{
+    onShouldStartLoadWithRequest: ShouldStart;
+    onOpenWindow: OpenWindow;
+  }>,
+) {
+  return {
+    source: getRestrictedWebViewSource(miniapp),
+    onShouldStartLoadWithRequest: callbacks.onShouldStartLoadWithRequest,
+    onOpenWindow: callbacks.onOpenWindow,
+    ...RESTRICTED_WEBVIEW_SECURITY_PROPS,
+  };
+}
+
 export function getRestrictedSharePayload(
   miniapp: Readonly<PublicMiniapp>,
   title: string,
