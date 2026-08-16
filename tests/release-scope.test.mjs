@@ -155,6 +155,50 @@ test('release scope verifier accepts non-slug kebab-case release metadata', () =
   );
 });
 
+test('release scope verifier accepts descriptive miniapp metadata keys', () => {
+  withFixture(
+    (root) => {
+      writeFixtureFile(
+        root,
+        'release/web-artifacts.json',
+        JSON.stringify({
+          'miniapp-description': 'health-and-wellness-information',
+          miniapp_metadata: 'technical-request-logs',
+          publicMiniappDescription: 'health-and-wellness-information',
+        }),
+      );
+    },
+    (result) => {
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+    },
+  );
+});
+
+test('release scope verifier rejects explicit slug-bearing metadata fields', () => {
+  withFixture(
+    (root) => {
+      writeFixtureFile(
+        root,
+        'release/web-artifacts.json',
+        JSON.stringify({
+          slug: 'client-resources',
+          slugs: ['client-resources'],
+          miniapp: 'client-resources',
+          miniapps: ['client-resources'],
+          miniApps: ['client-resources'],
+          moduleSlug: 'client-resources',
+          module_slugs: ['client-resources'],
+          'module-slug': 'client-resources',
+        }),
+      );
+    },
+    (result) => {
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /unapproved miniapp slug in release metadata.*client-resources/i);
+    },
+  );
+});
+
 test('release scope verifier rejects reachable legacy imports and unsafe WebView controls', () => {
   withFixture(
     (root) => {

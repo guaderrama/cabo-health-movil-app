@@ -58,7 +58,9 @@ function extractAasaSlugs(source) {
 }
 
 function isSlugBearingKey(key) {
-  return /(?:^|[-_])(?:slug|slugs|miniapps?)(?:$|[-_])|(?:Slug|Miniapp)/.test(key);
+  return /^miniapps?$/i.test(key)
+    || /(?:^|[-_])slugs?$/i.test(key)
+    || /(?:Slug|Slugs)$/.test(key);
 }
 
 function collectMetadataSlugs(value, slugs, key = '') {
