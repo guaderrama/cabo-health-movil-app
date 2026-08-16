@@ -104,14 +104,15 @@ El contenido permanece visible sin JavaScript. CSS controla microinteracciones; 
 
 El catálogo es inmutable dentro del release. No consume Firestore ni una lista remota.
 
-La política de navegación acepta únicamente:
+La política de navegación acepta dentro del WebView únicamente:
 
 - HTTPS;
 - host exacto `cabohealth.org`;
-- el prefijo exacto de la miniapp seleccionada;
-- recursos compartidos propios necesarios para esa miniapp.
+- el prefijo exacto de la miniapp seleccionada.
 
-El WebView no incluye `onMessage`, JavaScript inyectado, puente nativo, acceso a archivos, mixed content, ventanas automáticas ni APIs/permisos nativos. Redirects, popups y esquemas no aprobados se bloquean. Mapa, teléfono, correo y WhatsApp usan una allowlist externa explícita y se abren en el sistema, no dentro del WebView.
+El WebView no incluye `onMessage`, JavaScript inyectado, puente nativo, acceso a archivos, mixed content, ventanas automáticas ni APIs/permisos nativos. Toda solicitud pasa primero por una política síncrona cerrada; redirects y popups se bloquean. Privacy, Terms, Support y Report Content, además de mapa, teléfono, correo y WhatsApp confirmados, usan una allowlist externa exacta y sólo se abren en el sistema después de un tap explícito. Los popups se bloquean incluso cuando apuntan a un destino permitido.
+
+En iOS se limita WebKit a `WKAppBoundDomains` para `cabohealth.org`; esta defensa de dominio complementa, pero no reemplaza, la validación exacta de ruta. Las miniapps usan enlaces en la misma ventana para que el gesto llegue a la política verificable.
 
 Cada miniapp se sirve con CSP estricta que limita scripts, estilos e imágenes a recursos propios y bloquea `connect-src`, frames, objetos, formularios, workers, fuentes y media remotos. La allowlist de navegación no se considera control suficiente para subrecursos.
 
@@ -121,10 +122,10 @@ El shell no entrega identificadores, locale, Saved, permisos ni datos personales
 
 El binario declara `applinks:cabohealth.org`. La ruta nativa `/apps/[slug]` resuelve contra el mismo catálogo y la misma política que un tap interno.
 
-`/.well-known/apple-app-site-association` responde por HTTPS, sin redirect y con JSON válido. Sólo declara:
+`/.well-known/apple-app-site-association` responde por HTTPS, sin redirect y con JSON válido. Sólo declara las dos rutas canónicas exactas que puede resolver `app/apps/[slug].tsx`:
 
-- `/apps/healthy-recipes/*`
-- `/apps/clinic-guide/*`
+- `/apps/healthy-recipes/`
+- `/apps/clinic-guide/`
 
 Las rutas públicas necesarias para el release son:
 

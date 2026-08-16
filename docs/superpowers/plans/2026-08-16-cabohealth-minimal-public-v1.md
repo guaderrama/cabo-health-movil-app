@@ -445,15 +445,22 @@ Compile the pure policy and test at minimum:
 | --- | --- |
 | canonical initial URL for selected slug | allow in WebView |
 | same host + exact selected path prefix | allow in WebView |
+| selected path with a benign query/fragment | allow in WebView, but share/load only the canonical catalog URL |
 | other approved miniapp path | block cross-module navigation |
 | root domain, legacy app path or arbitrary cabohealth path | block |
-| any subdomain, lookalike host, HTTP, `javascript:`, `data:`, `file:` | block |
-| exact owner-approved `mailto:`/`tel:` values | open externally |
-| exact owner-approved Apple Maps and WhatsApp contact URLs | open externally |
+| whitespace/control/backslash, userinfo, non-default port, traversal or encoded slash/backslash | block |
+| any subdomain, trailing-dot/lookalike host, HTTP, `javascript:`, `data:`, `file:`, `blob:` or custom scheme | block |
+| exact Privacy/Terms/Support/Report URL after a top-frame user click | open externally |
+| exact owner-approved `mailto:`/`tel:` values after a top-frame user click | open externally |
+| exact owner-approved Apple Maps and WhatsApp URL after a top-frame user click | open externally |
+| any contact URL while owner facts remain unconfirmed | block |
 | any different recipient, phone, map query or WhatsApp number | block |
-| popup/redirect to any other host | block |
+| script/redirect to an otherwise approved external URL | block |
+| every popup target, including an otherwise approved external URL | block |
 
 Unknown slug always returns not found and never instantiates a WebView.
+
+The pure result is `allow-webview`, `open-external` or `block` with a stable reason code. External matching is exact and case-sensitive; do not trim, repair, normalize or add query parameters. Only an iOS top-frame request whose `navigationType` is `click` is user initiated. The current null contact record therefore produces an empty contact allowlist; tests inject synthetic confirmed contacts to exercise that branch. Exact legal URLs come from the frozen catalog and remain separate from owner-contact facts.
 
 - [ ] **Step 2: Extract and harden the existing WebView**
 
@@ -464,37 +471,43 @@ Required props/config:
 ```tsx
 <WebView
   source={{ uri: miniapp.canonicalUrl }}
-  originWhitelist={['https://cabohealth.org']}
+  originWhitelist={['*']}
   javaScriptEnabled
   domStorageEnabled
   mixedContentMode="never"
   allowFileAccess={false}
+  allowFileAccessFromFileURLs={false}
   allowUniversalAccessFromFileURLs={false}
   javaScriptCanOpenWindowsAutomatically={false}
-  setSupportMultipleWindows={false}
+  setSupportMultipleWindows
   sharedCookiesEnabled={false}
   thirdPartyCookiesEnabled={false}
+  limitsNavigationsToAppBoundDomains
+  mediaCapturePermissionGrantType="deny"
+  geolocationEnabled={false}
 />
 ```
 
-Do not add `onMessage` or injected JavaScript. External allowlisted actions use `Linking.openURL`; failed/blocked requests produce an accessible message without leaking full query values into logs.
+`originWhitelist={['*']}` is deliberate: this version of `react-native-webview` opens URLs that fail its origin whitelist through `Linking` before consulting `onShouldStartLoadWithRequest`. Passing every request to the synchronous fail-closed policy prevents that bypass. The policy, not the package's prefix-based origin matcher, enforces the exact host/path/scheme.
+
+Add `onOpenWindow` and intentionally block every popup target; the generated miniapps use same-window links. Keeping Android multiple-window support enabled ensures popup attempts reach that handler instead of falling back to the top WebView. Do not add `onMessage` or injected JavaScript. External allowlisted actions use `Linking.openURL` only after the policy returns `open-external`; failed/blocked requests produce an accessible generic message without leaking raw URLs or query values into logs. Share only `miniapp.universalLink`, never the current navigation state.
 
 - [ ] **Step 3: Route taps and Universal Links through one screen**
 
-All card/saved taps push `/apps/[slug]`. The same route handles `https://cabohealth.org/apps/<slug>/`. Delete the old arbitrary-ID WebView route.
+All card/saved taps push `/apps/[slug]`. The same route handles the two exact canonical Universal Links. It validates `string | string[]`, ignores query/fragment input and resolves only through `getPublicMiniapp`; an unknown slug renders not found without constructing a WebView. Delete the old arbitrary-ID WebView route. A Universal Link may open its requested public module directly; the A4 introduction remains the normal first-launch experience and is not an authentication gate.
 
-Add `ios.associatedDomains: ["applinks:cabohealth.org"]` without changing bundle ID/team/project ID.
+Add `ios.associatedDomains: ["applinks:cabohealth.org"]` and `ios.infoPlist.WKAppBoundDomains: ["cabohealth.org"]` without changing bundle ID/team/project ID. `limitsNavigationsToAppBoundDomains` and the Info.plist entry must be present together.
 
 - [ ] **Step 4: Add exact AASA source**
 
 Generate the App ID from the checked-in Apple team in `eas.json` plus `ios.bundleIdentifier` in `app.json`; for the current configuration this resolves to `DQ8PH2DZ3R.com.cabohealth.app`. Components contain only:
 
 ```json
-{"/":"/apps/healthy-recipes/*"}
-{"/":"/apps/clinic-guide/*"}
+{"/":"/apps/healthy-recipes/"}
+{"/":"/apps/clinic-guide/"}
 ```
 
-No broad wildcard, redirect, extra App ID or file extension. `scripts/verify-aasa.mjs` canonicalizes JSON and rejects any extra/missing detail, App ID or component.
+No nested-path claim, broad wildcard, redirect, extra App ID or file extension. The single-segment native route therefore matches every path claimed by AASA. `scripts/verify-aasa.mjs` rejects duplicate keys, BOM/trailing content and any extra/missing root key, detail, App ID or component, then compares canonical deterministic bytes. Local Expo verification deep-compares the associated-domain and app-bound-domain arrays rather than using `includes`.
 
 - [ ] **Step 5: Verify and commit**
 
@@ -503,7 +516,7 @@ npm run test
 npm run test:scope
 npm run typecheck
 npm run expo:config >/tmp/cabohealth-expo-config.json
-node -e "const c=require('/tmp/cabohealth-expo-config.json'); if(!c.ios.associatedDomains.includes('applinks:cabohealth.org')) process.exit(1)"
+node -e "const c=require('/tmp/cabohealth-expo-config.json'); const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b); if(!same(c.ios.associatedDomains,['applinks:cabohealth.org'])||!same(c.ios.infoPlist.WKAppBoundDomains,['cabohealth.org'])) process.exit(1)"
 git add app features/launch constants/publicContacts.ts app.json tsconfig.node-tests.json tests/navigation-policy.test.mjs scripts/generate-aasa.mjs scripts/verify-aasa.mjs web-hosting/cabohealth.org/.well-known/apple-app-site-association
 git diff --cached --name-only
 git commit -m "feat: restrict miniapp navigation"
@@ -548,7 +561,7 @@ Assert:
 
 - [ ] **Step 2: Implement a static, progressively enhanced shared shell**
 
-Use semantic HTML and local assets. `scripts/build-miniapps.mjs` reads the canonical `content/*.json` and generates fully rendered bilingual HTML; the complete list/detail/checklist content remains usable with scripts disabled. JavaScript enhances search, filters, language switching and local favorites but is not responsible for first rendering canonical content. `shell.js` handles only language, local UI state and safe external-link labeling. It never receives data from native code.
+Use semantic HTML and local assets. `scripts/build-miniapps.mjs` reads the canonical `content/*.json` and generates fully rendered bilingual HTML; the complete list/detail/checklist content remains usable with scripts disabled. JavaScript enhances search, filters, language switching and local favorites but is not responsible for first rendering canonical content. `shell.js` handles only language, local UI state and safe external-link labeling. It never receives data from native code. Every legal/contact action is an ordinary same-window anchor activated by the user; do not use `target="_blank"`, `window.open` or automatic navigation.
 
 Generate an equivalent CSP `<meta http-equiv>` and server-header configuration. Scan HTML, CSS and JavaScript for every `src`, `href`, CSS `url()`, `fetch`, XHR, EventSource, WebSocket, Worker, iframe and dynamic import target; only local static resources are permitted. Navigation allowlists do not substitute for this subresource boundary.
 
