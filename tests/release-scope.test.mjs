@@ -140,6 +140,21 @@ test('release scope verifier rejects a third slug in arbitrary release metadata 
   );
 });
 
+test('release scope verifier accepts non-slug kebab-case release metadata', () => {
+  withFixture(
+    (root) => {
+      writeFixtureFile(
+        root,
+        'release/web-artifacts.json',
+        JSON.stringify({ release: { contentDescriptors: ['health-and-wellness-information'], dataUse: ['technical-request-logs'] } }),
+      );
+    },
+    (result) => {
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+    },
+  );
+});
+
 test('release scope verifier rejects reachable legacy imports and unsafe WebView controls', () => {
   withFixture(
     (root) => {

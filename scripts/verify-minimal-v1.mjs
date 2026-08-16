@@ -57,17 +57,21 @@ function extractAasaSlugs(source) {
   return [...source.matchAll(/\/apps\/([a-z0-9-]+)\/(?:\*|(?=["'}\],\s]|$))/g)].map((match) => match[1]);
 }
 
-function collectMetadataSlugs(value, slugs) {
+function isSlugBearingKey(key) {
+  return /(?:^|[-_])(?:slug|slugs|miniapps?)(?:$|[-_])|(?:Slug|Miniapp)/.test(key);
+}
+
+function collectMetadataSlugs(value, slugs, key = '') {
   if (Array.isArray(value)) {
     for (const item of value) {
-      collectMetadataSlugs(item, slugs);
+      collectMetadataSlugs(item, slugs, key);
     }
   } else if (value && typeof value === 'object') {
-    for (const childValue of Object.values(value)) {
-      collectMetadataSlugs(childValue, slugs);
+    for (const [childKey, childValue] of Object.entries(value)) {
+      collectMetadataSlugs(childValue, slugs, childKey);
     }
   } else if (typeof value === 'string') {
-    if (/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(value)) {
+    if (isSlugBearingKey(key) && /^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(value)) {
       slugs.push(value);
     }
     for (const match of value.matchAll(/\/apps\/([a-z0-9-]+)\/(?:\*|(?=["'}\],\s]|$))/g)) {
