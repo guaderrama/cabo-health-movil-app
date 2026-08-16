@@ -28,15 +28,29 @@ export function createOrderedPersistence<T>(options: {
   onFailure: (value: T) => void;
 }) {
   let queue: Promise<void> = Promise.resolve();
+  let operationGeneration = 0;
 
   return {
+    beginRead() {
+      const readGeneration = operationGeneration;
+      return {
+        applyCurrent(apply: () => void): boolean {
+          if (readGeneration !== operationGeneration) return false;
+          apply();
+          return true;
+        },
+      };
+    },
     submit(value: T): Promise<boolean> {
+      operationGeneration += 1;
       const operation = queue.then(async () => {
         try {
           await options.persist(value);
+          operationGeneration += 1;
           options.onCommit(value);
           return true;
         } catch {
+          operationGeneration += 1;
           options.onFailure(value);
           return false;
         }

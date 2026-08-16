@@ -96,23 +96,26 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }
 
   const loadPreferences = useCallback(async function load() {
+    const read = writerRef.current!.beginRead();
     const [storedLanguage, storedHaptics, storedReducedEffects, systemReducedMotion] = await Promise.all([
       getLanguage(),
       getHapticEnabled(),
       getReducedEffectsOverride(),
       AccessibilityInfo.isReduceMotionEnabled().catch(() => true),
     ]);
-    setLanguageState(storedLanguage.value);
-    setHapticsEnabledState(storedHaptics.value);
-    setReducedEffectsOverrideState(storedReducedEffects.value);
-    setOsReduceMotion(systemReducedMotion);
-    const readFailed = [storedLanguage, storedHaptics, storedReducedEffects]
-      .some((result) => result.status === 'error');
-    setPersistenceIssue(readFailed ? {
-      messageKey: 'storage.readError',
-      retry: () => { void load(); },
-    } : null);
-    setIsReady(true);
+    read.applyCurrent(() => {
+      setLanguageState(storedLanguage.value);
+      setHapticsEnabledState(storedHaptics.value);
+      setReducedEffectsOverrideState(storedReducedEffects.value);
+      setOsReduceMotion(systemReducedMotion);
+      const readFailed = [storedLanguage, storedHaptics, storedReducedEffects]
+        .some((result) => result.status === 'error');
+      setPersistenceIssue(readFailed ? {
+        messageKey: 'storage.readError',
+        retry: () => { void load(); },
+      } : null);
+      setIsReady(true);
+    });
   }, []);
 
   useEffect(() => {

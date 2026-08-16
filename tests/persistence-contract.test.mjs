@@ -91,3 +91,105 @@ test('failed persistence does not commit and the same change can be retried', as
     'commit:es-MX',
   ]);
 });
+
+const providerScenarios = [
+  {
+    name: 'Favorites',
+    initial: ['healthy-recipes'],
+    staleRead: [],
+    next: ['healthy-recipes', 'clinic-guide'],
+  },
+  {
+    name: 'Preferences',
+    initial: { language: 'en', haptics: true, reducedEffects: false },
+    staleRead: { language: 'en', haptics: true, reducedEffects: false },
+    next: { language: 'es-MX', haptics: false, reducedEffects: true },
+  },
+  {
+    name: 'Theme',
+    initial: 'system',
+    staleRead: 'light',
+    next: 'dark',
+  },
+];
+
+function createStateCoordinator(scenario, persist) {
+  let state = scenario.initial;
+  let issue = 'read-error';
+  const coordinator = createOrderedPersistence({
+    persist,
+    onCommit: (value) => {
+      state = value;
+      issue = null;
+    },
+    onFailure: () => {
+      issue = `${scenario.name}-write-error`;
+    },
+  });
+  return {
+    coordinator,
+    snapshot: () => ({ state, issue }),
+    applyRead: (read) => read.applyCurrent(() => {
+      state = scenario.staleRead;
+      issue = null;
+    }),
+  };
+}
+
+test('retry reads begun before later Favorites, Preferences, or Theme writes cannot overwrite success', async (t) => {
+  for (const scenario of providerScenarios) {
+    await t.test(scenario.name, async () => {
+      const fixture = createStateCoordinator(scenario, async () => {});
+      const retryRead = fixture.coordinator.beginRead();
+
+      assert.equal(await fixture.coordinator.submit(scenario.next), true);
+      assert.equal(fixture.applyRead(retryRead), false);
+      assert.deepEqual(fixture.snapshot(), { state: scenario.next, issue: null });
+    });
+  }
+});
+
+test('retry reads begun during Favorites, Preferences, or Theme writes cannot overwrite success', async (t) => {
+  for (const scenario of providerScenarios) {
+    await t.test(scenario.name, async () => {
+      let resolveWrite;
+      const pendingWrite = new Promise((resolve) => { resolveWrite = resolve; });
+      const fixture = createStateCoordinator(scenario, async () => pendingWrite);
+      const write = fixture.coordinator.submit(scenario.next);
+      await new Promise((resolve) => setImmediate(resolve));
+      const retryRead = fixture.coordinator.beginRead();
+
+      resolveWrite();
+      assert.equal(await write, true);
+      assert.equal(fixture.applyRead(retryRead), false);
+      assert.deepEqual(fixture.snapshot(), { state: scenario.next, issue: null });
+    });
+  }
+});
+
+test('delayed retry reads never clear later Favorites, Preferences, or Theme write failures', async (t) => {
+  for (const scenario of providerScenarios) {
+    await t.test(scenario.name, async () => {
+      const fixture = createStateCoordinator(scenario, async () => {
+        throw new Error('private write detail');
+      });
+      const retryRead = fixture.coordinator.beginRead();
+
+      assert.equal(await fixture.coordinator.submit(scenario.next), false);
+      assert.equal(fixture.applyRead(retryRead), false);
+      assert.deepEqual(fixture.snapshot(), {
+        state: scenario.initial,
+        issue: `${scenario.name}-write-error`,
+      });
+    });
+  }
+});
+
+test('a retry read still applies when no newer persistence operation occurred', () => {
+  const scenario = providerScenarios[1];
+  const fixture = createStateCoordinator(scenario, async () => {});
+  const retryRead = fixture.coordinator.beginRead();
+
+  assert.equal(fixture.applyRead(retryRead), true);
+  assert.deepEqual(fixture.snapshot(), { state: scenario.staleRead, issue: null });
+});

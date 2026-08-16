@@ -55,13 +55,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }
 
   const loadTheme = useCallback(async function load() {
+    const read = writerRef.current!.beginRead();
     const result = await getThemePreference();
-    setThemeState(result.value);
-    setPersistenceIssue(result.status === 'error' ? {
-      messageKey: 'storage.readError',
-      retry: () => { void load(); },
-    } : null);
-    setIsLoaded(true);
+    read.applyCurrent(() => {
+      setThemeState(result.value);
+      setPersistenceIssue(result.status === 'error' ? {
+        messageKey: 'storage.readError',
+        retry: () => { void load(); },
+      } : null);
+      setIsLoaded(true);
+    });
   }, []);
 
   useEffect(() => {

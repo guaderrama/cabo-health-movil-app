@@ -64,14 +64,17 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   }
 
   const loadFavorites = useCallback(async function load() {
+    const read = writerRef.current!.beginRead();
     const result = await getFavorites();
-    const normalized = normalizePublicFavorites(result.value);
-    intendedFavoritesRef.current = normalized;
-    setFavorites(normalized);
-    setPersistenceIssue(result.status === 'error' ? {
-      messageKey: 'storage.readError',
-      retry: () => { void load(); },
-    } : null);
+    read.applyCurrent(() => {
+      const normalized = normalizePublicFavorites(result.value);
+      intendedFavoritesRef.current = normalized;
+      setFavorites(normalized);
+      setPersistenceIssue(result.status === 'error' ? {
+        messageKey: 'storage.readError',
+        retry: () => { void load(); },
+      } : null);
+    });
   }, []);
 
   useEffect(() => {
