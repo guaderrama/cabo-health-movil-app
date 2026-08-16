@@ -34,6 +34,7 @@ const POLICY_CONTROLLED_WEBVIEW_PROPS = new Set([
   'source',
   'onShouldStartLoadWithRequest',
   'onOpenWindow',
+  'nativeConfig',
   'originWhitelist',
   'javaScriptEnabled',
   'domStorageEnabled',
@@ -234,6 +235,7 @@ test('native WebView makes one final policy spread authoritative over effective 
     `originWhitelist={['https://cabohealth.org']} {...restrictedWebViewPolicyProps}`,
     `{...restrictedWebViewPolicyProps} originWhitelist={['https://cabohealth.org']}`,
     `{...untrustedProps} {...restrictedWebViewPolicyProps}`,
+    `nativeConfig={{ props: { injectedJavaScriptObject: { unsafe: true }, newSource: { uri: 'https://example.test/' } } }} {...restrictedWebViewPolicyProps}`,
     `injectedJavaScriptObject={{ token: 'unsafe' }} {...restrictedWebViewPolicyProps}`,
     `{...restrictedWebViewPolicyProps} injectedJavaScriptObject={{ token: 'unsafe' }}`,
   ]) {
