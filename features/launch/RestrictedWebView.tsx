@@ -4,6 +4,7 @@ import {
   Linking,
   Platform,
   Pressable,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -22,6 +23,14 @@ import type {
 import type { PublicMiniapp } from '../../constants/publicMiniapps';
 import { useFavorites, useTheme, useTranslations } from '../../hooks';
 import { classifyMiniappNavigation } from './navigationPolicy';
+import {
+  applyNavigationDecision,
+  applyPopupNavigation,
+  getRestrictedSharePayload,
+  getRestrictedWebViewSource,
+  handleRestrictedWebViewBack,
+  RESTRICTED_WEBVIEW_SECURITY_PROPS,
+} from './restrictedWebViewBehavior';
 
 export function RestrictedWebView({
   miniapp,
@@ -65,26 +74,23 @@ export function RestrictedWebView({
       isPopup: false,
     });
 
-    if (result.decision === 'allow-webview') return true;
-    if (result.decision === 'open-external') {
-      void openExternal(request.url);
-      return false;
-    }
-    showGenericError();
-    return false;
+    return applyNavigationDecision(result, request.url, {
+      openExternal,
+      showError: showGenericError,
+    });
   }, [miniapp.slug, openExternal, showGenericError]);
 
   const handleOpenWindow = useCallback((event: WebViewOpenWindowEvent) => {
-    classifyMiniappNavigation({
+    applyPopupNavigation({
       slug: miniapp.slug,
-      url: event.nativeEvent.targetUrl,
+      targetUrl: event.nativeEvent.targetUrl,
       platform: Platform.OS,
-      navigationType: 'other',
-      isTopFrame: false,
-      isPopup: true,
+      effects: {
+        openExternal,
+        showError: showGenericError,
+      },
     });
-    showGenericError();
-  }, [miniapp.slug, showGenericError]);
+  }, [miniapp.slug, openExternal, showGenericError]);
 
   const handleRetry = useCallback(() => {
     setErrorMessage(null);
@@ -97,15 +103,15 @@ export function RestrictedWebView({
 
   const handleShare = useCallback(async () => {
     try {
-      await Share.share({
-        title,
-        message: `${title}: ${miniapp.universalLink}`,
-        url: miniapp.universalLink,
-      });
+      await Share.share(getRestrictedSharePayload(miniapp, title));
     } catch {
       showGenericError();
     }
-  }, [miniapp.universalLink, showGenericError, title]);
+  }, [miniapp, showGenericError, title]);
+
+  const handleHeaderBack = useCallback(() => {
+    handleRestrictedWebViewBack(router);
+  }, [router]);
 
   const handleNavigationStateChange = useCallback((navigation: WebViewNavigation) => {
     setCanGoBack(navigation.canGoBack);
@@ -136,7 +142,7 @@ export function RestrictedWebView({
           accessibilityRole="button"
           accessibilityLabel={t('common.back')}
           hitSlop={8}
-          onPress={() => router.back()}
+          onPress={handleHeaderBack}
           style={styles.headerButton}
         >
           <Ionicons name="chevron-back" size={25} color={colors.primary} />
@@ -170,73 +176,67 @@ export function RestrictedWebView({
         </View>
       </View>
 
-      {loading && progress < 1 && (
-        <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-          <View style={[styles.progress, { backgroundColor: colors.accent, width: `${progress * 100}%` }]} />
-        </View>
-      )}
-
-      <WebView
-        key={`${miniapp.slug}:${reloadKey}`}
-        ref={webViewRef}
-        source={{ uri: miniapp.canonicalUrl }}
-        style={styles.webview}
-        originWhitelist={['*']}
-        onShouldStartLoadWithRequest={handleNavigationRequest}
-        onOpenWindow={handleOpenWindow}
-        onLoadStart={() => {
-          setLoading(true);
-          setErrorMessage(null);
-        }}
-        onLoadProgress={(event) => setProgress(event.nativeEvent.progress)}
-        onLoadEnd={() => {
-          setLoading(false);
-          setProgress(1);
-        }}
-        onNavigationStateChange={handleNavigationStateChange}
-        onError={handleLoadError}
-        onHttpError={handleHttpError}
-        javaScriptEnabled
-        domStorageEnabled
-        mixedContentMode="never"
-        allowFileAccess={false}
-        allowFileAccessFromFileURLs={false}
-        allowUniversalAccessFromFileURLs={false}
-        javaScriptCanOpenWindowsAutomatically={false}
-        setSupportMultipleWindows
-        sharedCookiesEnabled={false}
-        thirdPartyCookiesEnabled={false}
-        limitsNavigationsToAppBoundDomains
-        mediaCapturePermissionGrantType="deny"
-        geolocationEnabled={false}
-        allowsBackForwardNavigationGestures
-        startInLoadingState
-        renderLoading={() => (
-          <View style={[styles.loading, { backgroundColor: colors.background }]}>
-            <ActivityIndicator size="large" color={colors.primary} />
+      <View style={styles.content}>
+        {loading && progress < 1 && (
+          <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
+            <View style={[styles.progress, { backgroundColor: colors.accent, width: `${progress * 100}%` }]} />
           </View>
         )}
-      />
 
-      {errorMessage && (
-        <View
-          accessibilityLiveRegion="assertive"
-          accessibilityRole="alert"
-          style={[styles.errorOverlay, { backgroundColor: colors.background }]}
-        >
-          <Ionicons name="cloud-offline-outline" size={58} color={colors.error} />
-          <Text style={[styles.errorTitle, { color: colors.text }]}>{t('common.error')}</Text>
-          <Text style={[styles.errorBody, { color: colors.textSecondary }]}>{errorMessage}</Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={handleRetry}
-            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+        <WebView
+          key={`${miniapp.slug}:${reloadKey}`}
+          ref={webViewRef}
+          source={getRestrictedWebViewSource(miniapp)}
+          style={styles.webview}
+          onShouldStartLoadWithRequest={handleNavigationRequest}
+          onOpenWindow={handleOpenWindow}
+          onLoadStart={() => {
+            setLoading(true);
+            setErrorMessage(null);
+          }}
+          onLoadProgress={(event) => setProgress(event.nativeEvent.progress)}
+          onLoadEnd={() => {
+            setLoading(false);
+            setProgress(1);
+          }}
+          onNavigationStateChange={handleNavigationStateChange}
+          onError={handleLoadError}
+          onHttpError={handleHttpError}
+          allowsBackForwardNavigationGestures
+          startInLoadingState
+          renderLoading={() => (
+            <View style={[styles.loading, { backgroundColor: colors.background }]}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+          )}
+          {...RESTRICTED_WEBVIEW_SECURITY_PROPS}
+        />
+
+        {errorMessage && (
+          <View
+            accessibilityLiveRegion="assertive"
+            accessibilityRole="alert"
+            style={[styles.errorOverlay, { backgroundColor: colors.background }]}
           >
-            <Ionicons name="refresh" size={20} color={colors.white} />
-            <Text style={[styles.retryText, { color: colors.white }]}>{t('common.retry')}</Text>
-          </Pressable>
-        </View>
-      )}
+            <ScrollView
+              contentContainerStyle={styles.errorScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <Ionicons name="cloud-offline-outline" size={58} color={colors.error} />
+              <Text style={[styles.errorTitle, { color: colors.text }]}>{t('common.error')}</Text>
+              <Text style={[styles.errorBody, { color: colors.textSecondary }]}>{errorMessage}</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={handleRetry}
+                style={[styles.retryButton, { backgroundColor: colors.primary }]}
+              >
+                <Ionicons name="refresh" size={20} color={colors.white} />
+                <Text style={[styles.retryText, { color: colors.white }]}>{t('common.retry')}</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        )}
+      </View>
 
       <View
         style={[
@@ -296,6 +296,7 @@ function ToolbarButton({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  content: { flex: 1 },
   header: { minHeight: 44, flexDirection: 'row', alignItems: 'flex-end', borderBottomWidth: 1, paddingHorizontal: 4 },
   headerButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   title: { flex: 1, minHeight: 44, textAlign: 'center', textAlignVertical: 'center', fontSize: 16, lineHeight: 21, fontWeight: '700', paddingTop: 11 },
@@ -304,7 +305,8 @@ const styles = StyleSheet.create({
   progress: { height: 3 },
   webview: { flex: 1 },
   loading: { position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' },
-  errorOverlay: { position: 'absolute', top: 90, right: 0, bottom: 58, left: 0, alignItems: 'center', justifyContent: 'center', padding: 28 },
+  errorOverlay: { position: 'absolute', inset: 0 },
+  errorScrollContent: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
   errorTitle: { marginTop: 14, fontSize: 20, lineHeight: 26, fontWeight: '700', textAlign: 'center' },
   errorBody: { marginTop: 7, maxWidth: 320, fontSize: 14, lineHeight: 21, textAlign: 'center' },
   retryButton: { minHeight: 44, marginTop: 22, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 20 },

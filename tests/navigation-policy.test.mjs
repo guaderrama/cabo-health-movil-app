@@ -189,36 +189,116 @@ test('production owner contact allowlist remains empty while frozen facts are un
 });
 
 test('contact adapter rejects stale values unless the record and each contact source are confirmed', () => {
+  const confirmedSource = {
+    sourceUrl: 'https://cabohealth.org/source/',
+    sourceStatus: 'owner-confirmed-source',
+  };
   const facts = {
     status: 'owner-confirmed',
     ownerConfirmedAt: '2026-08-16T18:30:00.000Z',
     facts: {
-      publicEmail: { value: 'owner@example.test', sourceUrl: 'https://cabohealth.org/source/', sourceStatus: 'owner-confirmation-required' },
-      phone: { value: '+526241234567', sourceUrl: 'https://cabohealth.org/source/', sourceStatus: 'owner-confirmed-source' },
-      whatsApp: { value: 'https://wa.me/526241234567', sourceUrl: 'https://cabohealth.org/source/', sourceStatus: 'owner-confirmed-source' },
-      appleMapsDestination: { value: 'https://maps.apple.com/?address=Exact%20Clinic', sourceUrl: 'https://cabohealth.org/source/', sourceStatus: 'owner-confirmed-source' },
+      publicEmail: { value: 'owner@example.test', ...confirmedSource },
+      phone: { value: '+526241234567', ...confirmedSource },
+      whatsApp: { value: 'https://wa.me/526241234567', ...confirmedSource },
+      address: { value: 'Exact Clinic', ...confirmedSource },
+      hours: { value: 'Monday-Friday', ...confirmedSource },
+      appleMapsDestination: { value: 'https://maps.apple.com/?address=Exact%20Clinic', ...confirmedSource },
+      serviceLanguages: { value: ['English', 'Español'], ...confirmedSource },
     },
   };
 
-  assert.deepEqual(getConfirmedPublicContactUrls(facts), []);
   assert.deepEqual(getConfirmedPublicContactUrls({
     ...facts,
     ownerConfirmedAt: 'not-a-timestamp',
-    facts: Object.fromEntries(Object.entries(facts.facts).map(([key, fact]) => [
-      key,
-      { ...fact, sourceStatus: 'owner-confirmed-source' },
-    ])),
   }), []);
   assert.deepEqual(
-    getConfirmedPublicContactUrls({
-      ...facts,
-      facts: {
-        ...facts.facts,
-        publicEmail: { ...facts.facts.publicEmail, sourceStatus: 'owner-confirmed-source' },
-      },
-    }),
+    getConfirmedPublicContactUrls(facts),
     syntheticContacts,
   );
+});
+
+test('contact adapter requires exactly all seven frozen fact keys before deriving URLs', () => {
+  const confirmedSource = {
+    sourceUrl: 'https://cabohealth.org/source/',
+    sourceStatus: 'owner-confirmed-source',
+  };
+  const completeFacts = {
+    publicEmail: { value: 'owner@example.test', ...confirmedSource },
+    phone: { value: '+526241234567', ...confirmedSource },
+    whatsApp: { value: 'https://wa.me/526241234567', ...confirmedSource },
+    address: { value: 'Exact Clinic', ...confirmedSource },
+    hours: { value: 'Monday-Friday', ...confirmedSource },
+    appleMapsDestination: { value: 'https://maps.apple.com/?address=Exact%20Clinic', ...confirmedSource },
+    serviceLanguages: { value: ['English', 'Español'], ...confirmedSource },
+  };
+  const record = {
+    status: 'owner-confirmed',
+    ownerConfirmedAt: '2026-08-16T18:30:00.000Z',
+    facts: completeFacts,
+  };
+
+  for (const omitted of ['address', 'hours', 'serviceLanguages']) {
+    assert.deepEqual(getConfirmedPublicContactUrls({
+      ...record,
+      facts: Object.fromEntries(
+        Object.entries(completeFacts).filter(([key]) => key !== omitted),
+      ),
+    }), [], `missing ${omitted}`);
+  }
+
+  assert.deepEqual(getConfirmedPublicContactUrls({
+    ...record,
+    facts: {
+      ...completeFacts,
+      extraContact: { value: 'unexpected', ...confirmedSource },
+    },
+  }), []);
+});
+
+test('contact adapter rejects invalid values and every untrusted source URL shape', () => {
+  const confirmedSource = {
+    sourceUrl: 'https://cabohealth.org/source/',
+    sourceStatus: 'owner-confirmed-source',
+  };
+  const completeFacts = {
+    publicEmail: { value: 'owner@example.test', ...confirmedSource },
+    phone: { value: '+526241234567', ...confirmedSource },
+    whatsApp: { value: 'https://wa.me/526241234567', ...confirmedSource },
+    address: { value: 'Exact Clinic', ...confirmedSource },
+    hours: { value: 'Monday-Friday', ...confirmedSource },
+    appleMapsDestination: { value: 'https://maps.apple.com/?address=Exact%20Clinic', ...confirmedSource },
+    serviceLanguages: { value: ['English', 'Español'], ...confirmedSource },
+  };
+  const record = {
+    status: 'owner-confirmed',
+    ownerConfirmedAt: '2026-08-16T18:30:00.000Z',
+    facts: completeFacts,
+  };
+
+  for (const sourceUrl of [
+    '',
+    'not-a-url',
+    'http://cabohealth.org/source/',
+    ' https://cabohealth.org/source/',
+    'https://cabohealth.org/source/ ',
+  ]) {
+    assert.deepEqual(getConfirmedPublicContactUrls({
+      ...record,
+      facts: {
+        ...completeFacts,
+        address: { ...completeFacts.address, sourceUrl },
+      },
+    }), [], sourceUrl);
+  }
+
+  for (const facts of [
+    { ...completeFacts, address: { ...completeFacts.address, value: '   ' } },
+    { ...completeFacts, hours: { ...completeFacts.hours, value: '' } },
+    { ...completeFacts, serviceLanguages: { ...completeFacts.serviceLanguages, value: [] } },
+    { ...completeFacts, serviceLanguages: { ...completeFacts.serviceLanguages, value: ['English', ' '] } },
+  ]) {
+    assert.deepEqual(getConfirmedPublicContactUrls({ ...record, facts }), []);
+  }
 });
 
 test('blocks script and redirect attempts to otherwise approved external destinations', () => {
