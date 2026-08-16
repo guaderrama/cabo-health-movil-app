@@ -11,3 +11,5 @@ export { PremiumIcon } from './icons/PremiumIcon';
 export type { PremiumIconName } from './icons/PremiumIcon';
 export { AnimatedMolecules } from './AnimatedMolecules';
 export type { AnimatedMoleculesProps } from './AnimatedMolecules';
+export { BottomNavigation } from './BottomNavigation';
+export { EditorialMetadata } from './EditorialMetadata';

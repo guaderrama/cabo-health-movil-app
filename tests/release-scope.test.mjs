@@ -109,7 +109,9 @@ test('runtime config exposes only public local-state settings and no remote cata
   assert.deepEqual(config.storageKeys, {
     favorites: '@cabohealth_favorites',
     favoritesOrder: '@cabohealth_favorites_order',
+    language: '@cabohealth_language',
     hapticEnabled: '@cabohealth_haptic_enabled',
+    reducedEffects: '@cabohealth_reduced_effects',
     hasSeenOnboarding: '@cabohealth_has_seen_onboarding',
   });
 });

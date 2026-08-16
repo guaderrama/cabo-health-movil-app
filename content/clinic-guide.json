@@ -1,0 +1,73 @@
+{
+  "version": "1.0.0",
+  "reviewedOn": "2026-08-16",
+  "emergency": {
+    "en": "This checklist is not medical or emergency guidance and cannot provide urgent help. In Mexico, if there is an emergency or immediate assistance is needed, call 911. Do not wait for a scheduled visit or use this app for emergency help.",
+    "es-MX": "Esta lista no es orientación médica ni de emergencia y no puede proporcionar ayuda urgente. En México, si hay una emergencia o se necesita asistencia inmediata, llama al 911. No esperes una cita programada ni uses esta app para solicitar ayuda de emergencia."
+  },
+  "privacy": {
+    "en": "This local checklist has no free-text fields or uploads.",
+    "es-MX": "Esta lista local no tiene campos de texto libre ni cargas de archivos."
+  },
+  "groups": [
+    {
+      "id": "appointment-confirmation",
+      "title": { "en": "Appointment confirmation", "es-MX": "Confirmación de cita" },
+      "items": [
+        { "id": "confirm-appointment", "text": { "en": "Confirm the date and time shown in your booking.", "es-MX": "Confirma la fecha y hora que aparecen en tu reservación." } },
+        { "id": "confirm-location", "text": { "en": "Confirm the clinic’s exact location and arrival instructions directly with the clinic.", "es-MX": "Confirma directamente con la clínica la ubicación exacta e indicaciones de llegada." } },
+        { "id": "check-rescheduling", "text": { "en": "Check the clinic’s current rescheduling or cancellation instructions.", "es-MX": "Revisa las indicaciones vigentes para reprogramar o cancelar." } },
+        { "id": "plan-arrival", "text": { "en": "Plan to arrive according to the clinic’s confirmation.", "es-MX": "Planea llegar conforme a la confirmación de la clínica." } }
+      ]
+    },
+    {
+      "id": "questions",
+      "title": { "en": "Questions", "es-MX": "Preguntas" },
+      "items": [
+        { "id": "prepare-questions-elsewhere", "text": { "en": "If you choose, prepare questions outside this app; do not enter private health information here.", "es-MX": "Si lo deseas, prepara tus preguntas fuera de esta app; no ingreses aquí información privada de salud." } },
+        { "id": "confirm-how-to-ask", "text": { "en": "Confirm directly with the clinic how and when questions can be discussed during your visit.", "es-MX": "Confirma directamente con la clínica cómo y cuándo se pueden comentar preguntas durante tu visita." } }
+      ]
+    },
+    {
+      "id": "travel-access",
+      "title": { "en": "Travel and access", "es-MX": "Traslado y acceso" },
+      "items": [
+        { "id": "plan-transportation", "text": { "en": "Plan your transportation and parking or drop-off.", "es-MX": "Planea tu transporte y estacionamiento o descenso." } },
+        { "id": "ask-access-details", "text": { "en": "Check entry, elevator, or parking details with the clinic if you would like them.", "es-MX": "Consulta con la clínica detalles de acceso, elevador o estacionamiento si los deseas." } },
+        { "id": "confirm-visitor-policy", "text": { "en": "If you want to bring a support person, confirm the clinic’s visitor policy.", "es-MX": "Si quieres llevar una persona de apoyo, confirma la política de acompañantes." } }
+      ]
+    },
+    {
+      "id": "accessibility-language",
+      "title": { "en": "Accessibility and language", "es-MX": "Accesibilidad e idioma" },
+      "items": [
+        { "id": "choose-app-language", "text": { "en": "Choose the app language: English or Español (México).", "es-MX": "Elige el idioma de la app: English o Español (México)." } },
+        { "id": "ask-language-assistance", "text": { "en": "Ask the clinic directly about interpreter availability if you would like language assistance.", "es-MX": "Pregunta directamente a la clínica sobre disponibilidad de intérprete si deseas apoyo de idioma." } },
+        { "id": "ask-accessibility", "text": { "en": "Ask the clinic directly about any accessibility accommodation you would like.", "es-MX": "Pregunta directamente a la clínica sobre cualquier ajuste de accesibilidad que desees." } },
+        { "id": "bring-communication-aids", "text": { "en": "Bring communication aids you normally use, if you choose.", "es-MX": "Lleva las ayudas de comunicación que usas habitualmente, si lo deseas." } }
+      ]
+    },
+    {
+      "id": "what-to-bring",
+      "title": { "en": "What to bring", "es-MX": "Qué llevar" },
+      "items": [
+        { "id": "bring-requested-documents", "text": { "en": "Bring only identification or records the clinic specifically requests.", "es-MX": "Lleva únicamente la identificación o los registros que la clínica solicite específicamente." } },
+        { "id": "bring-comfort-items", "text": { "en": "Bring any non-health personal items you want for travel comfort.", "es-MX": "Lleva artículos personales no relacionados con la salud que quieras para mayor comodidad durante el traslado." } }
+      ]
+    },
+    {
+      "id": "privacy",
+      "title": { "en": "Privacy", "es-MX": "Privacidad" },
+      "items": [
+        { "id": "local-checklist", "text": { "en": "This checklist stays on your device unless you choose otherwise.", "es-MX": "Esta lista permanece en tu dispositivo, salvo que tú elijas otra cosa." } },
+        { "id": "no-private-health-information", "text": { "en": "Do not enter private health information in this checklist.", "es-MX": "No ingreses información privada de salud en esta lista." } }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "title": "Gobierno de México — ¿Qué es el Número Único de Llamadas de Emergencia 9-1-1?",
+      "url": "https://www.gob.mx/911/articulos/que-es-el-911emergencias?idiom=es"
+    }
+  ]
+}

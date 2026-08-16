@@ -29,6 +29,9 @@ export type RootStackParamList = {
   '(main)': undefined;
   '(main)/index': undefined;
   '(main)/settings': undefined;
+  '(main)/saved': undefined;
+  '(main)/recipes': undefined;
+  '(main)/visit-checklist': undefined;
   '(main)/webview/[id]': { id: string };
 };
 

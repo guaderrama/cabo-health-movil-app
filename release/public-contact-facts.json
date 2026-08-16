@@ -1,0 +1,13 @@
+{
+  "status": "awaiting-owner-confirmation",
+  "ownerConfirmedAt": null,
+  "facts": {
+    "publicEmail": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
+    "phone": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
+    "whatsApp": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
+    "address": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
+    "hours": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
+    "appleMapsDestination": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
+    "serviceLanguages": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" }
+  }
+}

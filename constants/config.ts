@@ -13,7 +13,9 @@ export const config = {
   storageKeys: {
     favorites: '@cabohealth_favorites',
     favoritesOrder: '@cabohealth_favorites_order',
+    language: '@cabohealth_language',
     hapticEnabled: '@cabohealth_haptic_enabled',
+    reducedEffects: '@cabohealth_reduced_effects',
     hasSeenOnboarding: '@cabohealth_has_seen_onboarding',
   },
 
@@ -34,6 +36,7 @@ export const config = {
     support: 'https://cabohealth.org/app/support/',
     privacy: 'https://cabohealth.org/app/privacy/',
     terms: 'https://cabohealth.org/app/terms/',
+    reportContent: 'https://cabohealth.org/app/report-content/',
   },
 
   // Features flags

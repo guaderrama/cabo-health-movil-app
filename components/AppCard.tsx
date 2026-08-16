@@ -1,334 +1,149 @@
-// components/AppCard.tsx
-// Premium visual card for each web app - CaboHealth Brand
-// With glassmorphism effect, animations and automatic category icons
-
-import { useRef, useEffect } from 'react';
-import { TouchableOpacity, View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { useEffect, useRef } from 'react';
+import {
+  Animated,
+  Easing,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
-import { WebApp } from '../types';
-import { useTheme } from '../hooks';
-import { layout, getCategoryConfig } from '../constants';
-import { PremiumIcon } from './icons/PremiumIcon';
-import type { PremiumIconName } from './icons/PremiumIcon';
+import type { PublicMiniapp } from '../constants/publicMiniapps';
+import { useReducedMotion, useTheme, useTranslations } from '../hooks';
+import { EditorialMetadata } from './EditorialMetadata';
 
 interface AppCardProps {
-  app: WebApp;
-  onPress: (app: WebApp) => void;
-  onLongPress?: (app: WebApp) => void;
-  index?: number; // For staggered entry animation
+  miniapp: Readonly<PublicMiniapp>;
+  favorite: boolean;
+  onPress: (miniapp: Readonly<PublicMiniapp>) => void;
+  onToggleFavorite: (slug: string) => void;
+  index?: number;
 }
 
-export function AppCard({ app, onPress, onLongPress, index = 0 }: AppCardProps) {
+export function AppCard({
+  miniapp,
+  favorite,
+  onPress,
+  onToggleFavorite,
+  index = 0,
+}: AppCardProps) {
   const { colors, isDark } = useTheme();
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  // Staggered entry animation
-  const enterAnim = useRef(new Animated.Value(0)).current;
-  const translateY = enterAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [20, 0],
-  });
-  const entryScale = enterAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.95, 1],
-  });
+  const { language, t } = useTranslations();
+  const reduceMotion = useReducedMotion();
+  const entrance = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
 
   useEffect(() => {
-    Animated.timing(enterAnim, {
+    if (reduceMotion) {
+      entrance.setValue(1);
+      return;
+    }
+    const animation = Animated.timing(entrance, {
       toValue: 1,
-      duration: 400,
-      delay: index * 50, // 50ms stagger between cards
+      duration: 180,
+      delay: index * 45,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
-    }).start();
-  }, []);
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [entrance, index, reduceMotion]);
 
-  const handlePressIn = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.98,  // Más sutil y profesional
-      useNativeDriver: true,
-      damping: 15,
-      stiffness: 150,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      damping: 15,
-      stiffness: 150,
-    }).start();
-  };
-
-  const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress(app);
-  };
-
-  const handleLongPress = () => {
-    if (onLongPress) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      onLongPress(app);
-    }
-  };
-
-  // Get category config (automatic icon and color)
-  const categoryConfig = getCategoryConfig(app.category);
-
-  // In dark mode, always use glassmorphism (ignore category colors for elegance)
-  // In light mode, use category colors
-  const effectiveColor = isDark ? undefined : (app.color || categoryConfig.color);
-  const hasCustomColor = !isDark && effectiveColor && effectiveColor !== '#FFFFFF' && effectiveColor !== colors.cardBackground;
-  const cardBgColor = hasCustomColor ? effectiveColor : undefined;
-
-  // Determine if background is light to choose correct text color
-  // In dark mode, background is always dark
-  const isLightBg = isDark ? false : (hasCustomColor ? isLightColor(effectiveColor) : true);
+  const title = miniapp.title[language === 'es-MX' ? 'es' : 'en'];
+  const summary = miniapp.summary[language === 'es-MX' ? 'es' : 'en'];
 
   return (
-    <Animated.View style={[
-      styles.cardWrapper,
-      {
-        opacity: enterAnim,
-        transform: [
-          { translateY },
-          { scale: Animated.multiply(scaleAnim, entryScale) },
-        ],
-      },
-    ]}>
-      <TouchableOpacity
-        onPress={handlePress}
-        onLongPress={handleLongPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={1}
-        style={styles.touchable}
+    <Animated.View
+      style={{
+        flex: 1,
+        opacity: entrance,
+        transform: [{
+          translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }),
+        }],
+      }}
+    >
+      <BlurView
+        intensity={isDark ? 28 : 42}
+        tint={isDark ? 'dark' : 'light'}
+        style={[styles.card, { borderColor: colors.glassBorder }]}
       >
-        {/* Glassmorphism container */}
-        {!hasCustomColor ? (
-          <BlurView
-            intensity={isDark ? 25 : 40}
-            tint={isDark ? 'dark' : 'light'}
-            style={[styles.blurContainer, styles.cardShadow]}
-          >
-            <View
-              style={[
-                styles.card,
-                {
-                  backgroundColor: colors.glass,
-                  borderColor: colors.glassBorder,
-                },
-              ]}
-            >
-              <CardContent
-                app={app}
-                colors={colors}
-                isLightBg={isLightBg}
-                isDark={isDark}
-                categoryIcon={categoryConfig.icon}
-                premiumIcon={categoryConfig.premiumIcon}
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.glass }]} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${title}. ${summary}`}
+          accessibilityHint={t('catalog.open')}
+          onPress={() => onPress(miniapp)}
+          style={({ pressed }) => [styles.content, pressed && styles.pressed]}
+        >
+          <View style={styles.topRow}>
+            <View style={[styles.moduleIcon, { backgroundColor: `${colors.primary}18` }]}>
+              <Ionicons
+                name={miniapp.slug === 'healthy-recipes' ? 'restaurant-outline' : 'calendar-outline'}
+                size={23}
+                color={colors.primary}
               />
             </View>
-          </BlurView>
-        ) : (
-          <View
-            style={[
-              styles.card,
-              styles.blurContainer,
-              styles.cardShadow,
-              {
-                backgroundColor: cardBgColor,
-                borderColor: isLightBg ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)',
-              },
-            ]}
-          >
-            <CardContent
-              app={app}
-              colors={colors}
-              isLightBg={isLightBg}
-              isDark={isDark}
-              categoryIcon={categoryConfig.icon}
-              premiumIcon={categoryConfig.premiumIcon}
-            />
+            <View style={[styles.badge, { backgroundColor: `${colors.primary}18` }]}>
+              <Text style={[styles.badgeText, { color: colors.primary }]}>{t('catalog.publicBadge')}</Text>
+            </View>
           </View>
-        )}
-      </TouchableOpacity>
+          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+          <Text style={[styles.summary, { color: colors.textSecondary }]}>{summary}</Text>
+          <EditorialMetadata miniapp={miniapp} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={favorite ? t('catalog.removeSaved') : t('catalog.save')}
+          accessibilityState={{ selected: favorite }}
+          hitSlop={6}
+          onPress={() => onToggleFavorite(miniapp.slug)}
+          style={({ pressed }) => [
+            styles.favoriteButton,
+            { backgroundColor: colors.cardBackground, borderColor: colors.border },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons
+            name={favorite ? 'star' : 'star-outline'}
+            size={21}
+            color={favorite ? colors.favorite : colors.primary}
+          />
+        </Pressable>
+      </BlurView>
     </Animated.View>
   );
 }
 
-// Helper: detect if string is emoji
-const isEmoji = (str?: string): boolean => {
-  if (!str) return false;
-  // Detect Unicode emojis
-  return /\p{Emoji}/u.test(str) && str.length <= 4;
-};
-
-// Helper: detect if color is light (to choose dark or white text)
-const isLightColor = (hexColor?: string): boolean => {
-  if (!hexColor) return true;
-  // Remove # if exists
-  const hex = hexColor.replace('#', '');
-  // Convert to RGB
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-  // Calculate luminance (standard formula)
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  // If luminance > 0.6, it's a light color
-  return luminance > 0.6;
-};
-
-// Card inner content
-function CardContent({
-  app,
-  colors,
-  isLightBg,
-  isDark,
-  categoryIcon,
-  premiumIcon,
-}: {
-  app: WebApp;
-  colors: any;
-  isLightBg: boolean;
-  isDark: boolean;
-  categoryIcon: keyof typeof Ionicons.glyphMap;
-  premiumIcon?: PremiumIconName;
-}) {
-  // Determine which icon to show: manual emoji > premium SVG > category Ionicon
-  const showEmoji = app.icon && isEmoji(app.icon);
-  const iconColor = isLightBg ? colors.primary : colors.white;
-
-  return (
-    <>
-      {/* Badge New */}
-      {app.isNew && (
-        <View style={[styles.badgeNew, { backgroundColor: colors.primary }]}>
-          <Text style={styles.badgeNewText}>New</Text>
-        </View>
-      )}
-
-      {/* Favorite */}
-      {app.isFavorite && (
-        <View style={[styles.favoriteIcon, { backgroundColor: `${colors.favorite}20` }]}>
-          <Ionicons name="star" size={14} color={colors.favorite} />
-        </View>
-      )}
-
-      {/* Icon - Priority: Emoji > Premium SVG > Ionicon fallback */}
-      {showEmoji ? (
-        <Text style={styles.icon}>{app.icon}</Text>
-      ) : premiumIcon ? (
-        <View style={styles.iconContainer}>
-          <PremiumIcon name={premiumIcon} size={48} isDark={isDark} />
-        </View>
-      ) : (
-        <View style={styles.iconContainer}>
-          <Ionicons name={categoryIcon} size={48} color={iconColor} />
-        </View>
-      )}
-
-      {/* Name */}
-      <Text
-        style={[
-          styles.name,
-          { color: isLightBg ? colors.text : colors.white },
-        ]}
-        numberOfLines={1}
-      >
-        {app.name}
-      </Text>
-
-      {/* Description */}
-      <Text
-        style={[
-          styles.description,
-          {
-            color: isLightBg
-              ? colors.textSecondary
-              : 'rgba(255,255,255,0.8)',
-          },
-        ]}
-        numberOfLines={4}
-      >
-        {app.description}
-      </Text>
-    </>
-  );
-}
-
 const styles = StyleSheet.create({
-  cardWrapper: {
+  card: {
     flex: 1,
-    margin: 6,
-  },
-  touchable: {
-    flex: 1,
-  },
-  blurContainer: {
-    borderRadius: 24,
+    minHeight: 244,
+    borderRadius: 22,
+    borderWidth: 1,
     overflow: 'hidden',
-    minHeight: 200,
-  },
-  // Premium shadow system
-  cardShadow: {
-    shadowColor: '#000',
+    shadowColor: '#082A3C',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
-    elevation: 6,
+    elevation: 3,
   },
-  card: {
-    flex: 1,
-    minHeight: 200,
-    padding: 20,
-    borderRadius: 24,
+  content: { flex: 1, padding: 14 },
+  pressed: { opacity: 0.82 },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  moduleIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  badge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, marginRight: 40 },
+  badgeText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.7 },
+  title: { fontSize: 16, lineHeight: 20, fontWeight: '700', marginBottom: 5 },
+  summary: { fontSize: 12, lineHeight: 17 },
+  favoriteButton: {
+    position: 'absolute',
+    right: 9,
+    top: 9,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     borderWidth: 1,
-  },
-  badgeNew: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 12,
-  },
-  badgeNewText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  favoriteIcon: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    padding: 4,
-    borderRadius: 8,
-  },
-  icon: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
-  iconContainer: {
-    width: 56,
-    height: 56,
-    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  name: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  description: {
-    fontSize: 14,
-    lineHeight: 20,
+    justifyContent: 'center',
   },
 });
-
-export default AppCard;

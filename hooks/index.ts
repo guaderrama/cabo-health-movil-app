@@ -5,6 +5,8 @@ export { useWebApps } from './useWebApps';
 export { useNetworkStatus } from './useNetworkStatus';
 export { useFavorites } from './useFavorites';
 export { useReducedMotion } from './useReducedMotion';
+export { usePreferences } from '../context/PreferencesContext';
+export { useTranslations } from '../i18n/useTranslations';
 
 // Theme hook (re-export from context)
 export { useTheme, ThemeProvider } from '../context/ThemeContext';

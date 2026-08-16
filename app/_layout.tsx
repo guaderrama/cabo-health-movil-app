@@ -8,6 +8,8 @@ import { Slot } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet } from 'react-native';
 import { ThemeProvider, useTheme } from '../hooks';
+import { PreferencesProvider } from '../context/PreferencesContext';
+import { FavoritesProvider } from '../context/FavoritesContext';
 import {
   removeLegacyPrivateState,
   settleLegacyPrivateStateMigration,
@@ -40,7 +42,11 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider>
-      <ThemedLayout />
+      <PreferencesProvider>
+        <FavoritesProvider>
+          <ThemedLayout />
+        </FavoritesProvider>
+      </PreferencesProvider>
     </ThemeProvider>
   );
 }

@@ -1,0 +1,160 @@
+{
+  "version": "1.0.0",
+  "reviewedOn": "2026-08-16",
+  "disclaimer": {
+    "en": "Recipes are general food inspiration, not medical or dietary treatment. Check ingredient labels and avoid ingredients you are allergic to. For individualized food questions, consult a qualified professional.",
+    "es-MX": "Las recetas son ideas generales de alimentación, no tratamiento médico ni dietético. Revisa las etiquetas y evita ingredientes a los que eres alérgico. Para preguntas personalizadas sobre alimentación, consulta a un profesional calificado."
+  },
+  "foodSafety": {
+    "en": "Wash hands and produce; keep raw foods separate; cook animal foods safely; refrigerate perishables promptly.",
+    "es-MX": "Lava las manos y los productos; mantén separados los alimentos crudos; cocina de forma segura los alimentos de origen animal; refrigera pronto los perecederos."
+  },
+  "sources": [
+    {
+      "title": "WHO — Healthy diet",
+      "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet%E2%81%A3%E2%81%A0"
+    },
+    {
+      "title": "FoodSafety.gov — 4 Steps to Food Safety",
+      "url": "https://www.foodsafety.gov/keep-food-safe/4-steps-to-food-safety"
+    },
+    {
+      "title": "USDA FSIS — Food Allergies: The Big 9",
+      "url": "https://www.fsis.usda.gov/food-safety/safe-food-handling-and-preparation/food-safety-basics/food-allergies-big-9"
+    }
+  ],
+  "recipes": [
+    {
+      "slug": "mango-cucumber-lime-cup",
+      "title": { "en": "Mango, Cucumber & Lime Cup", "es-MX": "Vaso de mango, pepino y limón" },
+      "summary": { "en": "A cool fruit-and-vegetable snack with lime and mint.", "es-MX": "Botana fresca de fruta y verduras con limón y menta." },
+      "categories": ["snack"],
+      "tags": ["plant-based"],
+      "timeMinutes": 10,
+      "timeLabel": { "en": "10 min", "es-MX": "10 min" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["1 ripe mango, cubed", "1 small cucumber, diced", "Juice of 1 lime", "1 Tbsp chopped mint", "Pinch of chili powder, optional"],
+        "es-MX": ["1 mango maduro en cubos", "1 pepino chico en cubos", "Jugo de 1 limón", "1 cda de menta picada", "Pizca de chile en polvo, opcional"]
+      },
+      "steps": {
+        "en": ["Combine mango and cucumber.", "Add lime and mint; toss.", "Top with optional chili; serve chilled."],
+        "es-MX": ["Mezcla el mango y el pepino.", "Agrega limón y menta; revuelve.", "Añade chile opcional y sirve frío."]
+      },
+      "allergens": {
+        "en": "None intentionally included. Check packaged chili for ingredients.",
+        "es-MX": "No contiene alérgenos intencionalmente. Revisa los ingredientes del chile envasado."
+      },
+      "foodSafety": { "en": "Wash produce before preparation.", "es-MX": "Lava los productos antes de prepararlos." },
+      "editorialNote": { "en": "Original general food idea; not medical advice.", "es-MX": "Idea original de alimentación general; no es consejo médico." }
+    },
+    {
+      "slug": "oats-berry-yogurt-cup",
+      "title": { "en": "Berry Oat Yogurt Cup", "es-MX": "Vaso de yogur con avena y frutos rojos" },
+      "summary": { "en": "A quick layered breakfast or snack.", "es-MX": "Desayuno o botana rápida en capas." },
+      "categories": ["breakfast", "snack"],
+      "tags": ["vegetarian"],
+      "timeMinutes": 5,
+      "timeLabel": { "en": "5 min", "es-MX": "5 min" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["1 cup plain yogurt", "1/2 cup rolled oats", "1 cup berries, fresh or frozen and thawed", "1 Tbsp pumpkin seeds", "Cinnamon"],
+        "es-MX": ["1 taza de yogur natural", "1/2 taza de avena en hojuelas", "1 taza de frutos rojos frescos o descongelados", "1 cda de pepitas", "Canela"]
+      },
+      "steps": {
+        "en": ["Spoon yogurt into two cups.", "Add oats and berries.", "Finish with pumpkin seeds and cinnamon."],
+        "es-MX": ["Divide el yogur en dos vasos.", "Agrega avena y frutos rojos.", "Termina con pepitas y canela."]
+      },
+      "allergens": {
+        "en": "Milk or dairy; oats may contain wheat through cross-contact; seeds.",
+        "es-MX": "Leche o lácteos; la avena puede contener trigo por contacto cruzado; semillas."
+      },
+      "foodSafety": { "en": "Keep yogurt and thawed berries refrigerated.", "es-MX": "Mantén refrigerados el yogur y los frutos rojos descongelados." },
+      "editorialNote": { "en": "Original general food idea; choose an alternative that fits your needs and check package labels.", "es-MX": "Idea original; elige una alternativa adecuada para ti y revisa las etiquetas." }
+    },
+    {
+      "slug": "black-bean-corn-skillet",
+      "title": { "en": "Warm Black Bean & Corn Skillet", "es-MX": "Sartén tibio de frijoles negros y elote" },
+      "summary": { "en": "Beans, vegetables, and corn warmed with cumin and lime.", "es-MX": "Frijoles, verduras y elote con comino y limón." },
+      "categories": ["lunch", "dinner"],
+      "tags": ["plant-based"],
+      "timeMinutes": 15,
+      "timeLabel": { "en": "15 min", "es-MX": "15 min" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["1 tsp olive or canola oil", "1/2 onion, diced", "1 bell pepper, diced", "1 1/2 cups no-salt-added canned black beans, drained and rinsed", "1 cup corn", "1/2 tsp cumin", "1 lime", "Cilantro, optional"],
+        "es-MX": ["1 cdita de aceite de oliva o canola", "1/2 cebolla en cubos", "1 pimiento morrón en cubos", "1 1/2 tazas de frijoles negros enlatados sin sal añadida, escurridos y enjuagados", "1 taza de elote", "1/2 cdita de comino", "1 limón", "Cilantro, opcional"]
+      },
+      "steps": {
+        "en": ["Warm oil; cook onion and pepper until softened.", "Stir in beans, corn, and cumin; warm through.", "Finish with lime and optional cilantro."],
+        "es-MX": ["Calienta el aceite; cocina la cebolla y el pimiento hasta suavizar.", "Agrega frijoles, elote y comino; calienta por completo.", "Termina con limón y cilantro opcional."]
+      },
+      "allergens": { "en": "None intentionally included. Check canned and packaged ingredients.", "es-MX": "No contiene alérgenos intencionalmente. Revisa los productos envasados." },
+      "foodSafety": { "en": "Refrigerate leftovers promptly.", "es-MX": "Refrigera pronto los sobrantes." },
+      "editorialNote": { "en": "Original general food idea; rinse canned beans if desired.", "es-MX": "Idea original; puedes enjuagar los frijoles enlatados si lo deseas." }
+    },
+    {
+      "slug": "chicken-zucchini-tortilla-plates",
+      "title": { "en": "Chicken, Zucchini & Tortilla Plates", "es-MX": "Tacos sencillos de pollo y calabacita" },
+      "summary": { "en": "Simple skillet chicken and vegetables in warm corn tortillas.", "es-MX": "Pollo y verduras al sartén en tortillas de maíz calientes." },
+      "categories": ["lunch", "dinner"],
+      "tags": ["contains-animal-food"],
+      "timeMinutes": 25,
+      "timeLabel": { "en": "25 min", "es-MX": "25 min" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["250 g boneless skinless chicken, diced", "1 tsp oil", "1 zucchini, sliced", "1 tomato, diced", "1/2 tsp dried oregano", "4 small corn tortillas", "Lime wedges"],
+        "es-MX": ["250 g de pollo sin piel ni hueso en cubos", "1 cdita de aceite", "1 calabacita rebanada", "1 jitomate en cubos", "1/2 cdita de orégano seco", "4 tortillas chicas de maíz", "Gajos de limón"]
+      },
+      "steps": {
+        "en": ["Cook chicken in oil until it reaches a safe internal temperature.", "Add zucchini, tomato, and oregano; cook until tender.", "Warm tortillas and serve with lime."],
+        "es-MX": ["Cocina el pollo en aceite hasta alcanzar una temperatura interna segura.", "Agrega calabacita, jitomate y orégano; cocina hasta suavizar.", "Calienta las tortillas y sirve con limón."]
+      },
+      "allergens": { "en": "None intentionally included; packaged tortillas may contain wheat or other allergens.", "es-MX": "No contiene alérgenos intencionalmente; las tortillas envasadas pueden contener trigo u otros alérgenos." },
+      "foodSafety": { "en": "Use a food thermometer and avoid cross-contamination.", "es-MX": "Usa un termómetro de cocina y evita la contaminación cruzada." },
+      "editorialNote": { "en": "Original general food idea.", "es-MX": "Idea original de alimentación general." }
+    },
+    {
+      "slug": "lentil-rice-tomato-bowl",
+      "title": { "en": "Lentil, Brown Rice & Tomato Bowl", "es-MX": "Tazón de lentejas, arroz integral y jitomate" },
+      "summary": { "en": "A pantry-friendly bowl with lemon and parsley.", "es-MX": "Tazón práctico de despensa con limón y perejil." },
+      "categories": ["lunch", "dinner"],
+      "tags": ["plant-based"],
+      "timeMinutes": 15,
+      "timeLabel": { "en": "15 min with cooked rice and lentils", "es-MX": "15 min con arroz y lentejas cocidos" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["1 1/2 cups cooked lentils", "1 cup cooked brown rice", "1 cup tomato, diced", "1/2 cup cucumber, chopped", "1 Tbsp olive oil", "1 lemon", "Parsley or cilantro"],
+        "es-MX": ["1 1/2 tazas de lentejas cocidas", "1 taza de arroz integral cocido", "1 taza de jitomate en cubos", "1/2 taza de pepino picado", "1 cda de aceite de oliva", "1 limón", "Perejil o cilantro"]
+      },
+      "steps": {
+        "en": ["Place rice and lentils in two bowls.", "Add tomato and cucumber.", "Drizzle with oil and lemon; top with herbs."],
+        "es-MX": ["Divide el arroz y las lentejas en dos tazones.", "Agrega jitomate y pepino.", "Añade aceite y limón; termina con hierbas."]
+      },
+      "allergens": { "en": "None intentionally included. Check packaged ingredients.", "es-MX": "No contiene alérgenos intencionalmente. Revisa los ingredientes envasados." },
+      "foodSafety": { "en": "Refrigerate leftovers promptly.", "es-MX": "Refrigera los sobrantes de inmediato." },
+      "editorialNote": { "en": "Original general food idea.", "es-MX": "Idea original de alimentación general." }
+    },
+    {
+      "slug": "tuna-avocado-crisp-tostadas",
+      "title": { "en": "Tuna, Avocado & Tomato Tostadas", "es-MX": "Tostadas de atún, aguacate y jitomate" },
+      "summary": { "en": "A no-mayo topping for crisp corn tostadas.", "es-MX": "Cubierta sin mayonesa para tostadas crujientes de maíz." },
+      "categories": ["lunch", "snack"],
+      "tags": ["contains-fish"],
+      "timeMinutes": 10,
+      "timeLabel": { "en": "10 min", "es-MX": "10 min" },
+      "servings": 2,
+      "ingredients": {
+        "en": ["1 can tuna packed in water, drained", "1/2 avocado, mashed", "1/2 cup tomato, diced", "2 Tbsp onion, chopped", "Juice of 1/2 lime", "4 corn tostadas", "Cilantro, optional"],
+        "es-MX": ["1 lata de atún en agua, escurrida", "1/2 aguacate machacado", "1/2 taza de jitomate en cubos", "2 cdas de cebolla picada", "Jugo de 1/2 limón", "4 tostadas de maíz", "Cilantro, opcional"]
+      },
+      "steps": {
+        "en": ["Mix tuna, avocado, tomato, onion, and lime.", "Spoon onto tostadas.", "Add optional cilantro and eat right away."],
+        "es-MX": ["Mezcla atún, aguacate, jitomate, cebolla y limón.", "Sirve sobre las tostadas.", "Agrega cilantro opcional y come de inmediato."]
+      },
+      "allergens": { "en": "Fish; packaged tostadas may contain wheat or other allergens.", "es-MX": "Pescado; las tostadas envasadas pueden contener trigo u otros alérgenos." },
+      "foodSafety": { "en": "Refrigerate opened tuna and avocado mixture promptly; do not leave perishable foods out.", "es-MX": "Refrigera pronto el atún abierto y la mezcla; no dejes alimentos perecederos fuera." },
+      "editorialNote": { "en": "Original general food idea.", "es-MX": "Idea original de alimentación general." }
+    }
+  ]
+}

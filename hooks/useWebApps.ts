@@ -1,12 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Network from 'expo-network';
 import { PUBLIC_MINIAPPS } from '../constants/publicMiniapps';
-import {
-  createPublicCatalogState,
-  getFavoriteSnapshot,
-  subscribeFavoriteSnapshot,
-} from '../features/catalog/publicCatalogState';
+import { createPublicCatalogState } from '../features/catalog/publicCatalogState';
 import { WebApp } from '../types';
+import { useFavorites } from '../context/FavoritesContext';
 
 interface UseWebAppsResult {
   apps: WebApp[];
@@ -20,11 +17,7 @@ interface UseWebAppsResult {
 
 export function useWebApps(): UseWebAppsResult {
   const [isOffline, setIsOffline] = useState(false);
-  const favorites = useSyncExternalStore(
-    subscribeFavoriteSnapshot,
-    getFavoriteSnapshot,
-    getFavoriteSnapshot,
-  );
+  const { favorites } = useFavorites();
 
   useEffect(() => {
     let isMounted = true;

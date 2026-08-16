@@ -11,10 +11,14 @@
   },
   "files": [
     "constants/publicMiniapps.ts",
+    "features/catalog/publicCatalogState.ts",
     "features/motion/moleculeMotionPolicy.ts",
     "features/onboarding/introLayout.ts",
     "features/onboarding/introTiming.ts",
     "features/onboarding/onboardingStore.ts",
+    "features/preferences/preferencesPolicy.ts",
+    "features/resources/publicContent.ts",
+    "i18n/messages.ts",
     "tests/type-contracts/animated-molecules-props.ts"
   ]
 }

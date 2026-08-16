@@ -95,3 +95,29 @@ export const PUBLIC_MINIAPPS: readonly Readonly<PublicMiniapp>[] = Object.freeze
 export function getPublicMiniapp(slug: string): Readonly<PublicMiniapp> | undefined {
   return PUBLIC_MINIAPPS.find((miniapp) => miniapp.slug === slug);
 }
+
+export interface EditorialMetadata {
+  access: 'public';
+  contentDescriptor: 'health-and-wellness-information';
+  dataUse: 'technical-request-logs';
+  permissions: [];
+  source: string;
+  reviewedOn: string;
+  appStoreAgeRating?: number;
+}
+
+export function getEditorialMetadata(
+  miniapp: Readonly<PublicMiniapp>,
+): EditorialMetadata {
+  return {
+    access: miniapp.access,
+    contentDescriptor: miniapp.contentDescriptors[0],
+    dataUse: miniapp.dataUse[0],
+    permissions: [],
+    source: miniapp.editorialSource,
+    reviewedOn: miniapp.reviewedOn,
+    ...(miniapp.appStoreAgeRating === null
+      ? {}
+      : { appStoreAgeRating: miniapp.appStoreAgeRating }),
+  };
+}
