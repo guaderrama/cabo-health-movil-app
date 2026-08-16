@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,17 +16,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { AnimatedMolecules, AppCard, WelcomeBanner } from '../../components';
 import { PUBLIC_MINIAPPS, type PublicMiniapp } from '../../constants/publicMiniapps';
 import { introColors } from '../../constants';
+import { resolveCatalogCardColumns } from '../../features/catalog/catalogPresentation';
 import { useFavorites, useReducedMotion, useTheme, useTranslations, useWebApps } from '../../hooks';
 
 export default function HomeScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
+  const window = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const { colors, isDark } = useTheme();
   const { t } = useTranslations();
   const { isOffline } = useWebApps();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const cardColumns = resolveCatalogCardColumns(window);
 
   const openMiniapp = useCallback((miniapp: Readonly<PublicMiniapp>) => {
     router.push({ pathname: '/(main)/webview/[id]', params: { id: miniapp.slug } });
@@ -65,7 +69,10 @@ export default function HomeScreen() {
 
         <View style={styles.cardRow}>
           {PUBLIC_MINIAPPS.map((miniapp, index) => (
-            <View key={miniapp.slug} style={styles.cardColumn}>
+            <View
+              key={miniapp.slug}
+              style={[styles.cardColumn, { width: cardColumns === 2 ? '50%' : '100%' }]}
+            >
               <AppCard
                 miniapp={miniapp}
                 favorite={isFavorite(miniapp.slug)}
@@ -140,8 +147,8 @@ const styles = StyleSheet.create({
   headerSubtitle: { color: 'rgba(255,255,255,0.86)', fontSize: 12, lineHeight: 17, marginTop: 4 },
   offline: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginHorizontal: 14, marginTop: 10, padding: 10, borderRadius: 12 },
   offlineText: { flex: 1, fontSize: 12, lineHeight: 17 },
-  cardRow: { flexDirection: 'row', paddingHorizontal: 10, paddingTop: 12 },
-  cardColumn: { width: '50%', paddingHorizontal: 5 },
+  cardRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 10, paddingTop: 12 },
+  cardColumn: { paddingHorizontal: 5, paddingBottom: 10 },
   toolsSection: { paddingHorizontal: 15, paddingTop: 20, gap: 10 },
   utility: { minHeight: 58, borderWidth: 1, borderRadius: 17, flexDirection: 'row', alignItems: 'center', padding: 10 },
   utilityIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 11 },

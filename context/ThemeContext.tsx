@@ -1,92 +1,103 @@
-// context/ThemeContext.tsx
-// Contexto global para manejo de tema (Light/Dark Mode)
-
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useColorScheme } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { lightColors, darkColors, ThemeColors } from '../constants/colors';
-
-const THEME_STORAGE_KEY = '@cabohealth_theme';
+import { lightColors, darkColors, type ThemeColors } from '../constants/colors';
+import { getThemePreference, setThemePreference } from '../services/storage';
+import { createOrderedPersistence } from '../features/preferences/persistencePolicy';
+import type { MessageKey } from '../i18n/messages';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
+
+export interface PersistenceIssue {
+  messageKey: MessageKey;
+  retry: () => void;
+}
 
 interface ThemeContextType {
   theme: ThemeMode;
   isDark: boolean;
   colors: ThemeColors;
-  setTheme: (theme: ThemeMode) => void;
-  toggleTheme: () => void;
+  persistenceIssue: PersistenceIssue | null;
+  setTheme: (theme: ThemeMode) => Promise<boolean>;
+  toggleTheme: () => Promise<boolean>;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-interface ThemeProviderProps {
-  children: ReactNode;
-}
-
-export function ThemeProvider({ children }: ThemeProviderProps) {
+export function ThemeProvider({ children }: { children: ReactNode }) {
   const systemColorScheme = useColorScheme();
   const [theme, setThemeState] = useState<ThemeMode>('system');
   const [isLoaded, setIsLoaded] = useState(false);
+  const [persistenceIssue, setPersistenceIssue] = useState<PersistenceIssue | null>(null);
+  const writerRef = useRef<ReturnType<typeof createOrderedPersistence<ThemeMode>> | null>(null);
 
-  // Cargar preferencia guardada
-  useEffect(() => {
-    const loadTheme = async () => {
-      try {
-        const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-        if (savedTheme && ['light', 'dark', 'system'].includes(savedTheme)) {
-          setThemeState(savedTheme as ThemeMode);
-        }
-      } catch (error) {
-        console.error('Error loading theme:', error);
-      } finally {
-        setIsLoaded(true);
-      }
-    };
-
-    loadTheme();
-  }, []);
-
-  // Determinar si usar modo oscuro
-  const isDark = theme === 'dark' || (theme === 'system' && systemColorScheme === 'dark');
-
-  // Seleccionar colores según tema
-  const colors = isDark ? darkColors : lightColors;
-
-  // Guardar y cambiar tema
-  const setTheme = useCallback(async (newTheme: ThemeMode) => {
-    setThemeState(newTheme);
-    try {
-      await AsyncStorage.setItem(THEME_STORAGE_KEY, newTheme);
-    } catch (error) {
-      console.error('Error saving theme:', error);
-    }
-  }, []);
-
-  // Toggle rápido entre light y dark
-  const toggleTheme = useCallback(() => {
-    const newTheme = isDark ? 'light' : 'dark';
-    setTheme(newTheme);
-  }, [isDark, setTheme]);
-
-  // No renderizar hasta que el tema esté cargado
-  if (!isLoaded) {
-    return null;
+  if (!writerRef.current) {
+    writerRef.current = createOrderedPersistence<ThemeMode>({
+      persist: setThemePreference,
+      onCommit: (value) => {
+        setThemeState(value);
+        setPersistenceIssue(null);
+      },
+      onFailure: (value) => {
+        setPersistenceIssue({
+          messageKey: 'storage.themeWriteError',
+          retry: () => { void writerRef.current?.submit(value); },
+        });
+      },
+    });
   }
 
+  const loadTheme = useCallback(async function load() {
+    const result = await getThemePreference();
+    setThemeState(result.value);
+    setPersistenceIssue(result.status === 'error' ? {
+      messageKey: 'storage.readError',
+      retry: () => { void load(); },
+    } : null);
+    setIsLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    void loadTheme();
+  }, [loadTheme]);
+
+  const setTheme = useCallback((newTheme: ThemeMode) => (
+    writerRef.current!.submit(newTheme)
+  ), []);
+
+  const isDark = theme === 'dark' || (theme === 'system' && systemColorScheme === 'dark');
+  const colors = isDark ? darkColors : lightColors;
+  const toggleTheme = useCallback(
+    () => setTheme(isDark ? 'light' : 'dark'),
+    [isDark, setTheme],
+  );
+
+  if (!isLoaded) return null;
   return (
-    <ThemeContext.Provider value={{ theme, isDark, colors, setTheme, toggleTheme }}>
+    <ThemeContext.Provider value={{
+      theme,
+      isDark,
+      colors,
+      persistenceIssue,
+      setTheme,
+      toggleTheme,
+    }}>
       {children}
     </ThemeContext.Provider>
   );
 }
 
 export function useTheme(): ThemeContextType {
-  const context = useContext(ThemeContext);
-  if (context === undefined) {
-    throw new Error('useTheme must be used within a ThemeProvider');
-  }
-  return context;
+  const value = useContext(ThemeContext);
+  if (!value) throw new Error('useTheme must be used within a ThemeProvider');
+  return value;
 }
 
 export default ThemeContext;

@@ -1,18 +1,21 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AppCard } from '../../components';
 import { PUBLIC_MINIAPPS, type PublicMiniapp } from '../../constants/publicMiniapps';
+import { resolveCatalogCardColumns } from '../../features/catalog/catalogPresentation';
 import { useFavorites, useTheme, useTranslations } from '../../hooks';
 
 export default function SavedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const window = useWindowDimensions();
   const { colors } = useTheme();
   const { t } = useTranslations();
   const { favorites, isFavorite, toggleFavorite } = useFavorites();
   const saved = PUBLIC_MINIAPPS.filter((miniapp) => favorites.includes(miniapp.slug));
+  const cardColumns = resolveCatalogCardColumns(window);
   const openMiniapp = (miniapp: Readonly<PublicMiniapp>) => {
     router.push({ pathname: '/(main)/webview/[id]', params: { id: miniapp.slug } });
   };
@@ -35,7 +38,10 @@ export default function SavedScreen() {
       ) : (
         <View style={styles.cardRow}>
           {saved.map((miniapp, index) => (
-            <View key={miniapp.slug} style={styles.cardColumn}>
+            <View
+              key={miniapp.slug}
+              style={[styles.cardColumn, { width: cardColumns === 2 ? '50%' : '100%' }]}
+            >
               <AppCard
                 miniapp={miniapp}
                 favorite={isFavorite(miniapp.slug)}
@@ -56,7 +62,7 @@ const styles = StyleSheet.create({
   title: { fontFamily: 'Georgia', fontSize: 31, lineHeight: 37, fontWeight: '600', paddingHorizontal: 16 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 4, paddingHorizontal: 16 },
   cardRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 10, paddingTop: 18 },
-  cardColumn: { width: '50%', padding: 5 },
+  cardColumn: { padding: 5 },
   empty: { flex: 1, minHeight: 360, alignItems: 'center', justifyContent: 'center', padding: 32 },
   emptyIcon: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: 20, lineHeight: 26, fontWeight: '700', marginTop: 18, textAlign: 'center' },

@@ -33,9 +33,8 @@ export default function SettingsScreen() {
   } = usePreferences();
   const { t } = useTranslations();
 
-  const selectTheme = useCallback((nextTheme: ThemeMode) => {
-    setTheme(nextTheme);
-    triggerHaptic('selection');
+  const selectTheme = useCallback(async (nextTheme: ThemeMode) => {
+    if (await setTheme(nextTheme)) triggerHaptic('selection');
   }, [setTheme, triggerHaptic]);
 
   const openUrl = useCallback(async (url: string) => {

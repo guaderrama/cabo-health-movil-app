@@ -10,6 +10,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import type { PublicMiniapp } from '../constants/publicMiniapps';
+import { buildCatalogCardAccessibilityLabel } from '../features/catalog/catalogPresentation';
 import { useReducedMotion, useTheme, useTranslations } from '../hooks';
 import { EditorialMetadata } from './EditorialMetadata';
 
@@ -68,46 +69,50 @@ export function AppCard({
         style={[styles.card, { borderColor: colors.glassBorder }]}
       >
         <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.glass }]} />
+        <View style={styles.topRow}>
+          <View
+            accessible={false}
+            importantForAccessibility="no-hide-descendants"
+            style={[styles.moduleIcon, { backgroundColor: `${colors.primary}18` }]}
+          >
+            <Ionicons
+              name={miniapp.slug === 'healthy-recipes' ? 'restaurant-outline' : 'calendar-outline'}
+              size={23}
+              color={colors.primary}
+            />
+          </View>
+          <View style={[styles.badge, { backgroundColor: `${colors.primary}18` }]}>
+            <Text style={[styles.badgeText, { color: colors.primary }]}>{t('catalog.publicBadge')}</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={favorite ? t('catalog.removeSaved') : t('catalog.save')}
+            accessibilityState={{ selected: favorite }}
+            hitSlop={6}
+            onPress={() => onToggleFavorite(miniapp.slug)}
+            style={({ pressed }) => [
+              styles.favoriteButton,
+              { backgroundColor: colors.cardBackground, borderColor: colors.border },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons
+              name={favorite ? 'star' : 'star-outline'}
+              size={21}
+              color={favorite ? colors.favorite : colors.primary}
+            />
+          </Pressable>
+        </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${title}. ${summary}`}
+          accessibilityLabel={buildCatalogCardAccessibilityLabel(miniapp, language, t)}
           accessibilityHint={t('catalog.open')}
           onPress={() => onPress(miniapp)}
           style={({ pressed }) => [styles.content, pressed && styles.pressed]}
         >
-          <View style={styles.topRow}>
-            <View style={[styles.moduleIcon, { backgroundColor: `${colors.primary}18` }]}>
-              <Ionicons
-                name={miniapp.slug === 'healthy-recipes' ? 'restaurant-outline' : 'calendar-outline'}
-                size={23}
-                color={colors.primary}
-              />
-            </View>
-            <View style={[styles.badge, { backgroundColor: `${colors.primary}18` }]}>
-              <Text style={[styles.badgeText, { color: colors.primary }]}>{t('catalog.publicBadge')}</Text>
-            </View>
-          </View>
           <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
           <Text style={[styles.summary, { color: colors.textSecondary }]}>{summary}</Text>
           <EditorialMetadata miniapp={miniapp} />
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={favorite ? t('catalog.removeSaved') : t('catalog.save')}
-          accessibilityState={{ selected: favorite }}
-          hitSlop={6}
-          onPress={() => onToggleFavorite(miniapp.slug)}
-          style={({ pressed }) => [
-            styles.favoriteButton,
-            { backgroundColor: colors.cardBackground, borderColor: colors.border },
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons
-            name={favorite ? 'star' : 'star-outline'}
-            size={21}
-            color={favorite ? colors.favorite : colors.primary}
-          />
         </Pressable>
       </BlurView>
     </Animated.View>
@@ -127,18 +132,15 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
-  content: { flex: 1, padding: 14 },
+  content: { flex: 1, paddingHorizontal: 14, paddingBottom: 14 },
   pressed: { opacity: 0.82 },
-  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 9, paddingBottom: 10 },
   moduleIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  badge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, marginRight: 40 },
-  badgeText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.7 },
+  badge: { flex: 1, minWidth: 0, alignSelf: 'center', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  badgeText: { flexShrink: 1, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.7 },
   title: { fontSize: 16, lineHeight: 20, fontWeight: '700', marginBottom: 5 },
   summary: { fontSize: 12, lineHeight: 17 },
   favoriteButton: {
-    position: 'absolute',
-    right: 9,
-    top: 9,
     width: 44,
     height: 44,
     borderRadius: 14,

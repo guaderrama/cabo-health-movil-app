@@ -109,6 +109,46 @@ test('unconfirmed owner facts keep contact, map, address, hours, and language ac
   }
 });
 
+test('contact actions reject partial, blank, malformed, and stale-looking confirmed records', () => {
+  const completeFacts = Object.fromEntries(
+    Object.keys(PUBLIC_CONTACT_FACTS.facts).map((key) => [key, {
+      value: key === 'serviceLanguages' ? ['English', 'Español'] : `verified ${key}`,
+      sourceUrl: 'https://cabohealth.org/owner-confirmed-source/',
+      sourceStatus: 'owner-confirmed-source',
+    }]),
+  );
+  const confirmed = {
+    status: 'owner-confirmed',
+    ownerConfirmedAt: '2026-08-16T18:30:00.000Z',
+    facts: completeFacts,
+  };
+
+  assert.equal(canUseContactActions(confirmed), true);
+  assert.equal(canUseContactActions({ ...confirmed, facts: {} }), false);
+  assert.equal(canUseContactActions({
+    ...confirmed,
+    facts: Object.fromEntries(Object.entries(completeFacts).slice(0, 6)),
+  }), false);
+  assert.equal(canUseContactActions({
+    ...confirmed,
+    facts: { ...completeFacts, publicEmail: { ...completeFacts.publicEmail, value: '   ' } },
+  }), false);
+  assert.equal(canUseContactActions({
+    ...confirmed,
+    facts: { ...completeFacts, serviceLanguages: { ...completeFacts.serviceLanguages, value: [] } },
+  }), false);
+  assert.equal(canUseContactActions({
+    ...confirmed,
+    facts: { ...completeFacts, hours: { ...completeFacts.hours, sourceUrl: 'not a URL' } },
+  }), false);
+  assert.equal(canUseContactActions({ ...confirmed, ownerConfirmedAt: 'not a timestamp' }), false);
+  assert.equal(canUseContactActions({ ...confirmed, ownerConfirmedAt: '2026-08-16' }), false);
+  assert.equal(canUseContactActions({
+    ...confirmed,
+    facts: { ...completeFacts, phone: { ...completeFacts.phone, sourceUrl: '  https://cabohealth.org/source/  ' } },
+  }), false);
+});
+
 test('preference policy validates persisted values and never overrides OS Reduce Motion', () => {
   assert.equal(normalizeLanguage('es-MX'), 'es-MX');
   assert.equal(normalizeLanguage('fr'), 'en');

@@ -4,12 +4,18 @@ import test from 'node:test';
 import {
   MAIN_NAV_ITEMS,
   MESSAGES,
+  resolveMainNavigationSelection,
   translateMessage,
 } from '../.test-build/i18n/messages.js';
 import {
   getEditorialMetadata,
   PUBLIC_MINIAPPS,
 } from '../.test-build/constants/publicMiniapps.js';
+import {
+  buildCatalogCardAccessibilityLabel,
+  formatEditorialDate,
+  resolveCatalogCardColumns,
+} from '../.test-build/features/catalog/catalogPresentation.js';
 
 test('English and Mexican Spanish expose the same non-empty public message contract', () => {
   const englishKeys = Object.keys(MESSAGES.en).sort();
@@ -49,7 +55,8 @@ test('each catalog card exposes public editorial facts and omits an unverified a
   for (const miniapp of PUBLIC_MINIAPPS) {
     assert.notEqual(miniapp.summary.en.trim(), '');
     assert.notEqual(miniapp.summary.es.trim(), '');
-    assert.notEqual(miniapp.editorialSource.trim(), '');
+    assert.notEqual(miniapp.editorialSource.en.trim(), '');
+    assert.notEqual(miniapp.editorialSource['es-MX'].trim(), '');
     assert.match(miniapp.reviewedOn, /^\d{4}-\d{2}-\d{2}$/);
 
     assert.deepEqual(getEditorialMetadata(miniapp), {
@@ -61,4 +68,34 @@ test('each catalog card exposes public editorial facts and omits an unverified a
       reviewedOn: miniapp.reviewedOn,
     });
   }
+});
+
+test('catalog card accessibility narration includes every localized required fact', () => {
+  const label = buildCatalogCardAccessibilityLabel(
+    PUBLIC_MINIAPPS[0],
+    'es-MX',
+    (key) => translateMessage('es-MX', key),
+  );
+
+  assert.equal(label.includes('Recetas Saludables'), true);
+  assert.equal(label.includes('Público'), true);
+  assert.equal(label.includes('Fuente: Equipo editorial de CaboHealth'), true);
+  assert.equal(label.includes('Revisado: 16 de agosto de 2026'), true);
+  assert.equal(label.includes('Información de salud y bienestar'), true);
+  assert.equal(label.includes('registros técnicos de solicitudes'), true);
+  assert.equal(label.includes('Sin permisos del dispositivo'), true);
+});
+
+test('editorial dates and utility tab ancestry are deliberate for both locales', () => {
+  assert.equal(formatEditorialDate('2026-08-16', 'en'), 'August 16, 2026');
+  assert.equal(formatEditorialDate('2026-08-16', 'es-MX'), '16 de agosto de 2026');
+  assert.equal(resolveMainNavigationSelection('/recipes'), 'apps');
+  assert.equal(resolveMainNavigationSelection('/visit-checklist'), 'apps');
+  assert.equal(resolveMainNavigationSelection('/saved'), 'saved');
+});
+
+test('catalog stacks cards for narrow widths or large Dynamic Type only', () => {
+  assert.equal(resolveCatalogCardColumns({ width: 390, fontScale: 1 }), 2);
+  assert.equal(resolveCatalogCardColumns({ width: 320, fontScale: 1 }), 1);
+  assert.equal(resolveCatalogCardColumns({ width: 430, fontScale: 1.8 }), 1);
 });

@@ -60,6 +60,11 @@ const englishMessages = {
   'settings.support': 'Support',
   'settings.reportContent': 'Report content',
   'settings.openLinkError': 'This page could not be opened. Check your connection and try again.',
+  'storage.readError': 'Saved settings could not be read. Defaults are shown for now.',
+  'storage.favoriteWriteError': 'Your Saved change could not be stored.',
+  'storage.preferenceWriteError': 'Your setting could not be stored.',
+  'storage.themeWriteError': 'Your theme could not be stored.',
+  'storage.retry': 'Try again',
   'recipes.title': 'Offline recipes',
   'recipes.subtitle': 'Six original food ideas bundled with this app.',
   'recipes.searchPlaceholder': 'Search recipes',
@@ -148,6 +153,11 @@ const spanishMessages: Record<MessageKey, string> = {
   'settings.support': 'Soporte',
   'settings.reportContent': 'Reportar contenido',
   'settings.openLinkError': 'No se pudo abrir esta página. Revisa tu conexión e inténtalo de nuevo.',
+  'storage.readError': 'No se pudieron leer los ajustes guardados. Por ahora se muestran los valores predeterminados.',
+  'storage.favoriteWriteError': 'No se pudo guardar tu cambio en Guardado.',
+  'storage.preferenceWriteError': 'No se pudo guardar tu ajuste.',
+  'storage.themeWriteError': 'No se pudo guardar tu tema.',
+  'storage.retry': 'Intentar de nuevo',
   'recipes.title': 'Recetas sin conexión',
   'recipes.subtitle': 'Seis ideas originales de alimentación incluidas en esta app.',
   'recipes.searchPlaceholder': 'Buscar recetas',
@@ -192,4 +202,10 @@ export const MAIN_NAV_ITEMS = [
 
 export function translateMessage(language: AppLanguage, key: MessageKey): string {
   return MESSAGES[language]?.[key] ?? MESSAGES.en[key];
+}
+
+export function resolveMainNavigationSelection(pathname: string): 'apps' | 'saved' | 'settings' {
+  if (pathname.includes('/saved')) return 'saved';
+  if (pathname.includes('/settings')) return 'settings';
+  return 'apps';
 }

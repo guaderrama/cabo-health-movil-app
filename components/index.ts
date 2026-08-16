@@ -13,3 +13,4 @@ export { AnimatedMolecules } from './AnimatedMolecules';
 export type { AnimatedMoleculesProps } from './AnimatedMolecules';
 export { BottomNavigation } from './BottomNavigation';
 export { EditorialMetadata } from './EditorialMetadata';
+export { PersistenceErrorBanner } from './PersistenceErrorBanner';

@@ -67,6 +67,16 @@ export interface PublicContactFacts {
   facts: Record<string, PublicContactFact>;
 }
 
+export const REQUIRED_PUBLIC_CONTACT_FACT_KEYS = [
+  'publicEmail',
+  'phone',
+  'whatsApp',
+  'address',
+  'hours',
+  'appleMapsDestination',
+  'serviceLanguages',
+] as const;
+
 export const RECIPE_CONTENT = recipesJson as RecipeContent;
 export const RECIPES = RECIPE_CONTENT.recipes;
 export const CLINIC_GUIDE = clinicGuideJson as ClinicGuideContent;
@@ -141,12 +151,34 @@ export function resetVisitChecklist(
 }
 
 export function canUseContactActions(facts: PublicContactFacts): boolean {
-  return facts.status === 'owner-confirmed'
-    && typeof facts.ownerConfirmedAt === 'string'
-    && facts.ownerConfirmedAt.length > 0
-    && Object.values(facts.facts).every(
-      (fact) => fact.value !== null
-        && fact.sourceUrl !== null
-        && fact.sourceStatus === 'owner-confirmed-source',
-    );
+  if (facts.status !== 'owner-confirmed' || typeof facts.ownerConfirmedAt !== 'string') {
+    return false;
+  }
+  const isoTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/;
+  if (!isoTimestamp.test(facts.ownerConfirmedAt) || Number.isNaN(Date.parse(facts.ownerConfirmedAt))) {
+    return false;
+  }
+
+  const keys = Object.keys(facts.facts);
+  if (
+    keys.length !== REQUIRED_PUBLIC_CONTACT_FACT_KEYS.length
+    || REQUIRED_PUBLIC_CONTACT_FACT_KEYS.some((key) => !Object.hasOwn(facts.facts, key))
+  ) {
+    return false;
+  }
+
+  return REQUIRED_PUBLIC_CONTACT_FACT_KEYS.every((key) => {
+    const fact = facts.facts[key];
+    const hasValue = Array.isArray(fact.value)
+      ? fact.value.length > 0
+        && fact.value.every((value) => typeof value === 'string' && value.trim().length > 0)
+      : typeof fact.value === 'string' && fact.value.trim().length > 0;
+    if (!hasValue || fact.sourceStatus !== 'owner-confirmed-source') return false;
+    if (typeof fact.sourceUrl !== 'string' || fact.sourceUrl.trim() !== fact.sourceUrl) return false;
+    try {
+      return new URL(fact.sourceUrl).protocol === 'https:';
+    } catch {
+      return false;
+    }
+  });
 }

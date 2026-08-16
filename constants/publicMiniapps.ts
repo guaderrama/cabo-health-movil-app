@@ -21,7 +21,7 @@ export interface PublicMiniapp {
   permissions: [];
   hasUserGeneratedContent: false;
   hasPurchases: false;
-  editorialSource: string;
+  editorialSource: { en: string; 'es-MX': string };
   reviewedOn: string;
   contentVersion: string;
   legalUrls: PublicMiniappLegalUrls;
@@ -50,7 +50,10 @@ export const PUBLIC_MINIAPPS: readonly Readonly<PublicMiniapp>[] = Object.freeze
     permissions: [],
     hasUserGeneratedContent: false,
     hasPurchases: false,
-    editorialSource: 'CaboHealth editorial team',
+    editorialSource: {
+      en: 'CaboHealth editorial team',
+      'es-MX': 'Equipo editorial de CaboHealth',
+    },
     reviewedOn: '2026-08-16',
     contentVersion: '1.0.0',
     legalUrls: {
@@ -80,7 +83,10 @@ export const PUBLIC_MINIAPPS: readonly Readonly<PublicMiniapp>[] = Object.freeze
     permissions: [],
     hasUserGeneratedContent: false,
     hasPurchases: false,
-    editorialSource: 'CaboHealth editorial team',
+    editorialSource: {
+      en: 'CaboHealth editorial team',
+      'es-MX': 'Equipo editorial de CaboHealth',
+    },
     reviewedOn: '2026-08-16',
     contentVersion: '1.0.0',
     legalUrls: {
@@ -101,7 +107,7 @@ export interface EditorialMetadata {
   contentDescriptor: 'health-and-wellness-information';
   dataUse: 'technical-request-logs';
   permissions: [];
-  source: string;
+  source: { en: string; 'es-MX': string };
   reviewedOn: string;
   appStoreAgeRating?: number;
 }

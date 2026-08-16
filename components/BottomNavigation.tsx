@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MAIN_NAV_ITEMS } from '../i18n/messages';
+import { MAIN_NAV_ITEMS, resolveMainNavigationSelection } from '../i18n/messages';
 import { useTheme, useTranslations } from '../hooks';
 
 export function BottomNavigation() {
@@ -11,13 +11,7 @@ export function BottomNavigation() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { t } = useTranslations();
-  const selected = pathname.includes('/saved')
-    ? 'saved'
-    : pathname.includes('/settings')
-      ? 'settings'
-      : pathname.includes('/recipes') || pathname.includes('/visit-checklist')
-        ? null
-        : 'apps';
+  const selected = resolveMainNavigationSelection(pathname);
 
   return (
     <View

@@ -4,19 +4,26 @@ import {
   getEditorialMetadata,
   type PublicMiniapp,
 } from '../constants/publicMiniapps';
+import { formatEditorialDate } from '../features/catalog/catalogPresentation';
 import { useTheme, useTranslations } from '../hooks';
 
 export function EditorialMetadata({ miniapp }: { miniapp: Readonly<PublicMiniapp> }) {
   const { colors } = useTheme();
-  const { t } = useTranslations();
+  const { language, t } = useTranslations();
   const metadata = getEditorialMetadata(miniapp);
+  const source = metadata.source[language];
+  const reviewedOn = formatEditorialDate(metadata.reviewedOn, language);
 
   return (
-    <View style={styles.container} accessibilityLabel={`${t('catalog.source')}: ${metadata.source}. ${t('catalog.reviewed')}: ${metadata.reviewedOn}. ${t('catalog.content')}. ${t('catalog.logs')}. ${t('catalog.permissions')}.`}>
+    <View
+      style={styles.container}
+      accessible
+      accessibilityLabel={`${t('catalog.source')}: ${source}. ${t('catalog.reviewed')}: ${reviewedOn}. ${t('catalog.content')}. ${t('catalog.logs')}. ${t('catalog.permissions')}.`}
+    >
       <View style={styles.row}>
         <Ionicons name="document-text-outline" size={12} color={colors.textSecondary} />
         <Text style={[styles.text, { color: colors.textSecondary }]}>
-          {metadata.source} · {metadata.reviewedOn}
+          {t('catalog.source')}: {source} · {t('catalog.reviewed')}: {reviewedOn}
         </Text>
       </View>
       <View style={styles.row}>

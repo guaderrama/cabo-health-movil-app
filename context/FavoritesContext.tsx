@@ -5,79 +5,128 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
-import {
-  normalizePublicFavorites,
-  togglePublicFavorite,
-} from '../features/catalog/publicCatalogState';
+import { normalizePublicFavorites, togglePublicFavorite } from '../features/catalog/publicCatalogState';
+import { createOrderedPersistence } from '../features/preferences/persistencePolicy';
 import { getFavorites, saveFavorites } from '../services/storage';
-import { usePreferences } from './PreferencesContext';
+import { usePreferences, type HapticCue } from './PreferencesContext';
+import type { MessageKey } from '../i18n/messages';
+
+interface FavoriteChange {
+  favorites: string[];
+  cue: HapticCue;
+}
+
+interface PersistenceIssue {
+  messageKey: MessageKey;
+  retry: () => void;
+}
 
 interface FavoritesContextValue {
   favorites: readonly string[];
+  persistenceIssue: PersistenceIssue | null;
   isFavorite: (slug: string) => boolean;
-  toggleFavorite: (slug: string) => void;
-  addFavorite: (slug: string) => void;
-  removeFavorite: (slug: string) => void;
-  clearFavorites: () => void;
+  toggleFavorite: (slug: string) => Promise<boolean>;
+  addFavorite: (slug: string) => Promise<boolean>;
+  removeFavorite: (slug: string) => Promise<boolean>;
+  clearFavorites: () => Promise<boolean>;
 }
 
 const FavoritesContext = createContext<FavoritesContextValue | undefined>(undefined);
 
 export function FavoritesProvider({ children }: { children: ReactNode }) {
   const { triggerHaptic } = usePreferences();
+  const triggerHapticRef = useRef(triggerHaptic);
+  triggerHapticRef.current = triggerHaptic;
   const [favorites, setFavorites] = useState<string[] | null>(null);
+  const intendedFavoritesRef = useRef<string[]>([]);
+  const [persistenceIssue, setPersistenceIssue] = useState<PersistenceIssue | null>(null);
+  const writerRef = useRef<ReturnType<typeof createOrderedPersistence<FavoriteChange>> | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    getFavorites().then((storedFavorites) => {
-      if (mounted) setFavorites(normalizePublicFavorites(storedFavorites));
+  if (!writerRef.current) {
+    writerRef.current = createOrderedPersistence<FavoriteChange>({
+      persist: ({ favorites: next }) => saveFavorites(normalizePublicFavorites(next)),
+      onCommit: ({ favorites: next, cue }) => {
+        const normalized = normalizePublicFavorites(next);
+        setFavorites(normalized);
+        setPersistenceIssue(null);
+        triggerHapticRef.current(cue);
+      },
+      onFailure: (change) => {
+        setPersistenceIssue({
+          messageKey: 'storage.favoriteWriteError',
+          retry: () => { void writerRef.current?.submit(change); },
+        });
+      },
     });
-    return () => {
-      mounted = false;
-    };
+  }
+
+  const loadFavorites = useCallback(async function load() {
+    const result = await getFavorites();
+    const normalized = normalizePublicFavorites(result.value);
+    intendedFavoritesRef.current = normalized;
+    setFavorites(normalized);
+    setPersistenceIssue(result.status === 'error' ? {
+      messageKey: 'storage.readError',
+      retry: () => { void load(); },
+    } : null);
   }, []);
 
-  const commit = useCallback((nextFavorites: readonly string[], cue: 'light' | 'medium') => {
-    const normalized = normalizePublicFavorites(nextFavorites);
-    setFavorites(normalized);
-    triggerHaptic(cue);
-    saveFavorites(normalized).catch(() => {});
-  }, [triggerHaptic]);
+  useEffect(() => {
+    void loadFavorites();
+  }, [loadFavorites]);
+
+  const submit = useCallback((next: readonly string[], cue: HapticCue) => {
+    const normalized = normalizePublicFavorites(next);
+    intendedFavoritesRef.current = normalized;
+    return writerRef.current!.submit({ favorites: normalized, cue });
+  }, []);
 
   const toggleFavorite = useCallback((slug: string) => {
-    if (!favorites) return;
-    const wasFavorite = favorites.includes(slug);
-    const next = togglePublicFavorite(favorites, slug);
-    if (next.length === favorites.length && next.every((value, index) => value === favorites[index])) return;
-    commit(next, wasFavorite ? 'light' : 'medium');
-  }, [commit, favorites]);
+    if (!favorites) return Promise.resolve(false);
+    const intended = intendedFavoritesRef.current;
+    const next = togglePublicFavorite(intended, slug);
+    if (next.length === intended.length && next.every((value, index) => value === intended[index])) {
+      return Promise.resolve(true);
+    }
+    return submit(next, intended.includes(slug) ? 'light' : 'medium');
+  }, [favorites, submit]);
 
   const addFavorite = useCallback((slug: string) => {
-    if (!favorites || favorites.includes(slug)) return;
-    const next = togglePublicFavorite(favorites, slug);
-    if (next.length !== favorites.length) commit(next, 'medium');
-  }, [commit, favorites]);
+    if (!favorites) return Promise.resolve(false);
+    const intended = intendedFavoritesRef.current;
+    if (intended.includes(slug)) return Promise.resolve(true);
+    const next = togglePublicFavorite(intended, slug);
+    return next.length === intended.length ? Promise.resolve(false) : submit(next, 'medium');
+  }, [favorites, submit]);
 
   const removeFavorite = useCallback((slug: string) => {
-    if (!favorites?.includes(slug)) return;
-    commit(favorites.filter((favorite) => favorite !== slug), 'light');
-  }, [commit, favorites]);
+    if (!favorites) return Promise.resolve(false);
+    const intended = intendedFavoritesRef.current;
+    if (!intended.includes(slug)) return Promise.resolve(true);
+    return submit(intended.filter((favorite) => favorite !== slug), 'light');
+  }, [favorites, submit]);
 
-  const clearFavorites = useCallback(() => {
-    if (!favorites?.length) return;
-    commit([], 'light');
-  }, [commit, favorites]);
+  const clearFavorites = useCallback(
+    () => !favorites
+      ? Promise.resolve(false)
+      : !intendedFavoritesRef.current.length
+        ? Promise.resolve(true)
+        : submit([], 'light'),
+    [favorites, submit],
+  );
 
   const value = useMemo<FavoritesContextValue>(() => ({
     favorites: favorites ?? [],
+    persistenceIssue,
     isFavorite: (slug: string) => favorites?.includes(slug) ?? false,
     toggleFavorite,
     addFavorite,
     removeFavorite,
     clearFavorites,
-  }), [addFavorite, clearFavorites, favorites, removeFavorite, toggleFavorite]);
+  }), [addFavorite, clearFavorites, favorites, persistenceIssue, removeFavorite, toggleFavorite]);
 
   if (favorites === null) return null;
   return <FavoritesContext.Provider value={value}>{children}</FavoritesContext.Provider>;
