@@ -10,6 +10,7 @@ dist/
 web-build/
 expo-env.d.ts
 /miniapps/dist/
+/miniapps/.dist-stage/
 
 # Native
 .kotlin/

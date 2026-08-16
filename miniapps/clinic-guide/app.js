@@ -1,5 +1,5 @@
 import { mountNetworkMotion } from '../shared/motion.js';
-import { mountShell } from '../shared/shell.js';
+import { mountPageLifecycle, mountShell } from '../shared/shell.js';
 
 const CHECKLIST_KEY = 'cabohealth.web.clinic-checklist.v1';
 const page = document;
@@ -31,8 +31,8 @@ for (const item of checklistItems) {
   }, { signal: listeners.signal });
 }
 
-window.addEventListener('pagehide', () => {
+mountPageLifecycle({ view: window, onDestroy: () => {
   listeners.abort();
   motion.destroy();
   shell.destroy();
-}, { once: true });
+} });

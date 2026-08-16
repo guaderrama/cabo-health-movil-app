@@ -1,5 +1,5 @@
 import { mountNetworkMotion } from '../shared/motion.js';
-import { mountShell } from '../shared/shell.js';
+import { mountPageLifecycle, mountShell } from '../shared/shell.js';
 
 const FAVORITES_KEY = 'cabohealth.web.recipe-favorites.v1';
 const page = document;
@@ -102,11 +102,11 @@ page.addEventListener('cabohealth:languagechange', onLanguageChange);
 updateFavoriteButtons();
 applyFilters();
 
-window.addEventListener('pagehide', () => {
+mountPageLifecycle({ view: window, onDestroy: () => {
   search.removeEventListener('input', applyFilters);
   for (const button of filterButtons) button.removeEventListener('click', onFilterClick);
   for (const button of favoriteButtons) button.removeEventListener('click', onFavoriteClick);
   page.removeEventListener('cabohealth:languagechange', onLanguageChange);
   motion.destroy();
   shell.destroy();
-}, { once: true });
+} });

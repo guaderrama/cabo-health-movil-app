@@ -412,6 +412,11 @@ main {
   list-style: none;
 }
 
+.external-marker {
+  margin-inline-start: 0.15em;
+  font-size: 0.9em;
+}
+
 .footer-note {
   max-width: 62rem;
   color: var(--ink-soft);

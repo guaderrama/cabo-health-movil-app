@@ -24,6 +24,28 @@ function persistLanguage(storage, language) {
   }
 }
 
+export function mountPageLifecycle({ view, onDestroy } = {}) {
+  if (!view?.addEventListener || !view?.removeEventListener || typeof onDestroy !== 'function') {
+    return { destroy: () => {} };
+  }
+  let active = true;
+
+  function destroy() {
+    if (!active) return;
+    active = false;
+    view.removeEventListener('pagehide', onPageHide);
+    onDestroy();
+  }
+
+  function onPageHide(event) {
+    if (event?.persisted) return;
+    destroy();
+  }
+
+  view.addEventListener('pagehide', onPageHide);
+  return { destroy };
+}
+
 export function mountShell({ document: page, storage } = {}) {
   if (!page?.documentElement) {
     return {
@@ -62,10 +84,14 @@ export function mountShell({ document: page, storage } = {}) {
       button.setAttribute('aria-pressed', String(selected));
     }
     for (const link of page.querySelectorAll('[data-external-action]')) {
-      const label = language === 'es-MX'
+      const actionLabel = language === 'es-MX' ? link.dataset.labelEs : link.dataset.labelEn;
+      const externalLabel = language === 'es-MX'
         ? 'Se abre fuera de CaboHealth'
         : 'Opens outside CaboHealth';
-      link.setAttribute('aria-description', label);
+      const visibleLabel = link.querySelector('[data-external-label]');
+      if (actionLabel && visibleLabel) visibleLabel.textContent = actionLabel;
+      if (actionLabel) link.setAttribute('aria-label', `${actionLabel}. ${externalLabel}`);
+      link.setAttribute('aria-description', externalLabel);
     }
 
     if (persist) persistLanguage(storage, language);

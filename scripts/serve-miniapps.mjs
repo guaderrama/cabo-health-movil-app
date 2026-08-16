@@ -1,8 +1,15 @@
 import { createServer } from 'node:http';
-import { existsSync, lstatSync, readFileSync } from 'node:fs';
-import { extname, join, relative, resolve } from 'node:path';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { extname, join, parse, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { CONTENT_SECURITY_POLICY } from './build-miniapps.mjs';
+import {
+  assertSafeMiniappOutputPath,
+  assertVerifiedMiniappDeploymentSource,
+  createHealthyArtifactPlan,
+  MINIAPP_SECURITY_HEADERS,
+  verifyBuiltArtifact,
+} from './build-miniapps.mjs';
 
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -12,8 +19,24 @@ const MIME_TYPES = {
   '.png': 'image/png',
 };
 
-export function resolveStaticRequest(root, requestTarget) {
-  const outputRoot = resolve(root);
+function hasSafeRootAncestry(outputRoot) {
+  const temporaryRoot = resolve(tmpdir());
+  const tempRelation = relative(temporaryRoot, outputRoot);
+  const anchor = tempRelation === '' || (!tempRelation.startsWith('..') && !parse(tempRelation).root)
+    ? temporaryRoot
+    : parse(outputRoot).root;
+  const relation = relative(anchor, outputRoot);
+  let current = anchor;
+  for (const component of relation.split(/[\\/]/u).filter(Boolean)) {
+    current = join(current, component);
+    if (!existsSync(current)) return false;
+    const stats = lstatSync(current);
+    if (!stats.isDirectory() || stats.isSymbolicLink()) return false;
+  }
+  return true;
+}
+
+export function normalizeStaticRequestTarget(requestTarget) {
   if (
     typeof requestTarget !== 'string'
     || !requestTarget.startsWith('/')
@@ -22,64 +45,131 @@ export function resolveStaticRequest(root, requestTarget) {
     || /%(?:2e|2f|5c|00)/iu.test(requestTarget)
   ) return null;
 
-  let url;
   let decodedPath;
   try {
-    url = new URL(requestTarget, 'http://miniapps.local');
-    decodedPath = decodeURIComponent(url.pathname);
+    decodedPath = decodeURIComponent(new URL(requestTarget, 'http://miniapps.local').pathname);
   } catch {
     return null;
   }
   if (decodedPath.split('/').includes('..') || decodedPath.includes('\\')) return null;
   const relativePath = decodedPath.endsWith('/') ? `${decodedPath.slice(1)}index.html` : decodedPath.slice(1);
   if (!relativePath || relativePath.split('/').some((part) => !part || part.startsWith('.'))) return null;
+  return relativePath;
+}
+
+export function resolveStaticRequest(root, requestTarget) {
+  const outputRoot = resolve(root);
+  const relativePath = normalizeStaticRequestTarget(requestTarget);
+  if (!relativePath) return null;
+  if (!hasSafeRootAncestry(outputRoot)) return null;
+  const rootStats = existsSync(outputRoot) ? lstatSync(outputRoot) : null;
+  if (!rootStats?.isDirectory() || rootStats.isSymbolicLink()) return null;
+  const realOutputRoot = realpathSync(outputRoot);
   const candidate = resolve(outputRoot, relativePath);
   const relation = relative(outputRoot, candidate);
   if (!relation || relation.startsWith('..') || relation.includes('..')) return null;
-  if (!existsSync(candidate)) return null;
-  const stats = lstatSync(candidate);
-  if (!stats.isFile() || stats.isSymbolicLink()) return null;
+
+  let current = outputRoot;
+  const components = relation.split(/[\\/]/u);
+  for (const [index, component] of components.entries()) {
+    current = join(current, component);
+    if (!existsSync(current)) return null;
+    const stats = lstatSync(current);
+    if (stats.isSymbolicLink()) return null;
+    const final = index === components.length - 1;
+    if ((final && !stats.isFile()) || (!final && !stats.isDirectory())) return null;
+  }
+  const realCandidate = realpathSync(candidate);
+  const realRelation = relative(realOutputRoot, realCandidate);
+  if (!realRelation || realRelation.startsWith('..') || realRelation.includes('..')) return null;
   return candidate;
 }
 
-export function createMiniappsServer({ root }) {
-  const outputRoot = resolve(root);
+export function loadVerifiedArtifactSnapshot({
+  projectRoot,
+  root,
+  afterArtifactVerification = () => {},
+}) {
+  const outputRoot = assertSafeMiniappOutputPath({ projectRoot, outputRoot: root });
+  verifyBuiltArtifact({ projectRoot, outputRoot });
+  const plan = createHealthyArtifactPlan(projectRoot);
+  afterArtifactVerification({ outputRoot });
+  const captured = new Map();
+
+  for (const path of plan.files.keys()) {
+    if (path === 'apps/.htaccess') continue;
+    const artifactPath = resolveStaticRequest(outputRoot, `/${path}`);
+    if (!artifactPath) throw new Error(`PREVIEW_ARTIFACT_PATH_UNSAFE: ${path}`);
+    const bytes = readFileSync(artifactPath);
+    captured.set(path, Buffer.from(bytes));
+  }
+
+  for (const [path, expectedBytes] of plan.files) {
+    if (path === 'apps/.htaccess') continue;
+    if (!captured.get(path)?.equals(expectedBytes)) {
+      throw new Error(`PREVIEW_ARTIFACT_CHANGED_DURING_SNAPSHOT: ${path}`);
+    }
+  }
+
+  const files = new Map();
+  for (const [path, bytes] of captured) {
+    if (path === 'apps/.htaccess') continue;
+    files.set(path, Object.freeze({
+      bytes: Buffer.from(bytes),
+      contentType: MIME_TYPES[extname(path)] ?? 'application/octet-stream',
+    }));
+  }
+
+  return Object.freeze({
+    lookup(requestTarget) {
+      const relativePath = normalizeStaticRequestTarget(requestTarget);
+      const item = relativePath ? files.get(relativePath) ?? null : null;
+      return item ? Object.freeze({ ...item, bytes: Buffer.from(item.bytes) }) : null;
+    },
+    read(requestTarget) {
+      const item = this.lookup(requestTarget);
+      return item?.bytes ?? null;
+    },
+  });
+}
+
+function writeResponse(response, status, headers, body) {
+  response.writeHead(status, { ...MINIAPP_SECURITY_HEADERS, ...headers });
+  response.end(body);
+}
+
+export function createMiniappsServer({ projectRoot, root }) {
+  const resolvedProjectRoot = projectRoot ?? resolve(fileURLToPath(new URL('..', import.meta.url)));
+  const snapshot = loadVerifiedArtifactSnapshot({ projectRoot: resolvedProjectRoot, root });
   return createServer((request, response) => {
     if (!['GET', 'HEAD'].includes(request.method ?? '')) {
-      response.writeHead(405, { Allow: 'GET, HEAD' });
-      response.end('Method Not Allowed\n');
+      writeResponse(response, 405, {
+        Allow: 'GET, HEAD',
+        'Content-Type': 'text/plain; charset=utf-8',
+      }, request.method === 'HEAD' ? undefined : 'Method Not Allowed\n');
       return;
     }
-    const filePath = resolveStaticRequest(outputRoot, request.url ?? '');
-    if (!filePath) {
-      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      response.end('Not Found\n');
+    const artifact = snapshot.lookup(request.url ?? '');
+    if (!artifact) {
+      writeResponse(response, 404, { 'Content-Type': 'text/plain; charset=utf-8' }, request.method === 'HEAD' ? undefined : 'Not Found\n');
       return;
     }
-    const body = readFileSync(filePath);
-    response.writeHead(200, {
-      'Content-Type': MIME_TYPES[extname(filePath)] ?? 'application/octet-stream',
-      'Content-Length': body.byteLength,
+    writeResponse(response, 200, {
+      'Content-Type': artifact.contentType,
+      'Content-Length': artifact.bytes.byteLength,
       'Cache-Control': 'no-store',
-      'Content-Security-Policy': CONTENT_SECURITY_POLICY,
-      'X-Content-Type-Options': 'nosniff',
-      'X-Frame-Options': 'DENY',
-      'Referrer-Policy': 'no-referrer',
-    });
-    response.end(request.method === 'HEAD' ? undefined : body);
+    }, request.method === 'HEAD' ? undefined : artifact.bytes);
   });
 }
 
 function runCli() {
   const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
   const root = join(projectRoot, 'miniapps/dist');
-  if (!existsSync(join(root, 'manifest.json'))) {
-    throw new Error('No Task 6A artifact found. Run npm run miniapps:build:healthy first.');
-  }
+  assertVerifiedMiniappDeploymentSource({ projectRoot, outputRoot: root });
   const portArgument = process.argv.find((argument) => argument.startsWith('--port='));
   const port = portArgument ? Number(portArgument.slice('--port='.length)) : 4173;
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Port must be an integer from 0 to 65535.');
-  const server = createMiniappsServer({ root });
+  const server = createMiniappsServer({ projectRoot, root });
   server.listen(port, '127.0.0.1', () => {
     const address = server.address();
     const activePort = typeof address === 'object' && address ? address.port : port;
