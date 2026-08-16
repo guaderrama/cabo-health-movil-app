@@ -54,25 +54,69 @@ function extractCatalogSlugs(source) {
 }
 
 function extractAasaSlugs(source) {
-  return [...source.matchAll(/\/apps\/([a-z0-9-]+)\/\*/g)].map((match) => match[1]);
+  return [...source.matchAll(/\/apps\/([a-z0-9-]+)\/(?:\*|(?=["'}\],\s]|$))/g)].map((match) => match[1]);
 }
 
-function collectMetadataSlugs(value, slugs, key = '') {
+function collectMetadataSlugs(value, slugs) {
   if (Array.isArray(value)) {
     for (const item of value) {
-      if (key === 'slugs' && typeof item === 'string') {
-        slugs.push(item);
-      }
       collectMetadataSlugs(item, slugs);
     }
   } else if (value && typeof value === 'object') {
-    for (const [childKey, childValue] of Object.entries(value)) {
-      if (childKey === 'slug' && typeof childValue === 'string') {
-        slugs.push(childValue);
-      }
-      collectMetadataSlugs(childValue, slugs, childKey);
+    for (const childValue of Object.values(value)) {
+      collectMetadataSlugs(childValue, slugs);
+    }
+  } else if (typeof value === 'string') {
+    if (/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(value)) {
+      slugs.push(value);
+    }
+    for (const match of value.matchAll(/\/apps\/([a-z0-9-]+)\/(?:\*|(?=["'}\],\s]|$))/g)) {
+      slugs.push(match[1]);
     }
   }
+}
+
+function hasForbiddenUrlScheme(source) {
+  const literals = [];
+  let index = 0;
+
+  while (index < source.length) {
+    const current = source[index];
+    const next = source[index + 1];
+    if (current === '/' && next === '/') {
+      index = source.indexOf('\n', index + 2);
+      if (index === -1) break;
+      continue;
+    }
+    if (current === '/' && next === '*') {
+      const end = source.indexOf('*/', index + 2);
+      index = end === -1 ? source.length : end + 2;
+      continue;
+    }
+    if (current !== "'" && current !== '"' && current !== '`') {
+      index += 1;
+      continue;
+    }
+
+    const quote = current;
+    let literal = '';
+    index += 1;
+    while (index < source.length && source[index] !== quote) {
+      if (source[index] === '\\' && index + 1 < source.length) {
+        literal += source[index + 1];
+        index += 2;
+      } else {
+        literal += source[index];
+        index += 1;
+      }
+    }
+    if (source[index] === quote) {
+      literals.push(literal);
+      index += 1;
+    }
+  }
+
+  return literals.some((literal) => /^\s*(?:javascript|data|file|content|intent):/i.test(literal));
 }
 
 function verify(root) {
@@ -108,7 +152,7 @@ function verify(root) {
     if (/http:\/\//i.test(text)) {
       errors.push(`Insecure production URL in ${location}`);
     }
-    if (/\b(?:javascript|data|file|content|intent):/i.test(text)) {
+    if (hasForbiddenUrlScheme(text)) {
       errors.push(`Forbidden URL scheme in ${location}`);
     }
   }

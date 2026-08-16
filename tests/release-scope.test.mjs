@@ -63,6 +63,17 @@ test('release scope verifier accepts a two-module public release artifact', () =
   );
 });
 
+test('release scope verifier accepts benign data and content object properties', () => {
+  withFixture(
+    (root) => {
+      writeFixtureFile(root, 'components/editorial.ts', "export const editorialCard = { data: [], content: 'CaboHealth editorial content' };\n");
+    },
+    (result) => {
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+    },
+  );
+});
+
 test('release scope verifier rejects removed routes and unapproved module metadata', () => {
   withFixture(
     (root) => {
@@ -97,6 +108,34 @@ test('release scope verifier rejects a third slug in the catalog or AASA artifac
       assert.equal(result.status, 1);
       assert.match(result.stderr, /unapproved miniapp slug in catalog.*client-resources/i);
       assert.match(result.stderr, /unapproved miniapp slug in AASA.*client-resources/i);
+    },
+  );
+});
+
+test('release scope verifier rejects an exact third AASA miniapp path', () => {
+  withFixture(
+    (root) => {
+      writeFixtureFile(
+        root,
+        'web-hosting/cabohealth.org/.well-known/apple-app-site-association',
+        JSON.stringify({ applinks: { details: [{ components: [{ '/': '/apps/healthy-recipes/' }, { '/': '/apps/clinic-guide/' }, { '/': '/apps/client-resources/' }] }] } }),
+      );
+    },
+    (result) => {
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /unapproved miniapp slug in AASA.*client-resources/i);
+    },
+  );
+});
+
+test('release scope verifier rejects a third slug in arbitrary release metadata containers', () => {
+  withFixture(
+    (root) => {
+      writeFixtureFile(root, 'release/web-artifacts.json', JSON.stringify({ miniapps: ['healthy-recipes', 'clinic-guide', 'client-resources'] }));
+    },
+    (result) => {
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /unapproved miniapp slug in release metadata.*client-resources/i);
     },
   );
 });
