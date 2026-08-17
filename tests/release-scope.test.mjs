@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -9,6 +9,12 @@ import ts from 'typescript';
 
 const verifierPath = fileURLToPath(new URL('../scripts/verify-minimal-v1.mjs', import.meta.url));
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const legalSurfaces = Object.freeze({
+  privacy: 'https://cabohealth.org/app/privacy/',
+  terms: 'https://cabohealth.org/app/terms/',
+  support: 'https://cabohealth.org/app/support/',
+  'report-content': 'https://cabohealth.org/app/report-content/',
+});
 
 function writeFixtureFile(root, relativePath, contents) {
   const target = join(root, relativePath);
@@ -88,6 +94,19 @@ function writeCatalogFixture(root, healthyRating = 4, clinicRating = 4) {
   );
 }
 
+function writeLegalSurfaceFixtures(root) {
+  const navigation = Object.values(legalSurfaces)
+    .map((url) => `<a href="${url}">${url}</a>`)
+    .join('');
+  for (const [slug, canonical] of Object.entries(legalSurfaces)) {
+    writeFixtureFile(
+      root,
+      `web-hosting/cabohealth.org/app/${slug}/index.html`,
+      `<!doctype html><html><head><link rel="canonical" href="${canonical}"></head><body>${navigation}</body></html>`,
+    );
+  }
+}
+
 function makePublicReleaseFixture() {
   const root = mkdtempSync(join(tmpdir(), 'cabohealth-minimal-v1-'));
   writeFixtureFile(root, 'app/(main)/index.tsx', 'export default function Home() { return null; }\n');
@@ -97,6 +116,7 @@ function makePublicReleaseFixture() {
     'web-hosting/cabohealth.org/.well-known/apple-app-site-association',
     JSON.stringify({ applinks: { details: [{ components: [{ '/': '/apps/healthy-recipes/' }, { '/': '/apps/clinic-guide/' }] }] } }),
   );
+  writeLegalSurfaceFixtures(root);
   writeFixtureFile(root, 'release/web-artifacts.json', JSON.stringify({ slugs: ['healthy-recipes', 'clinic-guide'] }));
   writeComplianceFixture(root, verifiedComplianceFacts());
   return root;
@@ -181,6 +201,16 @@ test('release scope verifier accepts a two-module public release artifact', () =
     () => {},
     (result) => {
       assert.equal(result.status, 0, result.stderr || result.stdout);
+    },
+  );
+});
+
+test('release scope verifier rejects a missing Report Content hosted route', () => {
+  withFixture(
+    (root) => unlinkSync(join(root, 'web-hosting/cabohealth.org/app/report-content/index.html')),
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /Missing hosted legal surface: Report Content/i);
     },
   );
 });

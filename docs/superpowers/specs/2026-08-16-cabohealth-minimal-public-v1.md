@@ -134,6 +134,7 @@ Las rutas públicas necesarias para el release son:
 - `/app/privacy/`
 - `/app/terms/`
 - `/app/support/`
+- `/app/report-content/`
 - `/.well-known/apple-app-site-association`
 
 Se respalda el sitio y base de datos antes de desplegar. La publicación se hace en staging o carpeta versionada, se verifica, y luego se promueve con rollback preparado.

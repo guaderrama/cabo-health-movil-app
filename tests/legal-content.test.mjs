@@ -18,6 +18,7 @@ const pagePaths = Object.freeze({
   privacy: 'web-hosting/cabohealth.org/app/privacy/index.html',
   terms: 'web-hosting/cabohealth.org/app/terms/index.html',
   support: 'web-hosting/cabohealth.org/app/support/index.html',
+  reportContent: 'web-hosting/cabohealth.org/app/report-content/index.html',
 });
 
 function readArtifact(relativePath) {
@@ -401,6 +402,14 @@ test('each bilingual section preserves its locale-specific substantive obligatio
       'report-content': [/without including sensitive information/i, /sin incluir información sensible/i],
       scope: [/facts that are still pending are not stated here/i, /hechos de plataforma o lanzamiento que siguen pendientes/i],
     },
+    reportContent: {
+      scope: [/Healthy Recipes and CaboHealth Clinic Guide/i, /Recetas Saludables y la Guía de la Clínica CaboHealth/i],
+      contact: [/prefix the subject with “Report Content”/i, /comienza el asunto con “Reportar contenido”/i],
+      details: [/module, public page, and concern/i, /módulo, la página pública y el problema/i],
+      privacy: [/Do not include health or other sensitive information/i, /No incluyas información de salud ni otra información sensible/i],
+      review: [/no response deadline is promised/i, /no se promete un plazo de respuesta/i],
+      support: [/Support page/i, /página de Soporte/i],
+    },
   };
 
   for (const [page, sections] of Object.entries(obligations)) {
@@ -477,6 +486,31 @@ test('Report Content is visible in both languages with an explicit contact path'
     assert.match(html, /Reportar contenido/);
     assert.ok(attributeValues(html, 'href').includes('mailto:ivan@ivanguaderrama.com'));
   }
+});
+
+test('Report Content route uses only the frozen email contact and an explicit support fallback', () => {
+  const contactRecord = readJson('release/public-contact-facts.json');
+  const html = readArtifact(pagePaths.reportContent);
+  const hrefs = attributeValues(html, 'href');
+  const emailAction = `mailto:${contactRecord.facts.publicEmail.value}`;
+
+  assert.equal(contactRecord.status, 'owner-confirmed');
+  assert.equal(hrefs.filter((href) => href === emailAction).length, 2, 'email must render once per locale');
+  assert.equal(hrefs.includes(`tel:${contactRecord.facts.phone.value}`), false);
+  assert.equal(hrefs.includes(contactRecord.facts.whatsApp.value), false);
+  assert.equal(hrefs.includes(contactRecord.facts.appleMapsDestination.value), false);
+  assert.equal(hrefs.includes(legalUrls.support), true, 'support fallback must be explicit');
+  assert.match(html, /data-contact-record=["']release\/public-contact-facts\.json["']/i);
+});
+
+test('Report Content reuses the exact legal-page visual and CSP contract', () => {
+  const reference = readArtifact(pagePaths.privacy);
+  const reportContent = readArtifact(pagePaths.reportContent);
+  const styleBlock = (html) => html.match(/<style>([\s\S]*?)<\/style>/i)?.[1];
+  const csp = (html) => html.match(/<meta\s+http-equiv=["']Content-Security-Policy["']\s+content=["']([^"']+)["']>/i)?.[1];
+
+  assert.equal(styleBlock(reportContent), styleBlock(reference));
+  assert.equal(csp(reportContent), csp(reference));
 });
 
 test('legal pages contain no absent-v1 or unresolved release claims', () => {

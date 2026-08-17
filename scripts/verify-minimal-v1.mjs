@@ -12,6 +12,12 @@ const LEGAL_URLS = {
   Support: 'https://cabohealth.org/app/support/',
   'Report Content': 'https://cabohealth.org/app/report-content/',
 };
+const LEGAL_SURFACE_PATHS = {
+  Privacy: 'web-hosting/cabohealth.org/app/privacy/index.html',
+  Terms: 'web-hosting/cabohealth.org/app/terms/index.html',
+  Support: 'web-hosting/cabohealth.org/app/support/index.html',
+  'Report Content': 'web-hosting/cabohealth.org/app/report-content/index.html',
+};
 const REQUIRED_COMPLIANCE_GATES = [
   'appStore.seller',
   'appStore.sellerRelationship',
@@ -708,6 +714,10 @@ function verify(root) {
   for (const [label, url] of Object.entries(LEGAL_URLS)) {
     if (!packagedText.includes(url)) {
       errors.push(`Missing legal URL: ${label}`);
+    }
+    const surfacePath = join(root, LEGAL_SURFACE_PATHS[label]);
+    if (!existsSync(surfacePath) || !statSync(surfacePath).isFile()) {
+      errors.push(`Missing hosted legal surface: ${label}`);
     }
   }
 

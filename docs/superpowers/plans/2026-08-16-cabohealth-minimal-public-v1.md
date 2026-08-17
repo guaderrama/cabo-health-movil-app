@@ -617,6 +617,7 @@ Do not commit `miniapps/dist` if it is ignored; commit its hash inventory in `re
 - Create: `web-hosting/cabohealth.org/app/privacy/index.html`
 - Create: `web-hosting/cabohealth.org/app/terms/index.html`
 - Create: `web-hosting/cabohealth.org/app/support/index.html`
+- Create: `web-hosting/cabohealth.org/app/report-content/index.html`
 - Create: `docs/operations/content-review-and-takedown.md`
 - Create: `docs/operations/hosting-security-checklist.md`
 - Create: `release/data-inventory.md`
@@ -710,6 +711,7 @@ public_html/apps/.htaccess
 public_html/app/privacy/
 public_html/app/terms/
 public_html/app/support/
+public_html/app/report-content/
 public_html/.well-known/apple-app-site-association
 ```
 
