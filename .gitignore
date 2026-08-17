@@ -13,6 +13,7 @@ expo-env.d.ts
 /miniapps/.dist-stage/
 # Private immutable build evidence; never a deployment source.
 /miniapps/.dist-artifact-*.capsule
+/release/web-bundles/
 
 # Native
 .kotlin/
