@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
 const APPROVED_SLUGS = new Set(['healthy-recipes', 'clinic-guide']);
@@ -536,21 +537,7 @@ function readExportedPublicMiniapps(source, errors) {
   return entries;
 }
 
-function verifyComplianceFacts(root, errors, catalogRatings) {
-  const compliancePath = join(root, 'release', 'compliance-facts.json');
-  if (!existsSync(compliancePath)) {
-    errors.push('Missing release compliance facts: release/compliance-facts.json');
-    return;
-  }
-
-  let facts;
-  try {
-    facts = JSON.parse(readText(compliancePath));
-  } catch {
-    errors.push('Invalid release metadata JSON: release/compliance-facts.json');
-    return;
-  }
-
+function verifyComplianceFactsValue(facts, errors, catalogRatings) {
   hasExactKeys(facts, 'compliance', [
     'schemaVersion',
     'brand',
@@ -685,6 +672,96 @@ function verifyComplianceFacts(root, errors, catalogRatings) {
   }
 }
 
+function verifyComplianceFacts(root, errors, catalogRatings) {
+  const compliancePath = join(root, 'release', 'compliance-facts.json');
+  if (!existsSync(compliancePath)) {
+    errors.push('Missing release compliance facts: release/compliance-facts.json');
+    return;
+  }
+
+  let facts;
+  try {
+    facts = JSON.parse(readText(compliancePath));
+  } catch {
+    errors.push('Invalid release metadata JSON: release/compliance-facts.json');
+    return;
+  }
+  verifyComplianceFactsValue(facts, errors, catalogRatings);
+}
+
+export function verifyCapturedMinimalV1(files) {
+  if (!(files instanceof Map) || [...files].some(([path, bytes]) => typeof path !== 'string' || !Buffer.isBuffer(bytes))) {
+    throw new Error('CAPTURED_COMPLIANCE_INPUT_INVALID');
+  }
+  const errors = [];
+  const paths = [...files.keys()];
+  const textFor = (path) => files.get(path)?.toString('utf8');
+  for (const path of paths) {
+    if (path.startsWith('app/(auth)/')) errors.push(`Legacy auth route is still packaged: ${path}`);
+  }
+  if (files.has('app/(main)/admin.tsx')) errors.push('Admin route is still packaged: app/(main)/admin.tsx');
+
+  const scopedSourcePaths = paths.filter((path) => (
+    SOURCE_DIRECTORIES.some((directory) => path.startsWith(`${directory}/`))
+    && isSourceFile(path)
+  ));
+  const sourceText = scopedSourcePaths.map((path) => ({ path, text: textFor(path) }));
+  for (const { path, text } of sourceText) {
+    const imports = text.match(/\bimport(?:[\s\S]{0,500}?\sfrom\s*)?['"][^'"]+['"]/g) ?? [];
+    if (imports.some((statement) => /(?:access[-_ ]?code|biometr\w*|firebase|firestore)/i.test(statement))) {
+      errors.push(`Legacy access-code, biometry, Firebase, or Firestore import is reachable from ${path}`);
+    }
+    if (/\b(?:onMessage|injectedJavaScript)\b/.test(text)) errors.push(`Forbidden WebView bridge control in ${path}`);
+    if (/\bEXPO_PUBLIC_[A-Z0-9_]*URL\b/.test(text)) errors.push(`Arbitrary EXPO_PUBLIC_*URL endpoint in ${path}`);
+    if (/http:\/\//i.test(text)) errors.push(`Insecure production URL in ${path}`);
+    if (hasForbiddenUrlScheme(text)) errors.push(`Forbidden URL scheme in ${path}`);
+  }
+
+  let catalogRatings = [];
+  const catalogSource = textFor('constants/publicMiniapps.ts');
+  if (catalogSource !== undefined) {
+    catalogRatings = readExportedPublicMiniapps(catalogSource, errors);
+    addUnexpectedSlugs(errors, 'catalog', [
+      ...extractCatalogSlugs(catalogSource),
+      ...catalogRatings.map((entry) => entry.slug),
+    ]);
+  } else {
+    errors.push('Missing catalog: constants/publicMiniapps.ts');
+  }
+
+  for (const path of paths.filter((path) => basename(path) === 'apple-app-site-association')) {
+    addUnexpectedSlugs(errors, 'AASA', extractAasaSlugs(textFor(path)));
+  }
+  for (const path of paths.filter((path) => (
+    (path.startsWith('release/') || path.startsWith('miniapps/')) && path.endsWith('.json')
+  ))) {
+    try {
+      const slugs = [];
+      collectMetadataSlugs(JSON.parse(textFor(path)), slugs);
+      addUnexpectedSlugs(errors, 'release metadata', slugs);
+    } catch {
+      errors.push(`Invalid release metadata JSON: ${path}`);
+    }
+  }
+
+  const packagedText = sourceText.map(({ text }) => text).join('\n');
+  for (const [label, url] of Object.entries(LEGAL_URLS)) {
+    if (!packagedText.includes(url)) errors.push(`Missing legal URL: ${label}`);
+    if (!files.has(LEGAL_SURFACE_PATHS[label])) errors.push(`Missing hosted legal surface: ${label}`);
+  }
+  const complianceText = textFor('release/compliance-facts.json');
+  if (complianceText === undefined) {
+    errors.push('Missing release compliance facts: release/compliance-facts.json');
+  } else {
+    try {
+      verifyComplianceFactsValue(JSON.parse(complianceText), errors, catalogRatings);
+    } catch {
+      errors.push('Invalid release metadata JSON: release/compliance-facts.json');
+    }
+  }
+  return errors;
+}
+
 function verify(root) {
   const errors = [];
   const appRoot = join(root, 'app');
@@ -768,15 +845,17 @@ function verify(root) {
   return errors;
 }
 
-const root = resolve(process.argv[2] ?? process.cwd());
-if (!statSync(root).isDirectory()) {
-  throw new Error(`Verification root is not a directory: ${root}`);
-}
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const root = resolve(process.argv[2] ?? process.cwd());
+  if (!statSync(root).isDirectory()) {
+    throw new Error(`Verification root is not a directory: ${root}`);
+  }
 
-const errors = verify(root);
-if (errors.length > 0) {
-  console.error(errors.map((error) => `FAIL: ${error}`).join('\n'));
-  process.exitCode = 1;
-} else {
-  console.log('Minimal public v1 release scope verified.');
+  const errors = verify(root);
+  if (errors.length > 0) {
+    console.error(errors.map((error) => `FAIL: ${error}`).join('\n'));
+    process.exitCode = 1;
+  } else {
+    console.log('Minimal public v1 release scope verified.');
+  }
 }

@@ -7,7 +7,6 @@ import {
   lstatSync,
   openSync,
   readFileSync,
-  realpathSync,
 } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -15,12 +14,14 @@ import {
   MINIAPP_APACHE_SECURITY_CONFIG,
   readVerifiedMiniappArtifact,
 } from './build-miniapps.mjs';
-import { canonicalAasaBytes, readReleaseIdentity } from './generate-aasa.mjs';
+import { canonicalAasaBytes } from './generate-aasa.mjs';
 import { assertStaticWebPolicy } from './web-release-policy.mjs';
+import { verifyCapturedMinimalV1 } from './verify-minimal-v1.mjs';
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const APP_ID = 'DQ8PH2DZ3R.com.cabohealth.app';
 const helperPath = resolve(projectRoot, 'scripts/secure_web_release.py');
+const helperSource = readFileSync(helperPath, 'utf8');
 const CAPSULE_SHA256 = 'b5f4f2a39a46df12f12c017e6ef31fbff0aeb71045b3af5a7456be852fea9334';
 const CAPSULE_SIZE = 161867;
 export const REVIEWED_MINIAPP_FILE_PINS = Object.freeze([
@@ -170,6 +171,103 @@ function assertExactKeys(value, keys, label) {
   ) throw new Error(`${label}_SCHEMA_INVALID`);
 }
 
+function decodeCapturedFile(entry, label, expectedPath) {
+  assertExactKeys(entry, ['path', 'size', 'sha256', 'bytesBase64'], label);
+  const bytes = Buffer.from(entry.bytesBase64, 'base64');
+  if (
+    entry.path !== expectedPath
+    || !Number.isSafeInteger(entry.size)
+    || entry.size < 0
+    || !/^[a-f0-9]{64}$/u.test(entry.sha256)
+    || bytes.byteLength !== entry.size
+    || sha256(bytes) !== entry.sha256
+    || bytes.toString('base64') !== entry.bytesBase64
+  ) throw new Error(`${label}_INVALID: ${entry.path ?? expectedPath}`);
+  return bytes;
+}
+
+export function captureBoundAssemblySnapshot(root, testFault = undefined) {
+  const lexicalRoot = resolve(root);
+  const environment = { ...process.env };
+  if (testFault !== undefined) environment.CABOHEALTH_TEST_FAULT = testFault;
+  const result = spawnSync(
+    'python3',
+    ['-c', helperSource, 'capture-assembly-snapshot', lexicalRoot],
+    {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+      env: environment,
+    },
+  );
+  if (result.status !== 0) throw new Error(`WEB_BOUND_SNAPSHOT_FAILED: ${result.stderr.trim()}`);
+  let snapshot;
+  try {
+    snapshot = JSON.parse(result.stdout);
+  } catch {
+    throw new Error('WEB_BOUND_SNAPSHOT_SCHEMA_INVALID');
+  }
+  if (`${JSON.stringify(snapshot)}\n` !== result.stdout) throw new Error('WEB_BOUND_SNAPSHOT_NONCANONICAL');
+  assertExactKeys(
+    snapshot,
+    ['schemaVersion', 'artifactKind', 'rootIdentity', 'complianceFiles', 'reviewedInputs', 'capsule', 'snapshotSha256'],
+    'WEB_BOUND_SNAPSHOT',
+  );
+  assertExactKeys(snapshot.rootIdentity, ['device', 'inode'], 'WEB_BOUND_SNAPSHOT_ROOT');
+  if (
+    snapshot.schemaVersion !== 1
+    || snapshot.artifactKind !== 'cabohealth-bound-assembly-snapshot-v1'
+    || !Number.isSafeInteger(snapshot.rootIdentity.device)
+    || snapshot.rootIdentity.device < 0
+    || !Number.isSafeInteger(snapshot.rootIdentity.inode)
+    || snapshot.rootIdentity.inode <= 0
+    || !Array.isArray(snapshot.complianceFiles)
+    || !Array.isArray(snapshot.reviewedInputs)
+    || snapshot.reviewedInputs.length !== INPUT_PATHS.length
+    || !/^[a-f0-9]{64}$/u.test(snapshot.snapshotSha256)
+  ) throw new Error('WEB_BOUND_SNAPSHOT_SCHEMA_INVALID');
+  const unsigned = { ...snapshot };
+  delete unsigned.snapshotSha256;
+  if (sha256(Buffer.from(canonicalJson(unsigned))) !== snapshot.snapshotSha256) {
+    throw new Error('WEB_BOUND_SNAPSHOT_DIGEST_INVALID');
+  }
+  const compliancePaths = snapshot.complianceFiles.map(({ path }) => path);
+  if (
+    compliancePaths.some((path, index) => typeof path !== 'string' || (index > 0 && path <= compliancePaths[index - 1]))
+  ) throw new Error('WEB_BOUND_SNAPSHOT_COMPLIANCE_SET_INVALID');
+  for (const entry of snapshot.complianceFiles) {
+    decodeCapturedFile(entry, 'WEB_BOUND_SNAPSHOT_COMPLIANCE_FILE', entry.path);
+  }
+  for (const [index, entry] of snapshot.reviewedInputs.entries()) {
+    decodeCapturedFile(entry, 'WEB_BOUND_SNAPSHOT_REVIEWED_INPUT', INPUT_PATHS[index]);
+  }
+  assertExactKeys(snapshot.capsule, ['path', 'size', 'sha256', 'bytesBase64', 'mode', 'nlink'], 'WEB_BOUND_SNAPSHOT_CAPSULE');
+  const capsuleBytes = decodeCapturedFile(
+    {
+      path: snapshot.capsule.path,
+      size: snapshot.capsule.size,
+      sha256: snapshot.capsule.sha256,
+      bytesBase64: snapshot.capsule.bytesBase64,
+    },
+    'WEB_BOUND_SNAPSHOT_CAPSULE',
+    'miniapps/dist',
+  );
+  if (
+    snapshot.capsule.mode !== '0400'
+    || snapshot.capsule.nlink !== 2
+    || snapshot.capsule.size !== CAPSULE_SIZE
+    || snapshot.capsule.sha256 !== CAPSULE_SHA256
+  ) throw new Error('TASK6B_CAPSULE_ATTESTATION_FAILED');
+  return Object.freeze({
+    ...snapshot,
+    rootPath: lexicalRoot,
+    rootIdentityString: `${snapshot.rootIdentity.device}:${snapshot.rootIdentity.inode}`,
+    complianceBuffers: new Map(snapshot.complianceFiles.map((entry) => [entry.path, decodeCapturedFile(entry, 'WEB_BOUND_SNAPSHOT_COMPLIANCE_FILE', entry.path)])),
+    reviewedInputBuffers: new Map(snapshot.reviewedInputs.map((entry, index) => [INPUT_PATHS[index], decodeCapturedFile(entry, 'WEB_BOUND_SNAPSHOT_REVIEWED_INPUT', INPUT_PATHS[index])])),
+    capsuleBytes,
+  });
+}
+
 export function assertFinalLegalPins(reviewedLegalSha256) {
   assertExactKeys(reviewedLegalSha256, ['privacy', 'report-content', 'support', 'terms'], 'FINAL_LEGAL_PINS');
   for (const [slug, hash] of Object.entries(reviewedLegalSha256)) {
@@ -240,73 +338,46 @@ export function captureReviewedCapsule(root, artifactReader = readVerifiedMiniap
   };
 }
 
-function runInputCapture(root, expectedRootIdentity = attestRoot(root)) {
-  const result = spawnSync('python3', [helperPath, 'capture-reviewed-inputs', root], {
-    cwd: root,
-    encoding: 'utf8',
-    maxBuffer: 4 * 1024 * 1024,
-    env: { ...process.env, CABOHEALTH_EXPECTED_ROOT_ID: expectedRootIdentity },
-  });
-  if (result.status !== 0) throw new Error(`WEB_INPUT_CAPTURE_FAILED: ${result.stderr.trim()}`);
-  let snapshot;
+function capturedCapsulePayload(snapshot, artifactReader = readVerifiedMiniappArtifact) {
+  let capsule;
   try {
-    snapshot = JSON.parse(result.stdout);
+    capsule = JSON.parse(snapshot.capsuleBytes.toString('utf8'));
   } catch {
-    throw new Error('WEB_INPUT_CAPTURE_SCHEMA_INVALID');
+    throw new Error('TASK6B_CAPSULE_PAYLOAD_INVALID');
   }
-  if (`${JSON.stringify(snapshot)}\n` !== result.stdout) throw new Error('WEB_INPUT_CAPTURE_NONCANONICAL');
-  assertExactKeys(snapshot, ['schemaVersion', 'artifactKind', 'files'], 'WEB_INPUT_CAPTURE');
+  assertExactKeys(capsule, ['schemaVersion', 'kind', 'manifest', 'files'], 'TASK6B_CAPSULE');
   if (
-    snapshot.schemaVersion !== 1
-    || snapshot.artifactKind !== 'cabohealth-reviewed-web-input-snapshot-v1'
-    || !Array.isArray(snapshot.files)
-    || snapshot.files.length !== INPUT_PATHS.length
-  ) throw new Error('WEB_INPUT_CAPTURE_SCHEMA_INVALID');
+    capsule.schemaVersion !== 1
+    || capsule.kind !== 'cabohealth-miniapps-task-6b-release-capsule-v1'
+    || !capsule.manifest
+    || capsule.manifest.releaseReady !== true
+    || capsule.manifest.mode !== 'release'
+    || JSON.stringify(capsule.manifest.entrySlugs) !== JSON.stringify(['healthy-recipes', 'clinic-guide'])
+    || !Array.isArray(capsule.files)
+    || capsule.files.length !== REVIEWED_MINIAPP_FILE_PINS.length
+  ) throw new Error('TASK6B_CAPSULE_PAYLOAD_INVALID');
   const files = new Map();
-  for (const [index, entry] of snapshot.files.entries()) {
-    assertExactKeys(entry, ['path', 'size', 'sha256', 'bytesBase64'], 'WEB_INPUT_CAPTURE_FILE');
-    let bytes;
-    try {
-      bytes = Buffer.from(entry.bytesBase64, 'base64');
-    } catch {
-      throw new Error(`WEB_INPUT_CAPTURE_ENCODING_INVALID: ${entry.path}`);
+  for (const [index, entry] of capsule.files.entries()) {
+    const pin = REVIEWED_MINIAPP_FILE_PINS[index];
+    const bytes = decodeCapturedFile(entry, 'TASK6B_CAPSULE_FILE', pin.path);
+    if (entry.size !== pin.size || entry.sha256 !== pin.sha256) {
+      throw new Error(`TASK6B_CAPTURED_BUFFER_PIN_MISMATCH: ${pin.path}`);
     }
-    if (
-      entry.path !== INPUT_PATHS[index]
-      || !Number.isSafeInteger(entry.size)
-      || entry.size < 0
-      || bytes.byteLength !== entry.size
-      || sha256(bytes) !== entry.sha256
-      || bytes.toString('base64') !== entry.bytesBase64
-    ) throw new Error(`WEB_INPUT_CAPTURE_INVALID: ${entry.path ?? index}`);
-    files.set(entry.path, bytes);
+    files.set(pin.path, bytes);
   }
-  if (attestRoot(root) !== expectedRootIdentity) throw new Error('WEB_RELEASE_PROJECT_ROOT_CHANGED');
-  return files;
-}
-
-function attestRoot(root) {
-  const result = spawnSync('python3', [helperPath, 'root-identity', resolve(root)], {
-    cwd: projectRoot,
-    encoding: 'utf8',
-  });
-  if (result.status !== 0) throw new Error(`WEB_RELEASE_PROJECT_ROOT_UNSAFE: ${result.stderr.trim()}`);
-  let value;
-  try {
-    value = JSON.parse(result.stdout);
-  } catch {
-    throw new Error('WEB_RELEASE_ROOT_IDENTITY_INVALID');
+  if (JSON.stringify([...files.keys()]) !== JSON.stringify(MINIAPP_PATHS)) {
+    throw new Error('TASK6B_CAPSULE_PAYLOAD_INVALID');
   }
-  assertExactKeys(value, ['schemaVersion', 'device', 'inode'], 'WEB_RELEASE_ROOT_IDENTITY');
-  if (
-    value.schemaVersion !== 1
-    || !Number.isSafeInteger(value.device)
-    || !Number.isSafeInteger(value.inode)
-    || value.device < 0
-    || value.inode <= 0
-    || `${JSON.stringify(value)}\n` !== result.stdout
-  ) throw new Error('WEB_RELEASE_ROOT_IDENTITY_INVALID');
-  return `${value.device}:${value.inode}`;
+  const verifiedCapture = captureReviewedCapsule(snapshot.rootPath, artifactReader);
+  if (!verifiedCapture.bytes.equals(snapshot.capsuleBytes)) {
+    throw new Error('TASK6B_CAPSULE_CHANGED_DURING_CAPTURE');
+  }
+  for (const path of MINIAPP_PATHS) {
+    if (!verifiedCapture.files.get(path)?.equals(files.get(path))) {
+      throw new Error(`TASK6B_CAPTURED_BUFFER_PIN_MISMATCH: ${path}`);
+    }
+  }
+  return { bytes: snapshot.capsuleBytes, files: verifiedCapture.files };
 }
 
 function tags(text, name) {
@@ -361,26 +432,17 @@ export function createWebArtifactManifest(transport, inputs) {
   };
 }
 
-export function planWebRelease(
-  root = projectRoot,
-  reviewedLegalSha256 = FINAL_LEGAL_SHA256,
-  expectedRootIdentity = attestRoot(root),
-) {
-  const lexicalRoot = resolve(root);
-  if (attestRoot(lexicalRoot) !== expectedRootIdentity) throw new Error('WEB_RELEASE_PROJECT_ROOT_CHANGED');
-  const rootStats = lstatSync(lexicalRoot);
-  if (!rootStats.isDirectory() || rootStats.isSymbolicLink() || realpathSync(lexicalRoot) !== lexicalRoot) {
-    throw new Error('WEB_RELEASE_PROJECT_ROOT_UNSAFE');
+export function planWebRelease(snapshot, reviewedLegalSha256 = FINAL_LEGAL_SHA256) {
+  if (!snapshot || !(snapshot.reviewedInputBuffers instanceof Map) || !Buffer.isBuffer(snapshot.capsuleBytes)) {
+    throw new Error('WEB_BOUND_SNAPSHOT_SCHEMA_INVALID');
   }
   assertFinalLegalPins(reviewedLegalSha256);
-  const capsule = captureReviewedCapsule(lexicalRoot);
-  const capturedInputs = runInputCapture(lexicalRoot, expectedRootIdentity);
-  const { appId } = readReleaseIdentity(lexicalRoot);
-  if (appId !== APP_ID) throw new Error('WEB_RELEASE_APP_ID_INVALID');
+  const capsule = capturedCapsulePayload(snapshot);
+  const capturedInputs = snapshot.reviewedInputBuffers;
 
   const aasaPath = 'web-hosting/cabohealth.org/.well-known/apple-app-site-association';
   const aasaBytes = capturedInputs.get(aasaPath);
-  if (!aasaBytes?.equals(Buffer.from(canonicalAasaBytes(appId), 'utf8'))) {
+  if (!aasaBytes?.equals(Buffer.from(canonicalAasaBytes(APP_ID), 'utf8'))) {
     throw new Error('WEB_RELEASE_AASA_INVALID');
   }
   const apacheBytes = Buffer.from(MINIAPP_APACHE_SECURITY_CONFIG, 'utf8');
@@ -426,24 +488,11 @@ export function planWebRelease(
     inputFor('web-hosting/cabohealth.org/apps/.htaccess', 'apache-security', capturedInputs.get('web-hosting/cabohealth.org/apps/.htaccess')),
   ];
   const manifest = createWebArtifactManifest(transport, inputs);
-  if (attestRoot(lexicalRoot) !== expectedRootIdentity) throw new Error('WEB_RELEASE_PROJECT_ROOT_CHANGED');
   return Object.freeze({ manifest, transport });
 }
 
-function assertComplianceReady(root, rootIdentity) {
-  const result = spawnSync(
-    process.execPath,
-    [resolve(projectRoot, 'scripts/verify-minimal-v1.mjs'), root],
-    { cwd: root, encoding: 'utf8' },
-  );
-  if (result.status !== 0) {
-    throw new Error('COMPLIANCE_FACTS_INCOMPLETE');
-  }
-  if (attestRoot(root) !== rootIdentity) throw new Error('WEB_RELEASE_PROJECT_ROOT_CHANGED');
-}
-
 function runMutationHelper(arguments_, root, input, rootIdentity) {
-  const result = spawnSync('python3', [helperPath, ...arguments_], {
+  const result = spawnSync('python3', ['-c', helperSource, ...arguments_], {
     cwd: root,
     encoding: 'utf8',
     input,
@@ -458,21 +507,16 @@ function runMutationHelper(arguments_, root, input, rootIdentity) {
 
 export function assembleWebRelease({ root = projectRoot, mode = 'check' } = {}) {
   if (!['check', 'assemble'].includes(mode)) throw new Error('WEB_RELEASE_MODE_INVALID');
-  const rootIdentity = attestRoot(root);
-  assertComplianceReady(root, rootIdentity);
-  const plan = planWebRelease(root, FINAL_LEGAL_SHA256, rootIdentity);
+  const snapshot = captureBoundAssemblySnapshot(root);
+  const complianceErrors = verifyCapturedMinimalV1(snapshot.complianceBuffers);
+  if (complianceErrors.length > 0) throw new Error('COMPLIANCE_FACTS_INCOMPLETE');
+  const plan = planWebRelease(snapshot, FINAL_LEGAL_SHA256);
   if (mode === 'check') return plan;
   runMutationHelper(
-    ['materialize-local', root],
-    root,
-    canonicalJson(plan.transport),
-    rootIdentity,
-  );
-  runMutationHelper(
-    ['publish-manifest-local', root, sha256(Buffer.from(canonicalJson(plan.manifest)))],
+    ['materialize-release', root],
     root,
     canonicalJson({ transport: plan.transport, manifest: plan.manifest }),
-    rootIdentity,
+    snapshot.rootIdentityString,
   );
   return plan;
 }

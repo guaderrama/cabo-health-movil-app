@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -301,19 +301,50 @@ test('atomic local promotion and rollback change only the nine leaves and restor
     'public_html/apps/clinic-guide',
   ]) assert.equal(existsSync(join(root, path)), false);
   for (const [path, bytes] of sentinels) assert.deepEqual(readFileSync(join(root, path)), bytes);
-  const journal = readFileSync(join(root, 'rollback', transport.releaseId, 'journal.jsonl'), 'utf8');
-  assert.equal(journal.includes(root), false);
+  const transitions = readdirSync(join(root, 'rollback', transport.releaseId, 'transitions'))
+    .map((name) => readFileSync(join(root, 'rollback', transport.releaseId, 'transitions', name), 'utf8'));
+  assert.equal(transitions.some((record) => record.includes(root)), false);
 });
 
-test('artifact provenance is exclusively published only after descriptor-relative bundle re-verification', () => {
-  const { result, root, transport } = materializeFixture();
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+test('artifact provenance is exclusively published only after independent descriptor-bound assembly', async () => {
+  const { createWebReleaseTransport } = await import('../scripts/assemble-web-release.mjs');
+  const root = mkdtempSync(join(fixtureTmp, 'cabohealth-authoritative-release-fixture-'));
+  mkdirSync(join(root, 'release'));
+  const inputPaths = [
+    'web-hosting/cabohealth.org/app/privacy/index.html',
+    'web-hosting/cabohealth.org/app/terms/index.html',
+    'web-hosting/cabohealth.org/app/support/index.html',
+    'web-hosting/cabohealth.org/app/report-content/index.html',
+    'web-hosting/cabohealth.org/.well-known/apple-app-site-association',
+    'miniapps/shared/security-headers.conf',
+    'web-hosting/cabohealth.org/apps/.htaccess',
+  ];
+  for (const source of inputPaths) writeFixturePath(root, source, readFileSync(join(projectRoot, source)));
+  copyFileSync(join(projectRoot, 'miniapps/dist'), join(root, 'miniapps/dist'));
+  linkSync(join(root, 'miniapps/dist'), join(root, 'miniapps/.dist-review-link'));
+  chmodSync(join(root, 'miniapps/dist'), 0o400);
+  const capsuleBytes = readFileSync(join(root, 'miniapps/dist'));
+  const capsule = JSON.parse(capsuleBytes.toString('utf8'));
+  const outputs = new Map([
+    ['.well-known/apple-app-site-association', readFileSync(join(root, 'web-hosting/cabohealth.org/.well-known/apple-app-site-association'))],
+    ['app/privacy/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/privacy/index.html'))],
+    ['app/report-content/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/report-content/index.html'))],
+    ['app/support/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/support/index.html'))],
+    ['app/terms/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/terms/index.html'))],
+    ...capsule.files.map(({ path, bytesBase64 }) => [path, Buffer.from(bytesBase64, 'base64')]),
+  ]);
+  const transport = createWebReleaseTransport(outputs);
   const manifest = fixtureArtifactManifest(transport);
-  const manifestSha256 = sha256(Buffer.from(canonicalJson(manifest)));
-  const publish = (reviewedHash = manifestSha256) => spawnSync('python3', [helperPath, 'publish-manifest-local', root, reviewedHash], {
+  const inputBytes = new Map([['miniapps/dist', capsuleBytes], ...inputPaths.map((path) => [path, readFileSync(join(root, path))])]);
+  manifest.inputs = manifest.inputs.map((entry) => ({
+    ...entry,
+    size: inputBytes.get(entry.path).byteLength,
+    sha256: sha256(inputBytes.get(entry.path)),
+  }));
+  const publish = (candidate = manifest) => spawnSync('python3', [helperPath, 'materialize-release', root], {
     cwd: projectRoot,
     encoding: 'utf8',
-    input: canonicalJson({ transport, manifest }),
+    input: canonicalJson({ transport, manifest: candidate }),
   });
 
   const first = publish();
@@ -329,11 +360,7 @@ test('artifact provenance is exclusively published only after descriptor-relativ
   assert.equal(after.mtimeMs, before.mtimeMs);
   const fabricated = structuredClone(manifest);
   fabricated.inputs[0].sha256 = '0'.repeat(64);
-  const rejected = spawnSync('python3', [helperPath, 'publish-manifest-local', root, manifestSha256], {
-    cwd: projectRoot,
-    encoding: 'utf8',
-    input: canonicalJson({ transport, manifest: fabricated }),
-  });
+  const rejected = publish(fabricated);
   assert.equal(rejected.status, 1, rejected.stderr || rejected.stdout);
 });
 

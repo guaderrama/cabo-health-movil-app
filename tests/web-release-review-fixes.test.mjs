@@ -378,8 +378,14 @@ test('promote-next stops after one unit and rollback restores a root-probe failu
         const inventory = runHelper(root, 'inventory-live', transport, [transport.releaseId]);
         assert.equal(inventory.status, 0, inventory.stderr || inventory.stdout);
         assert.deepEqual(JSON.parse(inventory.stdout), {
-          status: 'verified', rootCount: 3, fileCount: 8,
-          inventorySha256: JSON.parse(inventory.stdout).inventorySha256,
+          schemaVersion: 1,
+          artifactKind: 'cabohealth-server-inventory-v1',
+          status: 'verified',
+          releaseId: transport.releaseId,
+          rootCount: 3,
+          fileCount: 14,
+          paths: [...paths],
+          inventorySha256: transport.inventorySha256,
         });
       }
       for (let index = stopIndex + 1; index < targets.length; index += 1) {
@@ -445,13 +451,22 @@ test('production action contracts use nonce slugs and sanitize controls, invento
       terminalExpectedStatuses: [404],
     }), /SENSITIVE_CONTROLS_INVALID/u);
   }
+  const artifact = fixtureArtifact();
+  const authority = {
+    reviewedReleaseId: artifact.releaseId,
+    reviewedArtifactSha256: sha256(canonicalJson(artifact)),
+  };
   assert.equal(validateServerInventoryEvidence({
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-server-inventory-v1',
     status: 'verified',
+    releaseId: artifact.releaseId,
     rootCount: 3,
-    fileCount: 8,
-    inventorySha256: 'a'.repeat(64),
-  }), true);
-  assert.equal(validateBrowserEvidence({
+    fileCount: 14,
+    paths: [...paths],
+    inventorySha256: artifact.inventorySha256,
+  }, artifact, authority), true);
+  assert.throws(() => validateBrowserEvidence({
     status: 'verified',
     viewportCount: 2,
     localeCount: 2,
@@ -459,20 +474,7 @@ test('production action contracts use nonce slugs and sanitize controls, invento
     unexpectedRequests: 0,
     consoleErrors: 0,
     noJsReadable: true,
-  }), true);
-  for (const mutation of [
-    (value) => { value.unexpectedRequests = 1; },
-    (value) => { value.consoleErrors = 1; },
-    (value) => { value.noJsReadable = false; },
-    (value) => { value.rawLog = 'secret'; },
-  ]) {
-    const evidence = {
-      status: 'verified', viewportCount: 2, localeCount: 2, javascriptModeCount: 2,
-      unexpectedRequests: 0, consoleErrors: 0, noJsReadable: true,
-    };
-    mutation(evidence);
-    assert.throws(() => validateBrowserEvidence(evidence));
-  }
+  }, artifact, authority), /BROWSER_EVIDENCE/u);
 });
 
 test('legal approval pins reject pending and known draft hashes before accepting reviewed finals', async () => {
@@ -533,11 +535,15 @@ test('stage policy, modes, root identity, and partial journal fail closed withou
     mkdirSync(join(root, 'public_html'), { mode: 0o755 });
     assert.equal(runHelper(root, 'promote-next', transport, [transport.releaseId]).status, 0);
     const firstLive = readFileSync(join(root, 'public_html/apps/.htaccess'));
-    writeFileSync(join(root, 'rollback', transport.releaseId, 'journal.jsonl'), '{', { flag: 'a' });
+    writeFileSync(
+      join(root, 'rollback', transport.releaseId, 'transitions/01-promoted-000.json'),
+      '{',
+      { flag: 'wx', mode: 0o600 },
+    );
     const result = runHelper(root, 'promote-next', transport, [transport.releaseId]);
-    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), firstLive);
-    assert.equal(existsSync(join(root, 'public_html/apps/shared')), false);
+    assert.equal(existsSync(join(root, 'public_html/apps/shared')), true);
   });
 
   await context.test('journal mode', () => {
@@ -547,7 +553,7 @@ test('stage policy, modes, root identity, and partial journal fail closed withou
     mkdirSync(join(root, 'public_html'), { mode: 0o755 });
     assert.equal(runHelper(root, 'promote-next', transport, [transport.releaseId]).status, 0);
     const firstLive = readFileSync(join(root, 'public_html/apps/.htaccess'));
-    chmodSync(join(root, 'rollback', transport.releaseId, 'journal.jsonl'), 0o644);
+    chmodSync(join(root, 'rollback', transport.releaseId, 'transitions/00-promoted-000.json'), 0o644);
     const result = runHelper(root, 'promote-next', transport, [transport.releaseId]);
     assert.equal(result.status, 1, result.stderr || result.stdout);
     assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), firstLive);

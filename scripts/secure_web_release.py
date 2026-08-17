@@ -67,6 +67,19 @@ PROMOTE_TARGETS = (
 ENTRY_SLUGS = ("healthy-recipes", "clinic-guide")
 LEGAL_SLUGS = ("privacy", "terms", "support", "report-content")
 APP_ID = "DQ8PH2DZ3R.com.cabohealth.app"
+CAPSULE_SIZE = 161867
+CAPSULE_SHA256 = "b5f4f2a39a46df12f12c017e6ef31fbff0aeb71045b3af5a7456be852fea9334"
+MINIAPP_FILE_PINS = (
+    ("apps/.htaccess", 568, "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"),
+    ("apps/clinic-guide/app.js", 1436, "1565868ae2bc74769e5d036bc697a4e1d81f91740345ba67edf0628af5813243"),
+    ("apps/clinic-guide/index.html", 20481, "a0246074ba7734df7e28354a6ecfff39ac08d7ddd1da4e295f66f11ec77a18ee"),
+    ("apps/healthy-recipes/app.js", 4049, "70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090"),
+    ("apps/healthy-recipes/index.html", 55957, "5f22027afcd1600fa36cd77974d48b6d2ddc4fe26e27fcf57f206a8520413829"),
+    ("apps/shared/logo.png", 13598, "e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117"),
+    ("apps/shared/motion.js", 8996, "9ac97593f7339f6b7f1b9f4da6dafed4084185440022604b75754377291e56b7"),
+    ("apps/shared/shell.js", 3769, "d53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103"),
+    ("apps/shared/styles.css", 9887, "db0f0c531c453455d63aadba1dd4a99008337e555a746a7cbfee19e5a3d8f3ef"),
+)
 RELEASE_ID = re.compile(r"^web-v1-[a-f0-9]{64}$")
 SHA256 = re.compile(r"^[a-f0-9]{64}$")
 ROOT_KEYS = (
@@ -138,15 +151,17 @@ UNITS = (
         ".well-known/apple-app-site-association",
     )),
 )
-JOURNAL_KEYS = (
+TRANSITION_KEYS = (
     "schemaVersion",
     "index",
     "target",
     "slot",
     "original",
     "oldInventorySha256",
-    "state",
+    "transition",
+    "attempt",
 )
+TRANSITION_NAME = re.compile(r"^(0[0-8])-(prepared|promoted|rolled-back)-([0-9]{3})\.json$")
 MANIFEST_KEYS = (
     "schemaVersion",
     "artifactKind",
@@ -220,6 +235,35 @@ def test_fault_enabled(root_path: str, name: str) -> bool:
     if "cabohealth-" not in os.path.basename(root_path) or "-fixture-" not in os.path.basename(root_path):
         fail("TEST_FAULT_FORBIDDEN")
     return True
+
+
+def test_fault_requested(root_path: str, *names: str) -> str | None:
+    for name in names:
+        if test_fault_enabled(root_path, name):
+            return name
+    return None
+
+
+def raise_injected_exception(root_path: str, prefix: str) -> None:
+    requested = test_fault_requested(
+        root_path,
+        f"{prefix}-oserror",
+        f"{prefix}-unicode",
+        f"{prefix}-runtime",
+        f"{prefix}-oserror-reversal-fsync-oserror",
+    )
+    if requested is None:
+        return
+    if requested.endswith("-unicode"):
+        raise UnicodeError(f"INJECTED_{prefix.upper().replace('-', '_')}_UNICODE")
+    if requested.endswith("-runtime"):
+        raise RuntimeError(f"INJECTED_{prefix.upper().replace('-', '_')}_RUNTIME")
+    raise OSError(errno.EIO, f"INJECTED_{prefix.upper().replace('-', '_')}_OSERROR")
+
+
+def test_crash(root_path: str, name: str) -> None:
+    if test_fault_enabled(root_path, name):
+        os._exit(86)
 
 
 def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -485,9 +529,75 @@ def rename_with_flag(src_fd: int, src: str, dst_fd: int, dst: str, operation: st
     if result != 0:
         error_number = ctypes.get_errno()
         raise ReleaseError(f"ATOMIC_RENAME_{operation.upper()}_FAILED: errno={error_number}")
+
+
+def fsync_rename_directories(src_fd: int, dst_fd: int) -> None:
     os.fsync(src_fd)
     if dst_fd != src_fd:
         os.fsync(dst_fd)
+
+
+def describe_exception(error: BaseException) -> str:
+    return f"{type(error).__name__}:{error}"
+
+
+def reverse_after_exception(
+    primary: BaseException,
+    src_fd: int,
+    src: str,
+    dst_fd: int,
+    dst: str,
+    operation: str,
+    root_path: str,
+    reversal_fault: str | None = None,
+) -> None:
+    try:
+        rename_with_flag(dst_fd, dst, src_fd, src, operation)
+        fsync_rename_directories(dst_fd, src_fd)
+        if reversal_fault and test_fault_enabled(root_path, reversal_fault):
+            raise OSError(errno.EIO, "INJECTED_REVERSAL_FSYNC_OSERROR")
+    except BaseException as reversal:
+        raise ReleaseError(
+            f"POST_NAMESPACE_FAILURE PRIMARY={describe_exception(primary)} "
+            f"REVERSAL={describe_exception(reversal)}"
+        ) from reversal
+    raise ReleaseError(f"POST_NAMESPACE_FAILURE PRIMARY={describe_exception(primary)} REVERSAL=ok") from primary
+
+
+def reversible_rename(
+    root_path: str,
+    src_fd: int,
+    src: str,
+    dst_fd: int,
+    dst: str,
+    operation: str,
+    validator: Any,
+    fault_prefix: str,
+    crash_prefix: str,
+    tamper: Any | None = None,
+) -> None:
+    rename_with_flag(src_fd, src, dst_fd, dst, operation)
+    try:
+        test_crash(root_path, f"{crash_prefix}-crash-after-namespace")
+        if test_fault_enabled(root_path, f"{fault_prefix}-fsync-oserror"):
+            raise OSError(errno.EIO, "INJECTED_POST_NAMESPACE_FSYNC_OSERROR")
+        fsync_rename_directories(src_fd, dst_fd)
+        test_crash(root_path, f"{crash_prefix}-crash-after-directory-fsync")
+        raise_injected_exception(root_path, fault_prefix)
+        if tamper is not None and test_fault_enabled(root_path, f"{fault_prefix}-tamper"):
+            tamper()
+        validator()
+    except BaseException as primary:
+        reverse_after_exception(
+            primary,
+            src_fd,
+            src,
+            dst_fd,
+            dst,
+            operation,
+            root_path,
+            f"{fault_prefix}-oserror-reversal-fsync-oserror",
+        )
 
 
 def write_all(fd: int, contents: bytes) -> None:
@@ -651,44 +761,14 @@ def verify_new_unit(public_fd: int, payload_paths: tuple[str, ...], buffers: dic
             fail(f"PROMOTED_BYTES_MISMATCH: {path}")
 
 
-def create_journal(rollback_fd: int) -> int:
-    try:
-        fd = os.open(
-            "journal.jsonl",
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-            0o600,
-            dir_fd=rollback_fd,
-        )
-    except OSError as error:
-        raise ReleaseError("ROLLBACK_JOURNAL_COLLISION") from error
-    os.fchmod(fd, 0o600)
-    os.fsync(fd)
-    os.fsync(rollback_fd)
-    return fd
-
-
-def open_journal(rollback_fd: int) -> int:
-    try:
-        fd = os.open(
-            "journal.jsonl",
-            os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK,
-            dir_fd=rollback_fd,
-        )
-    except OSError as error:
-        raise ReleaseError("ROLLBACK_JOURNAL_INVALID") from error
-    info = os.fstat(fd)
-    if (
-        not stat.S_ISREG(info.st_mode)
-        or info.st_uid != os.geteuid()
-        or info.st_nlink != 1
-        or info.st_mode & 0o777 != 0o600
-    ):
-        os.close(fd)
-        fail("ROLLBACK_JOURNAL_INVALID")
-    return fd
-
-
-def journal_entry(index: int, target: str, slot: str, original: str, old_hash: str | None, state: str) -> dict[str, Any]:
+def transition_record(
+    index: int,
+    original: str,
+    old_hash: str | None,
+    transition: str,
+    attempt: int,
+) -> dict[str, Any]:
+    target, slot, _payload_paths = UNITS[index]
     return {
         "schemaVersion": 1,
         "index": index,
@@ -696,20 +776,32 @@ def journal_entry(index: int, target: str, slot: str, original: str, old_hash: s
         "slot": slot,
         "original": original,
         "oldInventorySha256": old_hash,
-        "state": state,
+        "transition": transition,
+        "attempt": attempt,
     }
 
 
-def append_journal(fd: int, entry: dict[str, Any]) -> None:
-    write_all(fd, canonical_json(entry))
-    os.fsync(fd)
+def transition_name(index: int, transition: str, attempt: int) -> str:
+    if transition not in ("prepared", "promoted", "rolled-back") or not 0 <= attempt <= 999:
+        fail("ROLLBACK_TRANSITION_INVALID")
+    return f"{index:02d}-{transition}-{attempt:03d}.json"
 
 
-def read_journal(rollback_fd: int) -> list[dict[str, Any]]:
+def open_transitions(rollback_fd: int, *, create: bool = False) -> int:
+    if create:
+        try:
+            os.mkdir("transitions", 0o700, dir_fd=rollback_fd)
+            os.fsync(rollback_fd)
+        except FileExistsError:
+            pass
+    return open_directory("transitions", rollback_fd, "rollback/transitions", mode=0o700)
+
+
+def read_transition_file(transitions_fd: int, name: str) -> bytes:
     try:
-        fd = os.open("journal.jsonl", OPEN_FILE_READ, dir_fd=rollback_fd)
+        fd = os.open(name, OPEN_FILE_READ, dir_fd=transitions_fd)
     except OSError as error:
-        raise ReleaseError("ROLLBACK_JOURNAL_INVALID") from error
+        raise ReleaseError("ROLLBACK_TRANSITION_INVALID") from error
     try:
         before = os.fstat(fd)
         if (
@@ -718,7 +810,7 @@ def read_journal(rollback_fd: int) -> list[dict[str, Any]]:
             or before.st_nlink != 1
             or before.st_mode & 0o777 != 0o600
         ):
-            fail("ROLLBACK_JOURNAL_INVALID")
+            fail("ROLLBACK_TRANSITION_INVALID")
         raw = read_all(fd)
         after = os.fstat(fd)
         if (
@@ -736,22 +828,141 @@ def read_journal(rollback_fd: int) -> list[dict[str, Any]]:
             after.st_uid,
             after.st_nlink,
         ):
-            fail("ROLLBACK_JOURNAL_CHANGED_DURING_READ")
+            fail("ROLLBACK_TRANSITION_CHANGED_DURING_READ")
+        return raw
     finally:
         os.close(fd)
-    entries = []
-    for line in raw.splitlines(keepends=True):
+
+
+def parse_transition_files(transitions_fd: int) -> tuple[dict[int, dict[str, Any]], dict[tuple[int, str], list[bytes]]]:
+    complete: dict[int, dict[str, Any]] = {}
+    attempts: dict[tuple[int, str], list[bytes]] = {}
+    names = sorted(os.listdir(transitions_fd), key=lambda value: value.encode("ascii"))
+    for name in names:
+        match = TRANSITION_NAME.fullmatch(name)
+        if match is None:
+            fail("ROLLBACK_TRANSITION_UNKNOWN_PATH")
+        index = int(match.group(1))
+        transition = match.group(2)
+        attempt = int(match.group(3))
+        key = (index, transition)
+        prior = attempts.setdefault(key, [])
+        if attempt != len(prior):
+            fail("ROLLBACK_TRANSITION_ATTEMPT_ORDER_INVALID")
+        raw = read_transition_file(transitions_fd, name)
+        prior.append(raw)
         try:
-            entry = json.loads(line, object_pairs_hook=reject_duplicate_keys)
-        except json.JSONDecodeError as error:
-            raise ReleaseError("ROLLBACK_JOURNAL_INVALID") from error
-        if canonical_json(entry) != line:
-            fail("ROLLBACK_JOURNAL_NONCANONICAL")
-        exact_keys(entry, JOURNAL_KEYS, "ROLLBACK_JOURNAL_ENTRY")
-        entries.append(entry)
-    if not entries:
-        fail("ROLLBACK_JOURNAL_INVALID")
-    return entries
+            value = json.loads(raw, object_pairs_hook=reject_duplicate_keys)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            value = None
+        if value is not None and canonical_json(value) == raw:
+            exact_keys(value, TRANSITION_KEYS, "ROLLBACK_TRANSITION")
+            expected = transition_record(
+                index,
+                value.get("original"),
+                value.get("oldInventorySha256"),
+                transition,
+                attempt,
+            )
+            if value != expected:
+                fail("ROLLBACK_TRANSITION_INVALID")
+            if transition != "prepared" and index not in complete:
+                fail("ROLLBACK_TRANSITION_WITHOUT_INTENT")
+            existing = complete.get(index)
+            if existing is not None:
+                if (
+                    value["original"] != existing["original"]
+                    or value["oldInventorySha256"] != existing["oldInventorySha256"]
+                ):
+                    fail("ROLLBACK_TRANSITION_AUTHORITY_CHANGED")
+                allowed = {
+                    "prepared": {"promoted"},
+                    "promoted": {"rolled-back"},
+                    "rolled-back": set(),
+                }
+                if transition not in allowed[existing["transition"]]:
+                    fail("ROLLBACK_TRANSITION_STATE_INVALID")
+            complete[index] = value
+        else:
+            if not raw or any(previous.endswith(b"\n") for previous in prior[:-1]):
+                fail("ROLLBACK_TRANSITION_TORN_ORDER_INVALID")
+            authority = complete.get(index)
+            if transition != "prepared":
+                if authority is None:
+                    fail("ROLLBACK_TRANSITION_WITHOUT_INTENT")
+                expected_raw = canonical_json(transition_record(
+                    index,
+                    authority["original"],
+                    authority["oldInventorySha256"],
+                    transition,
+                    attempt,
+                ))
+                if len(raw) >= len(expected_raw) or not expected_raw.startswith(raw):
+                    fail("ROLLBACK_TRANSITION_TORN_BYTES_INVALID")
+    return complete, attempts
+
+
+def write_transition(
+    transitions_fd: int,
+    index: int,
+    original: str,
+    old_hash: str | None,
+    transition: str,
+    root_path: str,
+    crash_prefix: str | None = None,
+) -> dict[str, Any]:
+    _complete, attempts = parse_transition_files(transitions_fd)
+    attempt = len(attempts.get((index, transition), []))
+    record = transition_record(index, original, old_hash, transition, attempt)
+    raw = canonical_json(record)
+    for partial in attempts.get((index, transition), []):
+        if partial.endswith(b"\n") or len(partial) >= len(raw) or not raw.startswith(partial):
+            fail("ROLLBACK_TRANSITION_TORN_BYTES_INVALID")
+    name = transition_name(index, transition, attempt)
+    try:
+        fd = os.open(
+            name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+            dir_fd=transitions_fd,
+        )
+    except OSError as error:
+        raise ReleaseError("ROLLBACK_TRANSITION_COLLISION") from error
+    try:
+        os.fchmod(fd, 0o600)
+        if crash_prefix and test_fault_enabled(root_path, f"{crash_prefix}-crash-transition-partial"):
+            write_all(fd, raw[: max(1, len(raw) // 2)])
+            os.fsync(fd)
+            os.fsync(transitions_fd)
+            os._exit(86)
+        write_all(fd, raw)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.fsync(transitions_fd)
+    if crash_prefix:
+        test_crash(root_path, f"{crash_prefix}-crash-after-transition-fsync")
+    return record
+
+
+def validate_transition_state(latest: dict[int, dict[str, Any]]) -> tuple[int, int]:
+    if sorted(latest) != list(range(len(UNITS))):
+        fail("ROLLBACK_TRANSITION_SET_INVALID")
+    states = [latest[index]["transition"] for index in range(len(UNITS))]
+    promoted_end = 0
+    while promoted_end < len(states) and states[promoted_end] == "promoted":
+        promoted_end += 1
+    rolled_back_end = promoted_end
+    while rolled_back_end < len(states) and states[rolled_back_end] == "rolled-back":
+        rolled_back_end += 1
+    if any(state != "prepared" for state in states[rolled_back_end:]):
+        fail("ROLLBACK_GLOBAL_ORDER_INVALID")
+    if rolled_back_end > promoted_end:
+        for index in range(promoted_end, rolled_back_end):
+            attempts_transition = latest[index]["transition"]
+            if attempts_transition != "rolled-back":
+                fail("ROLLBACK_GLOBAL_ORDER_INVALID")
+    return promoted_end, rolled_back_end
 
 
 def list_regular_tree(root_fd: int) -> tuple[str, ...]:
@@ -806,6 +1017,177 @@ def capture_reviewed_inputs(root_path: str) -> bytes:
         "artifactKind": "cabohealth-reviewed-web-input-snapshot-v1",
         "files": files,
     })
+
+
+def captured_file(path: str, contents: bytes) -> dict[str, Any]:
+    return {
+        "path": path,
+        "size": len(contents),
+        "sha256": hashlib.sha256(contents).hexdigest(),
+        "bytesBase64": base64.b64encode(contents).decode("ascii"),
+    }
+
+
+def capture_tree_files(
+    root_fd: int,
+    root_name: str,
+    predicate: Any,
+) -> list[dict[str, Any]]:
+    info = stat_if_present(root_fd, root_name)
+    if info is None:
+        return []
+    directory_fd = open_directory(root_name, root_fd, root_name)
+    files: list[dict[str, Any]] = []
+
+    def walk(directory: int, prefix: str) -> None:
+        before_directory = os.fstat(directory)
+        for name in sorted(os.listdir(directory), key=lambda item: item.encode("utf-8")):
+            path = f"{prefix}/{name}"
+            try:
+                entry_fd = os.open(name, OPEN_FILE_READ, dir_fd=directory)
+            except OSError as error:
+                raise ReleaseError(f"ASSEMBLY_SNAPSHOT_ENTRY_INVALID: {path}") from error
+            try:
+                before = os.fstat(entry_fd)
+                if before.st_uid != os.geteuid():
+                    fail(f"ASSEMBLY_SNAPSHOT_ENTRY_INVALID: {path}")
+                if stat.S_ISDIR(before.st_mode):
+                    if before.st_mode & 0o022:
+                        fail(f"ASSEMBLY_SNAPSHOT_ENTRY_INVALID: {path}")
+                    walk(entry_fd, path)
+                elif stat.S_ISREG(before.st_mode):
+                    if predicate(path):
+                        if before.st_nlink != 1:
+                            fail(f"ASSEMBLY_SNAPSHOT_ENTRY_INVALID: {path}")
+                        contents = read_all(entry_fd)
+                        after = os.fstat(entry_fd)
+                        if (
+                            before.st_dev,
+                            before.st_ino,
+                            before.st_size,
+                            before.st_mode,
+                            before.st_uid,
+                            before.st_nlink,
+                        ) != (
+                            after.st_dev,
+                            after.st_ino,
+                            after.st_size,
+                            after.st_mode,
+                            after.st_uid,
+                            after.st_nlink,
+                        ):
+                            fail(f"ASSEMBLY_SNAPSHOT_ENTRY_CHANGED: {path}")
+                        files.append(captured_file(path, contents))
+                else:
+                    fail(f"ASSEMBLY_SNAPSHOT_ENTRY_INVALID: {path}")
+            finally:
+                os.close(entry_fd)
+        after_directory = os.fstat(directory)
+        if (before_directory.st_dev, before_directory.st_ino) != (
+            after_directory.st_dev,
+            after_directory.st_ino,
+        ):
+            fail(f"ASSEMBLY_SNAPSHOT_DIRECTORY_CHANGED: {prefix}")
+
+    try:
+        walk(directory_fd, root_name)
+    finally:
+        os.close(directory_fd)
+    return files
+
+
+def open_absolute_parent(path: str) -> tuple[int, str]:
+    parent = os.path.dirname(path)
+    leaf = os.path.basename(path)
+    if not leaf or not os.path.isabs(parent):
+        fail("UNSAFE_ROOT_DIRECTORY")
+    return open_root(parent), leaf
+
+
+def read_capsule_file(root_fd: int) -> tuple[bytes, os.stat_result]:
+    miniapps_fd = open_directory("miniapps", root_fd, "miniapps")
+    try:
+        try:
+            capsule_fd = os.open("dist", OPEN_FILE_READ, dir_fd=miniapps_fd)
+        except OSError as error:
+            raise ReleaseError("TASK6B_CAPSULE_ATTESTATION_FAILED") from error
+        try:
+            before = os.fstat(capsule_fd)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.geteuid()
+                or before.st_nlink != 2
+                or before.st_mode & 0o777 != 0o400
+            ):
+                fail("TASK6B_CAPSULE_ATTESTATION_FAILED")
+            contents = read_all(capsule_fd)
+            after = os.fstat(capsule_fd)
+            identity = lambda info: (
+                info.st_dev,
+                info.st_ino,
+                info.st_size,
+                info.st_mode,
+                info.st_uid,
+                info.st_nlink,
+            )
+            if identity(before) != identity(after):
+                fail("TASK6B_CAPSULE_CHANGED_DURING_CAPTURE")
+            if len(contents) != CAPSULE_SIZE or hashlib.sha256(contents).hexdigest() != CAPSULE_SHA256:
+                fail("TASK6B_CAPSULE_ATTESTATION_FAILED")
+            return contents, before
+        finally:
+            os.close(capsule_fd)
+    finally:
+        os.close(miniapps_fd)
+
+
+def capture_assembly_snapshot(root_path: str) -> bytes:
+    root_fd = open_root(root_path)
+    exchanged = False
+    parent_fd: int | None = None
+    root_leaf = ""
+    alternate_leaf = ""
+    try:
+        if test_fault_enabled(root_path, "assembly-transient-root-exchange"):
+            parent_fd, root_leaf = open_absolute_parent(root_path)
+            alternate_leaf = f"{root_leaf}.alternate"
+            rename_with_flag(parent_fd, root_leaf, parent_fd, alternate_leaf, "exchange")
+            fsync_rename_directories(parent_fd, parent_fd)
+            exchanged = True
+        compliance_files: list[dict[str, Any]] = []
+        for directory in ("app", "components", "constants", "context", "hooks", "features"):
+            compliance_files.extend(capture_tree_files(root_fd, directory, lambda _path: True))
+        compliance_files.extend(capture_tree_files(root_fd, "release", lambda path: path.endswith(".json")))
+        compliance_files.extend(capture_tree_files(root_fd, "miniapps", lambda path: path.endswith(".json")))
+        reviewed_inputs = [captured_file(path, read_fixed_file(root_fd, path)) for path in INPUT_PATHS]
+        for entry in reviewed_inputs:
+            if entry["path"].endswith("apple-app-site-association") or "/app/" in entry["path"]:
+                compliance_files.append(entry)
+        compliance_by_path = {entry["path"]: entry for entry in compliance_files}
+        compliance_files = [compliance_by_path[path] for path in sorted(compliance_by_path, key=lambda item: item.encode("utf-8"))]
+        capsule_contents, capsule_info = read_capsule_file(root_fd)
+        root_info = os.fstat(root_fd)
+        snapshot = {
+            "schemaVersion": 1,
+            "artifactKind": "cabohealth-bound-assembly-snapshot-v1",
+            "rootIdentity": {"device": root_info.st_dev, "inode": root_info.st_ino},
+            "complianceFiles": compliance_files,
+            "reviewedInputs": reviewed_inputs,
+            "capsule": {
+                **captured_file("miniapps/dist", capsule_contents),
+                "mode": f"{capsule_info.st_mode & 0o777:04o}",
+                "nlink": capsule_info.st_nlink,
+            },
+        }
+        snapshot["snapshotSha256"] = hashlib.sha256(canonical_json(snapshot)).hexdigest()
+        return canonical_json(snapshot)
+    finally:
+        if exchanged and parent_fd is not None:
+            rename_with_flag(parent_fd, root_leaf, parent_fd, alternate_leaf, "exchange")
+            fsync_rename_directories(parent_fd, parent_fd)
+        if parent_fd is not None:
+            os.close(parent_fd)
+        os.close(root_fd)
 
 
 def create_file(parent_fd: int, name: str, contents: bytes, path: str, final_mode: int = 0o444) -> None:
@@ -912,55 +1294,64 @@ def materialize_new(bundle_fd: int, buffers: dict[str, bytes]) -> None:
             os.close(fd)
 
 
+def materialize_local_bound(
+    root_fd: int,
+    raw: bytes,
+    transport: dict[str, Any],
+    buffers: dict[str, bytes],
+) -> str:
+    release_fd = open_directory("release", root_fd, "release")
+    try:
+        bundles_fd = ensure_directory("web-bundles", release_fd, "release/web-bundles")
+        try:
+            transport_name = f"{transport['releaseId']}.transport.json"
+            transport_info = stat_if_present(bundles_fd, transport_name)
+            if transport_info is not None:
+                if (
+                    not stat.S_ISREG(transport_info.st_mode)
+                    or transport_info.st_uid != os.geteuid()
+                    or transport_info.st_nlink != 1
+                    or transport_info.st_mode & 0o777 != 0o444
+                ):
+                    fail("TRANSPORT_PUBLICATION_COLLISION")
+                transport_fd = os.open(transport_name, OPEN_FILE_READ, dir_fd=bundles_fd)
+                try:
+                    if read_all(transport_fd) != raw:
+                        fail("TRANSPORT_PUBLICATION_COLLISION")
+                finally:
+                    os.close(transport_fd)
+            try:
+                os.mkdir(transport["releaseId"], 0o700, dir_fd=bundles_fd)
+                os.fsync(bundles_fd)
+                created = True
+            except FileExistsError:
+                created = False
+            bundle_fd = open_directory(
+                transport["releaseId"], bundles_fd, transport["releaseId"], mode=None if created else 0o555
+            )
+            try:
+                if created:
+                    materialize_new(bundle_fd, buffers)
+                else:
+                    verify_tree(bundle_fd, buffers)
+            finally:
+                os.close(bundle_fd)
+            if transport_info is None:
+                create_file(bundles_fd, transport_name, raw, f"release/web-bundles/{transport_name}")
+        finally:
+            os.close(bundles_fd)
+    finally:
+        os.close(release_fd)
+    return "materialized" if created else "verified-existing"
+
+
 def materialize_local(root_path: str, raw: bytes) -> str:
     transport, buffers = parse_transport(raw)
     root_fd = open_root(root_path)
     try:
-        release_fd = open_directory("release", root_fd, "release")
-        try:
-            bundles_fd = ensure_directory("web-bundles", release_fd, "release/web-bundles")
-            try:
-                transport_name = f"{transport['releaseId']}.transport.json"
-                transport_info = stat_if_present(bundles_fd, transport_name)
-                if transport_info is not None:
-                    if (
-                        not stat.S_ISREG(transport_info.st_mode)
-                        or transport_info.st_uid != os.geteuid()
-                        or transport_info.st_nlink != 1
-                        or transport_info.st_mode & 0o777 != 0o444
-                    ):
-                        fail("TRANSPORT_PUBLICATION_COLLISION")
-                    transport_fd = os.open(transport_name, OPEN_FILE_READ, dir_fd=bundles_fd)
-                    try:
-                        if read_all(transport_fd) != raw:
-                            fail("TRANSPORT_PUBLICATION_COLLISION")
-                    finally:
-                        os.close(transport_fd)
-                try:
-                    os.mkdir(transport["releaseId"], 0o700, dir_fd=bundles_fd)
-                    os.fsync(bundles_fd)
-                    created = True
-                except FileExistsError:
-                    created = False
-                bundle_fd = open_directory(
-                    transport["releaseId"], bundles_fd, transport["releaseId"], mode=None if created else 0o555
-                )
-                try:
-                    if created:
-                        materialize_new(bundle_fd, buffers)
-                    else:
-                        verify_tree(bundle_fd, buffers)
-                finally:
-                    os.close(bundle_fd)
-                if transport_info is None:
-                    create_file(bundles_fd, transport_name, raw, f"release/web-bundles/{transport_name}")
-            finally:
-                os.close(bundles_fd)
-        finally:
-            os.close(release_fd)
+        return materialize_local_bound(root_fd, raw, transport, buffers)
     finally:
         os.close(root_fd)
-    return "materialized" if created else "verified-existing"
 
 
 def materialize_stage_new(public_fd: int, buffers: dict[str, bytes]) -> None:
@@ -1049,9 +1440,21 @@ def inventory_live(root_path: str, release_argument: str, raw: bytes) -> dict[st
     try:
         public_fd = open_directory("public_html", root_fd, "public_html", mode=0o755)
         try:
-            hashes: list[str] = []
+            expected_children = {
+                "apps": (".htaccess", "clinic-guide", "healthy-recipes", "shared"),
+                "app": ("privacy", "report-content", "support", "terms"),
+                ".well-known": ("apple-app-site-association",),
+            }
+            for parent, children in expected_children.items():
+                parent_fd = open_directory(parent, public_fd, f"public_html/{parent}", mode=0o755)
+                try:
+                    found = tuple(sorted(os.listdir(parent_fd), key=lambda item: item.encode("ascii")))
+                    if found != children:
+                        fail(f"SERVER_INVENTORY_PARENT_SET_INVALID: {parent}")
+                finally:
+                    os.close(parent_fd)
             file_count = 0
-            for index in (1, 6, 7):
+            for index in range(len(UNITS)):
                 target, _slot, payload_paths = UNITS[index]
                 parent_fd, leaf = open_parent_for_target(public_fd, target)
                 try:
@@ -1061,348 +1464,475 @@ def inventory_live(root_path: str, release_argument: str, raw: bytes) -> dict[st
                 expected = expected_unit_hash(payload_paths, buffers)
                 if actual != expected:
                     fail("SERVER_INVENTORY_INVALID")
-                hashes.append(actual)
                 file_count += len(payload_paths)
         finally:
             os.close(public_fd)
     finally:
         os.close(root_fd)
     return {
+        "schemaVersion": 1,
+        "artifactKind": "cabohealth-server-inventory-v1",
         "status": "verified",
+        "releaseId": transport["releaseId"],
         "rootCount": 3,
         "fileCount": file_count,
-        "inventorySha256": hashlib.sha256(canonical_json(hashes)).hexdigest(),
+        "paths": list(PAYLOAD_PATHS),
+        "inventorySha256": transport["inventorySha256"],
     }
 
 
-def promote_next(root_path: str, release_argument: str, raw: bytes) -> dict[str, Any]:
-    transport, buffers = parse_transport(raw)
-    validate_release_argument(release_argument, transport)
-    root_fd = open_root(root_path)
-    try:
-        stage_fd = open_directory("stage", root_fd, "stage")
-        try:
-            release_fd = open_directory(release_argument, stage_fd, f"stage/{release_argument}", mode=0o700)
+def live_preflight(live_public_fd: int) -> list[tuple[str, str | None]]:
+    result: list[tuple[str, str | None]] = []
+    for target, _slot, payload_paths in UNITS:
+        parent_name, leaf_name = target.split("/", 1)
+        parent_fd = open_optional_container(live_public_fd, parent_name)
+        if parent_fd is None:
+            old_hash = None
+        else:
             try:
-                stage_public_fd = open_directory("public_html", release_fd, "stage/public_html", mode=0o700)
+                old_hash = inventory_leaf(parent_fd, leaf_name, payload_paths, target)
             finally:
-                os.close(release_fd)
-        finally:
-            os.close(stage_fd)
-        try:
-            live_public_fd = open_directory("public_html", root_fd, "public_html", mode=0o755)
-            try:
-                if (
-                    os.fstat(stage_public_fd).st_dev != os.fstat(live_public_fd).st_dev
-                    or test_fault_enabled(root_path, "promotion-cross-device")
-                ):
-                    fail("PROMOTION_CROSS_DEVICE_FORBIDDEN")
-                rollback_root_info = stat_if_present(root_fd, "rollback")
-                existing_release = False
-                if rollback_root_info is not None:
-                    existing_rollback_root_fd = open_directory("rollback", root_fd, "rollback", mode=0o700)
-                    try:
-                        existing_release = stat_if_present(existing_rollback_root_fd, release_argument) is not None
-                    finally:
-                        os.close(existing_rollback_root_fd)
-                preflight: list[tuple[str, str | None]] = []
-                if not existing_release:
-                    for target, _slot, payload_paths in UNITS:
-                        parent_name, leaf_name = target.split("/", 1)
-                        parent_fd = open_optional_container(live_public_fd, parent_name)
-                        if parent_fd is None:
-                            old_hash = None
-                        else:
-                            try:
-                                old_hash = inventory_leaf(parent_fd, leaf_name, payload_paths, target)
-                            finally:
-                                os.close(parent_fd)
-                        preflight.append(("present" if old_hash is not None else "absent", old_hash))
-                    for name in ("apps", "app", ".well-known"):
-                        container_fd = ensure_directory(name, live_public_fd, f"public_html/{name}", 0o755)
-                        os.close(container_fd)
-
-                rollback_root_fd = ensure_directory("rollback", root_fd, "rollback")
-                try:
-                    if (
-                        os.fstat(rollback_root_fd).st_dev != os.fstat(live_public_fd).st_dev
-                        or os.fstat(stage_public_fd).st_dev != os.fstat(live_public_fd).st_dev
-                    ):
-                        fail("PROMOTION_CROSS_DEVICE_FORBIDDEN")
-                    if existing_release:
-                        created_rollback = False
-                    else:
-                        try:
-                            os.mkdir(release_argument, 0o700, dir_fd=rollback_root_fd)
-                            os.fsync(rollback_root_fd)
-                            created_rollback = True
-                        except FileExistsError as error:
-                            raise ReleaseError("ROLLBACK_RELEASE_COLLISION") from error
-                    rollback_fd = open_directory(
-                        release_argument,
-                        rollback_root_fd,
-                        f"rollback/{release_argument}",
-                        mode=0o700,
-                    )
-                    try:
-                        if created_rollback:
-                            journal_fd = create_journal(rollback_fd)
-                            try:
-                                for index, (target, slot, _payload_paths) in enumerate(UNITS):
-                                    original, old_hash = preflight[index]
-                                    append_journal(
-                                        journal_fd,
-                                        journal_entry(index, target, slot, original, old_hash, "prepared"),
-                                    )
-                            finally:
-                                os.close(journal_fd)
-
-                        latest = validate_journal(read_journal(rollback_fd))
-                        if len(latest) != len(UNITS):
-                            fail("ROLLBACK_JOURNAL_INVALID")
-                        if any(entry["state"] == "rolled-back" for entry in latest.values()):
-                            fail("PROMOTION_AFTER_ROLLBACK_FORBIDDEN")
-                        pending = [index for index, entry in latest.items() if entry["state"] == "prepared"]
-                        if not pending:
-                            fail("PROMOTION_ALREADY_COMPLETE")
-                        index = min(pending)
-                        entry = latest[index]
-                        target, slot, payload_paths = UNITS[index]
-                        new_hash = expected_unit_hash(payload_paths, buffers)
-                        stage_parent_fd, stage_leaf = open_parent_for_target(stage_public_fd, target)
-                        live_parent_fd, live_leaf = open_parent_for_target(live_public_fd, target)
-                        try:
-                            stage_hash = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
-                            live_hash = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
-                            slot_hash = inventory_leaf(rollback_fd, slot, payload_paths, target)
-                            old_hash = entry["oldInventorySha256"]
-                            if entry["original"] == "present":
-                                if live_hash == new_hash and stage_hash == old_hash and slot_hash is None:
-                                    rename_with_flag(stage_parent_fd, stage_leaf, rollback_fd, slot, "noreplace")
-                                    stage_hash = None
-                                    slot_hash = inventory_leaf(rollback_fd, slot, payload_paths, target)
-                                if live_hash == new_hash and stage_hash is None and slot_hash == old_hash:
-                                    pass
-                                elif live_hash == old_hash and stage_hash == new_hash and slot_hash is None:
-                                    rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
-                                    try:
-                                        if test_fault_enabled(root_path, "promotion-post-exchange-inventory-error"):
-                                            fail(f"PROMOTION_POST_EXCHANGE_INVENTORY_FAILED: {target}")
-                                        after_live = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
-                                        after_stage = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
-                                        if after_live != new_hash or after_stage != old_hash:
-                                            fail(f"PROMOTION_RACE_OR_TAMPER_DETECTED: {target}")
-                                    except ReleaseError:
-                                        rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
-                                        raise
-                                    rename_with_flag(stage_parent_fd, stage_leaf, rollback_fd, slot, "noreplace")
-                                    if inventory_leaf(rollback_fd, slot, payload_paths, target) != old_hash:
-                                        fail(f"PROMOTION_ROLLBACK_SLOT_MISMATCH: {target}")
-                                else:
-                                    fail(f"PROMOTION_STATE_INVALID: {target}")
-                            else:
-                                if live_hash == new_hash and stage_hash is None and slot_hash is None:
-                                    pass
-                                elif live_hash is None and stage_hash == new_hash and slot_hash is None:
-                                    rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "noreplace")
-                                    try:
-                                        if test_fault_enabled(root_path, "promotion-post-noreplace-inventory-error"):
-                                            fail(f"PROMOTION_POST_NOREPLACE_INVENTORY_FAILED: {target}")
-                                        if inventory_leaf(live_parent_fd, live_leaf, payload_paths, target) != new_hash:
-                                            fail(f"PROMOTION_RACE_OR_TAMPER_DETECTED: {target}")
-                                    except ReleaseError:
-                                        rename_with_flag(live_parent_fd, live_leaf, stage_parent_fd, stage_leaf, "noreplace")
-                                        raise
-                                else:
-                                    fail(f"PROMOTION_STATE_INVALID: {target}")
-                            journal_fd = open_journal(rollback_fd)
-                            try:
-                                append_journal(
-                                    journal_fd,
-                                    journal_entry(index, target, slot, entry["original"], old_hash, "promoted"),
-                                )
-                            finally:
-                                os.close(journal_fd)
-                        finally:
-                            os.close(stage_parent_fd)
-                            os.close(live_parent_fd)
-                        return {
-                            "schemaVersion": 1,
-                            "index": index,
-                            "target": f"public_html/{target}",
-                            "status": "unit-promoted",
-                            "complete": index == len(UNITS) - 1,
-                        }
-                    finally:
-                        os.close(rollback_fd)
-                finally:
-                    os.close(rollback_root_fd)
-            finally:
-                os.close(live_public_fd)
-        finally:
-            os.close(stage_public_fd)
-    finally:
-        os.close(root_fd)
-    fail("PROMOTION_STATE_INVALID")
+                os.close(parent_fd)
+        result.append(("present" if old_hash is not None else "absent", old_hash))
+    return result
 
 
-def validate_journal(entries: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
-    latest: dict[int, dict[str, Any]] = {}
-    allowed_transitions = {
-        None: {"prepared"},
-        "prepared": {"promoted", "rolled-back"},
-        "promoted": {"rolled-back"},
-    }
-    for entry in entries:
-        index = entry.get("index")
-        if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(UNITS):
-            fail("ROLLBACK_JOURNAL_INVALID")
-        target, slot, _payload_paths = UNITS[index]
-        if (
-            entry.get("schemaVersion") != 1
-            or entry.get("target") != f"public_html/{target}"
-            or entry.get("slot") != slot
-            or entry.get("original") not in ("present", "absent")
-            or (
-                entry.get("oldInventorySha256") is not None
-                and not SHA256.fullmatch(entry["oldInventorySha256"])
-            )
-            or (entry["original"] == "present") != (entry["oldInventorySha256"] is not None)
-            or entry.get("state") not in ("prepared", "promoted", "rolled-back")
-        ):
-            fail("ROLLBACK_JOURNAL_INVALID")
-        previous = latest.get(index)
-        if previous and any(entry[key] != previous[key] for key in JOURNAL_KEYS if key != "state"):
-            fail("ROLLBACK_JOURNAL_INVALID")
-        previous_state = previous["state"] if previous else None
-        if entry["state"] not in allowed_transitions.get(previous_state, set()):
-            fail("ROLLBACK_JOURNAL_INVALID")
-        latest[index] = entry
-    if sorted(latest) != list(range(len(latest))):
-        fail("ROLLBACK_JOURNAL_INVALID")
+def ensure_prepared_transitions(
+    transitions_fd: int,
+    preflight: list[tuple[str, str | None]],
+    root_path: str,
+) -> dict[int, dict[str, Any]]:
+    latest, _attempts = parse_transition_files(transitions_fd)
+    if any(entry["transition"] != "prepared" for entry in latest.values()) and len(latest) != len(UNITS):
+        fail("ROLLBACK_TRANSITION_INITIALIZATION_INVALID")
+    if len(latest) < len(UNITS):
+        for index, (original, old_hash) in enumerate(preflight):
+            existing = latest.get(index)
+            if existing is not None:
+                if existing["original"] != original or existing["oldInventorySha256"] != old_hash:
+                    fail("ROLLBACK_TRANSITION_PREFLIGHT_CHANGED")
+                continue
+            write_transition(transitions_fd, index, original, old_hash, "prepared", root_path)
+        latest, _attempts = parse_transition_files(transitions_fd)
+    validate_transition_state(latest)
     return latest
 
 
-def rollback_local(root_path: str, release_argument: str, raw: bytes) -> str:
+def unit_inventories(
+    stage_public_fd: int,
+    live_public_fd: int,
+    rollback_fd: int,
+    index: int,
+) -> tuple[int, str, int, str, str | None, str | None, str | None]:
+    target, slot, payload_paths = UNITS[index]
+    stage_parent_fd, stage_leaf = open_parent_for_target(stage_public_fd, target)
+    live_parent_fd, live_leaf = open_parent_for_target(live_public_fd, target)
+    try:
+        stage_hash = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
+        live_hash = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
+        slot_hash = inventory_leaf(rollback_fd, slot, payload_paths, target)
+        return stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, stage_hash, live_hash, slot_hash
+    except BaseException:
+        os.close(stage_parent_fd)
+        os.close(live_parent_fd)
+        raise
+
+
+def physical_state(entry: dict[str, Any], new_hash: str, stage_hash: str | None, live_hash: str | None, slot_hash: str | None) -> str:
+    old_hash = entry["oldInventorySha256"]
+    if entry["original"] == "present":
+        states = {
+            (new_hash, old_hash, None): "prepared",
+            (old_hash, new_hash, None): "exchanged",
+            (None, new_hash, old_hash): "promoted",
+            (None, old_hash, new_hash): "rolled-back",
+        }
+    else:
+        states = {
+            (new_hash, None, None): "prepared",
+            (None, new_hash, None): "promoted",
+            (None, None, new_hash): "rolled-back",
+        }
+    state = states.get((stage_hash, live_hash, slot_hash))
+    if state is None:
+        fail(f"PROMOTION_PHYSICAL_STATE_INVALID: {entry['target']}")
+    return state
+
+
+def validate_all_physical_states(
+    latest: dict[int, dict[str, Any]],
+    buffers: dict[str, bytes],
+    stage_public_fd: int,
+    live_public_fd: int,
+    rollback_fd: int,
+    *,
+    allow_prepared_candidate: bool,
+    allow_rolled_back_candidate: bool = False,
+) -> dict[int, str]:
+    promoted_end, rolled_back_end = validate_transition_state(latest)
+    candidate = promoted_end if rolled_back_end == promoted_end and promoted_end < len(UNITS) else None
+    states: dict[int, str] = {}
+    for index, entry in latest.items():
+        target, _slot, payload_paths = UNITS[index]
+        stage_parent_fd, _stage_leaf, live_parent_fd, _live_leaf, stage_hash, live_hash, slot_hash = unit_inventories(
+            stage_public_fd, live_public_fd, rollback_fd, index
+        )
+        try:
+            actual = physical_state(entry, expected_unit_hash(payload_paths, buffers), stage_hash, live_hash, slot_hash)
+        finally:
+            os.close(stage_parent_fd)
+            os.close(live_parent_fd)
+        expected = entry["transition"]
+        if expected == "prepared" and allow_prepared_candidate and index == candidate:
+            if actual not in ("prepared", "exchanged", "promoted"):
+                fail(f"PROMOTION_PHYSICAL_STATE_INVALID: {target}")
+        elif (
+            expected == "promoted"
+            and allow_rolled_back_candidate
+            and index == promoted_end - 1
+            and actual == "rolled-back"
+        ):
+            pass
+        elif actual != expected:
+            fail(f"PROMOTION_RECORD_PHYSICAL_MISMATCH: {target}")
+        states[index] = actual
+    return states
+
+
+def finish_promoted_physical_state(
+    root_path: str,
+    entry: dict[str, Any],
+    buffers: dict[str, bytes],
+    stage_public_fd: int,
+    live_public_fd: int,
+    rollback_fd: int,
+    index: int,
+    current: str,
+) -> None:
+    target, slot, payload_paths = UNITS[index]
+    new_hash = expected_unit_hash(payload_paths, buffers)
+    old_hash = entry["oldInventorySha256"]
+    stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, _stage_hash, _live_hash, _slot_hash = unit_inventories(
+        stage_public_fd, live_public_fd, rollback_fd, index
+    )
+    try:
+        if entry["original"] == "present" and current == "prepared":
+            def validate_exchange() -> None:
+                if test_fault_enabled(root_path, "promotion-post-exchange-inventory-error"):
+                    fail(f"PROMOTION_POST_EXCHANGE_INVENTORY_FAILED: {target}")
+                after_live = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
+                after_stage = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
+                if (
+                    after_live != new_hash
+                    or after_stage != old_hash
+                    or test_fault_enabled(root_path, "promotion-post-exchange-mismatch")
+                ):
+                    fail(f"PROMOTION_RACE_OR_TAMPER_DETECTED: {target}")
+
+            reversible_rename(
+                root_path,
+                stage_parent_fd,
+                stage_leaf,
+                live_parent_fd,
+                live_leaf,
+                "exchange",
+                validate_exchange,
+                "promotion-post-exchange",
+                "promote",
+            )
+            current = "exchanged"
+        if entry["original"] == "present" and current == "exchanged":
+            rename_with_flag(stage_parent_fd, stage_leaf, rollback_fd, slot, "noreplace")
+            fsync_rename_directories(stage_parent_fd, rollback_fd)
+            if inventory_leaf(rollback_fd, slot, payload_paths, target) != old_hash:
+                fail(f"PROMOTION_ROLLBACK_SLOT_MISMATCH: {target}")
+            current = "promoted"
+        if entry["original"] == "absent" and current == "prepared":
+            def validate_noreplace() -> None:
+                if test_fault_enabled(root_path, "promotion-post-noreplace-inventory-error"):
+                    fail(f"PROMOTION_POST_NOREPLACE_INVENTORY_FAILED: {target}")
+                if inventory_leaf(live_parent_fd, live_leaf, payload_paths, target) != new_hash:
+                    fail(f"PROMOTION_RACE_OR_TAMPER_DETECTED: {target}")
+
+            reversible_rename(
+                root_path,
+                stage_parent_fd,
+                stage_leaf,
+                live_parent_fd,
+                live_leaf,
+                "noreplace",
+                validate_noreplace,
+                "promotion-post-noreplace",
+                "promote",
+            )
+            current = "promoted"
+        if current != "promoted":
+            fail(f"PROMOTION_STATE_INVALID: {target}")
+    finally:
+        os.close(stage_parent_fd)
+        os.close(live_parent_fd)
+
+
+def open_release_state(root_path: str, release_argument: str, raw: bytes, *, create_rollback: bool) -> tuple[Any, ...]:
     transport, buffers = parse_transport(raw)
     validate_release_argument(release_argument, transport)
     root_fd = open_root(root_path)
+    stage_fd = open_directory("stage", root_fd, "stage")
+    release_fd = open_directory(release_argument, stage_fd, f"stage/{release_argument}", mode=0o700)
+    stage_public_fd = open_directory("public_html", release_fd, "stage/public_html", mode=0o700)
+    os.close(release_fd)
+    os.close(stage_fd)
+    live_public_fd = open_directory("public_html", root_fd, "public_html", mode=0o755)
+    if (
+        os.fstat(stage_public_fd).st_dev != os.fstat(live_public_fd).st_dev
+        or (create_rollback and test_fault_enabled(root_path, "promotion-cross-device"))
+    ):
+        fail("PROMOTION_CROSS_DEVICE_FORBIDDEN")
+    existing_release = False
+    rollback_info = stat_if_present(root_fd, "rollback")
+    if rollback_info is not None:
+        existing_root_fd = open_directory("rollback", root_fd, "rollback", mode=0o700)
+        try:
+            existing_release = stat_if_present(existing_root_fd, release_argument) is not None
+        finally:
+            os.close(existing_root_fd)
+    preflight = live_preflight(live_public_fd) if not existing_release else []
+    if not existing_release:
+        for name in ("apps", "app", ".well-known"):
+            container_fd = ensure_directory(name, live_public_fd, f"public_html/{name}", 0o755)
+            os.close(container_fd)
+    rollback_root_fd = ensure_directory("rollback", root_fd, "rollback") if create_rollback else open_directory(
+        "rollback", root_fd, "rollback", mode=0o700
+    )
+    if (
+        os.fstat(rollback_root_fd).st_dev != os.fstat(live_public_fd).st_dev
+        or os.fstat(stage_public_fd).st_dev != os.fstat(live_public_fd).st_dev
+    ):
+        fail("PROMOTION_CROSS_DEVICE_FORBIDDEN")
+    if not existing_release:
+        if not create_rollback:
+            fail("ROLLBACK_RELEASE_MISSING")
+        try:
+            os.mkdir(release_argument, 0o700, dir_fd=rollback_root_fd)
+            os.fsync(rollback_root_fd)
+        except FileExistsError as error:
+            raise ReleaseError("ROLLBACK_RELEASE_COLLISION") from error
+    rollback_fd = open_directory(release_argument, rollback_root_fd, f"rollback/{release_argument}", mode=0o700)
+    rollback_names = set(os.listdir(rollback_fd))
+    allowed_rollback_names = {"transitions", *(slot for _target, slot, _paths in UNITS)}
+    if not rollback_names.issubset(allowed_rollback_names):
+        fail("ROLLBACK_UNKNOWN_PATH")
+    transitions_fd = open_transitions(rollback_fd, create=create_rollback)
+    if not existing_release:
+        latest = ensure_prepared_transitions(transitions_fd, preflight, root_path)
+    else:
+        latest, _attempts = parse_transition_files(transitions_fd)
+        validate_transition_state(latest)
+    return (
+        transport, buffers, root_fd, stage_public_fd, live_public_fd,
+        rollback_root_fd, rollback_fd, transitions_fd, latest,
+    )
+
+
+def close_release_state(state: tuple[Any, ...]) -> None:
+    for fd in reversed(state[2:8]):
+        os.close(fd)
+
+
+def promote_next(root_path: str, release_argument: str, raw: bytes) -> dict[str, Any]:
+    state = open_release_state(root_path, release_argument, raw, create_rollback=True)
+    transport, buffers, _root_fd, stage_public_fd, live_public_fd, _rollback_root_fd, rollback_fd, transitions_fd, latest = state
     try:
-        stage_fd = open_directory("stage", root_fd, "stage")
-        try:
-            stage_release_fd = open_directory(release_argument, stage_fd, f"stage/{release_argument}", mode=0o700)
-            try:
-                stage_public_fd = open_directory("public_html", stage_release_fd, "stage/public_html", mode=0o700)
-            finally:
-                os.close(stage_release_fd)
-        finally:
-            os.close(stage_fd)
-        live_public_fd = open_directory("public_html", root_fd, "public_html", mode=0o755)
-        try:
-            rollback_root_fd = open_directory("rollback", root_fd, "rollback", mode=0o700)
-            try:
-                rollback_fd = open_directory(
-                    release_argument,
-                    rollback_root_fd,
-                    f"rollback/{release_argument}",
-                    mode=0o700,
-                )
-                try:
-                    latest = validate_journal(read_journal(rollback_fd))
-                    if len(latest) != len(UNITS):
-                        fail("ROLLBACK_JOURNAL_INVALID")
-                    if latest and all(entry["state"] == "rolled-back" for entry in latest.values()):
-                        fail("ROLLBACK_ALREADY_APPLIED")
-                    journal_fd = open_journal(rollback_fd)
-                    try:
-                        for index in sorted(latest, reverse=True):
-                            entry = latest[index]
-                            if entry["state"] == "rolled-back":
-                                continue
-                            target, slot, payload_paths = UNITS[index]
-                            live_parent_fd, live_leaf = open_parent_for_target(live_public_fd, target)
-                            try:
-                                new_hash = expected_unit_hash(payload_paths, buffers)
-                                old_hash = entry["oldInventorySha256"]
-                                live_hash = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
-                                slot_hash = inventory_leaf(rollback_fd, slot, payload_paths, target)
-                                stage_parent_fd, stage_leaf = open_parent_for_target(stage_public_fd, target)
-                                try:
-                                    stage_hash = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
-                                    if entry["state"] == "prepared":
-                                        expected_live = old_hash if entry["original"] == "present" else None
-                                        if live_hash != expected_live or stage_hash != new_hash or slot_hash is not None:
-                                            fail(f"ROLLBACK_PREPARED_STATE_INVALID: {target}")
-                                    elif entry["original"] == "present":
-                                        if live_hash == old_hash and slot_hash == new_hash and stage_hash is None:
-                                            pass
-                                        elif live_hash == new_hash and slot_hash == old_hash and stage_hash is None:
-                                            rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "exchange")
-                                            try:
-                                                if test_fault_enabled(root_path, "rollback-post-exchange-inventory-error"):
-                                                    fail(f"ROLLBACK_POST_EXCHANGE_INVENTORY_FAILED: {target}")
-                                                restored = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
-                                                displaced = inventory_leaf(rollback_fd, slot, payload_paths, target)
-                                                if (
-                                                    restored != old_hash
-                                                    or displaced != new_hash
-                                                    or test_fault_enabled(root_path, "rollback-post-exchange-mismatch")
-                                                ):
-                                                    fail(f"ROLLBACK_RESTORE_MISMATCH: {target}")
-                                            except ReleaseError:
-                                                rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "exchange")
-                                                raise
-                                        elif live_hash == new_hash and slot_hash is None and stage_hash == old_hash:
-                                            rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
-                                            try:
-                                                restored = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
-                                                displaced = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
-                                                if restored != old_hash or displaced != new_hash:
-                                                    fail(f"ROLLBACK_RESTORE_MISMATCH: {target}")
-                                            except ReleaseError:
-                                                rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
-                                                raise
-                                        else:
-                                            fail(f"ROLLBACK_STATE_INVALID: {target}")
-                                    else:
-                                        if live_hash is None and slot_hash == new_hash and stage_hash is None:
-                                            pass
-                                        elif live_hash == new_hash and slot_hash is None and stage_hash is None:
-                                            rename_with_flag(live_parent_fd, live_leaf, rollback_fd, slot, "noreplace")
-                                            if (
-                                                inventory_leaf(live_parent_fd, live_leaf, payload_paths, target) is not None
-                                                or inventory_leaf(rollback_fd, slot, payload_paths, target) != new_hash
-                                            ):
-                                                fail(f"ROLLBACK_RESTORE_MISMATCH: {target}")
-                                        else:
-                                            fail(f"ROLLBACK_STATE_INVALID: {target}")
-                                finally:
-                                    os.close(stage_parent_fd)
-                                append_journal(
-                                    journal_fd,
-                                    journal_entry(
-                                        index,
-                                        target,
-                                        slot,
-                                        entry["original"],
-                                        old_hash,
-                                        "rolled-back",
-                                    ),
-                                )
-                            finally:
-                                os.close(live_parent_fd)
-                    finally:
-                        os.close(journal_fd)
-                finally:
-                    os.close(rollback_fd)
-            finally:
-                os.close(rollback_root_fd)
-        finally:
-            os.close(live_public_fd)
-            os.close(stage_public_fd)
+        promoted_end, rolled_back_end = validate_transition_state(latest)
+        if rolled_back_end > promoted_end:
+            fail("PROMOTION_AFTER_ROLLBACK_FORBIDDEN")
+        if promoted_end == len(UNITS):
+            fail("PROMOTION_ALREADY_COMPLETE")
+        physical = validate_all_physical_states(
+            latest,
+            buffers,
+            stage_public_fd,
+            live_public_fd,
+            rollback_fd,
+            allow_prepared_candidate=True,
+        )
+        index = promoted_end
+        entry = latest[index]
+        finish_promoted_physical_state(
+            root_path, entry, buffers, stage_public_fd, live_public_fd, rollback_fd, index, physical[index]
+        )
+        write_transition(
+            transitions_fd,
+            index,
+            entry["original"],
+            entry["oldInventorySha256"],
+            "promoted",
+            root_path,
+            "promote",
+        )
+        test_crash(root_path, "promote-crash-before-return")
+        return {
+            "schemaVersion": 1,
+            "index": index,
+            "target": f"public_html/{UNITS[index][0]}",
+            "status": "unit-promoted",
+            "complete": index == len(UNITS) - 1,
+        }
     finally:
-        os.close(root_fd)
-    return "rolled-back"
+        close_release_state(state)
+
+
+def tamper_live_leaf_mode(parent_fd: int, leaf: str) -> None:
+    fd = os.open(leaf, OPEN_FILE_READ, dir_fd=parent_fd)
+    try:
+        os.fchmod(fd, 0o600)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def rollback_promoted_unit(
+    root_path: str,
+    entry: dict[str, Any],
+    buffers: dict[str, bytes],
+    stage_public_fd: int,
+    live_public_fd: int,
+    rollback_fd: int,
+    index: int,
+    current: str,
+) -> None:
+    target, slot, payload_paths = UNITS[index]
+    new_hash = expected_unit_hash(payload_paths, buffers)
+    old_hash = entry["oldInventorySha256"]
+    stage_parent_fd, _stage_leaf, live_parent_fd, live_leaf, _stage_hash, _live_hash, _slot_hash = unit_inventories(
+        stage_public_fd, live_public_fd, rollback_fd, index
+    )
+    try:
+        if current == "rolled-back":
+            return
+        if current != "promoted":
+            fail(f"ROLLBACK_STATE_INVALID: {target}")
+        if entry["original"] == "present":
+            def validate_exchange() -> None:
+                if test_fault_enabled(root_path, "rollback-post-exchange-inventory-error"):
+                    fail(f"ROLLBACK_POST_EXCHANGE_INVENTORY_FAILED: {target}")
+                restored = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
+                displaced = inventory_leaf(rollback_fd, slot, payload_paths, target)
+                if (
+                    restored != old_hash
+                    or displaced != new_hash
+                    or test_fault_enabled(root_path, "rollback-post-exchange-mismatch")
+                ):
+                    fail(f"ROLLBACK_RESTORE_MISMATCH: {target}")
+
+            reversible_rename(
+                root_path,
+                rollback_fd,
+                slot,
+                live_parent_fd,
+                live_leaf,
+                "exchange",
+                validate_exchange,
+                "rollback-post-exchange",
+                "rollback",
+                lambda: tamper_live_leaf_mode(live_parent_fd, live_leaf),
+            )
+        else:
+            def validate_noreplace() -> None:
+                if (
+                    inventory_leaf(live_parent_fd, live_leaf, payload_paths, target) is not None
+                    or inventory_leaf(rollback_fd, slot, payload_paths, target) != new_hash
+                ):
+                    fail(f"ROLLBACK_RESTORE_MISMATCH: {target}")
+
+            reversible_rename(
+                root_path,
+                live_parent_fd,
+                live_leaf,
+                rollback_fd,
+                slot,
+                "noreplace",
+                validate_noreplace,
+                "rollback-post-noreplace",
+                "rollback",
+            )
+    finally:
+        os.close(stage_parent_fd)
+        os.close(live_parent_fd)
+
+
+def rollback_local(root_path: str, release_argument: str, raw: bytes) -> str:
+    state = open_release_state(root_path, release_argument, raw, create_rollback=False)
+    _transport, buffers, _root_fd, stage_public_fd, live_public_fd, _rollback_root_fd, rollback_fd, transitions_fd, latest = state
+    try:
+        promoted_end, rolled_back_end = validate_transition_state(latest)
+        physical = validate_all_physical_states(
+            latest,
+            buffers,
+            stage_public_fd,
+            live_public_fd,
+            rollback_fd,
+            allow_prepared_candidate=True,
+            allow_rolled_back_candidate=True,
+        )
+        candidate = promoted_end if promoted_end == rolled_back_end and promoted_end < len(UNITS) else None
+        if candidate is not None and physical[candidate] in ("exchanged", "promoted"):
+            entry = latest[candidate]
+            finish_promoted_physical_state(
+                root_path,
+                entry,
+                buffers,
+                stage_public_fd,
+                live_public_fd,
+                rollback_fd,
+                candidate,
+                physical[candidate],
+            )
+            write_transition(
+                transitions_fd,
+                candidate,
+                entry["original"],
+                entry["oldInventorySha256"],
+                "promoted",
+                root_path,
+            )
+            latest, _attempts = parse_transition_files(transitions_fd)
+            promoted_end, rolled_back_end = validate_transition_state(latest)
+        if promoted_end == 0:
+            if rolled_back_end > 0:
+                return "rolled-back"
+            fail("ROLLBACK_NOTHING_PROMOTED")
+        for index in range(promoted_end - 1, -1, -1):
+            entry = latest[index]
+            target, _slot, payload_paths = UNITS[index]
+            stage_parent_fd, _stage_leaf, live_parent_fd, _live_leaf, stage_hash, live_hash, slot_hash = unit_inventories(
+                stage_public_fd, live_public_fd, rollback_fd, index
+            )
+            try:
+                current = physical_state(
+                    entry, expected_unit_hash(payload_paths, buffers), stage_hash, live_hash, slot_hash
+                )
+            finally:
+                os.close(stage_parent_fd)
+                os.close(live_parent_fd)
+            rollback_promoted_unit(
+                root_path, entry, buffers, stage_public_fd, live_public_fd, rollback_fd, index, current
+            )
+            write_transition(
+                transitions_fd,
+                index,
+                entry["original"],
+                entry["oldInventorySha256"],
+                "rolled-back",
+                root_path,
+                "rollback",
+            )
+            latest, _attempts = parse_transition_files(transitions_fd)
+            validate_transition_state(latest)
+        test_crash(root_path, "rollback-crash-before-return")
+        return "rolled-back"
+    finally:
+        close_release_state(state)
 
 
 def validate_artifact_manifest(manifest: Any, transport: dict[str, Any]) -> bytes:
@@ -1440,9 +1970,7 @@ def validate_artifact_manifest(manifest: Any, transport: dict[str, Any]) -> byte
     return canonical_json(manifest)
 
 
-def publish_manifest_local(root_path: str, reviewed_manifest_sha256: str, raw: bytes) -> str:
-    if not SHA256.fullmatch(reviewed_manifest_sha256):
-        fail("REVIEWED_MANIFEST_SHA256_INVALID")
+def parse_artifact_envelope(raw: bytes) -> tuple[dict[str, Any], dict[str, bytes], bytes, bytes]:
     try:
         envelope = json.loads(raw.decode("utf-8"), object_pairs_hook=reject_duplicate_keys)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -1450,50 +1978,135 @@ def publish_manifest_local(root_path: str, reviewed_manifest_sha256: str, raw: b
     if canonical_json(envelope) != raw:
         fail("WEB_ARTIFACT_ENVELOPE_NONCANONICAL")
     exact_keys(envelope, ("transport", "manifest"), "WEB_ARTIFACT_ENVELOPE")
-    transport, buffers = parse_transport(canonical_json(envelope["transport"]))
+    transport_bytes = canonical_json(envelope["transport"])
+    transport, buffers = parse_transport(transport_bytes)
     manifest_bytes = validate_artifact_manifest(envelope["manifest"], transport)
-    if hashlib.sha256(manifest_bytes).hexdigest() != reviewed_manifest_sha256:
-        fail("REVIEWED_MANIFEST_SHA256_MISMATCH")
+    return transport, buffers, transport_bytes, manifest_bytes
+
+
+def independently_captured_assembly(root_fd: int) -> tuple[dict[str, bytes], list[dict[str, Any]]]:
+    capsule_bytes, _capsule_info = read_capsule_file(root_fd)
+    try:
+        capsule = json.loads(capsule_bytes.decode("utf-8"), object_pairs_hook=reject_duplicate_keys)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ReleaseError("TASK6B_CAPSULE_PAYLOAD_INVALID") from error
+    exact_keys(capsule, ("schemaVersion", "kind", "manifest", "files"), "TASK6B_CAPSULE")
+    manifest = capsule.get("manifest")
+    if (
+        capsule["schemaVersion"] != 1
+        or capsule["kind"] != "cabohealth-miniapps-task-6b-release-capsule-v1"
+        or not isinstance(manifest, dict)
+        or manifest.get("releaseReady") is not True
+        or manifest.get("mode") != "release"
+        or manifest.get("entrySlugs") != list(ENTRY_SLUGS)
+        or not isinstance(capsule["files"], list)
+        or len(capsule["files"]) != len(MINIAPP_FILE_PINS)
+    ):
+        fail("TASK6B_CAPSULE_PAYLOAD_INVALID")
+    expected_buffers: dict[str, bytes] = {}
+    for index, item in enumerate(capsule["files"]):
+        exact_keys(item, ("path", "size", "sha256", "bytesBase64"), "TASK6B_CAPSULE_FILE")
+        pin_path, pin_size, pin_sha256 = MINIAPP_FILE_PINS[index]
+        try:
+            contents = base64.b64decode(item["bytesBase64"], validate=True)
+        except (TypeError, ValueError, base64.binascii.Error) as error:
+            raise ReleaseError("TASK6B_CAPSULE_PAYLOAD_INVALID") from error
+        if (
+            item["path"] != pin_path
+            or item["size"] != pin_size
+            or item["sha256"] != pin_sha256
+            or len(contents) != pin_size
+            or hashlib.sha256(contents).hexdigest() != pin_sha256
+            or base64.b64encode(contents).decode("ascii") != item["bytesBase64"]
+        ):
+            fail("TASK6B_CAPSULE_PAYLOAD_INVALID")
+        expected_buffers[pin_path] = contents
+
+    captured_inputs = {path: read_fixed_file(root_fd, path) for path in INPUT_PATHS}
+    expected_buffers[".well-known/apple-app-site-association"] = captured_inputs[
+        "web-hosting/cabohealth.org/.well-known/apple-app-site-association"
+    ]
+    for slug in LEGAL_SLUGS:
+        expected_buffers[f"app/{slug}/index.html"] = captured_inputs[
+            f"web-hosting/cabohealth.org/app/{slug}/index.html"
+        ]
+    apache = expected_buffers["apps/.htaccess"]
+    if (
+        captured_inputs["miniapps/shared/security-headers.conf"] != apache
+        or captured_inputs["web-hosting/cabohealth.org/apps/.htaccess"] != apache
+    ):
+        fail("WEB_RELEASE_APACHE_SECURITY_MISMATCH")
+    input_bytes = {"miniapps/dist": capsule_bytes, **captured_inputs}
+    input_entries = [{
+        "path": path,
+        "size": len(input_bytes[path]),
+        "sha256": hashlib.sha256(input_bytes[path]).hexdigest(),
+        "kind": INPUT_MANIFEST_KINDS[index],
+    } for index, path in enumerate(INPUT_MANIFEST_PATHS)]
+    return expected_buffers, input_entries
+
+
+def publish_manifest_bound(
+    root_fd: int,
+    transport: dict[str, Any],
+    buffers: dict[str, bytes],
+    manifest_bytes: bytes,
+) -> str:
+    release_fd = open_directory("release", root_fd, "release")
+    try:
+        bundles_fd = open_directory("web-bundles", release_fd, "release/web-bundles")
+        try:
+            bundle_fd = open_directory(transport["releaseId"], bundles_fd, transport["releaseId"], mode=0o555)
+            try:
+                verify_tree(bundle_fd, buffers)
+            finally:
+                os.close(bundle_fd)
+        finally:
+            os.close(bundles_fd)
+
+        existing = stat_if_present(release_fd, "web-artifacts.json")
+        if existing is None:
+            create_file(release_fd, "web-artifacts.json", manifest_bytes, "release/web-artifacts.json")
+            return "published-manifest"
+        if (
+            not stat.S_ISREG(existing.st_mode)
+            or existing.st_uid != os.geteuid()
+            or existing.st_nlink != 1
+            or existing.st_mode & 0o777 != 0o444
+        ):
+            fail("WEB_ARTIFACT_MANIFEST_COLLISION")
+        fd = os.open("web-artifacts.json", OPEN_FILE_READ, dir_fd=release_fd)
+        try:
+            before = os.fstat(fd)
+            contents = read_all(fd)
+            after = os.fstat(fd)
+            if (
+                contents != manifest_bytes
+                or (before.st_dev, before.st_ino, before.st_size, before.st_mode, before.st_uid, before.st_nlink)
+                != (after.st_dev, after.st_ino, after.st_size, after.st_mode, after.st_uid, after.st_nlink)
+            ):
+                fail("WEB_ARTIFACT_MANIFEST_COLLISION")
+        finally:
+            os.close(fd)
+        return "verified-existing-manifest"
+    finally:
+        os.close(release_fd)
+
+
+def materialize_release(root_path: str, raw: bytes) -> str:
+    transport, buffers, transport_bytes, manifest_bytes = parse_artifact_envelope(raw)
 
     root_fd = open_root(root_path)
     try:
-        release_fd = open_directory("release", root_fd, "release")
-        try:
-            bundles_fd = open_directory("web-bundles", release_fd, "release/web-bundles")
-            try:
-                bundle_fd = open_directory(transport["releaseId"], bundles_fd, transport["releaseId"], mode=0o555)
-                try:
-                    verify_tree(bundle_fd, buffers)
-                finally:
-                    os.close(bundle_fd)
-            finally:
-                os.close(bundles_fd)
-
-            existing = stat_if_present(release_fd, "web-artifacts.json")
-            if existing is None:
-                create_file(
-                    release_fd,
-                    "web-artifacts.json",
-                    manifest_bytes,
-                    "release/web-artifacts.json",
-                )
-                return "published-manifest"
-            if (
-                not stat.S_ISREG(existing.st_mode)
-                or existing.st_uid != os.geteuid()
-                or existing.st_nlink != 1
-                or existing.st_mode & 0o777 != 0o444
-            ):
-                fail("WEB_ARTIFACT_MANIFEST_COLLISION")
-            fd = os.open("web-artifacts.json", OPEN_FILE_READ, dir_fd=release_fd)
-            try:
-                if read_all(fd) != manifest_bytes:
-                    fail("WEB_ARTIFACT_MANIFEST_COLLISION")
-            finally:
-                os.close(fd)
-            return "verified-existing-manifest"
-        finally:
-            os.close(release_fd)
+        expected_buffers, input_entries = independently_captured_assembly(root_fd)
+        if buffers != expected_buffers:
+            fail("WEB_ARTIFACT_INDEPENDENT_ASSEMBLY_MISMATCH")
+        manifest = json.loads(manifest_bytes.decode("utf-8"), object_pairs_hook=reject_duplicate_keys)
+        if manifest["inputs"] != input_entries:
+            fail("WEB_ARTIFACT_MANIFEST_PROVENANCE_MISMATCH")
+        materialized = materialize_local_bound(root_fd, transport_bytes, transport, buffers)
+        published = publish_manifest_bound(root_fd, transport, buffers, manifest_bytes)
+        return f"{materialized};{published}"
     finally:
         os.close(root_fd)
 
@@ -1515,8 +2128,14 @@ def main(argv: list[str]) -> int:
         result = materialize_local(argv[2], sys.stdin.buffer.read())
         print(result)
         return 0
+    if len(argv) == 3 and argv[1] == "materialize-release":
+        print(materialize_release(argv[2], sys.stdin.buffer.read()))
+        return 0
     if len(argv) == 3 and argv[1] == "capture-reviewed-inputs":
         sys.stdout.buffer.write(capture_reviewed_inputs(argv[2]))
+        return 0
+    if len(argv) == 3 and argv[1] == "capture-assembly-snapshot":
+        sys.stdout.buffer.write(capture_assembly_snapshot(argv[2]))
         return 0
     if len(argv) == 4 and argv[1] == "materialize-stage":
         result = materialize_stage(argv[2], argv[3], sys.stdin.buffer.read())
@@ -1532,10 +2151,7 @@ def main(argv: list[str]) -> int:
     if len(argv) == 4 and argv[1] == "inventory-live":
         sys.stdout.buffer.write(canonical_json(inventory_live(argv[2], argv[3], sys.stdin.buffer.read())))
         return 0
-    if len(argv) == 4 and argv[1] == "publish-manifest-local":
-        print(publish_manifest_local(argv[2], argv[3], sys.stdin.buffer.read()))
-        return 0
-    fail("Usage: secure_web_release.py <root-identity|materialize-local|materialize-stage|capture-reviewed-inputs|promote-next|rollback-local|inventory-live|publish-manifest-local> <owned-root> [release-id]")
+    fail("Usage: secure_web_release.py <root-identity|capture-assembly-snapshot|materialize-local|materialize-release|materialize-stage|capture-reviewed-inputs|promote-next|rollback-local|inventory-live> <owned-root> [release-id]")
 
 
 if __name__ == "__main__":

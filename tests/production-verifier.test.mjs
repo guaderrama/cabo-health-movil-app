@@ -111,6 +111,51 @@ function localOriginArtifact() {
   };
 }
 
+function fixtureBrowserEvidence(artifact, authority) {
+  const routes = artifact.files
+    .filter(({ path }) => path.endsWith('.html'))
+    .map(({ path }) => `/${path.replace(/index\.html$/u, '')}`);
+  const observations = [];
+  for (const viewport of ['mobile', 'desktop']) {
+    for (const locale of ['en-US', 'es-MX']) {
+      for (const javascript of ['enabled', 'disabled']) {
+        for (const path of routes) {
+          const url = new URL(path, 'https://cabohealth.org/').href;
+          observations.push({
+            path,
+            viewport,
+            locale,
+            javascript,
+            documentUrl: url,
+            readyState: 'complete',
+            bodyTextLength: 120,
+            canonicalHref: url,
+            unexpectedRequestCount: 0,
+            consoleErrorCount: 0,
+            miniappReady: javascript === 'enabled' && path.startsWith('/apps/'),
+          });
+        }
+      }
+    }
+  }
+  const evidence = {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-browser-measurement-v1',
+    status: 'verified',
+    releaseId: artifact.releaseId,
+    artifactSha256: authority.reviewedArtifactSha256,
+    checkedAt: '2026-08-18T01:03:30.000Z',
+    nonceSha256: 'f'.repeat(64),
+    viewports: ['mobile', 'desktop'],
+    locales: ['en-US', 'es-MX'],
+    javascriptModes: ['enabled', 'disabled'],
+    routes,
+    observations,
+  };
+  evidence.measurementSha256 = sha256(Buffer.from(`${JSON.stringify(evidence)}\n`));
+  return evidence;
+}
+
 async function runMutatedOrigin(verifyOrigin, mutate) {
   const { artifact, authority, bodies } = localOriginArtifact();
   const routeToPath = new Map([...bodies.keys()].map((path) => [
@@ -206,11 +251,17 @@ test('sanitized production evidence reconciles the exact artifact URL set withou
       unknownSlugNonceSha256: 'f'.repeat(64),
       urls: evidenceUrls,
     },
-    serverInventory: { status: 'verified', rootCount: 3, fileCount: 8, inventorySha256: 'e'.repeat(64) },
-    browser: {
-      status: 'verified', viewportCount: 2, localeCount: 2, javascriptModeCount: 2,
-      unexpectedRequests: 0, consoleErrors: 0, noJsReadable: true,
+    serverInventory: {
+      schemaVersion: 1,
+      artifactKind: 'cabohealth-server-inventory-v1',
+      status: 'verified',
+      releaseId: artifact.releaseId,
+      rootCount: 3,
+      fileCount: 14,
+      paths: artifact.files.map(({ path }) => path),
+      inventorySha256: artifact.inventorySha256,
     },
+    browser: fixtureBrowserEvidence(artifact, authority),
     controls: { unrelatedAssetRetained: true, terminalRouteRetained: true },
     appleCdn: {
       status: 'pending-propagation',

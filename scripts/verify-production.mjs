@@ -2,11 +2,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { canonicalAasaBytes, readReleaseIdentity } from './generate-aasa.mjs';
+import { canonicalAasaBytes } from './generate-aasa.mjs';
 import { CONTENT_SECURITY_POLICY, MINIAPP_SECURITY_HEADERS } from './build-miniapps.mjs';
 import { assertStaticWebPolicy } from './web-release-policy.mjs';
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const APP_ID = 'DQ8PH2DZ3R.com.cabohealth.app';
 const RELEASE_ID = /^web-v1-[a-f0-9]{64}$/u;
 const SHA256 = /^[a-f0-9]{64}$/u;
 const COMMIT = /^[a-f0-9]{40}$/u;
@@ -229,38 +230,254 @@ export function validateSensitiveControls(value) {
   return value;
 }
 
-export function validateServerInventoryEvidence(value) {
-  assertExactKeys(value, ['status', 'rootCount', 'fileCount', 'inventorySha256'], 'SERVER_INVENTORY');
+export function validateServerInventoryEvidence(value, artifact, authority) {
+  validateArtifactAuthority(artifact, authority);
+  assertExactKeys(value, [
+    'schemaVersion',
+    'artifactKind',
+    'status',
+    'releaseId',
+    'rootCount',
+    'fileCount',
+    'paths',
+    'inventorySha256',
+  ], 'SERVER_INVENTORY');
   if (
-    value.status !== 'verified'
+    value.schemaVersion !== 1
+    || value.artifactKind !== 'cabohealth-server-inventory-v1'
+    || value.status !== 'verified'
+    || value.releaseId !== artifact.releaseId
     || value.rootCount !== 3
-    || value.fileCount !== 8
-    || typeof value.inventorySha256 !== 'string'
-    || !SHA256.test(value.inventorySha256)
+    || value.fileCount !== ORIGIN_PAYLOAD_PATHS.length
+    || JSON.stringify(value.paths) !== JSON.stringify(ORIGIN_PAYLOAD_PATHS)
+    || value.inventorySha256 !== artifact.inventorySha256
   ) throw new Error('SERVER_INVENTORY_INVALID');
   return true;
 }
 
-export function validateBrowserEvidence(value) {
+const BROWSER_VIEWPORTS = Object.freeze([
+  Object.freeze({ id: 'mobile', width: 390, height: 844 }),
+  Object.freeze({ id: 'desktop', width: 1440, height: 900 }),
+]);
+const BROWSER_LOCALES = Object.freeze(['en-US', 'es-MX']);
+const BROWSER_JAVASCRIPT_MODES = Object.freeze(['enabled', 'disabled']);
+
+function browserRoutes(artifact) {
+  return artifact.files
+    .filter(({ path }) => path.endsWith('.html'))
+    .map(({ path }) => publicUrlPath(path));
+}
+
+function browserMeasurementBody(value) {
+  const { measurementSha256: _measurementSha256, ...body } = value;
+  return body;
+}
+
+export function validateBrowserEvidence(value, artifact, authority) {
+  validateArtifactAuthority(artifact, authority);
   assertExactKeys(value, [
+    'schemaVersion',
+    'artifactKind',
     'status',
-    'viewportCount',
-    'localeCount',
-    'javascriptModeCount',
-    'unexpectedRequests',
-    'consoleErrors',
-    'noJsReadable',
+    'releaseId',
+    'artifactSha256',
+    'checkedAt',
+    'nonceSha256',
+    'viewports',
+    'locales',
+    'javascriptModes',
+    'routes',
+    'observations',
+    'measurementSha256',
   ], 'BROWSER_EVIDENCE');
+  const routes = browserRoutes(artifact);
   if (
-    value.status !== 'verified'
-    || value.viewportCount !== 2
-    || value.localeCount !== 2
-    || value.javascriptModeCount !== 2
-    || value.unexpectedRequests !== 0
-    || value.consoleErrors !== 0
-    || value.noJsReadable !== true
+    value.schemaVersion !== 1
+    || value.artifactKind !== 'cabohealth-browser-measurement-v1'
+    || value.status !== 'verified'
+    || value.releaseId !== artifact.releaseId
+    || value.artifactSha256 !== authority.reviewedArtifactSha256
+    || !isCanonicalUtcTimestamp(value.checkedAt)
+    || typeof value.nonceSha256 !== 'string'
+    || !SHA256.test(value.nonceSha256)
+    || JSON.stringify(value.viewports) !== JSON.stringify(BROWSER_VIEWPORTS.map(({ id }) => id))
+    || JSON.stringify(value.locales) !== JSON.stringify(BROWSER_LOCALES)
+    || JSON.stringify(value.javascriptModes) !== JSON.stringify(BROWSER_JAVASCRIPT_MODES)
+    || JSON.stringify(value.routes) !== JSON.stringify(routes)
+    || !Array.isArray(value.observations)
+    || value.observations.length !== BROWSER_VIEWPORTS.length * BROWSER_LOCALES.length
+      * BROWSER_JAVASCRIPT_MODES.length * routes.length
+    || value.measurementSha256 !== sha256(Buffer.from(canonicalJson(browserMeasurementBody(value))))
   ) throw new Error('BROWSER_EVIDENCE_INVALID');
+  let index = 0;
+  for (const viewport of BROWSER_VIEWPORTS) {
+    for (const locale of BROWSER_LOCALES) {
+      for (const javascript of BROWSER_JAVASCRIPT_MODES) {
+        for (const path of routes) {
+          const observation = value.observations[index];
+          assertExactKeys(observation, [
+            'path',
+            'viewport',
+            'locale',
+            'javascript',
+            'documentUrl',
+            'readyState',
+            'bodyTextLength',
+            'canonicalHref',
+            'unexpectedRequestCount',
+            'consoleErrorCount',
+            'miniappReady',
+          ], 'BROWSER_OBSERVATION');
+          const expectedUrl = new URL(path, 'https://cabohealth.org/').href;
+          if (
+            observation.path !== path
+            || observation.viewport !== viewport.id
+            || observation.locale !== locale
+            || observation.javascript !== javascript
+            || observation.documentUrl !== expectedUrl
+            || observation.readyState !== 'complete'
+            || !Number.isSafeInteger(observation.bodyTextLength)
+            || observation.bodyTextLength <= 0
+            || observation.canonicalHref !== expectedUrl
+            || observation.unexpectedRequestCount !== 0
+            || observation.consoleErrorCount !== 0
+            || typeof observation.miniappReady !== 'boolean'
+            || (javascript === 'enabled' && path.startsWith('/apps/') && observation.miniappReady !== true)
+          ) throw new Error(`BROWSER_EVIDENCE_INVALID: ${path}:${index}`);
+          index += 1;
+        }
+      }
+    }
+  }
   return true;
+}
+
+function assertLoopbackWebDriverUrl(value) {
+  const parsed = new URL(value);
+  if (
+    parsed.protocol !== 'http:'
+    || !['127.0.0.1', '[::1]'].includes(parsed.hostname)
+    || !parsed.port
+    || parsed.username
+    || parsed.password
+    || parsed.pathname !== '/'
+    || parsed.search
+    || parsed.hash
+  ) throw new Error('WEBDRIVER_NETWORK_FORBIDDEN');
+  return parsed;
+}
+
+async function webdriverCommand(base, path, method = 'POST', body = undefined) {
+  const response = await fetch(new URL(path, base), {
+    method,
+    redirect: 'manual',
+    headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (response.status !== 200 || response.url !== new URL(path, base).href) {
+    throw new Error(`WEBDRIVER_RESPONSE_INVALID: ${path}`);
+  }
+  const envelope = await response.json();
+  assertExactKeys(envelope, ['value'], 'WEBDRIVER_ENVELOPE');
+  return envelope.value;
+}
+
+export async function measureBrowserEvidence({
+  artifact,
+  reviewedReleaseId,
+  reviewedArtifactSha256,
+  baseUrl,
+  webdriverUrl,
+  productionConfirmation = null,
+  checkedAt = new Date().toISOString(),
+  nonce = randomBytes(16),
+}) {
+  const authority = { reviewedReleaseId, reviewedArtifactSha256 };
+  validateArtifactAuthority(artifact, authority);
+  const base = assertAllowedBaseUrl(baseUrl, productionConfirmation);
+  if (base.href !== 'https://cabohealth.org/') throw new Error('BROWSER_PRODUCTION_ORIGIN_REQUIRED');
+  const webdriver = assertLoopbackWebDriverUrl(webdriverUrl);
+  if (!Buffer.isBuffer(nonce) || nonce.byteLength !== 16 || !isCanonicalUtcTimestamp(checkedAt)) {
+    throw new Error('BROWSER_MEASUREMENT_INPUT_INVALID');
+  }
+  const routes = browserRoutes(artifact);
+  const allowedUrls = artifact.files
+    .filter(({ path }) => path !== 'apps/.htaccess')
+    .map(({ path }) => new URL(publicUrlPath(path), base).href);
+  const observations = [];
+  for (const viewport of BROWSER_VIEWPORTS) {
+    for (const locale of BROWSER_LOCALES) {
+      for (const javascript of BROWSER_JAVASCRIPT_MODES) {
+        const chromePreferences = {
+          intl: { accept_languages: locale },
+          profile: { managed_default_content_settings: { javascript: javascript === 'enabled' ? 1 : 2 } },
+        };
+        const created = await webdriverCommand(webdriver, '/session', 'POST', {
+          capabilities: {
+            alwaysMatch: {
+              browserName: 'chrome',
+              acceptInsecureCerts: false,
+              pageLoadStrategy: 'normal',
+              'goog:chromeOptions': { prefs: chromePreferences },
+              'goog:loggingPrefs': { browser: 'ALL' },
+            },
+          },
+        });
+        const sessionId = created?.sessionId;
+        if (typeof sessionId !== 'string' || !/^[A-Za-z0-9._-]+$/u.test(sessionId)) {
+          throw new Error('WEBDRIVER_SESSION_INVALID');
+        }
+        try {
+          await webdriverCommand(webdriver, `/session/${sessionId}/window/rect`, 'POST', {
+            width: viewport.width,
+            height: viewport.height,
+          });
+          for (const path of routes) {
+            const url = new URL(path, base).href;
+            await webdriverCommand(webdriver, `/session/${sessionId}/url`, 'POST', { url });
+            const measured = await webdriverCommand(webdriver, `/session/${sessionId}/execute/sync`, 'POST', {
+              script: `return (() => ({documentUrl: location.href, readyState: document.readyState, bodyTextLength: (document.body?.innerText || '').trim().length, canonicalHref: document.querySelector('link[rel="canonical"]')?.href || null, unexpectedRequestCount: performance.getEntriesByType('resource').filter((entry) => !arguments[0].includes(entry.name)).length, miniappReady: document.documentElement.dataset.ready === 'true'}))();`,
+              args: [allowedUrls],
+            });
+            const logs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'browser' });
+            if (!Array.isArray(logs)) throw new Error('WEBDRIVER_LOG_INVALID');
+            observations.push({
+              path,
+              viewport: viewport.id,
+              locale,
+              javascript,
+              documentUrl: measured?.documentUrl,
+              readyState: measured?.readyState,
+              bodyTextLength: measured?.bodyTextLength,
+              canonicalHref: measured?.canonicalHref,
+              unexpectedRequestCount: measured?.unexpectedRequestCount,
+              consoleErrorCount: logs.filter(({ level }) => ['SEVERE', 'ERROR'].includes(level)).length,
+              miniappReady: measured?.miniappReady,
+            });
+          }
+        } finally {
+          await webdriverCommand(webdriver, `/session/${sessionId}`, 'DELETE');
+        }
+      }
+    }
+  }
+  const evidence = {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-browser-measurement-v1',
+    status: 'verified',
+    releaseId: artifact.releaseId,
+    artifactSha256: reviewedArtifactSha256,
+    checkedAt,
+    nonceSha256: sha256(nonce),
+    viewports: BROWSER_VIEWPORTS.map(({ id }) => id),
+    locales: [...BROWSER_LOCALES],
+    javascriptModes: [...BROWSER_JAVASCRIPT_MODES],
+    routes,
+    observations,
+  };
+  evidence.measurementSha256 = sha256(Buffer.from(canonicalJson(evidence)));
+  validateBrowserEvidence(evidence, artifact, authority);
+  return evidence;
 }
 
 function assertAllowedBaseUrl(baseUrl, productionConfirmation) {
@@ -396,8 +613,7 @@ export async function verifyOrigin({
     if (entry.path.endsWith('.html')) assertPublicHtml(entry.path, bytes);
     if (entry.path.endsWith('.js')) assertPublicJavascript(entry.path, bytes);
     if (entry.path === '.well-known/apple-app-site-association') {
-      const { appId } = readReleaseIdentity(projectRoot);
-      if (!bytes.equals(Buffer.from(canonicalAasaBytes(appId), 'utf8'))) {
+      if (!bytes.equals(Buffer.from(canonicalAasaBytes(APP_ID), 'utf8'))) {
         throw new Error('ORIGIN_AASA_INVALID');
       }
     }
@@ -484,8 +700,8 @@ export function validateProductionEvidence(evidence, artifact, authority) {
     throw new Error('PRODUCTION_URL_SET_INVALID');
   }
 
-  validateServerInventoryEvidence(evidence.serverInventory);
-  validateBrowserEvidence(evidence.browser);
+  validateServerInventoryEvidence(evidence.serverInventory, artifact, authority);
+  validateBrowserEvidence(evidence.browser, artifact, authority);
   assertExactKeys(evidence.controls, ['unrelatedAssetRetained', 'terminalRouteRetained'], 'PRODUCTION_CONTROLS');
   if (
     evidence.controls.unrelatedAssetRetained !== true
@@ -586,8 +802,7 @@ export async function verifyAppleCdn({
   if (!expected || bytes.byteLength !== expected.size || sha256(bytes) !== expected.sha256) {
     throw new Error('APPLE_CDN_PENDING_PROPAGATION');
   }
-  const { appId } = readReleaseIdentity(projectRoot);
-  if (!bytes.equals(Buffer.from(canonicalAasaBytes(appId), 'utf8'))) throw new Error('APPLE_CDN_AASA_INVALID');
+  if (!bytes.equals(Buffer.from(canonicalAasaBytes(APP_ID), 'utf8'))) throw new Error('APPLE_CDN_AASA_INVALID');
   return { status: 'verified', sha256: expected.sha256 };
 }
 
@@ -685,12 +900,32 @@ async function runCli() {
     process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
   }
-  if (arguments_.length === 1 && arguments_[0] === '--validate-browser-evidence') {
-    validateBrowserEvidence(parseCanonicalStdin('BROWSER_EVIDENCE'));
-    console.log('Browser evidence verified.');
+  if (
+    arguments_[0] === '--measure-browser'
+    && arguments_.includes('--confirm-production=cabohealth.org')
+  ) {
+    const webdriverUrl = optionValue(arguments_.slice(1), 'webdriver-url');
+    assertArgumentSet(arguments_.slice(1), [
+      '--confirm-production=cabohealth.org',
+      `--reviewed-release-id=${optionValue(arguments_.slice(1), 'reviewed-release-id')}`,
+      `--reviewed-artifact-sha256=${optionValue(arguments_.slice(1), 'reviewed-artifact-sha256')}`,
+      `--webdriver-url=${webdriverUrl}`,
+    ]);
+    const authority = reviewedAuthority(arguments_.slice(1));
+    const artifact = parseCanonicalFile(resolve(projectRoot, 'release/web-artifacts.json'), 'WEB_ARTIFACT_EVIDENCE');
+    const result = await measureBrowserEvidence({
+      artifact,
+      ...authority,
+      baseUrl: 'https://cabohealth.org/',
+      webdriverUrl,
+      productionConfirmation: 'cabohealth.org',
+      checkedAt: new Date().toISOString(),
+      nonce: randomBytes(32),
+    });
+    process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
   }
-  throw new Error('Usage: node scripts/verify-production.mjs <--check|--verify-production-origin|--verify-apple-cdn|--validate-browser-evidence> [reviewed authority and explicit production confirmation]');
+  throw new Error('Usage: node scripts/verify-production.mjs <--check|--verify-production-origin|--verify-apple-cdn|--measure-browser> [reviewed authority and explicit production confirmation]');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
