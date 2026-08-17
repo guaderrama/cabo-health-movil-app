@@ -18,6 +18,22 @@
     "highestTestFlightBuildStatus": "expired",
     "nextCandidateBuild": "4"
   },
+  "ownerSeller": {
+    "sellerType": "individual",
+    "legalSeller": "Ivan Guaderrama",
+    "publicBrand": "Cabo Health",
+    "brandIsSeparateLegalEntity": false,
+    "registeredOrganization": false,
+    "dunsApplicable": false,
+    "dunsNumber": null,
+    "relationship": "trade brand owned and operated by Ivan Guaderrama"
+  },
+  "reviewRisk": {
+    "level": "medium",
+    "basis": "general-wellness/editorial-only",
+    "appleApprovalGuaranteed": false,
+    "fallback": "If Apple determines the app provides healthcare services, obtain written Apple direction or later migrate to a registered organization."
+  },
   "scope": {
     "miniapps": [
       {
@@ -50,21 +66,71 @@
     "marketing": "https://cabohealth.org/"
   },
   "copyright": {
-    "value": null,
-    "status": "pending-verified-rights-holder"
+    "value": "2026 Ivan Guaderrama",
+    "status": "owner-confirmed-draft-pending-save"
+  },
+  "appStoreDraft": {
+    "status": "pending-save",
+    "categories": {
+      "primary": "Health & Fitness",
+      "secondary": "Food & Drink",
+      "legacyPrimary": "Medical",
+      "legacyPrimaryAction": "replace"
+    },
+    "copyright": "2026 Ivan Guaderrama",
+    "availability": {
+      "territories": [
+        "MEX",
+        "USA"
+      ],
+      "automaticFutureTerritories": false,
+      "macAppleSiliconAvailable": false,
+      "visionProAvailable": false,
+      "status": "pending-save"
+    },
+    "dsa": {
+      "scope": "app-level",
+      "traderStatus": "non-trader/outside-EU-scope",
+      "releaseTerritories": [
+        "MEX",
+        "USA"
+      ],
+      "reassessBeforeAddingEuTerritory": true,
+      "globalAccountState": "unchanged",
+      "status": "pending-save"
+    },
+    "contentRights": {
+      "recommendedAnswer": "Yes",
+      "usesThirdPartyMaterial": true,
+      "status": "pending-final-rights-inventory-and-owner-confirmation"
+    },
+    "unresolvedExternalGates": {
+      "regulatedMedicalDevice": "pending-account-holder",
+      "exportCompliance": "pending-account-holder",
+      "finalPrivacyDisclosure": "pending-owner-legal",
+      "hostingLogRetention": "pending-owner-legal",
+      "hostingLogDeletion": "pending-owner-legal",
+      "supportResponseSla": "pending-owner",
+      "ageRating": "pending-app-store-calculation",
+      "allContentRights": "pending-owner-confirmation",
+      "brandEvidenceAttachment": "pending-signed-owner-declaration",
+      "exactReleaseCandidate": "pending-build-and-qa",
+      "screenshots": "pending-exact-rc-capture",
+      "appStoreConnectSave": "pending-save"
+    }
   },
   "gates": {
     "legalEntitySignOff": "pending-owner-legal",
-    "sellerLegalEntity": "blocked-external",
-    "sellerRelationship": "blocked-external",
-    "brandAuthorization": "pending-owner-legal",
-    "contentRights": "pending-owner-legal",
+    "sellerLegalEntity": "owner-confirmed-individual",
+    "sellerRelationship": "owner-confirmed-trade-brand",
+    "brandAuthorization": "pending-signed-owner-declaration",
+    "contentRights": "pending-final-rights-inventory-owner-confirmation",
     "hostedRoutes": "pending-deployment",
     "hostingLogTypes": "pending-task-7b",
     "hostingLogRetention": "pending-owner-legal",
     "hostingLogDeletion": "pending-owner-legal",
     "supportResponseSla": "pending-owner",
-    "phiRemediation": "pending-owner-authorization",
+    "phiRemediation": "verified-owner-authorized",
     "ageRating": "pending-app-store-calculation",
     "medicalDevice": "pending-account-holder",
     "exportCompliance": "pending-account-holder",

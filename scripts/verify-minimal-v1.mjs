@@ -189,6 +189,24 @@ function approvedDeterminationValue(value, path, errors) {
     && isNonEmptyString(value.determination);
 }
 
+function individualSellerValue(value, path, errors) {
+  return hasExactKeys(value, `${path}.value`, ['legalSeller', 'sellerType'], errors)
+    && value.sellerType === 'individual'
+    && value.legalSeller === 'Ivan Guaderrama';
+}
+
+function tradeBrandRelationshipValue(value, path, errors) {
+  return hasExactKeys(
+    value,
+    `${path}.value`,
+    ['brandIsSeparateLegalEntity', 'publicBrand', 'relationship'],
+    errors,
+  )
+    && value.publicBrand === 'Cabo Health'
+    && value.brandIsSeparateLegalEntity === false
+    && value.relationship === 'trade brand owned and operated by Ivan Guaderrama';
+}
+
 function medicalDeviceValue(value, path, errors) {
   return hasExactKeys(value, `${path}.value`, ['basis', 'isMedicalDevice'], errors)
     && typeof value.isMedicalDevice === 'boolean'
@@ -549,14 +567,33 @@ function verifyComplianceFacts(root, errors, catalogRatings) {
     'phiRemediation',
   ], errors);
   if (facts.schemaVersion !== 1) errors.push('Invalid compliance schemaVersion: expected 1');
-  if (facts.brand !== 'CaboHealth') errors.push('Invalid compliance brand: expected CaboHealth');
+  if (facts.brand !== 'Cabo Health') errors.push('Invalid compliance brand: expected Cabo Health');
   if (typeof facts.releaseReady !== 'boolean') errors.push('Invalid compliance releaseReady: expected boolean');
   if (!isNonEmptyString(facts.slice)) errors.push('Invalid compliance slice: expected non-empty string');
 
-  if (hasExactKeys(facts.legalEntity, 'legalEntity', ['legalSignOffStatus', 'name', 'nameStatus'], errors)) {
-    if (facts.legalEntity.name !== 'Cabo Health') errors.push('Invalid legalEntity.name: expected Cabo Health');
+  if (hasExactKeys(facts.legalEntity, 'legalEntity', [
+    'dunsApplicable',
+    'dunsNumber',
+    'legalSignOffStatus',
+    'name',
+    'nameStatus',
+    'registeredOrganization',
+    'sellerType',
+  ], errors)) {
+    if (facts.legalEntity.name !== 'Ivan Guaderrama') {
+      errors.push('Invalid legalEntity.name: expected Ivan Guaderrama');
+    }
     if (facts.legalEntity.nameStatus !== 'owner-confirmed') {
       errors.push('Invalid legalEntity.nameStatus: expected owner-confirmed');
+    }
+    if (facts.legalEntity.sellerType !== 'individual') {
+      errors.push('Invalid legalEntity.sellerType: expected individual');
+    }
+    if (facts.legalEntity.registeredOrganization !== false) {
+      errors.push('Invalid legalEntity.registeredOrganization: expected false');
+    }
+    if (facts.legalEntity.dunsApplicable !== false || facts.legalEntity.dunsNumber !== null) {
+      errors.push('Invalid legalEntity D-U-N-S facts: not applicable and no number required');
     }
     if (!['pending', 'approved'].includes(facts.legalEntity.legalSignOffStatus)) {
       errors.push('Invalid legalEntity.legalSignOffStatus');
@@ -573,11 +610,11 @@ function verifyComplianceFacts(root, errors, catalogRatings) {
   hasExactKeys(facts.ageRating, 'ageRating', ['host', 'miniapps'], errors);
   hasExactKeys(facts.ageRating?.miniapps, 'ageRating.miniapps', ['clinic-guide', 'healthy-recipes'], errors);
 
-  validateGate(facts.appStore?.seller, 'appStore.seller', isNonEmptyString, errors);
+  validateGate(facts.appStore?.seller, 'appStore.seller', individualSellerValue, errors);
   validateGate(
     facts.appStore?.sellerRelationship,
     'appStore.sellerRelationship',
-    (value) => ['legal-healthcare-provider', 'apple-written-direction'].includes(value),
+    tradeBrandRelationshipValue,
     errors,
   );
   validateGate(
@@ -631,11 +668,16 @@ function verifyComplianceFacts(root, errors, catalogRatings) {
   }
 
   if (
-    facts.appStore?.sellerRelationship?.status === 'verified'
-    && facts.appStore.sellerRelationship.value === 'legal-healthcare-provider'
-    && facts.appStore?.seller?.value !== facts.legalEntity?.name
+    facts.appStore?.seller?.status === 'verified'
+    && facts.appStore.seller.value?.legalSeller !== facts.legalEntity?.name
   ) {
-    errors.push('App Store seller must match the legal healthcare provider name');
+    errors.push('App Store legal seller must match Ivan Guaderrama');
+  }
+  if (
+    facts.appStore?.sellerRelationship?.status === 'verified'
+    && facts.appStore.sellerRelationship.value?.brandIsSeparateLegalEntity !== false
+  ) {
+    errors.push('Cabo Health brand must not be a separate legal entity');
   }
 
   if (facts.releaseReady !== true) {

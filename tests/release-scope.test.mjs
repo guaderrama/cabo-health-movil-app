@@ -25,17 +25,31 @@ function writeFixtureFile(root, relativePath, contents) {
 function verifiedComplianceFacts() {
   return {
     schemaVersion: 1,
-    brand: 'CaboHealth',
+    brand: 'Cabo Health',
     releaseReady: true,
-    slice: 'task-7b-verified',
+    slice: 'task-7d-owner-seller',
     legalEntity: {
-      name: 'Cabo Health',
+      name: 'Ivan Guaderrama',
       nameStatus: 'owner-confirmed',
+      sellerType: 'individual',
+      registeredOrganization: false,
+      dunsApplicable: false,
+      dunsNumber: null,
       legalSignOffStatus: 'approved',
     },
     appStore: {
-      seller: { value: 'Cabo Health', status: 'verified' },
-      sellerRelationship: { value: 'legal-healthcare-provider', status: 'verified' },
+      seller: {
+        value: { sellerType: 'individual', legalSeller: 'Ivan Guaderrama' },
+        status: 'verified',
+      },
+      sellerRelationship: {
+        value: {
+          publicBrand: 'Cabo Health',
+          brandIsSeparateLegalEntity: false,
+          relationship: 'trade brand owned and operated by Ivan Guaderrama',
+        },
+        status: 'verified',
+      },
     },
     hosting: {
       provider: 'Hostinger',
@@ -219,21 +233,27 @@ test('release scope verifier rejects every malformed or contradictory compliance
   const mutations = [
     ['unknown root key', (facts) => { facts.unexpected = 'accepted'; }],
     ['wrong schema version', (facts) => { facts.schemaVersion = 2; }],
-    ['wrong brand', (facts) => { facts.brand = 'Cabo Health'; }],
+    ['wrong brand', (facts) => { facts.brand = 'CaboHealth'; }],
     ['release-ready wrong type', (facts) => { facts.releaseReady = 'true'; }],
     ['empty slice', (facts) => { facts.slice = ''; }],
     ['unknown legal entity key', (facts) => { facts.legalEntity.unexpected = true; }],
     ['wrong legal entity name', (facts) => { facts.legalEntity.name = 'Fixture Company'; }],
     ['wrong legal entity name status', (facts) => { facts.legalEntity.nameStatus = 'verified'; }],
+    ['organization seller type', (facts) => { facts.legalEntity.sellerType = 'organization'; }],
+    ['registered organization', (facts) => { facts.legalEntity.registeredOrganization = true; }],
+    ['D-U-N-S marked applicable', (facts) => { facts.legalEntity.dunsApplicable = true; }],
+    ['invented D-U-N-S number', (facts) => { facts.legalEntity.dunsNumber = '123456789'; }],
     ['unknown app-store key', (facts) => { facts.appStore.unexpected = true; }],
     ['unknown hosting key', (facts) => { facts.hosting.unexpected = true; }],
     ['unknown support key', (facts) => { facts.support.unexpected = true; }],
     ['unknown age-rating key', (facts) => { facts.ageRating.unexpected = true; }],
     ['unknown gate key', (facts) => { facts.appStore.seller.unexpected = 'accepted'; }],
     ['contradictory pending gate', (facts) => { facts.appStore.seller.pending = true; }],
-    ['empty seller', (facts) => { facts.appStore.seller.value = ''; }],
-    ['healthcare seller does not match entity', (facts) => { facts.appStore.seller.value = 'Another Seller'; }],
-    ['unsupported seller relationship', (facts) => { facts.appStore.sellerRelationship.value = 'fixture-relationship'; }],
+    ['empty seller', (facts) => { facts.appStore.seller.value.legalSeller = ''; }],
+    ['individual seller does not match entity', (facts) => { facts.appStore.seller.value.legalSeller = 'Another Seller'; }],
+    ['organization App Store seller', (facts) => { facts.appStore.seller.value.sellerType = 'organization'; }],
+    ['brand represented as separate legal entity', (facts) => { facts.appStore.sellerRelationship.value.brandIsSeparateLegalEntity = true; }],
+    ['unsupported seller relationship', (facts) => { facts.appStore.sellerRelationship.value.relationship = 'fixture-relationship'; }],
     ['wrong hosting provider', (facts) => { facts.hosting.provider = 'Fixture Hosting'; }],
     ['empty log types', (facts) => { facts.hosting.logTypes.value = []; }],
     ['blank log type', (facts) => { facts.hosting.logTypes.value = [' ']; }],
@@ -309,6 +329,29 @@ test('release scope verifier rejects every malformed or contradictory compliance
         (result) => assert.equal(result.status, 1, `${name} bypassed verifier:\n${result.stdout}${result.stderr}`),
       );
     });
+  }
+});
+
+test('release scope verifier diagnoses individual seller and trade-brand contradictions', async (t) => {
+  const mutations = [
+    ['legal entity changed', (facts) => { facts.legalEntity.name = 'Cabo Health'; }, /legalEntity\.name: expected Ivan Guaderrama/i],
+    ['organization claimed', (facts) => { facts.legalEntity.registeredOrganization = true; }, /registeredOrganization: expected false/i],
+    ['seller mismatch', (facts) => { facts.appStore.seller.value.legalSeller = 'Another Seller'; }, /legal seller must match Ivan Guaderrama/i],
+    ['brand made a separate entity', (facts) => { facts.appStore.sellerRelationship.value.brandIsSeparateLegalEntity = true; }, /brand must not be a separate legal entity/i],
+  ];
+
+  for (const [name, mutate, expected] of mutations) {
+    await t.test(name, () => withFixture(
+      (root) => {
+        const facts = verifiedComplianceFacts();
+        mutate(facts);
+        writeComplianceFixture(root, facts);
+      },
+      (result) => {
+        assert.equal(result.status, 1, `${name} bypassed release verifier:\n${result.stdout}${result.stderr}`);
+        assert.match(result.stderr, expected);
+      },
+    ));
   }
 });
 

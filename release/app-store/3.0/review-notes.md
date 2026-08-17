@@ -4,7 +4,9 @@ Status: **DRAFT — DO NOT PASTE YET.** The body below is under 4,000 UTF-8 byte
 
 ## Paste-ready body after all gates are resolved
 
-CaboHealth 3.0 (build 4) is a deliberately limited public release with exactly two curated resources.
+CaboHealth 3.0 (build 4) is a deliberately limited release with exactly two free public general-wellness/editorial resources.
+
+This app is submitted by Ivan Guaderrama, an individual Apple Developer Program member. Cabo Health is a trade brand owned and operated by Ivan Guaderrama and is not represented as a separate legal entity.
 
 GUIDELINE 4.2 — NATIVE VALUE
 The first catalog screen shows both resources immediately. The app also includes a native recipe browser with search, categories, complete recipe details, allergen/food-safety notes, and a native visit-preparation checklist. Users can save either public resource, change English/Spanish (Mexico), choose appearance and reduced effects, replay the introduction, and use useful bundled content when hosted pages are unavailable. This is a curated CaboHealth experience, not a general link directory or marketplace.
@@ -23,7 +25,7 @@ REVIEW STEPS
 5. Return to Apps. Test Browse Recipes, Prepare for Your Visit, saving/removing both resources, Saved, and Settings (language, appearance, reduced effects, replay introduction, Privacy, Terms, Support, Report Content).
 
 ACCESS, BUSINESS MODEL, AND DATA
-All submitted functionality is public. There is no account, demo credential, purchase, subscription, advertising, user-generated content, or personalized recommendation. Native favorites, preferences, recipe favorites, and checklist state remain on the device. The two public resources request no health information and no device permission. [INSERT VERIFIED HOSTINGER REQUEST-LOG FIELDS, PURPOSE, RETENTION, DELETION, AND FINAL APP PRIVACY MAPPING.]
+All submitted functionality is public and general-wellness/editorial only. There is no account, demo credential, purchase, subscription, advertising, user-generated content, or personalized recommendation. Native favorites, preferences, recipe favorites, and checklist state remain on the device. The two public resources request no health information and no device permission. [INSERT VERIFIED HOSTINGER REQUEST-LOG FIELDS, PURPOSE, RETENTION, DELETION, AND FINAL APP PRIVACY MAPPING.]
 
 Legal/support URLs:
 Privacy: https://cabohealth.org/app/privacy/

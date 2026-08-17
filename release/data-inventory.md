@@ -21,4 +21,4 @@ The two public miniapps do not request or collect health information. They provi
 - **PENDING:** Confirm Hostinger log types from authenticated current configuration without copying sensitive log contents into this repository.
 - **PENDING:** Confirm actual retention and deletion behavior and obtain owner/legal approval for the disclosure.
 - **PENDING:** Reconcile this draft against the exact signed build, SDK/privacy report, and final App Privacy answers.
-- **PENDING:** Complete the public-site PHI remediation gate without recording names, URLs containing identifying details, or incident evidence here.
+- **VERIFIED:** Owner-authorized public-site PHI remediation is complete. The only versioned reference is the sanitized token `private-evidence:owner-authorized-phi-remediation`; no names, sensitive paths, URLs, filenames, or evidence hashes are stored here.

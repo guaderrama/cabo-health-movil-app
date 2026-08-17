@@ -1,32 +1,31 @@
-# Content rights and CaboHealth brand authorization attachment checklist
+# Content rights and Cabo Health trade-brand ownership checklist
 
-Status: **BLOCKED — owner/legal verification and Apple-ready evidence required.** This file records no ownership conclusion and contains no private attachment.
+Status: **BLOCKED — signed owner declaration, final rights inventory, and Apple-ready evidence remain pending.** Cabo Health is a trade brand owned and operated by Ivan Guaderrama. It is not represented as a separate legal entity or registered organization. This file contains no private attachment.
 
-Apple previously questioned the developer account’s relationship to the CaboHealth brand. A statement in Review Notes is not sufficient evidence. Before submission, prepare a single clear attachment set and keep originals/private identifiers outside Git.
+Apple previously questioned the individual developer account’s relationship to the Cabo Health brand. Ivan’s self-declaration and domain-control proof materially answer the Guideline 4.1 relationship question, but they do not guarantee acceptance and do not replace trademark registration.
 
-## CaboHealth brand/publisher relationship
+## Individual owner declaration and relationship evidence
 
-- [ ] Signed authorization on the verified brand owner/legal provider’s letterhead.
-- [ ] Exact registered legal name, jurisdiction, registration details, and signer’s authority.
-- [ ] Explicit permission to use the names `CaboHealth` / `Cabo Health`, wordmark, logo, clinic presentation, and `cabohealth.org` content in an iOS app.
+- [ ] Ivan inspects the local unsigned draft and prepares a signed and dated ownership declaration in his own name; do not use nonexistent organization letterhead or registered-company claims.
+- [ ] State that `Cabo Health` is a trade brand owned and operated by Ivan Guaderrama and is not a separate legal entity.
 - [ ] Identify Apple ID `6758285327` and bundle ID `com.cabohealth.app`.
-- [ ] Identify the final App Store seller/developer organization exactly as it will appear at submission; do not prepare the letter around the current individual seller if the app will transfer or the membership will convert.
-- [ ] Permission covers submission, distribution, updates, screenshots, marketing metadata, supported territories, and the duration of that authority.
-- [ ] Dated signature and direct verification contact for the rights holder.
-- [ ] Supporting registration/assignment/license documents if the signer is not the original owner.
-- [ ] Proof of authorized control of `cabohealth.org` and the source logo/wordmark files, if useful to corroborate the relationship.
+- [ ] State that the initial release scope is Mexico and United States only.
+- [ ] Attach current evidence that Ivan controls `cabohealth.org`.
+- [ ] Attach a brand/logo/content rights schedule covering the Cabo Health name, wordmark, logo, the two public resources, screenshots, metadata, distribution, and updates.
+- [ ] Include a dated signature and a verification contact appropriate for an individual owner.
+- [ ] Attach only genuine assignment, license, source, or authorship evidence; make no invented registration or trademark claim.
 
 ## Editorial content and third-party references
 
-- [ ] Healthy Recipes: rights basis for all twelve recipe texts, labels, food-safety wording, and any visual asset; distinguish original writing from attributed reference material.
-- [ ] Clinic Guide: rights basis for clinic descriptions, contact presentation, logo, and location information.
-- [ ] Source/attribution review for WHO, FoodSafety.gov, USDA FSIS, Gobierno de México 9-1-1, Apple Maps, and WhatsApp references; confirm that each use is permitted and accurately attributed.
-- [ ] Confirm the App Store Content Rights questionnaire answer against the exact hosted/signed content. The currently selected “no third-party content” answer is not carried forward automatically.
-- [ ] Record approver, material/version, basis, scope, date, territory/attribution limits, and a private evidence reference in the final rights record.
+- [ ] Healthy Recipes: inventory the rights basis for all twelve recipe texts, labels, food-safety wording, and every visual asset; distinguish original writing from third-party material.
+- [ ] Clinic Guide: inventory the rights basis for clinic descriptions, contact presentation, logo, and location information.
+- [ ] Review WHO, FoodSafety.gov, USDA FSIS, Gobierno de México 9-1-1, Apple Maps, and WhatsApp references; confirm that each use is permitted and accurately attributed.
+- [ ] Recommend **Yes — uses third-party material** for App Store Content Rights, pending the final inventory and Ivan’s confirmation. Do not reuse the legacy “No third-party content” answer.
+- [ ] Record approver, material/version, basis, scope, date, territory/attribution limits, and a sanitized private-evidence reference in the final rights record.
 
 ## Attachment hygiene
 
-- [ ] Create a readable PDF with a short index explaining each document’s relevance to Apple’s brand-relationship question.
-- [ ] Include only information Apple needs; redact bank, tax, unrelated account, and personal identity data where legally permissible.
-- [ ] Store the actual attachment privately; commit only a sanitized reference and SHA-256 after approval.
-- [ ] Re-open the final PDF and verify signatures, names, dates, bundle/App IDs, and legibility before attaching it in Resolution Center/App Review Information.
+- [ ] Create a readable PDF only after Ivan signs the final declaration; include a short index explaining each document’s relevance.
+- [ ] Include only information Apple needs; exclude or redact street address, identity documents, SSH details, passwords, tax/bank data, and unrelated personal identifiers where legally permissible.
+- [ ] Store signed attachments privately; Git may contain only a sanitized reference after approval, never a sensitive path, URL, filename, or evidence hash.
+- [ ] Re-open the final PDF and verify the signature, date, individual name, brand relationship, Apple ID, bundle ID, Mexico/US scope, and legibility before attaching it.

@@ -1,16 +1,33 @@
 {
   "schemaVersion": 1,
-  "brand": "CaboHealth",
+  "brand": "Cabo Health",
   "releaseReady": false,
-  "slice": "task-7a-local-draft",
+  "slice": "task-7d-owner-seller",
   "legalEntity": {
-    "name": "Cabo Health",
+    "name": "Ivan Guaderrama",
     "nameStatus": "owner-confirmed",
+    "sellerType": "individual",
+    "registeredOrganization": false,
+    "dunsApplicable": false,
+    "dunsNumber": null,
     "legalSignOffStatus": "pending"
   },
   "appStore": {
-    "seller": { "value": null, "status": "pending" },
-    "sellerRelationship": { "value": null, "status": "pending" }
+    "seller": {
+      "value": {
+        "sellerType": "individual",
+        "legalSeller": "Ivan Guaderrama"
+      },
+      "status": "verified"
+    },
+    "sellerRelationship": {
+      "value": {
+        "publicBrand": "Cabo Health",
+        "brandIsSeparateLegalEntity": false,
+        "relationship": "trade brand owned and operated by Ivan Guaderrama"
+      },
+      "status": "verified"
+    }
   },
   "hosting": {
     "provider": "Hostinger",
@@ -32,5 +49,11 @@
       "clinic-guide": { "value": null, "status": "pending" }
     }
   },
-  "phiRemediation": { "value": null, "status": "pending" }
+  "phiRemediation": {
+    "value": {
+      "completed": true,
+      "evidenceRef": "private-evidence:owner-authorized-phi-remediation"
+    },
+    "status": "verified"
+  }
 }

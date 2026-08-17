@@ -41,4 +41,4 @@ https://cabohealth.org/app/privacy/
 https://cabohealth.org/
 
 ## Copyright
-PENDIENTE — ingresar “2026 [titular legal verificado de los derechos]” sólo después de la aprobación legal/de entidad y de derechos de contenido.
+2026 Ivan Guaderrama

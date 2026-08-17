@@ -27,8 +27,12 @@ Before answering:
 
 ## Content rights
 
-Do not reuse the current “No third-party content” answer without reconciling the final recipes, sources, maps/contact references, brand relationship, and `content-rights-and-brand.md`. The account holder must answer from the verified rights dossier.
+Recommended answer: **Yes — uses third-party material**, pending the final rights inventory and Ivan Guaderrama’s confirmation. Do not reuse the legacy “No third-party content” answer. Reconcile the final recipes, sources, maps/contact references, brand relationship, and `content-rights-and-brand.md`; all-content rights remain pending.
 
 ## Pricing, availability, and release mode
 
-Candidate direction is free, no in-app purchase, no subscription, and manual release. Confirm territories, agreements, support availability throughout review, and every account-holder attestation immediately before adding the exact RC for review.
+Candidate direction is free, no in-app purchase, no subscription, and manual release. Initial territories are exactly Mexico (`MEX`) and United States (`USA`), with automatic future territories disabled, Mac Apple Silicon availability off, and Vision Pro availability off. All remain `pending-save` until verified in App Store Connect.
+
+## Digital Services Act
+
+App-level candidate status is `non-trader/outside-EU-scope` for this Mexico/US-only release and remains `pending-save`. Reassess before adding any EU territory. This draft changes no global account state.

@@ -595,20 +595,43 @@ test('active-resource mutation matrix rejects every supported remote loading mec
   }
 });
 
-test('draft compliance facts preserve every Task 7B gate as machine-readable pending', () => {
+test('draft compliance facts preserve confirmed owner facts and every unresolved gate', () => {
   const facts = readJson('release/compliance-facts.json');
   assert.equal(facts.schemaVersion, 1);
-  assert.equal(facts.brand, 'CaboHealth');
+  assert.equal(facts.brand, 'Cabo Health');
   assert.deepEqual(facts.legalEntity, {
-    name: 'Cabo Health',
+    name: 'Ivan Guaderrama',
     nameStatus: 'owner-confirmed',
+    sellerType: 'individual',
+    registeredOrganization: false,
+    dunsApplicable: false,
+    dunsNumber: null,
     legalSignOffStatus: 'pending',
+  });
+  assert.deepEqual(facts.appStore, {
+    seller: {
+      value: { sellerType: 'individual', legalSeller: 'Ivan Guaderrama' },
+      status: 'verified',
+    },
+    sellerRelationship: {
+      value: {
+        publicBrand: 'Cabo Health',
+        brandIsSeparateLegalEntity: false,
+        relationship: 'trade brand owned and operated by Ivan Guaderrama',
+      },
+      status: 'verified',
+    },
+  });
+  assert.deepEqual(facts.phiRemediation, {
+    value: {
+      completed: true,
+      evidenceRef: 'private-evidence:owner-authorized-phi-remediation',
+    },
+    status: 'verified',
   });
   assert.equal(facts.releaseReady, false);
 
   const requiredPendingPaths = [
-    ['appStore', 'seller'],
-    ['appStore', 'sellerRelationship'],
     ['hosting', 'logTypes'],
     ['hosting', 'retention'],
     ['hosting', 'deletionProcess'],
@@ -619,7 +642,6 @@ test('draft compliance facts preserve every Task 7B gate as machine-readable pen
     ['ageRating', 'host'],
     ['ageRating', 'miniapps', 'healthy-recipes'],
     ['ageRating', 'miniapps', 'clinic-guide'],
-    ['phiRemediation'],
   ];
   for (const path of requiredPendingPaths) {
     const gate = path.reduce((value, key) => value?.[key], facts);
@@ -627,13 +649,11 @@ test('draft compliance facts preserve every Task 7B gate as machine-readable pen
   }
 });
 
-test('release verification fails closed and names every unresolved Task 7B gate', () => {
+test('release verification fails closed and names every still-unresolved gate', () => {
   const result = spawnSync(process.execPath, [verifierPath, projectRoot], { encoding: 'utf8' });
   assert.equal(result.status, 1, result.stdout || result.stderr);
   for (const gate of [
     'legalEntity.legalSignOffStatus',
-    'appStore.seller',
-    'appStore.sellerRelationship',
     'hosting.logTypes',
     'hosting.retention',
     'hosting.deletionProcess',
@@ -644,7 +664,6 @@ test('release verification fails closed and names every unresolved Task 7B gate'
     'ageRating.host',
     'ageRating.miniapps.healthy-recipes',
     'ageRating.miniapps.clinic-guide',
-    'phiRemediation',
   ]) assert.match(result.stderr, new RegExp(`Pending release gate: ${gate.replaceAll('.', '\\.')}`));
 });
 

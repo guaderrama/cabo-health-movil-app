@@ -40,6 +40,69 @@ function mutateJson(root, relativePath, mutate) {
   writeFileSync(absolutePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function addOwnerSellerDraft(manifest) {
+  manifest.ownerSeller = {
+    sellerType: 'individual',
+    legalSeller: 'Ivan Guaderrama',
+    publicBrand: 'Cabo Health',
+    brandIsSeparateLegalEntity: false,
+    registeredOrganization: false,
+    dunsApplicable: false,
+    dunsNumber: null,
+    relationship: 'trade brand owned and operated by Ivan Guaderrama',
+  };
+  manifest.reviewRisk = {
+    level: 'medium',
+    basis: 'general-wellness/editorial-only',
+    appleApprovalGuaranteed: false,
+    fallback: 'If Apple determines the app provides healthcare services, obtain written Apple direction or later migrate to a registered organization.',
+  };
+  manifest.appStoreDraft = {
+    status: 'pending-save',
+    categories: {
+      primary: 'Health & Fitness',
+      secondary: 'Food & Drink',
+      legacyPrimary: 'Medical',
+      legacyPrimaryAction: 'replace',
+    },
+    copyright: '2026 Ivan Guaderrama',
+    availability: {
+      territories: ['MEX', 'USA'],
+      automaticFutureTerritories: false,
+      macAppleSiliconAvailable: false,
+      visionProAvailable: false,
+      status: 'pending-save',
+    },
+    dsa: {
+      scope: 'app-level',
+      traderStatus: 'non-trader/outside-EU-scope',
+      releaseTerritories: ['MEX', 'USA'],
+      reassessBeforeAddingEuTerritory: true,
+      globalAccountState: 'unchanged',
+      status: 'pending-save',
+    },
+    contentRights: {
+      recommendedAnswer: 'Yes',
+      usesThirdPartyMaterial: true,
+      status: 'pending-final-rights-inventory-and-owner-confirmation',
+    },
+    unresolvedExternalGates: {
+      regulatedMedicalDevice: 'pending-account-holder',
+      exportCompliance: 'pending-account-holder',
+      finalPrivacyDisclosure: 'pending-owner-legal',
+      hostingLogRetention: 'pending-owner-legal',
+      hostingLogDeletion: 'pending-owner-legal',
+      supportResponseSla: 'pending-owner',
+      ageRating: 'pending-app-store-calculation',
+      allContentRights: 'pending-owner-confirmation',
+      brandEvidenceAttachment: 'pending-signed-owner-declaration',
+      exactReleaseCandidate: 'pending-build-and-qa',
+      screenshots: 'pending-exact-rc-capture',
+      appStoreConnectSave: 'pending-save',
+    },
+  };
+}
+
 function withReleaseFixture(mutate, assertion) {
   const root = mkdtempSync(join(tmpdir(), 'cabohealth-app-store-metadata-'));
   try {
@@ -182,7 +245,78 @@ test('metadata verifier rejects an external release gate marked ready', () => {
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /sellerLegalEntity must remain blocked-external/i);
+      assert.match(result.stderr, /sellerLegalEntity must remain owner-confirmed-individual/i);
+    },
+  );
+});
+
+test('metadata verifier rejects owner, category, territory, platform, rights, and external-gate drift', async (t) => {
+  const mutations = [
+    ['separate legal entity', (manifest) => { manifest.ownerSeller.brandIsSeparateLegalEntity = true; }, /brand must not be represented as a separate legal entity/i],
+    ['registered organization', (manifest) => { manifest.ownerSeller.registeredOrganization = true; }, /seller must remain an individual/i],
+    ['seller mismatch', (manifest) => { manifest.ownerSeller.legalSeller = 'Another Seller'; }, /legal seller must remain Ivan Guaderrama/i],
+    ['Medical category retained', (manifest) => { manifest.appStoreDraft.categories.primary = 'Medical'; }, /categories must replace Medical with Health & Fitness and Food & Drink/i],
+    ['extra territory', (manifest) => { manifest.appStoreDraft.availability.territories.push('CAN'); }, /territories must be exactly MEX and USA/i],
+    ['EU territory without DSA reassessment', (manifest) => {
+      manifest.appStoreDraft.availability.territories = ['MEX', 'USA', 'FRA'];
+      manifest.appStoreDraft.dsa.releaseTerritories = ['MEX', 'USA', 'FRA'];
+    }, /territories must be exactly MEX and USA|EU territory requires DSA reassessment/i],
+    ['automatic future territories', (manifest) => { manifest.appStoreDraft.availability.automaticFutureTerritories = true; }, /automatic future territories must remain disabled/i],
+    ['Mac Apple Silicon enabled', (manifest) => { manifest.appStoreDraft.availability.macAppleSiliconAvailable = true; }, /Mac Apple Silicon availability must remain off/i],
+    ['Vision Pro enabled', (manifest) => { manifest.appStoreDraft.availability.visionProAvailable = true; }, /Vision Pro availability must remain off/i],
+    ['legacy Content Rights No', (manifest) => {
+      manifest.appStoreDraft.contentRights.recommendedAnswer = 'No';
+      manifest.appStoreDraft.contentRights.usesThirdPartyMaterial = false;
+    }, /Content Rights recommendation must remain Yes.*third-party material/i],
+    ['ASC marked saved', (manifest) => { manifest.appStoreDraft.status = 'saved'; }, /App Store draft must remain pending-save/i],
+    ['DSA marked saved', (manifest) => { manifest.appStoreDraft.dsa.status = 'saved'; }, /DSA status must remain pending-save/i],
+    ['medical-device gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.regulatedMedicalDevice = 'complete'; }, /regulatedMedicalDevice must remain pending-account-holder/i],
+    ['privacy gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.finalPrivacyDisclosure = 'complete'; }, /finalPrivacyDisclosure must remain pending-owner-legal/i],
+    ['rights gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.allContentRights = 'complete'; }, /allContentRights must remain pending-owner-confirmation/i],
+  ];
+
+  for (const [name, mutate, expected] of mutations) {
+    await t.test(name, () => withReleaseFixture(
+      (root) => mutateJson(root, `${releasePath}/release-manifest.json`, (manifest) => {
+        addOwnerSellerDraft(manifest);
+        mutate(manifest);
+      }),
+      (result) => {
+        assert.equal(result.status, 1, `${name} bypassed verifier:\n${result.stdout}${result.stderr}`);
+        assert.match(result.stderr, expected);
+      },
+    ));
+  }
+});
+
+test('metadata verifier rejects Review Notes without the individual seller and trade-brand disclosure', () => {
+  withReleaseFixture(
+    (root) => {
+      const file = join(root, releasePath, 'review-notes.md');
+      const source = readFileSync(file, 'utf8');
+      writeFileSync(file, source.replace(
+        'This app is submitted by Ivan Guaderrama, an individual Apple Developer Program member. Cabo Health is a trade brand owned and operated by Ivan Guaderrama and is not represented as a separate legal entity.',
+        'Cabo Health submits this app as an organization.',
+      ));
+    },
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /Review Notes missing the individual seller and trade-brand disclosure/i);
+    },
+  );
+});
+
+test('metadata verifier rejects an ownership declaration that claims a registered Cabo Health organization', () => {
+  withReleaseFixture(
+    (root) => {
+      writeFileSync(
+        join(root, releasePath, 'unsigned-ownership-declaration.md'),
+        '# Signed ownership declaration\n\nCabo Health is a registered organization and legal entity.\n',
+      );
+    },
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /ownership declaration must remain unsigned|must not claim.*legal entity|registered organization/i);
     },
   );
 });
