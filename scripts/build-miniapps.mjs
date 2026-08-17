@@ -1,14 +1,11 @@
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   lstatSync,
-  mkdirSync,
   readFileSync,
   readdirSync,
   realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -17,10 +14,10 @@ import { isDeepStrictEqual } from 'node:util';
 
 export const APPROVED_MINIAPP_SLUGS = Object.freeze(['healthy-recipes', 'clinic-guide']);
 export const CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; font-src 'self'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'; worker-src 'none'; media-src 'none'";
-export const CONTROLLED_STAGE_NAME = '.dist-stage';
-const CONTROLLED_STAGE_PREPARATION_NAME = '.dist-stage.prepare';
-export const CONTROLLED_STAGE_OWNER_FILE = '.cabohealth-stage-owner';
-export const CONTROLLED_STAGE_OWNER_VALUE = 'cabohealth-miniapps-task-6a-stage-v1\n';
+const IMMUTABLE_ARTIFACT_PREFIX = '.dist-artifact-';
+const IMMUTABLE_ARTIFACT_NAME = /^\.dist-artifact-[a-f0-9]{48}\.capsule$/u;
+const LEGACY_CONTROLLED_BUILD_NAMES = Object.freeze(['.dist-stage', '.dist-stage.prepare']);
+const TASK6A_CAPSULE_KIND = 'cabohealth-miniapps-task-6a-capsule-v1';
 export const MINIAPP_SECURITY_HEADERS = Object.freeze({
   'Content-Security-Policy': CONTENT_SECURITY_POLICY,
   'X-Content-Type-Options': 'nosniff',
@@ -110,11 +107,6 @@ function readJson(path) {
 
 function normalizedText(value) {
   return value.replace(/\r\n?/gu, '\n').replace(/\n*$/u, '\n');
-}
-
-function writeText(path, value) {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, normalizedText(value), 'utf8');
 }
 
 function sha256(buffer) {
@@ -303,15 +295,18 @@ function validateSourceInventory(projectRoot) {
   const miniappsRoot = join(projectRoot, 'miniapps');
   const rootEntries = readdirSync(miniappsRoot, { withFileTypes: true })
     .sort((left, right) => left.name.localeCompare(right.name));
-  for (const entry of rootEntries.filter(({ name }) => ['dist', CONTROLLED_STAGE_NAME].includes(name))) {
+  const controlledEntry = ({ name }) => name === 'dist' || IMMUTABLE_ARTIFACT_NAME.test(name);
+  for (const entry of rootEntries.filter(controlledEntry)) {
     const path = join(miniappsRoot, entry.name);
     const stats = lstatSync(path);
-    if (!stats.isDirectory() || stats.isSymbolicLink()) {
-      throw new Error(`Controlled miniapp build directory must be a real directory: ${path}`);
+    const validDist = entry.name === 'dist' && (stats.isDirectory() || stats.isFile());
+    const validImmutableCandidate = IMMUTABLE_ARTIFACT_NAME.test(entry.name) && stats.isFile();
+    if (stats.isSymbolicLink() || (!validDist && !validImmutableCandidate)) {
+      throw new Error(`Controlled miniapp build entry has an unsafe type: ${path}`);
     }
   }
   const sourceFiles = rootEntries
-    .filter((entry) => !['dist', CONTROLLED_STAGE_NAME].includes(entry.name))
+    .filter((entry) => !controlledEntry(entry))
     .flatMap((entry) => {
       const path = join(miniappsRoot, entry.name);
       const stats = lstatSync(path);
@@ -324,7 +319,7 @@ function validateSourceInventory(projectRoot) {
     throw new Error(`MINIAPP_SOURCE_INVENTORY_INVALID\nExpected ${SOURCE_FILES.join(', ')}\nFound ${sourceFiles.join(', ')}`);
   }
   const sourceRoots = rootEntries
-    .filter((entry) => entry.isDirectory() && !['dist', CONTROLLED_STAGE_NAME, 'shared'].includes(entry.name))
+    .filter((entry) => entry.isDirectory() && !controlledEntry(entry) && entry.name !== 'shared')
     .map((entry) => entry.name)
     .sort();
   if (JSON.stringify(sourceRoots) !== JSON.stringify([...APPROVED_MINIAPP_SLUGS].sort())) {
@@ -342,6 +337,12 @@ function validateSourceInventory(projectRoot) {
   if (sha256(readFileSync(join(miniappsRoot, 'shared/logo.png'))) !== sha256(readFileSync(join(projectRoot, 'assets/logo.png')))) {
     throw new Error('MINIAPP_LOGO_MUST_MATCH_LICENSED_LOCAL_ASSET');
   }
+  // Interrupted candidates must not wedge a later build, but their names are
+  // not a hiding place: createHealthyArtifactPlan subsequently requires every
+  // residue to be a private exact byte-prefix of the one pinned capsule.
+  return rootEntries
+    .filter(({ name }) => IMMUTABLE_ARTIFACT_NAME.test(name))
+    .map(({ name }) => join(miniappsRoot, name));
 }
 
 function validateReviewedSourceAttestation(projectRoot) {
@@ -592,18 +593,9 @@ function parseCanonicalManifest(root) {
   return { manifest, manifestBytes };
 }
 
-function verifyOwnedTask6AArtifact(root, projectRoot) {
-  try {
-    verifyBuiltArtifact({ projectRoot, outputRoot: root });
-  } catch (cause) {
-    throw new Error('Miniapp output ownership attestation failed', { cause });
-  }
-  return true;
-}
-
 export function createHealthyArtifactPlan(projectRoot) {
   const root = realpathSync(resolve(projectRoot));
-  validateSourceInventory(root);
+  const immutableCandidateResidues = validateSourceInventory(root);
   validateReviewedSourceAttestation(root);
   const recipes = readJson(join(root, 'content/recipes.json'));
   const recipeErrors = validateRecipes(recipes);
@@ -611,19 +603,56 @@ export function createHealthyArtifactPlan(projectRoot) {
   const files = expectedHealthyArtifactFiles(root, recipes);
   assertReviewedArtifactBuffers(files);
   const manifest = healthyManifest(recipes, files);
-  return Object.freeze({ files, manifest, projectRoot: root });
+  const plan = Object.freeze({ files, manifest, projectRoot: root });
+  validateImmutableCandidateResidues(immutableCandidateResidues, plan);
+  return plan;
 }
 
-export function verifyBuiltArtifact({ projectRoot, outputRoot, expectedEntrySlugs = TASK6A_ENTRY_SLUGS }) {
-  if (!isDeepStrictEqual(expectedEntrySlugs, TASK6A_ENTRY_SLUGS)) {
-    throw new Error('Task 6A verifier accepts only the exact Healthy Recipes entry root');
+function healthyArtifactCapsule(plan) {
+  return {
+    schemaVersion: 1,
+    kind: TASK6A_CAPSULE_KIND,
+    manifest: plan.manifest,
+    files: [...plan.files].map(([path, bytes]) => ({
+      path,
+      size: bytes.byteLength,
+      sha256: sha256(bytes),
+      bytesBase64: bytes.toString('base64'),
+    })),
+  };
+}
+
+function healthyArtifactCapsuleBytes(plan) {
+  return Buffer.from(normalizedText(JSON.stringify(healthyArtifactCapsule(plan), null, 2)), 'utf8');
+}
+
+function validateImmutableCandidateResidues(paths, plan) {
+  const expected = healthyArtifactCapsuleBytes(plan);
+  for (const path of paths) {
+    const stats = lstatSync(path);
+    const mode = stats.mode & 0o777;
+    const bytes = readFileSync(path);
+    if (
+      !stats.isFile()
+      || stats.isSymbolicLink()
+      || ![0o400, 0o600].includes(mode)
+      || stats.nlink < 1
+      || stats.nlink > 2
+      || bytes.byteLength > expected.byteLength
+      || !bytes.equals(expected.subarray(0, bytes.byteLength))
+    ) {
+      throw new Error(`MINIAPP_IMMUTABLE_CANDIDATE_RESIDUE_INVALID: ${path}`);
+    }
   }
-  const root = resolve(outputRoot);
-  const rootStats = lstatIfPresent(root);
-  if (!rootStats?.isDirectory() || rootStats.isSymbolicLink()) {
-    throw new Error('MINIAPP_ARTIFACT_VERIFICATION_FAILED: artifact root must be a real directory');
+}
+
+function assertUnchangedFilesystemObject(before, after, label) {
+  if (!before || !after || before.dev !== after.dev || before.ino !== after.ino) {
+    throw new Error(`MINIAPP_ARTIFACT_CHANGED_DURING_VERIFICATION: ${label}`);
   }
-  const plan = createHealthyArtifactPlan(projectRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+}
+
+function verifyDirectoryArtifact(root, plan) {
   const actualPaths = walkFiles(root).map((path) => normalizedRelative(root, path)).sort();
   const expectedPaths = [...plan.files.keys(), 'manifest.json'].sort();
   if (!isDeepStrictEqual(actualPaths, expectedPaths)) {
@@ -649,7 +678,69 @@ export function verifyBuiltArtifact({ projectRoot, outputRoot, expectedEntrySlug
   if (!manifestBytes.equals(canonicalManifest)) {
     throw new Error('MINIAPP_MANIFEST_BYTES_NONCANONICAL');
   }
+}
+
+function verifyCapsuleArtifact(root, rootStats, plan) {
+  if (!rootStats.isFile() || rootStats.isSymbolicLink()) {
+    throw new Error('MINIAPP_ARTIFACT_VERIFICATION_FAILED: capsule must be a real regular file');
+  }
+  const actualBytes = readFileSync(root);
+  const afterRead = lstatIfPresent(root);
+  assertUnchangedFilesystemObject(filesystemIdentity(root, rootStats), filesystemIdentity(root, afterRead), 'capsule identity');
+  if (!actualBytes.equals(healthyArtifactCapsuleBytes(plan))) {
+    throw new Error('MINIAPP_ARTIFACT_CAPSULE_MISMATCH');
+  }
+}
+
+export function verifyBuiltArtifact({ projectRoot, outputRoot, expectedEntrySlugs = TASK6A_ENTRY_SLUGS }) {
+  if (!isDeepStrictEqual(expectedEntrySlugs, TASK6A_ENTRY_SLUGS)) {
+    throw new Error('Task 6A verifier accepts only the exact Healthy Recipes entry root');
+  }
+  const root = resolve(outputRoot);
+  const rootStats = lstatIfPresent(root);
+  if (!rootStats || rootStats.isSymbolicLink() || (!rootStats.isDirectory() && !rootStats.isFile())) {
+    throw new Error('MINIAPP_ARTIFACT_VERIFICATION_FAILED: artifact root must be a real directory or immutable capsule');
+  }
+  const plan = createHealthyArtifactPlan(projectRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+  if (rootStats.isDirectory()) verifyDirectoryArtifact(root, plan);
+  else verifyCapsuleArtifact(root, rootStats, plan);
+  const finalStats = lstatIfPresent(root);
+  assertUnchangedFilesystemObject(filesystemIdentity(root, rootStats), filesystemIdentity(root, finalStats), 'artifact root identity');
   return true;
+}
+
+export function readVerifiedMiniappArtifact({ projectRoot, outputRoot }) {
+  const root = resolve(outputRoot);
+  verifyBuiltArtifact({ projectRoot, outputRoot: root });
+  const plan = createHealthyArtifactPlan(projectRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+  const rootStats = lstatIfPresent(root);
+  if (!rootStats || rootStats.isSymbolicLink()) {
+    throw new Error('MINIAPP_ARTIFACT_CHANGED_DURING_SNAPSHOT: artifact root');
+  }
+  const files = new Map();
+  if (rootStats.isFile()) {
+    verifyCapsuleArtifact(root, rootStats, plan);
+    for (const [path, bytes] of plan.files) files.set(path, Buffer.from(bytes));
+  } else if (rootStats.isDirectory()) {
+    for (const path of plan.files.keys()) {
+      const bytes = readFileSync(join(root, path));
+      files.set(path, Buffer.from(bytes));
+    }
+    verifyDirectoryArtifact(root, plan);
+  } else {
+    throw new Error('MINIAPP_ARTIFACT_CHANGED_DURING_SNAPSHOT: artifact root type');
+  }
+  const finalStats = lstatIfPresent(root);
+  assertUnchangedFilesystemObject(filesystemIdentity(root, rootStats), filesystemIdentity(root, finalStats), 'snapshot root identity');
+  for (const [path, expectedBytes] of plan.files) {
+    if (!files.get(path)?.equals(expectedBytes)) {
+      throw new Error(`MINIAPP_ARTIFACT_CHANGED_DURING_SNAPSHOT: ${path}`);
+    }
+  }
+  return Object.freeze({
+    files,
+    manifest: structuredClone(plan.manifest),
+  });
 }
 
 function inventoryFor(root) {
@@ -682,64 +773,6 @@ function lstatIfPresent(path) {
 
 function filesystemIdentity(path, stats = lstatIfPresent(path)) {
   return stats ? Object.freeze({ dev: stats.dev, ino: stats.ino, path }) : null;
-}
-
-function assertSameFilesystemObject(expected, actual, label) {
-  if (
-    !expected
-    || !actual
-    || expected.dev !== actual.dev
-    || expected.ino !== actual.ino
-  ) throw new Error(`Miniapp output ownership changed before filesystem operation: ${label} identity`);
-}
-
-function assertDirectoryIdentity(path, expected, label) {
-  const stats = lstatIfPresent(path);
-  if (!stats?.isDirectory() || stats.isSymbolicLink()) {
-    throw new Error(`Miniapp output ownership changed before filesystem operation: ${label} is not a real directory`);
-  }
-  const actual = filesystemIdentity(path, stats);
-  assertSameFilesystemObject(expected, actual, label);
-  return actual;
-}
-
-function assertOwnedStageDirectory(stage) {
-  const stats = lstatIfPresent(stage);
-  if (!stats) return;
-  if (!stats.isDirectory() || stats.isSymbolicLink()) {
-    throw new Error('Refusing unsafe miniapp stage: controlled stage is not an owned real directory');
-  }
-  const entries = readdirSync(stage).sort();
-  if (entries.length === 0) return;
-  const ownerPath = join(stage, CONTROLLED_STAGE_OWNER_FILE);
-  const ownerStats = lstatIfPresent(ownerPath);
-  if (!ownerStats?.isFile() || ownerStats.isSymbolicLink()) {
-    throw new Error('Refusing to delete miniapp stage without its exact ownership marker');
-  }
-  const ownerValue = readText(ownerPath);
-  const isInitializationResidue = entries.length === 1
-    && CONTROLLED_STAGE_OWNER_VALUE.startsWith(ownerValue);
-  if (ownerValue !== CONTROLLED_STAGE_OWNER_VALUE && !isInitializationResidue) {
-    throw new Error('Refusing to delete miniapp stage without its exact ownership marker');
-  }
-}
-
-function assertPreparedStageDirectory(preparation) {
-  const stats = lstatIfPresent(preparation);
-  if (!stats?.isDirectory() || stats.isSymbolicLink()) {
-    throw new Error('Refusing unsafe miniapp stage preparation directory');
-  }
-  const entries = readdirSync(preparation).sort();
-  if (!isDeepStrictEqual(entries, [CONTROLLED_STAGE_OWNER_FILE])) {
-    throw new Error('Miniapp stage preparation must contain only its ownership marker');
-  }
-  const ownerPath = join(preparation, CONTROLLED_STAGE_OWNER_FILE);
-  const ownerStats = lstatIfPresent(ownerPath);
-  if (
-    !ownerStats?.isFile()
-    || ownerStats.isSymbolicLink()
-    || readText(ownerPath) !== CONTROLLED_STAGE_OWNER_VALUE
-  ) throw new Error('Miniapp stage preparation marker is incomplete');
 }
 
 function assertOwnedDirectoryPath({ trustedRoot, candidate, label }) {
@@ -808,59 +841,34 @@ function describeSafeMiniappOutputPaths({ projectRoot, outputRoot }) {
     target = resolve(trustedRoot, ...descendants);
   }
 
-  const stage = join(dirname(target), CONTROLLED_STAGE_NAME);
-  const preparation = join(dirname(target), CONTROLLED_STAGE_PREPARATION_NAME);
-  if (target === stage) throw new Error('Refusing unsafe miniapp output path: target collides with controlled stage');
-  if (target === preparation || stage === preparation) {
-    throw new Error('Refusing unsafe miniapp output path: target collides with controlled stage preparation');
-  }
   const parent = dirname(target);
+  const targetName = target.slice(parent.length + 1);
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(targetName)
+    || LEGACY_CONTROLLED_BUILD_NAMES.includes(targetName)
+    || targetName.startsWith(IMMUTABLE_ARTIFACT_PREFIX)
+  ) {
+    throw new Error('Refusing unsafe miniapp output path: target name collides with controlled immutable artifacts');
+  }
   const parentChain = parent === trustedRoot
     ? [filesystemIdentity(trustedRoot)]
     : assertOwnedDirectoryPath({ trustedRoot, candidate: parent, label: 'miniapp output parent' });
   if (parentChain.at(-1)?.path !== parent) {
     throw new Error('Refusing unsafe miniapp output path: output parent must already be an owned real directory');
   }
-  assertOwnedDirectoryPath({ trustedRoot, candidate: target, label: 'miniapp output path' });
-  assertOwnedDirectoryPath({ trustedRoot, candidate: stage, label: 'miniapp staging path' });
-  assertOwnedDirectoryPath({ trustedRoot, candidate: preparation, label: 'miniapp stage preparation path' });
+  const targetStats = lstatIfPresent(target);
+  if (targetStats?.isSymbolicLink() || (targetStats && !targetStats.isDirectory() && !targetStats.isFile())) {
+    throw new Error('Refusing unsafe miniapp output path: target must be absent, a real directory, or an immutable capsule');
+  }
   return Object.freeze({
+    parent,
     parentChain,
-    preparation,
-    preparationIdentity: filesystemIdentity(preparation),
     project,
-    stage,
-    stageIdentity: filesystemIdentity(stage),
     target,
-    targetIdentity: filesystemIdentity(target),
+    targetIdentity: filesystemIdentity(target, targetStats),
+    targetName,
     trustedRoot,
   });
-}
-
-function revalidateSafeMiniappOutputPaths(expected, inputs, {
-  preparationIdentity = expected.preparationIdentity,
-  stageIdentity = expected.stageIdentity,
-  targetIdentity = expected.targetIdentity,
-} = {}) {
-  const current = describeSafeMiniappOutputPaths(inputs);
-  for (const key of ['preparation', 'project', 'stage', 'target', 'trustedRoot']) {
-    if (current[key] !== expected[key]) {
-      throw new Error(`Miniapp output ownership changed before filesystem operation: ${key}`);
-    }
-  }
-  if (!isDeepStrictEqual(current.parentChain, expected.parentChain)) {
-    throw new Error('Miniapp output ownership changed before filesystem operation: ancestor identity');
-  }
-  if (!isDeepStrictEqual(current.targetIdentity, targetIdentity)) {
-    throw new Error('Miniapp output ownership changed before filesystem operation: target identity');
-  }
-  if (!isDeepStrictEqual(current.stageIdentity, stageIdentity)) {
-    throw new Error('Miniapp output ownership changed before filesystem operation: stage identity');
-  }
-  if (!isDeepStrictEqual(current.preparationIdentity, preparationIdentity)) {
-    throw new Error('Miniapp output ownership changed before filesystem operation: stage preparation identity');
-  }
-  return current;
 }
 
 export function assertSafeMiniappOutputPath({ projectRoot, outputRoot }) {
@@ -873,8 +881,131 @@ export function assertVerifiedMiniappDeploymentSource({ projectRoot, outputRoot 
   if (target !== canonical) {
     throw new Error('Miniapp deployment source must be the verified canonical miniapps/dist artifact');
   }
+  const targetStats = lstatIfPresent(target);
+  if (!targetStats?.isDirectory() || targetStats.isSymbolicLink()) {
+    throw new Error('MINIAPP_DEPLOYMENT_REQUIRES_REVIEWED_MATERIALIZATION: immutable capsule is verified but is not a deployable static directory');
+  }
   verifyBuiltArtifact({ projectRoot, outputRoot: target });
   return target;
+}
+
+// Node does not expose openat(2) or renameat2(RENAME_NOREPLACE). This tiny
+// publisher enters the already-attested parent as its process cwd, verifies
+// that cwd inode before its first write, and performs every mutation relative
+// to that stable kernel-held directory. Its O_EXCL candidate is hard-linked to
+// the canonical name, which makes publication atomic and non-replacing.
+const IMMUTABLE_PUBLISHER_SOURCE = String.raw`
+'use strict';
+const { createHash, randomBytes } = require('node:crypto');
+const {
+  closeSync,
+  constants,
+  fchmodSync,
+  fstatSync,
+  fsyncSync,
+  linkSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} = require('node:fs');
+
+function fail(message) {
+  throw new Error(message);
+}
+
+try {
+  const [expectedDev, expectedIno, targetName, expectedSize, expectedHash, candidatePrefix] = process.argv.slice(1);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(targetName || '')) fail('unsafe canonical target name');
+  if (!/^\.dist-artifact-$/.test(candidatePrefix || '')) fail('unsafe immutable candidate prefix');
+  const cwdFd = openSync('.', constants.O_RDONLY);
+  const cwdStats = fstatSync(cwdFd);
+  if (!cwdStats.isDirectory() || String(cwdStats.dev) !== expectedDev || String(cwdStats.ino) !== expectedIno) {
+    fail('output parent ownership changed before publication');
+  }
+
+  const capsule = readFileSync(0);
+  if (String(capsule.byteLength) !== expectedSize) fail('immutable capsule size changed in transit');
+  if (createHash('sha256').update(capsule).digest('hex') !== expectedHash) fail('immutable capsule hash changed in transit');
+
+  let candidateName;
+  let candidateFd;
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    candidateName = candidatePrefix + randomBytes(24).toString('hex') + '.capsule';
+    try {
+      candidateFd = openSync(
+        candidateName,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW || 0),
+        0o600,
+      );
+      break;
+    } catch (error) {
+      if (error && error.code === 'EEXIST') continue;
+      throw error;
+    }
+  }
+  if (candidateFd === undefined) fail('could not reserve a unique immutable candidate');
+  writeFileSync(candidateFd, capsule);
+  fsyncSync(candidateFd);
+  fchmodSync(candidateFd, 0o400);
+  const candidateStats = fstatSync(candidateFd);
+  if (!candidateStats.isFile() || candidateStats.size !== capsule.byteLength) fail('immutable candidate verification failed');
+
+  linkSync(candidateName, targetName);
+  const targetFd = openSync(targetName, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  const targetStats = fstatSync(targetFd);
+  if (
+    !targetStats.isFile()
+    || targetStats.dev !== candidateStats.dev
+    || targetStats.ino !== candidateStats.ino
+  ) fail('canonical target is not the published immutable candidate');
+  const targetBytes = readFileSync(targetFd);
+  if (!targetBytes.equals(capsule)) fail('canonical target bytes changed after publication');
+  closeSync(targetFd);
+  closeSync(candidateFd);
+  closeSync(cwdFd);
+  process.stdout.write(JSON.stringify({
+    candidateName,
+    dev: String(candidateStats.dev),
+    ino: String(candidateStats.ino),
+  }));
+} catch (error) {
+  process.stderr.write(error && error.stack ? error.stack : String(error));
+  process.exitCode = 1;
+}
+`;
+
+function publishImmutableCapsule({ bytes, parent, parentIdentity, targetName }) {
+  if (!parentIdentity) throw new Error('MINIAPP_CANONICAL_PUBLICATION_FAILED: missing parent identity');
+  const result = spawnSync(process.execPath, [
+    '-e',
+    IMMUTABLE_PUBLISHER_SOURCE,
+    String(parentIdentity.dev),
+    String(parentIdentity.ino),
+    targetName,
+    String(bytes.byteLength),
+    sha256(bytes),
+    IMMUTABLE_ARTIFACT_PREFIX,
+  ], {
+    cwd: parent,
+    encoding: 'utf8',
+    input: bytes,
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) {
+    const detail = result.error?.message || result.stderr?.trim() || `publisher exited ${result.status}`;
+    throw new Error(`MINIAPP_CANONICAL_PUBLICATION_FAILED: exclusive publish refused (${detail})`);
+  }
+  try {
+    const published = JSON.parse(result.stdout);
+    if (
+      !IMMUTABLE_ARTIFACT_NAME.test(published.candidateName)
+      || !/^\d+$/u.test(published.dev)
+      || !/^\d+$/u.test(published.ino)
+    ) throw new Error('malformed publisher attestation');
+    return Object.freeze(published);
+  } catch (cause) {
+    throw new Error('MINIAPP_CANONICAL_PUBLICATION_FAILED: invalid publisher attestation', { cause });
+  }
 }
 
 export async function buildMiniapps({
@@ -899,207 +1030,54 @@ export async function buildMiniapps({
     throw new Error('CLINIC_GUIDE_TASK_6B_PENDING: confirmed facts pass validation, but the deployable Clinic Guide renderer is intentionally not part of Task 6A');
   }
 
-  const stage = safePaths.stage;
-  const preparation = safePaths.preparation;
-  const next = join(stage, 'next');
-  let preparationIdentity = safePaths.preparationIdentity;
-  let stageIdentity = safePaths.stageIdentity;
-  let targetIdentity = safePaths.targetIdentity;
-
-  if (preparationIdentity) {
-    assertOwnedStageDirectory(preparation);
-    beforeFilesystemOperation({ operation: 'remove-stage-preparation', path: preparation });
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    assertOwnedStageDirectory(preparation);
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    rmSync(preparation, { recursive: true, force: true });
-    preparationIdentity = null;
-  }
-
   const plan = createHealthyArtifactPlan(root);
-  if (targetIdentity) verifyOwnedTask6AArtifact(target, root);
-  if (stageIdentity) {
-    assertOwnedStageDirectory(stage);
-    beforeFilesystemOperation({ operation: 'remove-stage', path: stage });
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    assertOwnedStageDirectory(stage);
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    rmSync(stage, { recursive: true, force: true });
-    stageIdentity = null;
-  }
-  try {
-    beforeFilesystemOperation({ operation: 'create-stage-preparation', path: preparation });
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    mkdirSync(preparation);
-    preparationIdentity = filesystemIdentity(preparation);
-    writeFileSync(join(preparation, CONTROLLED_STAGE_OWNER_FILE), CONTROLLED_STAGE_OWNER_VALUE, {
-      encoding: 'utf8',
-      flag: 'wx',
-    });
-    beforeFilesystemOperation({
-      operation: 'publish-owned-stage',
-      path: stage,
-      preparationPath: preparation,
-    });
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    assertPreparedStageDirectory(preparation);
-    const publishedPreparationIdentity = preparationIdentity;
-    renameSync(preparation, stage);
-    preparationIdentity = null;
-    beforeFilesystemOperation({ operation: 'after-owned-stage-publication', path: stage });
-    const publishedStageIdentity = filesystemIdentity(stage);
-    assertSameFilesystemObject(
-      publishedPreparationIdentity,
-      publishedStageIdentity,
-      'published stage',
-    );
-    stageIdentity = publishedStageIdentity;
-    assertPreparedStageDirectory(stage);
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    mkdirSync(next);
-    let nextIdentity = filesystemIdentity(next);
-    for (const [relativePath, bytes] of plan.files) {
-      const artifactPath = join(next, relativePath);
-      mkdirSync(dirname(artifactPath), { recursive: true });
-      writeFileSync(artifactPath, bytes);
-    }
-    writeText(join(next, 'manifest.json'), JSON.stringify(plan.manifest, null, 2));
-    verifyBuiltArtifact({ projectRoot: root, outputRoot: next });
-
-    beforeFilesystemOperation({ operation: 'remove-output', path: target });
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    if (targetIdentity) {
-      verifyOwnedTask6AArtifact(target, root);
-      beforeFilesystemOperation({ operation: 'after-output-ownership-verification', path: target });
-      revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-        preparationIdentity,
-        stageIdentity,
-        targetIdentity,
-      });
-      verifyOwnedTask6AArtifact(target, root);
-      rmSync(target, { recursive: true, force: true });
-      targetIdentity = null;
-    }
-    beforeFilesystemOperation({ operation: 'promote-stage', path: next });
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    assertDirectoryIdentity(next, nextIdentity, 'verified stage artifact');
-    verifyBuiltArtifact({ projectRoot: root, outputRoot: next });
-    beforeFilesystemOperation({ operation: 'after-stage-artifact-verification', path: next });
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    assertDirectoryIdentity(next, nextIdentity, 'verified stage artifact');
-    verifyBuiltArtifact({ projectRoot: root, outputRoot: next });
-    renameSync(next, target);
-    const promotedTargetIdentity = filesystemIdentity(target);
-    assertSameFilesystemObject(nextIdentity, promotedTargetIdentity, 'promoted target');
-    nextIdentity = null;
-    targetIdentity = promotedTargetIdentity;
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    beforeFilesystemOperation({ operation: 'before-promoted-target-verification', path: target });
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
+  if (safePaths.targetIdentity) {
     verifyBuiltArtifact({ projectRoot: root, outputRoot: target });
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    assertOwnedStageDirectory(stage);
-    beforeFilesystemOperation({ operation: 'after-stage-cleanup-ownership-check', path: stage });
-    revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-      preparationIdentity,
-      stageIdentity,
-      targetIdentity,
-    });
-    assertOwnedStageDirectory(stage);
-    rmSync(stage, { recursive: true, force: true });
-    stageIdentity = null;
-    return plan.manifest;
-  } catch (error) {
-    const cleanupCandidates = [
-      {
-        operation: 'cleanup-stage',
-        path: stage,
-        identityName: 'stageIdentity',
-        identity: stageIdentity,
-      },
-      {
-        operation: 'cleanup-stage-preparation',
-        path: preparation,
-        identityName: 'preparationIdentity',
-        identity: preparationIdentity,
-      },
-    ];
-    for (const candidate of cleanupCandidates) {
-      if (!candidate.identity) continue;
-      try {
-        beforeFilesystemOperation({ operation: candidate.operation, path: candidate.path });
-        revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-          preparationIdentity,
-          stageIdentity,
-          targetIdentity,
-        });
-        assertOwnedStageDirectory(candidate.path);
-        revalidateSafeMiniappOutputPaths(safePaths, pathInputs, {
-          preparationIdentity,
-          stageIdentity,
-          targetIdentity,
-        });
-        rmSync(candidate.path, { recursive: true, force: true });
-        if (candidate.identityName === 'stageIdentity') stageIdentity = null;
-        else preparationIdentity = null;
-      } catch (cleanupError) {
-        if (error && typeof error === 'object' && !error.cleanupError) error.cleanupError = cleanupError;
-      }
+    const current = describeSafeMiniappOutputPaths(pathInputs);
+    if (
+      !isDeepStrictEqual(current.parentChain, safePaths.parentChain)
+      || !isDeepStrictEqual(current.targetIdentity, safePaths.targetIdentity)
+    ) {
+      throw new Error('MINIAPP_EXISTING_ARTIFACT_CHANGED_DURING_IDEMPOTENCE_CHECK');
     }
-    throw error;
+    verifyBuiltArtifact({ projectRoot: root, outputRoot: target });
+    const final = describeSafeMiniappOutputPaths(pathInputs);
+    if (
+      !isDeepStrictEqual(final.parentChain, safePaths.parentChain)
+      || !isDeepStrictEqual(final.targetIdentity, safePaths.targetIdentity)
+    ) {
+      throw new Error('MINIAPP_EXISTING_ARTIFACT_CHANGED_DURING_IDEMPOTENCE_CHECK');
+    }
+    return plan.manifest;
   }
+
+  const capsuleBytes = healthyArtifactCapsuleBytes(plan);
+  beforeFilesystemOperation({ operation: 'publish-canonical-artifact', path: target });
+  const published = publishImmutableCapsule({
+    bytes: capsuleBytes,
+    parent: safePaths.parent,
+    parentIdentity: safePaths.parentChain.at(-1),
+    targetName: safePaths.targetName,
+  });
+  const targetStats = lstatIfPresent(target);
+  if (
+    !targetStats?.isFile()
+    || targetStats.isSymbolicLink()
+    || String(targetStats.dev) !== published.dev
+    || String(targetStats.ino) !== published.ino
+  ) throw new Error('MINIAPP_CANONICAL_PUBLICATION_FAILED: canonical identity changed after publication');
+  const candidate = join(safePaths.parent, published.candidateName);
+  const candidateStats = lstatIfPresent(candidate);
+  if (
+    !candidateStats?.isFile()
+    || candidateStats.isSymbolicLink()
+    || candidateStats.dev !== targetStats.dev
+    || candidateStats.ino !== targetStats.ino
+  ) throw new Error('MINIAPP_CANONICAL_PUBLICATION_FAILED: immutable candidate identity changed after publication');
+  verifyBuiltArtifact({ projectRoot: root, outputRoot: target });
+  const finalStats = lstatIfPresent(target);
+  assertUnchangedFilesystemObject(filesystemIdentity(target, targetStats), filesystemIdentity(target, finalStats), 'published canonical artifact');
+  return plan.manifest;
 }
 
 async function runCli() {
@@ -1114,7 +1092,10 @@ async function runCli() {
     outputRoot,
     mode: flag === '--healthy' ? 'healthy' : 'release',
   });
-  console.log(`Built ${manifest.entrySlugs.join(', ')} into miniapps/dist (Task 6A; not release-ready).`);
+  const artifactType = lstatSync(outputRoot).isDirectory()
+    ? 'verified existing static directory'
+    : 'verified immutable capsule; reviewed static-tree materialization is still required';
+  console.log(`Prepared ${manifest.entrySlugs.join(', ')} at miniapps/dist (${artifactType}; Task 6A; not release-ready).`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

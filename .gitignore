@@ -9,8 +9,10 @@ node_modules
 dist/
 web-build/
 expo-env.d.ts
-/miniapps/dist/
+/miniapps/dist
 /miniapps/.dist-stage/
+# Private immutable build evidence; never a deployment source.
+/miniapps/.dist-artifact-*.capsule
 
 # Native
 .kotlin/

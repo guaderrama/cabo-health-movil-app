@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -13,7 +16,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -113,12 +116,24 @@ function exactConfirmedFacts() {
   };
 }
 
+async function materializeHealthyDirectory(outputRoot, sourceRoot = projectRoot) {
+  const { createHealthyArtifactPlan } = await import(buildModuleUrl.href);
+  const plan = createHealthyArtifactPlan(sourceRoot);
+  mkdirSync(outputRoot);
+  for (const [relativePath, bytes] of plan.files) {
+    const path = join(outputRoot, relativePath);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, bytes);
+  }
+  writeFileSync(join(outputRoot, 'manifest.json'), `${JSON.stringify(plan.manifest, null, 2)}\n`);
+  return plan;
+}
+
 async function withHealthyBuild(assertion) {
   const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-miniapps-'));
   const outputRoot = join(tempRoot, 'dist');
   try {
-    const { buildMiniapps } = await import(buildModuleUrl.href);
-    await buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' });
+    await materializeHealthyDirectory(outputRoot);
     await assertion(outputRoot);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
@@ -152,7 +167,7 @@ test('source registry contains only the two approved miniapps and the required l
 });
 
 test('healthy-only build is byte-for-byte deterministic and emits no deployable Clinic Guide', async () => {
-  const { buildMiniapps } = await import(buildModuleUrl.href);
+  const { buildMiniapps, readVerifiedMiniappArtifact } = await import(buildModuleUrl.href);
   const firstContainer = mkdtempSync(join(tmpdir(), 'cabohealth-miniapps-a-'));
   const secondContainer = mkdtempSync(join(tmpdir(), 'cabohealth-miniapps-b-'));
   const firstRoot = join(firstContainer, 'dist');
@@ -160,15 +175,17 @@ test('healthy-only build is byte-for-byte deterministic and emits no deployable 
   try {
     await buildMiniapps({ projectRoot, outputRoot: firstRoot, mode: 'healthy' });
     await buildMiniapps({ projectRoot, outputRoot: secondRoot, mode: 'healthy' });
-    assert.deepEqual(byteInventory(firstRoot), byteInventory(secondRoot));
-
-    assert.ok(existsSync(join(firstRoot, 'apps/healthy-recipes/index.html')));
-    assert.equal(existsSync(join(firstRoot, 'apps/clinic-guide/index.html')), false);
+    assert.deepEqual(readFileSync(firstRoot), readFileSync(secondRoot));
+    const firstArtifact = readVerifiedMiniappArtifact({ projectRoot, outputRoot: firstRoot });
+    const secondArtifact = readVerifiedMiniappArtifact({ projectRoot, outputRoot: secondRoot });
+    const firstFiles = [...firstArtifact.files].map(([path, bytes]) => [path, bytes.toString('base64')]);
+    const secondFiles = [...secondArtifact.files].map(([path, bytes]) => [path, bytes.toString('base64')]);
+    assert.deepEqual(firstFiles, secondFiles);
+    assert.ok(firstArtifact.files.has('apps/healthy-recipes/index.html'));
+    assert.equal(firstArtifact.files.has('apps/clinic-guide/index.html'), false);
     assert.deepEqual(
-      walk(join(firstRoot, 'apps'))
-        .filter((path) => basename(path) === 'index.html')
-        .map((path) => relative(join(firstRoot, 'apps'), path).replaceAll('\\', '/')),
-      ['healthy-recipes/index.html'],
+      [...firstArtifact.files.keys()].filter((path) => path.endsWith('/index.html')),
+      ['apps/healthy-recipes/index.html'],
     );
   } finally {
     rmSync(firstContainer, { recursive: true, force: true });
@@ -494,6 +511,114 @@ test('builder refuses a broad output target outside the exact dist or isolated t
   );
 });
 
+test('builder reuses an exact verified target without writing or changing its inode', async () => {
+  const { buildMiniapps } = await import(buildModuleUrl.href);
+  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-immutable-idempotent-'));
+  const outputRoot = join(tempRoot, 'dist');
+
+  try {
+    const firstManifest = await buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' });
+    const firstIdentity = lstatSync(outputRoot);
+    assert.equal(firstIdentity.isFile(), true, 'new canonical output is an immutable capsule file');
+    const firstParentEntries = readdirSync(tempRoot).sort();
+    const candidates = firstParentEntries.filter((name) => /^\.dist-artifact-[a-f0-9]{48}\.capsule$/u.test(name));
+    assert.equal(candidates.length, 1, 'one uniquely named immutable candidate is retained');
+    const candidateIdentity = lstatSync(join(tempRoot, candidates[0]));
+    assert.equal(candidateIdentity.dev, firstIdentity.dev);
+    assert.equal(candidateIdentity.ino, firstIdentity.ino);
+    assert.equal(firstIdentity.mode & 0o777, 0o400);
+    assert.ok(firstIdentity.nlink >= 2);
+    const firstBytes = readFileSync(outputRoot);
+
+    const secondManifest = await buildMiniapps({
+      projectRoot,
+      outputRoot,
+      mode: 'healthy',
+      beforeFilesystemOperation(details) {
+        assert.fail(`idempotent build attempted filesystem mutation: ${details.operation}`);
+      },
+    });
+
+    const secondIdentity = lstatSync(outputRoot);
+    assert.deepEqual(secondManifest, firstManifest);
+    assert.equal(secondIdentity.dev, firstIdentity.dev);
+    assert.equal(secondIdentity.ino, firstIdentity.ino);
+    assert.deepEqual(readdirSync(tempRoot).sort(), firstParentEntries);
+    assert.deepEqual(readFileSync(outputRoot), firstBytes);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('builder publishes with a real exclusive boundary and preserves a concurrent target', async () => {
+  const { buildMiniapps } = await import(buildModuleUrl.href);
+  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-exclusive-publish-'));
+  const outputRoot = join(tempRoot, 'dist');
+  let reachedPublishBoundary = false;
+
+  try {
+    await assert.rejects(
+      buildMiniapps({
+        projectRoot,
+        outputRoot,
+        mode: 'healthy',
+        beforeFilesystemOperation({ operation }) {
+          if (operation !== 'publish-canonical-artifact') return;
+          reachedPublishBoundary = true;
+          writeFileSync(outputRoot, 'concurrent target must survive\n', { flag: 'wx' });
+        },
+      }),
+      /exist|publish|concurrent|exclusive/iu,
+    );
+    assert.equal(reachedPublishBoundary, true);
+    assert.equal(readFileSync(outputRoot, 'utf8'), 'concurrent target must survive\n');
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('builder cannot redirect publication when its output ancestor is swapped at the syscall boundary', async () => {
+  const { buildMiniapps } = await import(buildModuleUrl.href);
+  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-publish-parent-race-'));
+  const outputRoot = join(tempRoot, 'dist');
+  const displacedRoot = `${tempRoot}.displaced`;
+  const outside = mkdtempSync(join(tmpdir(), 'cabohealth-publish-parent-outside-'));
+  writeFileSync(join(outside, 'sentinel.txt'), 'outside tree must remain unchanged\n');
+  const outsideBefore = byteInventory(outside);
+  let reachedPublishBoundary = false;
+
+  try {
+    await assert.rejects(
+      buildMiniapps({
+        projectRoot,
+        outputRoot,
+        mode: 'healthy',
+        beforeFilesystemOperation({ operation }) {
+          if (operation !== 'publish-canonical-artifact') return;
+          reachedPublishBoundary = true;
+          renameSync(tempRoot, displacedRoot);
+          symlinkSync(outside, tempRoot, 'dir');
+        },
+      }),
+      /exist|publish|ownership|path|no such file|ENOENT/iu,
+    );
+    assert.equal(reachedPublishBoundary, true);
+    assert.deepEqual(byteInventory(outside), outsideBefore);
+    assert.equal(existsSync(join(outside, 'dist')), false);
+  } finally {
+    if (lstatSync(tempRoot).isSymbolicLink()) unlinkSync(tempRoot);
+    if (existsSync(displacedRoot)) renameSync(displacedRoot, tempRoot);
+    rmSync(tempRoot, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('builder source has no recursive deletion or automatic cleanup API', () => {
+  const source = read('scripts/build-miniapps.mjs');
+  assert.doesNotMatch(source, /\b(?:rmSync|unlinkSync|rmdirSync|renameSync)\b|\brm\s*\(/u);
+  assert.doesNotMatch(source, /recursive\s*:\s*true/u);
+});
+
 test('builder rejects symlinked ancestors for canonical and isolated temporary outputs', async () => {
   const { assertSafeMiniappOutputPath } = await import(buildModuleUrl.href);
   const fixtureRoot = mkdtempSync(join(tmpdir(), 'cabohealth-output-ancestors-'));
@@ -528,343 +653,114 @@ test('builder rejects symlinked ancestors for canonical and isolated temporary o
   }
 });
 
-test('builder revalidates output ownership immediately before destructive replacement', async () => {
+test('builder preserves an existing invalid target and fails without creating a candidate', async () => {
   const { buildMiniapps } = await import(buildModuleUrl.href);
-  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-output-race-'));
+  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-invalid-target-'));
   const outputRoot = join(tempRoot, 'dist');
-  const displacedOutput = join(tempRoot, 'displaced-output');
-  const outside = mkdtempSync(join(tmpdir(), 'cabohealth-output-outside-'));
-  writeFileSync(join(outside, 'sentinel.txt'), 'must survive\n');
+  mkdirSync(outputRoot);
+  writeFileSync(join(outputRoot, 'sentinel.txt'), 'untrusted target must survive\n');
+  const before = byteInventory(tempRoot);
 
   try {
-    await buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' });
-    const oldManifest = readFileSync(join(outputRoot, 'manifest.json'));
     await assert.rejects(
-      buildMiniapps({
-        projectRoot,
-        outputRoot,
-        mode: 'healthy',
-        beforeFilesystemOperation({ operation }) {
-          if (operation !== 'remove-output') return;
-          renameSync(outputRoot, displacedOutput);
-          symlinkSync(outside, outputRoot, 'dir');
-        },
-      }),
-      /symlink|ownership|unsafe/iu,
+      buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' }),
+      /artifact|manifest|file set|verification/iu,
     );
-    assert.equal(readFileSync(join(outside, 'sentinel.txt'), 'utf8'), 'must survive\n');
-    assert.deepEqual(readFileSync(join(displacedOutput, 'manifest.json')), oldManifest);
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-    rmSync(outside, { recursive: true, force: true });
-  }
-});
-
-test('builder rejects a same-path real-directory replacement before destructive output removal', async () => {
-  const { buildMiniapps } = await import(buildModuleUrl.href);
-  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-output-identity-'));
-  const outputRoot = join(tempRoot, 'dist');
-  const displacedOutput = join(tempRoot, 'displaced-output');
-
-  try {
-    await buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' });
-    const oldManifest = readFileSync(join(outputRoot, 'manifest.json'));
-    await assert.rejects(
-      buildMiniapps({
-        projectRoot,
-        outputRoot,
-        mode: 'healthy',
-        beforeFilesystemOperation({ operation }) {
-          if (operation !== 'remove-output') return;
-          renameSync(outputRoot, displacedOutput);
-          mkdirSync(outputRoot);
-          writeFileSync(join(outputRoot, 'replacement.txt'), 'do not delete\n');
-        },
-      }),
-      /identity|ownership|changed/iu,
-    );
-    assert.equal(readFileSync(join(outputRoot, 'replacement.txt'), 'utf8'), 'do not delete\n');
-    assert.deepEqual(readFileSync(join(displacedOutput, 'manifest.json')), oldManifest);
+    assert.deepEqual(byteInventory(tempRoot), before);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
-test('builder refuses to delete a target that self-certifies coordinated artifact tampering', async () => {
+test('builder keeps an exact legacy directory artifact unchanged and performs no mutation', async () => {
   const { buildMiniapps } = await import(buildModuleUrl.href);
-  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-output-self-certified-'));
+  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-legacy-idempotent-'));
   const outputRoot = join(tempRoot, 'dist');
 
   try {
-    await buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' });
-    const artifactPath = join(outputRoot, 'apps/healthy-recipes/app.js');
-    const tamperedBytes = Buffer.from('globalThis["fetch"]("https://evil.example/");\n');
-    writeFileSync(artifactPath, tamperedBytes);
-    const manifestPath = join(outputRoot, 'manifest.json');
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-    manifest.files = manifest.files.map((entry) => entry.path === 'apps/healthy-recipes/app.js'
-      ? {
-          ...entry,
-          size: tamperedBytes.byteLength,
-          sha256: createHash('sha256').update(tamperedBytes).digest('hex'),
-        }
-      : entry);
-    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-    await assert.rejects(
-      buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' }),
-      /ownership|attestation|bytes mismatch|verified/iu,
-    );
-    assert.deepEqual(readFileSync(artifactPath), tamperedBytes, 'untrusted target must not be deleted');
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test('builder revalidates target identity after independent ownership verification', async () => {
-  const { buildMiniapps } = await import(buildModuleUrl.href);
-  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-output-post-attestation-race-'));
-  const outputRoot = join(tempRoot, 'dist');
-  const displacedOutput = join(tempRoot, 'displaced-output');
-
-  try {
-    await buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' });
-    await assert.rejects(
-      buildMiniapps({
-        projectRoot,
-        outputRoot,
-        mode: 'healthy',
-        beforeFilesystemOperation({ operation }) {
-          if (operation !== 'after-output-ownership-verification') return;
-          renameSync(outputRoot, displacedOutput);
-          mkdirSync(outputRoot);
-          writeFileSync(join(outputRoot, 'replacement.txt'), 'must survive\n');
-        },
-      }),
-      /identity|ownership|changed/iu,
-    );
-    assert.equal(readFileSync(join(outputRoot, 'replacement.txt'), 'utf8'), 'must survive\n');
-    assert.ok(existsSync(join(displacedOutput, 'manifest.json')));
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test('builder revalidates the owned stage immediately before recursive cleanup', async () => {
-  const { buildMiniapps } = await import(buildModuleUrl.href);
-  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-stage-race-'));
-  const outputRoot = join(tempRoot, 'dist');
-  const stage = join(tempRoot, '.dist-stage');
-  const displacedStage = join(tempRoot, 'displaced-stage');
-  const outside = mkdtempSync(join(tmpdir(), 'cabohealth-stage-outside-'));
-  mkdirSync(stage);
-  writeFileSync(join(stage, '.cabohealth-stage-owner'), 'cabohealth-miniapps-task-6a-stage-v1\n');
-  writeFileSync(join(stage, 'partial.txt'), 'owned partial stage\n');
-  writeFileSync(join(outside, 'sentinel.txt'), 'must survive\n');
-
-  try {
-    await assert.rejects(
-      buildMiniapps({
-        projectRoot,
-        outputRoot,
-        mode: 'healthy',
-        beforeFilesystemOperation({ operation }) {
-          if (operation !== 'remove-stage') return;
-          renameSync(stage, displacedStage);
-          symlinkSync(outside, stage, 'dir');
-        },
-      }),
-      /symlink|identity|ownership|unsafe/iu,
-    );
-    assert.equal(readFileSync(join(outside, 'sentinel.txt'), 'utf8'), 'must survive\n');
-    assert.equal(readFileSync(join(displacedStage, 'partial.txt'), 'utf8'), 'owned partial stage\n');
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-    rmSync(outside, { recursive: true, force: true });
-  }
-});
-
-test('builder removes only the exact controlled partial staging directory and recovers', async () => {
-  const { buildMiniapps } = await import(buildModuleUrl.href);
-  const stage = join(projectRoot, 'miniapps/.dist-stage');
-  mkdirSync(stage, { recursive: true });
-  writeFileSync(join(stage, '.cabohealth-stage-owner'), 'cabohealth-miniapps-task-6a-stage-v1\n');
-  writeFileSync(join(stage, 'partial.txt'), 'interrupted\n');
-
-  try {
+    await materializeHealthyDirectory(outputRoot);
+    const before = byteInventory(outputRoot);
+    const identity = lstatSync(outputRoot);
     await buildMiniapps({
       projectRoot,
-      outputRoot: join(projectRoot, 'miniapps/dist'),
+      outputRoot,
       mode: 'healthy',
+      beforeFilesystemOperation({ operation }) {
+        assert.fail(`legacy idempotence attempted mutation: ${operation}`);
+      },
     });
-    assert.equal(existsSync(stage), false);
+    const after = lstatSync(outputRoot);
+    assert.equal(after.dev, identity.dev);
+    assert.equal(after.ino, identity.ino);
+    assert.deepEqual(byteInventory(outputRoot), before);
   } finally {
-    rmSync(stage, { recursive: true, force: true });
+    rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
-test('builder atomically publishes stage ownership and recovers zero or truncated initialization markers', async () => {
-  const {
-    buildMiniapps,
-    CONTROLLED_STAGE_OWNER_FILE,
-    CONTROLLED_STAGE_OWNER_VALUE,
-  } = await import(buildModuleUrl.href);
+test('abandoned immutable candidates and legacy stages never wedge a later build and are preserved', async () => {
+  const { buildMiniapps, verifyBuiltArtifact } = await import(buildModuleUrl.href);
+  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-abandoned-artifact-'));
+  const outputRoot = join(tempRoot, 'dist');
+  const abandoned = join(tempRoot, '.dist-artifact-000000000000000000000000000000000000000000000000.capsule');
+  const legacyStage = join(tempRoot, '.dist-stage');
+  writeFileSync(abandoned, 'interrupted immutable candidate\n');
+  mkdirSync(legacyStage);
+  writeFileSync(join(legacyStage, 'sentinel.txt'), 'legacy stage must survive\n');
 
-  for (const marker of ['', CONTROLLED_STAGE_OWNER_VALUE.slice(0, 11)]) {
-    const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-partial-stage-owner-'));
-    const outputRoot = join(tempRoot, 'dist');
-    const stage = join(tempRoot, '.dist-stage');
-    mkdirSync(stage);
-    writeFileSync(join(stage, CONTROLLED_STAGE_OWNER_FILE), marker);
-    let observedAtomicPublication = false;
+  try {
+    await buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' });
+    assert.equal(readFileSync(abandoned, 'utf8'), 'interrupted immutable candidate\n');
+    assert.equal(readFileSync(join(legacyStage, 'sentinel.txt'), 'utf8'), 'legacy stage must survive\n');
+    assert.equal(verifyBuiltArtifact({ projectRoot, outputRoot }), true);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('canonical builds ignore but never modify an abandoned immutable candidate at the miniapps root', async () => {
+  const { buildMiniapps, verifyBuiltArtifact } = await import(buildModuleUrl.href);
+  const fixtureRoot = createTask6ASourceFixture('cabohealth-canonical-abandoned-');
+  const miniappsRoot = join(fixtureRoot, 'miniapps');
+  const outputRoot = join(miniappsRoot, 'dist');
+  const abandoned = join(miniappsRoot, '.dist-artifact-111111111111111111111111111111111111111111111111.capsule');
+  writeFileSync(abandoned, '', { mode: 0o600 });
+
+  try {
+    await buildMiniapps({ projectRoot: fixtureRoot, outputRoot, mode: 'healthy' });
+    assert.equal(readFileSync(abandoned, 'utf8'), '');
+    assert.equal(verifyBuiltArtifact({ projectRoot: fixtureRoot, outputRoot }), true);
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test('source inventory rejects disguised candidate data and legacy stage contents without modifying them', async () => {
+  const { buildMiniapps } = await import(buildModuleUrl.href);
+  for (const kind of ['candidate', 'legacy-stage']) {
+    const fixtureRoot = createTask6ASourceFixture(`cabohealth-invalid-residue-${kind}-`);
+    const miniappsRoot = join(fixtureRoot, 'miniapps');
+    const outputRoot = join(miniappsRoot, 'dist');
+    const residue = kind === 'candidate'
+      ? join(miniappsRoot, '.dist-artifact-222222222222222222222222222222222222222222222222.capsule')
+      : join(miniappsRoot, '.dist-stage/sentinel.txt');
+    mkdirSync(dirname(residue), { recursive: true });
+    writeFileSync(residue, 'unrelated or private data must not be hidden here\n', { mode: 0o600 });
+
     try {
-      await buildMiniapps({
-        projectRoot,
-        outputRoot,
-        mode: 'healthy',
-        beforeFilesystemOperation(details) {
-          if (details.operation !== 'publish-owned-stage') return;
-          observedAtomicPublication = true;
-          assert.equal(existsSync(details.path), false, 'published stage name must remain absent until rename');
-          assert.equal(
-            readFileSync(join(details.preparationPath, CONTROLLED_STAGE_OWNER_FILE), 'utf8'),
-            CONTROLLED_STAGE_OWNER_VALUE,
-          );
-        },
-      });
-      assert.equal(observedAtomicPublication, true);
-      assert.equal(existsSync(stage), false);
-      assert.ok(existsSync(join(outputRoot, 'manifest.json')));
+      await assert.rejects(
+        buildMiniapps({ projectRoot: fixtureRoot, outputRoot, mode: 'healthy' }),
+        /candidate[_ ]residue|source[_ ]inventory|source roots/iu,
+      );
+      assert.equal(readFileSync(residue, 'utf8'), 'unrelated or private data must not be hidden here\n');
+      assert.equal(existsSync(outputRoot), false);
     } finally {
-      rmSync(tempRoot, { recursive: true, force: true });
+      rmSync(fixtureRoot, { recursive: true, force: true });
     }
   }
 });
 
-test('builder carries the prepared stage inode across atomic publication', async () => {
-  const {
-    buildMiniapps,
-    CONTROLLED_STAGE_OWNER_FILE,
-    CONTROLLED_STAGE_OWNER_VALUE,
-  } = await import(buildModuleUrl.href);
-  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-stage-publication-race-'));
-  const outputRoot = join(tempRoot, 'dist');
-  const stage = join(tempRoot, '.dist-stage');
-  const displacedStage = join(tempRoot, 'displaced-stage');
-
-  try {
-    await assert.rejects(
-      buildMiniapps({
-        projectRoot,
-        outputRoot,
-        mode: 'healthy',
-        beforeFilesystemOperation({ operation }) {
-          if (operation !== 'after-owned-stage-publication') return;
-          renameSync(stage, displacedStage);
-          mkdirSync(stage);
-          writeFileSync(join(stage, CONTROLLED_STAGE_OWNER_FILE), CONTROLLED_STAGE_OWNER_VALUE);
-          writeFileSync(join(stage, 'replacement.txt'), 'must survive\n');
-        },
-      }),
-      /identity|ownership|changed/iu,
-    );
-    assert.equal(readFileSync(join(stage, 'replacement.txt'), 'utf8'), 'must survive\n');
-    assert.ok(existsSync(join(displacedStage, CONTROLLED_STAGE_OWNER_FILE)));
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test('builder carries the verified next inode through promotion and verifies the promoted target', async () => {
-  const { buildMiniapps } = await import(buildModuleUrl.href);
-  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-next-promotion-race-'));
-  const outputRoot = join(tempRoot, 'dist');
-  const displacedNext = join(tempRoot, 'displaced-next');
-
-  try {
-    await assert.rejects(
-      buildMiniapps({
-        projectRoot,
-        outputRoot,
-        mode: 'healthy',
-        beforeFilesystemOperation({ operation, path }) {
-          if (operation !== 'after-stage-artifact-verification') return;
-          renameSync(path, displacedNext);
-          mkdirSync(path);
-          mkdirSync(join(path, 'apps/clinic-guide'), { recursive: true });
-          writeFileSync(join(path, 'apps/clinic-guide/index.html'), '<!doctype html><title>unreviewed</title>\n');
-        },
-      }),
-      /identity|ownership|verification|changed/iu,
-    );
-    assert.equal(existsSync(outputRoot), false, 'unverified replacement must not be promoted');
-    assert.ok(existsSync(join(displacedNext, 'manifest.json')));
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test('builder revalidates the stage inode after its final ownership check before cleanup', async () => {
-  const { buildMiniapps } = await import(buildModuleUrl.href);
-  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-stage-final-cleanup-race-'));
-  const outputRoot = join(tempRoot, 'dist');
-  const stage = join(tempRoot, '.dist-stage');
-  const displacedStage = join(tempRoot, 'displaced-stage');
-
-  try {
-    await assert.rejects(
-      buildMiniapps({
-        projectRoot,
-        outputRoot,
-        mode: 'healthy',
-        beforeFilesystemOperation({ operation }) {
-          if (operation !== 'after-stage-cleanup-ownership-check') return;
-          renameSync(stage, displacedStage);
-          mkdirSync(stage);
-          writeFileSync(join(stage, 'replacement.txt'), 'must survive\n');
-        },
-      }),
-      /identity|ownership|changed/iu,
-    );
-    assert.equal(readFileSync(join(stage, 'replacement.txt'), 'utf8'), 'must survive\n');
-    assert.ok(existsSync(join(outputRoot, 'manifest.json')), 'promoted target remains independently verified');
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test('builder refuses to delete unowned output or staging directories', async () => {
-  const { buildMiniapps } = await import(buildModuleUrl.href);
-  const outputContainer = mkdtempSync(join(tmpdir(), 'cabohealth-unowned-output-'));
-  const outputRoot = join(outputContainer, 'dist');
-  const canonicalStage = join(projectRoot, 'miniapps/.dist-stage');
-  mkdirSync(outputRoot);
-  writeFileSync(join(outputRoot, 'sentinel.txt'), 'unowned output\n');
-  try {
-    await assert.rejects(
-      buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' }),
-      /owned|ownership|manifest/iu,
-    );
-    assert.equal(readFileSync(join(outputRoot, 'sentinel.txt'), 'utf8'), 'unowned output\n');
-
-    mkdirSync(canonicalStage);
-    writeFileSync(join(canonicalStage, 'sentinel.txt'), 'unowned stage\n');
-    await assert.rejects(
-      buildMiniapps({
-        projectRoot,
-        outputRoot: join(projectRoot, 'miniapps/dist'),
-        mode: 'healthy',
-      }),
-      /owned|ownership|stage/iu,
-    );
-    assert.equal(readFileSync(join(canonicalStage, 'sentinel.txt'), 'utf8'), 'unowned stage\n');
-  } finally {
-    rmSync(outputContainer, { recursive: true, force: true });
-    rmSync(canonicalStage, { recursive: true, force: true });
-  }
-});
-
-test('source inventory ignores the controlled stage only at the miniapps root', async () => {
+test('source inventory rejects stage-like names nested inside reviewed sources', async () => {
   const { buildMiniapps } = await import(buildModuleUrl.href);
   const nestedStageName = join(projectRoot, 'miniapps/shared/.dist-stage');
   const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-nested-stage-name-'));
@@ -1220,36 +1116,121 @@ test('preview serves an immutable verified snapshot even if artifact files chang
   });
 });
 
-test('preview captures only reviewed artifact paths when the manifest is replaced after verification', async () => {
+test('preview reads the immutable capsule and exposes only reviewed Healthy Recipes files', async () => {
+  const { buildMiniapps, readVerifiedMiniappArtifact } = await import(buildModuleUrl.href);
+  const { loadVerifiedArtifactSnapshot } = await import(serveModuleUrl.href);
+  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-capsule-preview-'));
+  const outputRoot = join(tempRoot, 'dist');
+
+  try {
+    await buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' });
+    const artifact = readVerifiedMiniappArtifact({ projectRoot, outputRoot });
+    const snapshot = loadVerifiedArtifactSnapshot({ projectRoot, root: outputRoot });
+    assert.deepEqual(
+      snapshot.read('/apps/healthy-recipes/index.html'),
+      artifact.files.get('apps/healthy-recipes/index.html'),
+    );
+    assert.equal(snapshot.read('/apps/clinic-guide/index.html'), null);
+    assert.equal(snapshot.read('/manifest.json'), null);
+    assert.equal(snapshot.read('/apps/.htaccess'), null);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('capsule verifier rejects truncation, embedded manifest drift, and embedded file tampering', async () => {
+  const { buildMiniapps, verifyBuiltArtifact } = await import(buildModuleUrl.href);
+  const mutations = [
+    ['truncated capsule', (bytes) => bytes.subarray(0, Math.max(1, bytes.byteLength - 37))],
+    ['embedded manifest drift', (bytes) => {
+      const capsule = JSON.parse(bytes.toString('utf8'));
+      capsule.manifest.releaseReady = true;
+      return Buffer.from(`${JSON.stringify(capsule, null, 2)}\n`);
+    }],
+    ['embedded file tampering', (bytes) => {
+      const capsule = JSON.parse(bytes.toString('utf8'));
+      capsule.files[0].bytesBase64 = `${capsule.files[0].bytesBase64.slice(0, -1)}A`;
+      return Buffer.from(`${JSON.stringify(capsule, null, 2)}\n`);
+    }],
+  ];
+
+  for (const [label, mutate] of mutations) {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-capsule-mutation-'));
+    const outputRoot = join(tempRoot, 'dist');
+    try {
+      await buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' });
+      assert.equal(verifyBuiltArtifact({ projectRoot, outputRoot }), true);
+      const original = readFileSync(outputRoot);
+      chmodSync(outputRoot, 0o600);
+      writeFileSync(outputRoot, mutate(original));
+      assert.throws(
+        () => verifyBuiltArtifact({ projectRoot, outputRoot }),
+        /capsule|artifact|mismatch|verification/iu,
+        label,
+      );
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  }
+});
+
+test('capsule preview fails closed when canonical bytes change after initial verification', async () => {
+  const { buildMiniapps } = await import(buildModuleUrl.href);
+  const { loadVerifiedArtifactSnapshot } = await import(serveModuleUrl.href);
+  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-capsule-preview-race-'));
+  const outputRoot = join(tempRoot, 'dist');
+  let replacementRan = false;
+
+  try {
+    await buildMiniapps({ projectRoot, outputRoot, mode: 'healthy' });
+    assert.throws(
+      () => loadVerifiedArtifactSnapshot({
+        projectRoot,
+        root: outputRoot,
+        afterArtifactVerification() {
+          replacementRan = true;
+          chmodSync(outputRoot, 0o600);
+          const bytes = readFileSync(outputRoot);
+          writeFileSync(outputRoot, bytes.subarray(0, bytes.byteLength - 1));
+        },
+      }),
+      /capsule|artifact|mismatch|verification|changed/iu,
+    );
+    assert.equal(replacementRan, true);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('preview fails closed when the artifact is replaced after initial verification', async () => {
   const { loadVerifiedArtifactSnapshot } = await import(serveModuleUrl.href);
   await withHealthyBuild(async (outputRoot) => {
-    const healthyPath = join(outputRoot, 'apps/healthy-recipes/app.js');
-    const healthyBytes = readFileSync(healthyPath);
     let replacementRan = false;
-    const snapshot = loadVerifiedArtifactSnapshot({
-      projectRoot,
-      root: outputRoot,
-      afterArtifactVerification() {
-        replacementRan = true;
-        const clinicRelativePath = 'apps/clinic-guide/index.html';
-        const clinicBytes = Buffer.from('<!doctype html><title>Unreviewed Clinic</title>\n');
-        const clinicPath = join(outputRoot, clinicRelativePath);
-        mkdirSync(dirname(clinicPath), { recursive: true });
-        writeFileSync(clinicPath, clinicBytes);
-        const manifestPath = join(outputRoot, 'manifest.json');
-        const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-        manifest.files = [...manifest.files, {
-          path: clinicRelativePath,
-          size: clinicBytes.byteLength,
-          sha256: createHash('sha256').update(clinicBytes).digest('hex'),
-        }].sort((left, right) => left.path.localeCompare(right.path));
-        writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-      },
-    });
+    assert.throws(
+      () => loadVerifiedArtifactSnapshot({
+        projectRoot,
+        root: outputRoot,
+        afterArtifactVerification() {
+          replacementRan = true;
+          const clinicRelativePath = 'apps/clinic-guide/index.html';
+          const clinicBytes = Buffer.from('<!doctype html><title>Unreviewed Clinic</title>\n');
+          const clinicPath = join(outputRoot, clinicRelativePath);
+          mkdirSync(dirname(clinicPath), { recursive: true });
+          writeFileSync(clinicPath, clinicBytes);
+          const manifestPath = join(outputRoot, 'manifest.json');
+          const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+          manifest.files = [...manifest.files, {
+            path: clinicRelativePath,
+            size: clinicBytes.byteLength,
+            sha256: createHash('sha256').update(clinicBytes).digest('hex'),
+          }].sort((left, right) => left.path.localeCompare(right.path));
+          writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+        },
+      }),
+      /artifact|file set|verification|changed/iu,
+    );
 
     assert.equal(replacementRan, true);
-    assert.deepEqual(snapshot.read('/apps/healthy-recipes/app.js'), healthyBytes);
-    assert.equal(snapshot.read('/apps/clinic-guide/index.html'), null);
   });
 });
 
@@ -1291,21 +1272,35 @@ test('preview sends the exact security headers for success and error responses',
   });
 });
 
-test('deployment source guard accepts only the verified canonical dist and never miniapp sources', async () => {
+test('deployment source guard accepts only a verified canonical static tree and refuses capsules or source templates', async () => {
   const { assertVerifiedMiniappDeploymentSource, buildMiniapps } = await import(buildModuleUrl.href);
-  const canonicalDist = join(projectRoot, 'miniapps/dist');
-  await buildMiniapps({ projectRoot, outputRoot: canonicalDist, mode: 'healthy' });
-  assert.equal(
-    assertVerifiedMiniappDeploymentSource({ projectRoot, outputRoot: canonicalDist }),
-    canonicalDist,
-  );
-  assert.throws(
-    () => assertVerifiedMiniappDeploymentSource({
-      projectRoot,
-      outputRoot: join(projectRoot, 'miniapps/clinic-guide'),
-    }),
-    /canonical|verified|deployment|unsafe/iu,
-  );
+  const directoryFixture = createTask6ASourceFixture('cabohealth-deploy-directory-');
+  const capsuleFixture = createTask6ASourceFixture('cabohealth-deploy-capsule-');
+  const directoryDist = join(directoryFixture, 'miniapps/dist');
+  const capsuleDist = join(capsuleFixture, 'miniapps/dist');
+  try {
+    await materializeHealthyDirectory(directoryDist, directoryFixture);
+    assert.equal(
+      assertVerifiedMiniappDeploymentSource({ projectRoot: directoryFixture, outputRoot: directoryDist }),
+      realpathSync(directoryDist),
+    );
+    assert.throws(
+      () => assertVerifiedMiniappDeploymentSource({
+        projectRoot: directoryFixture,
+        outputRoot: join(directoryFixture, 'miniapps/clinic-guide'),
+      }),
+      /canonical|verified|deployment|unsafe/iu,
+    );
+
+    await buildMiniapps({ projectRoot: capsuleFixture, outputRoot: capsuleDist, mode: 'healthy' });
+    assert.throws(
+      () => assertVerifiedMiniappDeploymentSource({ projectRoot: capsuleFixture, outputRoot: capsuleDist }),
+      /reviewed materialization|not a deployable static directory/iu,
+    );
+  } finally {
+    rmSync(directoryFixture, { recursive: true, force: true });
+    rmSync(capsuleFixture, { recursive: true, force: true });
+  }
 });
 
 test('package scripts keep the full release build gated and expose the independently green slice', () => {
@@ -1314,4 +1309,9 @@ test('package scripts keep the full release build gated and expose the independe
   assert.equal(scripts['miniapps:build:healthy'], 'node scripts/build-miniapps.mjs --healthy');
   assert.equal(scripts['miniapps:serve'], 'node scripts/serve-miniapps.mjs');
   assert.equal(scripts['miniapps:verify'], 'node --test tests/miniapps-content.test.mjs tests/miniapps-build.test.mjs');
+  assert.doesNotMatch(
+    read('scripts/serve-miniapps.mjs'),
+    /assertVerifiedMiniappDeploymentSource/u,
+    'local preview must verify and snapshot capsules without invoking a deployment-only guard',
+  );
 });

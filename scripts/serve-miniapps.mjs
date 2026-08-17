@@ -1,13 +1,12 @@
 import { createServer } from 'node:http';
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join, parse, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   assertSafeMiniappOutputPath,
-  assertVerifiedMiniappDeploymentSource,
-  createHealthyArtifactPlan,
   MINIAPP_SECURITY_HEADERS,
+  readVerifiedMiniappArtifact,
   verifyBuiltArtifact,
 } from './build-miniapps.mjs';
 
@@ -92,27 +91,11 @@ export function loadVerifiedArtifactSnapshot({
 }) {
   const outputRoot = assertSafeMiniappOutputPath({ projectRoot, outputRoot: root });
   verifyBuiltArtifact({ projectRoot, outputRoot });
-  const plan = createHealthyArtifactPlan(projectRoot);
   afterArtifactVerification({ outputRoot });
-  const captured = new Map();
-
-  for (const path of plan.files.keys()) {
-    if (path === 'apps/.htaccess') continue;
-    const artifactPath = resolveStaticRequest(outputRoot, `/${path}`);
-    if (!artifactPath) throw new Error(`PREVIEW_ARTIFACT_PATH_UNSAFE: ${path}`);
-    const bytes = readFileSync(artifactPath);
-    captured.set(path, Buffer.from(bytes));
-  }
-
-  for (const [path, expectedBytes] of plan.files) {
-    if (path === 'apps/.htaccess') continue;
-    if (!captured.get(path)?.equals(expectedBytes)) {
-      throw new Error(`PREVIEW_ARTIFACT_CHANGED_DURING_SNAPSHOT: ${path}`);
-    }
-  }
+  const artifact = readVerifiedMiniappArtifact({ projectRoot, outputRoot });
 
   const files = new Map();
-  for (const [path, bytes] of captured) {
+  for (const [path, bytes] of artifact.files) {
     if (path === 'apps/.htaccess') continue;
     files.set(path, Object.freeze({
       bytes: Buffer.from(bytes),
@@ -165,7 +148,6 @@ export function createMiniappsServer({ projectRoot, root }) {
 function runCli() {
   const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
   const root = join(projectRoot, 'miniapps/dist');
-  assertVerifiedMiniappDeploymentSource({ projectRoot, outputRoot: root });
   const portArgument = process.argv.find((argument) => argument.startsWith('--port='));
   const port = portArgument ? Number(portArgument.slice('--port='.length)) : 4173;
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Port must be an integer from 0 to 65535.');
