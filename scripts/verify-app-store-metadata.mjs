@@ -27,20 +27,20 @@ const expectedUrls = Object.freeze({
 });
 
 const expectedGateStates = Object.freeze({
-  legalEntitySignOff: 'pending-owner-legal',
+  legalEntitySignOff: 'owner-approved',
   sellerLegalEntity: 'owner-confirmed-individual',
   sellerRelationship: 'owner-confirmed-trade-brand',
-  brandAuthorization: 'pending-signed-owner-declaration',
-  contentRights: 'pending-final-rights-inventory-owner-confirmation',
+  brandAuthorization: 'owner-confirmed-pending-signed-declaration',
+  contentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
   hostedRoutes: 'pending-deployment',
-  hostingLogTypes: 'pending-task-7b',
-  hostingLogRetention: 'pending-owner-legal',
-  hostingLogDeletion: 'pending-owner-legal',
-  supportResponseSla: 'pending-owner',
+  hostingLogTypes: 'owner-authorized-disclosure',
+  hostingLogRetention: 'owner-authorized-disclosure',
+  hostingLogDeletion: 'owner-authorized-disclosure',
+  supportResponseSla: 'owner-confirmed',
   phiRemediation: 'verified-owner-authorized',
   ageRating: 'pending-app-store-calculation',
-  medicalDevice: 'pending-account-holder',
-  exportCompliance: 'pending-account-holder',
+  medicalDevice: 'owner-confirmed-pending-exact-rc-review',
+  exportCompliance: 'owner-confirmed-pending-exact-rc-review',
   exactReleaseCandidate: 'pending-build-and-qa',
   accessibilityLabels: 'pending-exact-rc-evidence',
   screenshots: 'pending-exact-rc-capture',
@@ -65,14 +65,14 @@ const expectedReviewRisk = Object.freeze({
 });
 
 const expectedUnresolvedExternalGates = Object.freeze({
-  regulatedMedicalDevice: 'pending-account-holder',
-  exportCompliance: 'pending-account-holder',
-  finalPrivacyDisclosure: 'pending-owner-legal',
-  hostingLogRetention: 'pending-owner-legal',
-  hostingLogDeletion: 'pending-owner-legal',
-  supportResponseSla: 'pending-owner',
+  regulatedMedicalDevice: 'owner-confirmed-pending-exact-rc-review',
+  exportCompliance: 'owner-confirmed-pending-exact-rc-review',
+  finalPrivacyDisclosure: 'owner-authorized-pending-linkage-and-exact-rc-review',
+  hostingLogRetention: 'owner-authorized-disclosure',
+  hostingLogDeletion: 'owner-authorized-disclosure',
+  supportResponseSla: 'owner-confirmed',
   ageRating: 'pending-app-store-calculation',
-  allContentRights: 'pending-owner-confirmation',
+  allContentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
   brandEvidenceAttachment: 'pending-signed-owner-declaration',
   exactReleaseCandidate: 'pending-build-and-qa',
   screenshots: 'pending-exact-rc-capture',
@@ -388,9 +388,9 @@ function verifyManifest() {
   if (
     contentRights?.recommendedAnswer !== 'Yes'
     || contentRights?.usesThirdPartyMaterial !== true
-    || contentRights?.status !== 'pending-final-rights-inventory-and-owner-confirmation'
+    || contentRights?.status !== 'owner-confirmed-scoped-pending-third-party-inventory'
   ) {
-    errors.push('Content Rights recommendation must remain Yes for uses third-party material pending final inventory and owner confirmation');
+    errors.push('Content Rights recommendation must remain Yes for uses third-party material with owner-confirmed scope while the final third-party inventory remains pending');
   }
   const unresolved = appStoreDraft?.unresolvedExternalGates;
   if (!hasExactKeys(unresolved, Object.keys(expectedUnresolvedExternalGates))) {
@@ -449,17 +449,62 @@ function verifyAuthoritativeProjectState() {
 
   const compliance = readProjectJson('release/compliance-facts.json');
   if (compliance) {
-    if (compliance.legalEntity?.legalSignOffStatus !== 'pending') {
-      errors.push('Authoritative legal sign-off status no longer matches this pending metadata draft');
+    if (compliance.legalEntity?.legalSignOffStatus !== 'approved') {
+      errors.push('Authoritative legal sign-off status no longer matches the approved owner confirmation');
+    }
+    const ownerConfirmedGates = [
+      [['hosting', 'logTypes'], {
+        value: ['IP address', 'browser or user-agent', 'requested URL', 'technical errors'],
+        status: 'verified',
+      }],
+      [['hosting', 'retention'], {
+        value: {
+          description: 'Owner authorized 2026-08-17: hPanel visibility is up to 7 days; any additional retention is controlled by Hostinger.',
+        },
+        status: 'verified',
+      }],
+      [['hosting', 'deletionProcess'], {
+        value: {
+          description: 'Owner authorized 2026-08-17: deletion beyond hPanel visibility is controlled by Hostinger.',
+        },
+        status: 'verified',
+      }],
+      [['support', 'responseSla'], {
+        value: {
+          description: 'Owner confirmed 2026-08-17: respond within 2 business days, Monday-Friday, 10:00 AM-4:00 PM.',
+        },
+        status: 'verified',
+      }],
+      [['contentRights'], {
+        value: {
+          approved: true,
+          scope: 'Owner confirmed 2026-08-17: ownership or authorization for the Cabo Health logo, domain, texts, recipes, and images used by public v1.',
+        },
+        status: 'verified',
+      }],
+      [['exportCompliance'], {
+        value: {
+          approved: true,
+          determination: 'Owner confirmed 2026-08-17: standard iOS platform encryption and HTTPS only; no proprietary or custom cryptography.',
+        },
+        status: 'verified',
+      }],
+      [['medicalDevice'], {
+        value: {
+          isMedicalDevice: false,
+          basis: 'Owner confirmed 2026-08-17: educational only; no diagnosis, treatment, or medical-device function.',
+        },
+        status: 'verified',
+      }],
+    ];
+    for (const [path, expected] of ownerConfirmedGates) {
+      let gate = compliance;
+      for (const key of path) gate = gate?.[key];
+      if (!equalJson(gate, expected)) {
+        errors.push(`Authoritative verified owner confirmation changed: ${path.join('.')}`);
+      }
     }
     const pendingGatePaths = [
-      ['hosting', 'logTypes'],
-      ['hosting', 'retention'],
-      ['hosting', 'deletionProcess'],
-      ['support', 'responseSla'],
-      ['contentRights'],
-      ['exportCompliance'],
-      ['medicalDevice'],
       ['ageRating', 'host'],
       ['ageRating', 'miniapps', 'healthy-recipes'],
       ['ageRating', 'miniapps', 'clinic-guide'],
@@ -475,7 +520,7 @@ function verifyAuthoritativeProjectState() {
       compliance.schemaVersion !== 1
       || compliance.brand !== 'Cabo Health'
       || compliance.releaseReady !== false
-      || compliance.slice !== 'task-7d-owner-seller'
+      || compliance.slice !== 'task-7e-owner-confirmations'
       || compliance.legalEntity?.name !== 'Ivan Guaderrama'
       || compliance.legalEntity?.nameStatus !== 'owner-confirmed'
       || compliance.legalEntity?.sellerType !== 'individual'
@@ -483,7 +528,7 @@ function verifyAuthoritativeProjectState() {
       || compliance.legalEntity?.dunsApplicable !== false
       || compliance.legalEntity?.dunsNumber !== null
     ) {
-      errors.push('Authoritative Task 7 root/legal facts do not match this draft');
+      errors.push('Authoritative Task 7 owner-confirmation root/legal facts do not match this draft');
     }
     if (
       compliance.appStore?.seller?.status !== 'verified'
@@ -628,10 +673,10 @@ function verifyPrivacy() {
   const privacy = readJson('app-privacy.json');
   if (!privacy) return;
   if (
-    privacy.status !== 'pending-hosting-retention-and-owner-approval'
+    privacy.status !== 'owner-authorized-pending-linkage-and-exact-rc-review'
     || privacy.recommendedAppPrivacyAnswer !== null
   ) {
-    errors.push('App Privacy recommendation must remain conditional until retention and owner approval are resolved');
+    errors.push('App Privacy recommendation must remain conditional with owner authorization while linkage and exact-RC review remain pending');
   }
   if (
     privacy.nativeBehavior?.account !== false
@@ -650,12 +695,12 @@ function verifyPrivacy() {
     logs?.provider !== 'Hostinger'
     || !Array.isArray(logs.observedFields)
     || logs.observedFields.length === 0
-    || logs.retention !== null
-    || logs.deletionProcess !== null
+    || logs.retention !== 'hPanel visibility up to 7 days; any additional retention is controlled by Hostinger.'
+    || logs.deletionProcess !== 'Deletion beyond hPanel visibility is controlled by Hostinger.'
     || logs.linkedToIdentity !== null
     || logs.tracking !== false
   ) {
-    errors.push('Hosting request-log facts must stay observed-but-unresolved and non-tracking');
+    errors.push('Hosting request-log facts must retain the owner-authorized retention/deletion disclosure, unresolved linkage, and non-tracking status');
   }
   if (
     typeof privacy.conditionalRecommendation?.dataNotCollectedPath !== 'string'

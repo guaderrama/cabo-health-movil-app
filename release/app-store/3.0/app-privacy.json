@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "pending-hosting-retention-and-owner-approval",
+  "status": "owner-authorized-pending-linkage-and-exact-rc-review",
   "recommendedAppPrivacyAnswer": null,
   "nativeBehavior": {
     "account": false,
@@ -33,8 +33,8 @@
       "page delivery",
       "security and troubleshooting"
     ],
-    "retention": null,
-    "deletionProcess": null,
+    "retention": "hPanel visibility up to 7 days; any additional retention is controlled by Hostinger.",
+    "deletionProcess": "Deletion beyond hPanel visibility is controlled by Hostinger.",
     "linkedToIdentity": null,
     "tracking": false
   },

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "brand": "Cabo Health",
   "releaseReady": false,
-  "slice": "task-7d-owner-seller",
+  "slice": "task-7e-owner-confirmations",
   "legalEntity": {
     "name": "Ivan Guaderrama",
     "nameStatus": "owner-confirmed",
@@ -10,7 +10,7 @@
     "registeredOrganization": false,
     "dunsApplicable": false,
     "dunsNumber": null,
-    "legalSignOffStatus": "pending"
+    "legalSignOffStatus": "approved"
   },
   "appStore": {
     "seller": {
@@ -31,17 +31,53 @@
   },
   "hosting": {
     "provider": "Hostinger",
-    "logTypes": { "value": null, "status": "pending" },
-    "retention": { "value": null, "status": "pending" },
-    "deletionProcess": { "value": null, "status": "pending" }
+    "logTypes": {
+      "value": ["IP address", "browser or user-agent", "requested URL", "technical errors"],
+      "status": "verified"
+    },
+    "retention": {
+      "value": {
+        "description": "Owner authorized 2026-08-17: hPanel visibility is up to 7 days; any additional retention is controlled by Hostinger."
+      },
+      "status": "verified"
+    },
+    "deletionProcess": {
+      "value": {
+        "description": "Owner authorized 2026-08-17: deletion beyond hPanel visibility is controlled by Hostinger."
+      },
+      "status": "verified"
+    }
   },
   "support": {
     "contactFactsRef": "release/public-contact-facts.json",
-    "responseSla": { "value": null, "status": "pending" }
+    "responseSla": {
+      "value": {
+        "description": "Owner confirmed 2026-08-17: respond within 2 business days, Monday-Friday, 10:00 AM-4:00 PM."
+      },
+      "status": "verified"
+    }
   },
-  "contentRights": { "value": null, "status": "pending" },
-  "exportCompliance": { "value": null, "status": "pending" },
-  "medicalDevice": { "value": null, "status": "pending" },
+  "contentRights": {
+    "value": {
+      "approved": true,
+      "scope": "Owner confirmed 2026-08-17: ownership or authorization for the Cabo Health logo, domain, texts, recipes, and images used by public v1."
+    },
+    "status": "verified"
+  },
+  "exportCompliance": {
+    "value": {
+      "approved": true,
+      "determination": "Owner confirmed 2026-08-17: standard iOS platform encryption and HTTPS only; no proprietary or custom cryptography."
+    },
+    "status": "verified"
+  },
+  "medicalDevice": {
+    "value": {
+      "isMedicalDevice": false,
+      "basis": "Owner confirmed 2026-08-17: educational only; no diagnosis, treatment, or medical-device function."
+    },
+    "status": "verified"
+  },
   "ageRating": {
     "host": { "value": null, "status": "pending" },
     "miniapps": {

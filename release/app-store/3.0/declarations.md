@@ -1,10 +1,10 @@
-# App Store declarations — owner/account-holder confirmations pending
+# App Store declarations — owner confirmations recorded
 
-Status: Draft only. These are recommended directions from the exact MVP source, not declarations already made on behalf of the owner.
+Status: Draft only. Ivan Guaderrama recorded the medical-scope and encryption confirmations below on 2026-08-17. Exact-RC inspection, App Store Connect answers, and submission remain pending; nothing here records an ASC save.
 
 ## Regulated medical device
 
-Source-supported candidate answer: **No**, subject to account-holder and legal confirmation.
+Owner-confirmed answer: **No.** The app is educational only and does not diagnose, treat, or function as a medical device.
 
 Basis to verify on the exact RC:
 
@@ -12,22 +12,22 @@ Basis to verify on the exact RC:
 - no measurement, patient input, personalized calculation, diagnosis, dosage, treatment selection, clinical decision support, sensor/camera use, or connection to a regulated device;
 - clear food-safety/emergency limitations and direction to seek qualified/local emergency help when appropriate.
 
-Before answering, confirm no marketing/hosted wording presents the app as a regulated device or makes a medical outcome claim. Record the owner/legal basis and date in `release/compliance-facts.json`.
+Before answering in App Store Connect, verify the exact RC and hosted wording still contain no regulated-device presentation or medical outcome claim. The dated owner basis is recorded in `release/compliance-facts.json`.
 
 ## Encryption and export compliance
 
-Current local config contains `ITSAppUsesNonExemptEncryption: false`. Source-supported candidate direction: the app uses ordinary platform/network HTTPS and contains no proprietary cryptographic feature, subject to signed-binary/SDK review and account-holder confirmation.
+Current local config contains `ITSAppUsesNonExemptEncryption: false`. Ivan confirmed that the app uses only standard iOS platform encryption and HTTPS and contains no proprietary or custom cryptography. The signed binary and SDK report still require review before answering in App Store Connect.
 
 Before answering:
 
 - [ ] Inspect the exact signed RC and dependency/privacy reports for encryption beyond Apple/standard exempt transport use.
 - [ ] Confirm `ITSAppUsesNonExemptEncryption` remains accurate in the uploaded build.
-- [ ] Have the account holder answer the current export questions; do not upload documentation unless the final answers require it.
-- [ ] Record the exact answers, basis, approval date, and any document reference in `release/compliance-facts.json`.
+- [ ] Have the account holder answer the current export questions in App Store Connect; do not upload documentation unless the final answers require it.
+- **RECORDED:** Owner determination and approval date are in `release/compliance-facts.json`.
 
 ## Content rights
 
-Recommended answer: **Yes — uses third-party material**, pending the final rights inventory and Ivan Guaderrama’s confirmation. Do not reuse the legacy “No third-party content” answer. Reconcile the final recipes, sources, maps/contact references, brand relationship, and `content-rights-and-brand.md`; all-content rights remain pending.
+Recommended answer: **Yes — uses third-party material**. Ivan confirmed ownership or authorization for the Cabo Health logo, domain, texts, recipes, and images used by public v1. Do not reuse the legacy “No third-party content” answer. The itemized evidence schedule and third-party sources, maps/contact references, brand relationship, and `content-rights-and-brand.md` still require final reconciliation.
 
 ## Pricing, availability, and release mode
 

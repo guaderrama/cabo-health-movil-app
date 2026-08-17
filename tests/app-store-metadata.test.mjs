@@ -40,6 +40,86 @@ function mutateJson(root, relativePath, mutate) {
   writeFileSync(absolutePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function recordOwnerConfirmations(root) {
+  mutateJson(root, 'release/compliance-facts.json', (facts) => {
+    facts.slice = 'task-7e-owner-confirmations';
+    facts.legalEntity.legalSignOffStatus = 'approved';
+    facts.hosting.logTypes = {
+      value: ['IP address', 'browser or user-agent', 'requested URL', 'technical errors'],
+      status: 'verified',
+    };
+    facts.hosting.retention = {
+      value: {
+        description: 'Owner authorized 2026-08-17: hPanel visibility is up to 7 days; any additional retention is controlled by Hostinger.',
+      },
+      status: 'verified',
+    };
+    facts.hosting.deletionProcess = {
+      value: {
+        description: 'Owner authorized 2026-08-17: deletion beyond hPanel visibility is controlled by Hostinger.',
+      },
+      status: 'verified',
+    };
+    facts.support.responseSla = {
+      value: {
+        description: 'Owner confirmed 2026-08-17: respond within 2 business days, Monday-Friday, 10:00 AM-4:00 PM.',
+      },
+      status: 'verified',
+    };
+    facts.contentRights = {
+      value: {
+        approved: true,
+        scope: 'Owner confirmed 2026-08-17: ownership or authorization for the Cabo Health logo, domain, texts, recipes, and images used by public v1.',
+      },
+      status: 'verified',
+    };
+    facts.exportCompliance = {
+      value: {
+        approved: true,
+        determination: 'Owner confirmed 2026-08-17: standard iOS platform encryption and HTTPS only; no proprietary or custom cryptography.',
+      },
+      status: 'verified',
+    };
+    facts.medicalDevice = {
+      value: {
+        isMedicalDevice: false,
+        basis: 'Owner confirmed 2026-08-17: educational only; no diagnosis, treatment, or medical-device function.',
+      },
+      status: 'verified',
+    };
+  });
+
+  mutateJson(root, `${releasePath}/release-manifest.json`, (manifest) => {
+    manifest.appStoreDraft.contentRights.status = 'owner-confirmed-scoped-pending-third-party-inventory';
+    Object.assign(manifest.appStoreDraft.unresolvedExternalGates, {
+      regulatedMedicalDevice: 'owner-confirmed-pending-exact-rc-review',
+      exportCompliance: 'owner-confirmed-pending-exact-rc-review',
+      finalPrivacyDisclosure: 'owner-authorized-pending-linkage-and-exact-rc-review',
+      hostingLogRetention: 'owner-authorized-disclosure',
+      hostingLogDeletion: 'owner-authorized-disclosure',
+      supportResponseSla: 'owner-confirmed',
+      allContentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
+    });
+    Object.assign(manifest.gates, {
+      legalEntitySignOff: 'owner-approved',
+      brandAuthorization: 'owner-confirmed-pending-signed-declaration',
+      contentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
+      hostingLogTypes: 'owner-authorized-disclosure',
+      hostingLogRetention: 'owner-authorized-disclosure',
+      hostingLogDeletion: 'owner-authorized-disclosure',
+      supportResponseSla: 'owner-confirmed',
+      medicalDevice: 'owner-confirmed-pending-exact-rc-review',
+      exportCompliance: 'owner-confirmed-pending-exact-rc-review',
+    });
+  });
+
+  mutateJson(root, `${releasePath}/app-privacy.json`, (privacy) => {
+    privacy.status = 'owner-authorized-pending-linkage-and-exact-rc-review';
+    privacy.hostedTechnicalRequestLogs.retention = 'hPanel visibility up to 7 days; any additional retention is controlled by Hostinger.';
+    privacy.hostedTechnicalRequestLogs.deletionProcess = 'Deletion beyond hPanel visibility is controlled by Hostinger.';
+  });
+}
+
 function addOwnerSellerDraft(manifest) {
   manifest.ownerSeller = {
     sellerType: 'individual',
@@ -84,17 +164,17 @@ function addOwnerSellerDraft(manifest) {
     contentRights: {
       recommendedAnswer: 'Yes',
       usesThirdPartyMaterial: true,
-      status: 'pending-final-rights-inventory-and-owner-confirmation',
+      status: 'owner-confirmed-scoped-pending-third-party-inventory',
     },
     unresolvedExternalGates: {
-      regulatedMedicalDevice: 'pending-account-holder',
-      exportCompliance: 'pending-account-holder',
-      finalPrivacyDisclosure: 'pending-owner-legal',
-      hostingLogRetention: 'pending-owner-legal',
-      hostingLogDeletion: 'pending-owner-legal',
-      supportResponseSla: 'pending-owner',
+      regulatedMedicalDevice: 'owner-confirmed-pending-exact-rc-review',
+      exportCompliance: 'owner-confirmed-pending-exact-rc-review',
+      finalPrivacyDisclosure: 'owner-authorized-pending-linkage-and-exact-rc-review',
+      hostingLogRetention: 'owner-authorized-disclosure',
+      hostingLogDeletion: 'owner-authorized-disclosure',
+      supportResponseSla: 'owner-confirmed',
       ageRating: 'pending-app-store-calculation',
-      allContentRights: 'pending-owner-confirmation',
+      allContentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
       brandEvidenceAttachment: 'pending-signed-owner-declaration',
       exactReleaseCandidate: 'pending-build-and-qa',
       screenshots: 'pending-exact-rc-capture',
@@ -123,6 +203,43 @@ test('versioned App Store metadata is a valid blocked 3.0 build 4 candidate', ()
   const result = verify(projectRoot);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /draft verified; submission remains blocked/i);
+});
+
+test('metadata verifier accepts the five owner confirmations without releasing unverified gates', () => {
+  withReleaseFixture(
+    recordOwnerConfirmations,
+    (result) => {
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      assert.match(result.stdout, /draft verified; submission remains blocked/i);
+    },
+  );
+});
+
+test('metadata verifier rejects regression of an owner-confirmed fact to pending', async (t) => {
+  const mutations = [
+    ['medical-device declaration', (root) => mutateJson(root, 'release/compliance-facts.json', (facts) => {
+      facts.medicalDevice = { value: null, status: 'pending' };
+    })],
+    ['support SLA', (root) => mutateJson(root, `${releasePath}/release-manifest.json`, (manifest) => {
+      manifest.gates.supportResponseSla = 'pending-owner';
+    })],
+    ['hosting retention disclosure', (root) => mutateJson(root, `${releasePath}/app-privacy.json`, (privacy) => {
+      privacy.hostedTechnicalRequestLogs.retention = null;
+    })],
+  ];
+
+  for (const [name, mutate] of mutations) {
+    await t.test(name, () => withReleaseFixture(
+      (root) => {
+        recordOwnerConfirmations(root);
+        mutate(root);
+      },
+      (result) => {
+        assert.equal(result.status, 1, `${name} regression bypassed verifier:\n${result.stdout}${result.stderr}`);
+        assert.match(result.stderr, /owner-confirmed|owner-authorized|verified owner confirmation/i);
+      },
+    ));
+  }
 });
 
 test('metadata verifier rejects a third hosted resource', () => {
@@ -275,9 +392,9 @@ test('metadata verifier rejects owner, category, territory, platform, rights, an
     }, /Content Rights recommendation must remain Yes.*third-party material/i],
     ['ASC marked saved', (manifest) => { manifest.appStoreDraft.status = 'saved'; }, /App Store draft must remain pending-save/i],
     ['DSA marked saved', (manifest) => { manifest.appStoreDraft.dsa.status = 'saved'; }, /DSA status must remain pending-save/i],
-    ['medical-device gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.regulatedMedicalDevice = 'complete'; }, /regulatedMedicalDevice must remain pending-account-holder/i],
-    ['privacy gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.finalPrivacyDisclosure = 'complete'; }, /finalPrivacyDisclosure must remain pending-owner-legal/i],
-    ['rights gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.allContentRights = 'complete'; }, /allContentRights must remain pending-owner-confirmation/i],
+    ['medical-device gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.regulatedMedicalDevice = 'complete'; }, /regulatedMedicalDevice must remain owner-confirmed-pending-exact-rc-review/i],
+    ['privacy gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.finalPrivacyDisclosure = 'complete'; }, /finalPrivacyDisclosure must remain owner-authorized-pending-linkage-and-exact-rc-review/i],
+    ['rights gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.allContentRights = 'complete'; }, /allContentRights must remain owner-confirmed-scoped-pending-third-party-inventory/i],
   ];
 
   for (const [name, mutate, expected] of mutations) {

@@ -12,13 +12,13 @@ The legacy Medical category must be visibly replaced, not hidden or relabeled to
 
 ## Remaining release gates
 
-- [ ] Ivan signs and dates the ownership declaration; domain-control and brand/logo/content schedules are attached privately and reviewed.
-- [ ] Final all-content rights inventory is approved; the Content Rights answer is reconfirmed as **Yes — uses third-party material** against the exact release.
-- [ ] Hostinger log retention, deletion, linkage/access, and final Privacy disclosure are approved.
-- [ ] Owner/legal approves a truthful public support-response policy; no response deadline is promised while the SLA remains pending.
+- [ ] Ivan signs and dates the ownership declaration; his scoped ownership/authorization confirmation is recorded, but domain-control and brand/logo/content schedules still require private attachment and review.
+- [ ] Final third-party rights inventory is approved; the owner-confirmed Content Rights answer remains **Yes — uses third-party material** against the exact release.
+- [ ] Hostinger linkage/access behavior and the final Apple Privacy category mapping are approved; the owner-authorized log/retention/deletion disclosure is already recorded.
+- **RECORDED:** Owner approved support responses within 2 business days, Monday–Friday, 10:00 AM–4:00 PM; the final public Support copy must match before deployment.
 - [ ] `/app/report-content/`, Privacy, Terms, Support, both public resources, AASA origin, and Apple CDN are deployed and pass the production verifier.
 - [ ] The current age questionnaire is completed truthfully and Apple’s calculated value is frozen in compliance facts and both catalog entries.
-- [ ] The account holder confirms regulated-medical-device and export-compliance answers.
+- [ ] Reconcile the exact RC with the owner-confirmed non-medical-device and standard-iOS/HTTPS-only encryption determinations before answering in App Store Connect.
 - [ ] Initial availability is verified as exactly Mexico and United States, automatic future territories off, Mac Apple Silicon off, and Vision Pro off.
 - [ ] App-level DSA remains non-trader/outside-EU-scope for this Mexico/US release and is reassessed before any EU territory is added; no global account state is changed by this draft.
 - [ ] `app.json` and `constants/config.ts` are updated together to marketing version 3.0/build 4 only when the RC task starts.
