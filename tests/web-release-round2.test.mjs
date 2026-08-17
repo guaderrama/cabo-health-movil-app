@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
@@ -204,6 +204,16 @@ test('post-namespace promotion failures reverse OSError, UnicodeError, RuntimeEr
   }
 });
 
+test('synchronous reversal revalidates a same-inode operand mutation before leaving anything live', () => {
+  const { root, transport } = setupPromotion('present');
+  const result = runHelper(root, 'promote-next', transport, [transport.releaseId], {
+    CABOHEALTH_TEST_FAULT: 'promotion-post-exchange-reversal-operand-tamper',
+  });
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  assert.match(result.stderr, /REVERSAL=.*INVALID/u);
+  assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), false);
+});
+
 test('post-exchange rollback failures and syscall-boundary tamper never leave the unverified operand live', async (context) => {
   for (const fault of [
     'rollback-post-exchange-oserror',
@@ -387,6 +397,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         activeTarget: null,
         pauseActionCount: 0,
         requests: [],
+        nextRequestId: 0,
         browserLogReadCount: 0,
       });
       value = {
@@ -405,7 +416,10 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         session.url = body.url;
         session.activeTarget = null;
         session.pauseActionCount = 0;
-        session.requests.push(body.url);
+        session.requests.push({
+          requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
+          url: body.url,
+        });
       }
       else if (request.method === 'GET' && command === 'url') value = session.url;
       else if (request.method === 'GET' && command === 'log/types') value = ['browser', 'performance'];
@@ -439,7 +453,10 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
               enterActionCount += 1;
               if (session.activeTarget === 'legal-link' && driverFault !== 'ignored-navigation') {
                 session.url = 'https://cabohealth.org/app/privacy/';
-                session.requests.push(session.url);
+                session.requests.push({
+                  requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
+                  url: session.url,
+                });
               }
             }
           }
@@ -492,21 +509,79 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
           const requestLog = driverFault === 'missing-navigation-request'
             ? session.requests.slice(0, 1)
             : session.requests;
-          value = driverFault === 'missing-document-request' ? [] : requestLog.map((url) => ({
-            level: 'INFO', message: JSON.stringify({
-              message: {
-                method: 'Network.requestWillBeSent',
-                params: { request: { url } },
-              },
-            }),
-          }));
+          const records = driverFault === 'missing-document-request' ? [] : [...requestLog];
+          if (driverFault === 'allowed-url-failure' && records.length > 0) records.push({
+            requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
+            url: 'https://cabohealth.org/apps/shared/styles.css',
+            resourceFailure: true,
+          });
+          if (driverFault === 'resource-redirect-allowed' && records.length > 0) records.push({
+            requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
+            url: 'https://cabohealth.org/apps/shared/styles.css',
+            redirectUrl: 'https://cabohealth.org/apps/shared/motion.js',
+          });
+          if (driverFault === 'navigation-redirect-allowed' && records.length > 1) {
+            records[1] = { ...records[1], redirectUrl: 'https://cabohealth.org/app/terms/' };
+          }
+          if (driverFault === 'external-request') records.push({
+            requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
+            url: 'https://evil.invalid/tracker.js',
+          });
+          const event = (method, params) => ({
+            level: 'INFO',
+            message: JSON.stringify({ message: { method, params } }),
+          });
+          value = records.flatMap((record, index) => {
+            const requestEvent = event('Network.requestWillBeSent', {
+              requestId: record.requestId,
+              request: { url: record.url },
+              ...(driverFault === 'orphan-redirect' && index === 0
+                ? { redirectResponse: { url: 'https://cabohealth.org/app/support/', status: 302 } }
+                : {}),
+            });
+            if ((driverFault === 'redirect-disallowed' && index === 0) || record.redirectUrl) {
+              const redirectUrl = record.redirectUrl ?? 'https://evil.invalid/redirected';
+              return [
+                requestEvent,
+                event('Network.requestWillBeSent', {
+                  requestId: record.requestId,
+                  request: { url: redirectUrl },
+                  redirectResponse: { url: record.url, status: 302 },
+                }),
+                event('Network.responseReceived', {
+                  requestId: record.requestId,
+                  response: { url: redirectUrl, status: 200 },
+                }),
+                event('Network.loadingFinished', { requestId: record.requestId }),
+              ];
+            }
+            if (driverFault === 'loading-failed' && index === 0) {
+              return [requestEvent, event('Network.loadingFailed', {
+                requestId: record.requestId,
+                errorText: 'fixture network failure',
+              })];
+            }
+            const status = driverFault === 'http-404' && index === 0
+              ? 404
+              : (driverFault === 'http-500' && index === 1) || record.resourceFailure ? 500 : 200;
+            const responseEvent = event('Network.responseReceived', {
+              requestId: record.requestId,
+              response: driverFault === 'missing-status' && index === 0
+                ? { url: record.url }
+                : { url: record.url, status },
+            });
+            if (driverFault === 'pending-request' && index === 0) return [requestEvent];
+            if (driverFault === 'missing-completion' && index === 0) return [requestEvent, responseEvent];
+            const finished = event('Network.loadingFinished', { requestId: record.requestId });
+            if (driverFault === 'duplicate-response' && index === 0) {
+              return [requestEvent, responseEvent, responseEvent, finished];
+            }
+            if (driverFault === 'duplicate-terminal' && index === 0) {
+              return [requestEvent, responseEvent, finished, finished];
+            }
+            return [requestEvent, responseEvent, finished];
+          });
           session.requests.length = 0;
-          if (driverFault === 'external-request') value.push({ level: 'INFO', message: JSON.stringify({
-            message: {
-              method: 'Network.requestWillBeSent',
-              params: { request: { url: 'https://evil.invalid/tracker.js' } },
-            },
-          }) });
         } else {
           session.browserLogReadCount += 1;
           value = driverFault === 'console-error'
@@ -573,6 +648,15 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       'missing-document-request',
       'missing-navigation-request',
       'external-request',
+      'http-404',
+      'http-500',
+      'loading-failed',
+      'pending-request',
+      'missing-completion',
+      'missing-status',
+      'allowed-url-failure',
+      'duplicate-response',
+      'duplicate-terminal',
       'console-error',
       'late-console-error',
     ]) {
@@ -586,6 +670,63 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         checkedAt: '2026-08-18T02:03:04.000Z',
       }), /(?:BROWSER|WEBDRIVER)_/u, fault);
     }
+    for (const fault of [
+      'redirect-disallowed',
+      'navigation-redirect-allowed',
+      'resource-redirect-allowed',
+      'orphan-redirect',
+    ]) {
+      driverFault = fault;
+      await assert.rejects(measureBrowserEvidence({
+        artifact,
+        ...authority,
+        baseUrl: 'https://cabohealth.org/',
+        webdriverUrl: `http://127.0.0.1:${address.port}/`,
+        productionConfirmation: 'cabohealth.org',
+        checkedAt: '2026-08-18T02:03:04.000Z',
+      }), /BROWSER_NETWORK_REDIRECT_FORBIDDEN/u, fault);
+    }
+    driverFault = null;
+
+    const cliRoot = mkdtempSync(join(fixtureTmp, 'cabohealth-browser-cli-fixture-'));
+    mkdirSync(join(cliRoot, 'scripts'));
+    mkdirSync(join(cliRoot, 'release'));
+    for (const name of [
+      'verify-production.mjs',
+      'generate-aasa.mjs',
+      'build-miniapps.mjs',
+      'web-release-policy.mjs',
+    ]) copyFileSync(join(projectRoot, 'scripts', name), join(cliRoot, 'scripts', name));
+    writeFileSync(join(cliRoot, 'release/web-artifacts.json'), canonicalJson(artifact), { flag: 'wx' });
+    const runBrowserCli = async () => {
+      const child = spawn(process.execPath, [
+        join(cliRoot, 'scripts/verify-production.mjs'),
+        '--measure-browser',
+        '--confirm-production=cabohealth.org',
+        `--reviewed-release-id=${authority.reviewedReleaseId}`,
+        `--reviewed-artifact-sha256=${authority.reviewedArtifactSha256}`,
+        `--webdriver-url=http://127.0.0.1:${address.port}/`,
+      ], { cwd: cliRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+      const stdout = [];
+      const stderr = [];
+      child.stdout.on('data', (chunk) => stdout.push(chunk));
+      child.stderr.on('data', (chunk) => stderr.push(chunk));
+      const status = await new Promise((resolvePromise) => child.on('close', resolvePromise));
+      return { status, stdout: Buffer.concat(stdout).toString(), stderr: Buffer.concat(stderr).toString() };
+    };
+    const cliSuccess = await runBrowserCli();
+    assert.equal(cliSuccess.status, 0, cliSuccess.stderr || cliSuccess.stdout);
+    assert.equal(cliSuccess.stderr, '');
+    const cliEvidence = JSON.parse(cliSuccess.stdout);
+    assert.equal(cliSuccess.stdout, canonicalJson(cliEvidence));
+    assert.equal(validateBrowserEvidence(cliEvidence, artifact, authority, {
+      reviewedBrowserMeasurementSha256: browserEvidenceSha256(cliEvidence),
+    }), true);
+    assert.equal(cliEvidence.observations.length, 48);
+    driverFault = 'allowed-url-failure';
+    const cliFailure = await runBrowserCli();
+    assert.equal(cliFailure.status, 1, cliFailure.stderr || cliFailure.stdout);
+    assert.match(cliFailure.stderr, /BROWSER_NETWORK_/u);
     driverFault = null;
   } finally {
     await new Promise((resolvePromise) => server.close(resolvePromise));

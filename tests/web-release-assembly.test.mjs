@@ -398,6 +398,131 @@ test('materialize-release rejects pending and coordinated compliance/legal/AASA/
   assert.equal(existsSync(join(root, 'release/web-bundles')), false);
 });
 
+test('post-pin materialization independently reaches legal, canonical AASA, and Apache authority gates', async (context) => {
+  const { createWebReleaseTransport } = await import('../scripts/assemble-web-release.mjs');
+  const legalSlugs = ['privacy', 'report-content', 'support', 'terms'];
+  const inputPaths = [
+    'web-hosting/cabohealth.org/app/privacy/index.html',
+    'web-hosting/cabohealth.org/app/terms/index.html',
+    'web-hosting/cabohealth.org/app/support/index.html',
+    'web-hosting/cabohealth.org/app/report-content/index.html',
+    'web-hosting/cabohealth.org/.well-known/apple-app-site-association',
+    'miniapps/shared/security-headers.conf',
+    'web-hosting/cabohealth.org/apps/.htaccess',
+  ];
+  const prepare = () => {
+    const root = mkdtempSync(join(fixtureTmp, 'cabohealth-post-pin-fixture-'));
+    mkdirSync(join(root, 'release'));
+    const facts = JSON.parse(readFileSync(join(projectRoot, 'release/compliance-facts.json'), 'utf8'));
+    facts.releaseReady = true;
+    facts.legalEntity.legalSignOffStatus = 'approved';
+    facts.hosting.logTypes = { value: ['access-log'], status: 'verified' };
+    facts.hosting.retention = { value: { description: 'reviewed retention' }, status: 'verified' };
+    facts.hosting.deletionProcess = { value: { description: 'reviewed deletion' }, status: 'verified' };
+    facts.support.responseSla = { value: { description: 'reviewed response policy' }, status: 'verified' };
+    facts.contentRights = { value: { approved: true, scope: 'reviewed scope' }, status: 'verified' };
+    facts.exportCompliance = { value: { approved: true, determination: 'reviewed determination' }, status: 'verified' };
+    facts.medicalDevice = { value: { basis: 'reviewed basis', isMedicalDevice: false }, status: 'verified' };
+    facts.ageRating.host = { value: 4, status: 'verified' };
+    facts.ageRating.miniapps['healthy-recipes'] = { value: 4, status: 'verified' };
+    facts.ageRating.miniapps['clinic-guide'] = { value: 4, status: 'verified' };
+    writeFileSync(join(root, 'release/compliance-facts.json'), canonicalJson(facts));
+    for (const source of inputPaths) {
+      const original = readFileSync(join(projectRoot, source));
+      const bytes = source.includes('/app/')
+        ? Buffer.concat([original, Buffer.from('<!-- independently reviewed final fixture -->\n')])
+        : original;
+      writeFixturePath(root, source, bytes);
+    }
+    writeFixturePath(root, 'miniapps/dist', readFileSync(join(projectRoot, 'miniapps/dist')));
+    linkSync(join(root, 'miniapps/dist'), join(root, 'miniapps/.dist-review-link'));
+    chmodSync(join(root, 'miniapps/dist'), 0o400);
+    const legalPins = Object.fromEntries(legalSlugs.map((slug) => [
+      slug,
+      sha256(readFileSync(join(root, `web-hosting/cabohealth.org/app/${slug}/index.html`))),
+    ]));
+    const helperSource = readFileSync(helperPath, 'utf8');
+    const pinsPattern = /FINAL_LEGAL_SHA256: dict\[str, str \| None\] = \{\n(?:    .*\n){4}\}/u;
+    assert.match(helperSource, pinsPattern);
+    const patchedHelper = helperSource.replace(
+      pinsPattern,
+      `FINAL_LEGAL_SHA256: dict[str, str | None] = ${JSON.stringify(legalPins, null, 4)}`,
+    );
+    const patchedHelperPath = join(root, 'secure_web_release_post_pin.py');
+    writeFileSync(patchedHelperPath, patchedHelper, { flag: 'wx' });
+    const envelope = () => {
+      const capsuleBytes = readFileSync(join(root, 'miniapps/dist'));
+      const capsule = JSON.parse(capsuleBytes.toString('utf8'));
+      const outputs = new Map([
+        ['.well-known/apple-app-site-association', readFileSync(join(root, 'web-hosting/cabohealth.org/.well-known/apple-app-site-association'))],
+        ...legalSlugs.map((slug) => [
+          `app/${slug}/index.html`,
+          readFileSync(join(root, `web-hosting/cabohealth.org/app/${slug}/index.html`)),
+        ]),
+        ...capsule.files.map(({ path, bytesBase64 }) => [path, Buffer.from(bytesBase64, 'base64')]),
+      ]);
+      const transport = createWebReleaseTransport(outputs);
+      const manifest = fixtureArtifactManifest(transport);
+      const inputBytes = new Map([
+        ['miniapps/dist', capsuleBytes],
+        ...inputPaths.map((path) => [path, readFileSync(join(root, path))]),
+      ]);
+      manifest.inputs = manifest.inputs.map((entry) => ({
+        ...entry,
+        size: inputBytes.get(entry.path).byteLength,
+        sha256: sha256(inputBytes.get(entry.path)),
+      }));
+      return { transport, manifest };
+    };
+    const publish = () => spawnSync('python3', [patchedHelperPath, 'materialize-release', root], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      input: canonicalJson(envelope()),
+    });
+    return { root, publish };
+  };
+
+  await context.test('final legal bytes', () => {
+    const { root, publish } = prepare();
+    const legalPath = join(root, 'web-hosting/cabohealth.org/app/privacy/index.html');
+    writeFileSync(legalPath, `${readFileSync(legalPath, 'utf8')}<!-- coordinated post-pin change -->\n`);
+    const result = publish();
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.match(result.stderr, /FINAL_LEGAL_PIN_MISMATCH/u);
+    assert.equal(existsSync(join(root, 'release/web-bundles')), false);
+    assert.equal(existsSync(join(root, 'release/web-artifacts.json')), false);
+  });
+
+  await context.test('canonical AASA bytes', () => {
+    const { root, publish } = prepare();
+    const path = join(root, 'web-hosting/cabohealth.org/.well-known/apple-app-site-association');
+    const value = JSON.parse(readFileSync(path, 'utf8'));
+    value.applinks.details[0].components.push({ '/': '/apps/unreviewed-third/' });
+    writeFileSync(path, canonicalJson(value));
+    const result = publish();
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.match(result.stderr, /WEB_RELEASE_AASA_INVALID/u);
+    assert.equal(existsSync(join(root, 'release/web-bundles')), false);
+    assert.equal(existsSync(join(root, 'release/web-artifacts.json')), false);
+  });
+
+  await context.test('Apache authority bytes', () => {
+    const { root, publish } = prepare();
+    for (const relativePath of [
+      'miniapps/shared/security-headers.conf',
+      'web-hosting/cabohealth.org/apps/.htaccess',
+    ]) {
+      const path = join(root, relativePath);
+      writeFileSync(path, `${readFileSync(path, 'utf8')}# coordinated post-pin change\n`);
+    }
+    const result = publish();
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.match(result.stderr, /WEB_RELEASE_APACHE_SECURITY_MISMATCH/u);
+    assert.equal(existsSync(join(root, 'release/web-bundles')), false);
+    assert.equal(existsSync(join(root, 'release/web-artifacts.json')), false);
+  });
+});
+
 test('materializer rejects schema, path, metadata, byte, and reviewed-release mutations before output writes', async (context) => {
   const cases = [
     ['unknown root key', (value) => { value.unknown = true; }],

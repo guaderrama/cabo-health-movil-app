@@ -427,9 +427,9 @@ function browserObservationChallenge(nonce, binding) {
   return sha256(Buffer.concat([nonce, Buffer.from(canonicalJson(binding))]));
 }
 
-function performanceRequestUrls(logs) {
+function completedPerformanceRequestUrls(logs) {
   if (!Array.isArray(logs)) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
-  const urls = [];
+  const requests = new Map();
   for (const entry of logs) {
     if (!entry || typeof entry.message !== 'string') throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
     let parsed;
@@ -438,13 +438,71 @@ function performanceRequestUrls(logs) {
     } catch {
       throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
     }
-    if (parsed?.message?.method === 'Network.requestWillBeSent') {
-      const url = parsed.message.params?.request?.url;
-      if (typeof url !== 'string') throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
-      urls.push(url);
+    const method = parsed?.message?.method;
+    if (![
+      'Network.requestWillBeSent',
+      'Network.responseReceived',
+      'Network.loadingFinished',
+      'Network.loadingFailed',
+    ].includes(method)) continue;
+    const params = parsed.message.params;
+    const requestId = params?.requestId;
+    if (typeof requestId !== 'string' || requestId.length === 0) {
+      throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+    }
+    if (method === 'Network.requestWillBeSent') {
+      const url = params?.request?.url;
+      if (typeof url !== 'string' || url.length === 0) {
+        throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+      }
+      const prior = requests.get(requestId);
+      if (prior !== undefined) {
+        const redirect = params.redirectResponse;
+        if (
+          !redirect
+          || redirect.url !== prior.url
+          || !Number.isInteger(redirect.status)
+          || redirect.status < 300
+          || redirect.status >= 400
+        ) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+        throw new Error('BROWSER_NETWORK_REDIRECT_FORBIDDEN');
+      }
+      if (params.redirectResponse !== undefined) {
+        throw new Error('BROWSER_NETWORK_REDIRECT_FORBIDDEN');
+      }
+      requests.set(requestId, { url, responseStatus: null, terminal: null });
+      continue;
+    }
+    const request = requests.get(requestId);
+    if (request === undefined) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+    if (method === 'Network.responseReceived') {
+      const status = params?.response?.status;
+      if (
+        request.responseStatus !== null
+        || request.terminal !== null
+        || params?.response?.url !== request.url
+        || !Number.isInteger(status)
+        || status < 100
+        || status > 599
+      ) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+      if (status < 200 || status >= 300) throw new Error('BROWSER_NETWORK_STATUS_INVALID');
+      request.responseStatus = status;
+      continue;
+    }
+    if (request.terminal !== null) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+    if (method === 'Network.loadingFailed') {
+      request.terminal = 'failed';
+      throw new Error('BROWSER_NETWORK_LOADING_FAILED');
+    }
+    if (request.responseStatus === null) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+    request.terminal = 'finished';
+  }
+  for (const request of requests.values()) {
+    if (request.responseStatus === null || request.terminal !== 'finished') {
+      throw new Error('BROWSER_NETWORK_REQUEST_INCOMPLETE');
     }
   }
-  return urls;
+  return [...requests.values()].map(({ url }) => url);
 }
 
 async function webdriverKeyAction(webdriver, sessionId, value) {
@@ -527,6 +585,12 @@ export async function measureBrowserEvidence({
           if (!Array.isArray(logTypes) || !['browser', 'performance'].every((type) => logTypes.includes(type))) {
             throw new Error('WEBDRIVER_LOG_CAPABILITY_INVALID');
           }
+          completedPerformanceRequestUrls(await webdriverCommand(
+            webdriver,
+            `/session/${sessionId}/log`,
+            'POST',
+            { type: 'performance' },
+          ));
           for (const path of routes) {
             const url = new URL(path, base).href;
             const miniapp = path.startsWith('/apps/');
@@ -549,12 +613,6 @@ export async function measureBrowserEvidence({
             if (discardedBrowserLogs.some(({ level } = {}) => ['SEVERE', 'ERROR'].includes(level))) {
               throw new Error('BROWSER_CONSOLE_ERROR');
             }
-            performanceRequestUrls(await webdriverCommand(
-              webdriver,
-              `/session/${sessionId}/log`,
-              'POST',
-              { type: 'performance' },
-            ));
             await webdriverCommand(webdriver, `/session/${sessionId}/goog/cdp/execute`, 'POST', {
               cmd: 'Emulation.setEmulatedMedia',
               params: {
@@ -688,7 +746,7 @@ export async function measureBrowserEvidence({
             const browserLogs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'browser' });
             if (!Array.isArray(browserLogs)) throw new Error('WEBDRIVER_LOG_INVALID');
             const performanceLogs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'performance' });
-            const requestUrls = performanceRequestUrls(performanceLogs);
+            const requestUrls = completedPerformanceRequestUrls(performanceLogs);
             const originalRequestCount = requestUrls.filter((requestUrl) => requestUrl === url).length;
             const navigationRequestCount = requestUrls.filter((requestUrl) => requestUrl === navigationHref).length;
             observations.push({

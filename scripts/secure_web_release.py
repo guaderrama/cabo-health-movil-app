@@ -184,6 +184,8 @@ TRANSITION_NAME = re.compile(r"^(0[0-8])-(prepared|promoted|rolled-back)-([0-9]{
 CANDIDATE_NAME = re.compile(
     r"^(0[0-8])-(prepared|promoted|rolled-back)-([0-9]{3})(?:-[a-f0-9]{16})?\.candidate$"
 )
+OPERATION_LOCK_CANDIDATE_NAME = re.compile(r"^operation-lock-[a-f0-9]{32}\.candidate$")
+OPERATION_LOCK_BYTES = b"CABOHEALTH_OPERATION_LOCK_V1\n"
 IDENTITY_KEYS = ("device", "inode", "type")
 MANIFEST_KEYS = (
     "schemaVersion",
@@ -573,13 +575,32 @@ def reverse_after_exception(
     operation: str,
     root_path: str,
     reversal_fault: str | None = None,
+    reversal_precheck: Any | None = None,
+    reversal_mutation: Any | None = None,
+    reversal_validator: Any | None = None,
+    reversal_safety: Any | None = None,
 ) -> None:
     try:
+        if reversal_precheck is not None:
+            reversal_precheck()
+        if reversal_mutation is not None:
+            reversal_mutation()
         rename_with_flag(dst_fd, dst, src_fd, src, operation)
         fsync_rename_directories(dst_fd, src_fd)
         if reversal_fault and test_fault_enabled(root_path, reversal_fault):
             raise OSError(errno.EIO, "INJECTED_REVERSAL_FSYNC_OSERROR")
+        if reversal_validator is not None:
+            reversal_validator()
     except BaseException as reversal:
+        if reversal_safety is not None:
+            try:
+                reversal_safety()
+            except BaseException as safety_error:
+                raise ReleaseError(
+                    f"POST_NAMESPACE_FAILURE PRIMARY={describe_exception(primary)} "
+                    f"REVERSAL={describe_exception(reversal)} "
+                    f"SAFETY={describe_exception(safety_error)}"
+                ) from safety_error
         raise ReleaseError(
             f"POST_NAMESPACE_FAILURE PRIMARY={describe_exception(primary)} "
             f"REVERSAL={describe_exception(reversal)}"
@@ -598,8 +619,16 @@ def reversible_rename(
     fault_prefix: str,
     crash_prefix: str,
     tamper: Any | None = None,
+    reversal_precheck: Any | None = None,
+    reversal_mutation: Any | None = None,
+    reversal_validator: Any | None = None,
+    reversal_safety: Any | None = None,
 ) -> None:
     rename_with_flag(src_fd, src, dst_fd, dst, operation)
+    reversal_mutation_requested = (
+        reversal_mutation is not None
+        and test_fault_enabled(root_path, f"{fault_prefix}-reversal-operand-tamper")
+    )
     try:
         test_crash(root_path, f"{crash_prefix}-crash-after-namespace")
         if test_fault_enabled(root_path, f"{fault_prefix}-fsync-oserror"):
@@ -609,6 +638,8 @@ def reversible_rename(
         raise_injected_exception(root_path, fault_prefix)
         if tamper is not None and test_fault_enabled(root_path, f"{fault_prefix}-tamper"):
             tamper()
+        if reversal_mutation_requested:
+            raise OSError(errno.EIO, "INJECTED_REVERSAL_OPERAND_TAMPER")
         validator()
     except BaseException as primary:
         reverse_after_exception(
@@ -620,6 +651,10 @@ def reversible_rename(
             operation,
             root_path,
             f"{fault_prefix}-oserror-reversal-fsync-oserror",
+            reversal_precheck,
+            reversal_mutation if reversal_mutation_requested else None,
+            reversal_validator,
+            reversal_safety,
         )
 
 
@@ -699,6 +734,26 @@ def object_identity(info: os.stat_result) -> dict[str, Any]:
         kind = "directory"
     else:
         fail("ROLLBACK_TRANSITION_IDENTITY_INVALID")
+    return {"device": info.st_dev, "inode": info.st_ino, "type": kind}
+
+
+def raw_object_identity(info: os.stat_result) -> dict[str, Any]:
+    if stat.S_ISREG(info.st_mode):
+        kind = "file"
+    elif stat.S_ISDIR(info.st_mode):
+        kind = "directory"
+    elif stat.S_ISLNK(info.st_mode):
+        kind = "symlink"
+    elif stat.S_ISFIFO(info.st_mode):
+        kind = "fifo"
+    elif stat.S_ISSOCK(info.st_mode):
+        kind = "socket"
+    elif stat.S_ISCHR(info.st_mode):
+        kind = "character-device"
+    elif stat.S_ISBLK(info.st_mode):
+        kind = "block-device"
+    else:
+        kind = "special"
     return {"device": info.st_dev, "inode": info.st_ino, "type": kind}
 
 
@@ -788,6 +843,38 @@ def inventory_leaf(
     return inventory_hash
 
 
+def probe_leaf(
+    parent_fd: int,
+    name: str,
+    expected_paths: tuple[str, ...],
+    target: str,
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Return stable raw topology even when strict inventory is invalid.
+
+    The no-follow lstat identity is authority only for crash reconciliation.  A
+    hash is returned solely when the ordinary strict inventory succeeds for the
+    same inode.  Special files are never followed, and FIFO reads remain
+    nonblocking through inventory_leaf's descriptor flags.
+    """
+    for _attempt in range(3):
+        before = stat_if_present(parent_fd, name)
+        if before is None:
+            return None, None
+        raw_identity = raw_object_identity(before)
+        try:
+            inventory_hash, strict_identity = inventory_leaf(
+                parent_fd, name, expected_paths, target, with_identity=True
+            )
+        except (ReleaseError, OSError, UnicodeError):
+            after = stat_if_present(parent_fd, name)
+            if after is not None and raw_object_identity(after) == raw_identity:
+                return None, raw_identity
+            continue
+        if strict_identity == raw_identity:
+            return inventory_hash, raw_identity
+    fail(f"LIVE_TARGET_CHANGED_DURING_PROBE: {target}")
+
+
 def expected_unit_hash(payload_paths: tuple[str, ...], buffers: dict[str, bytes]) -> str:
     entries = [{
         "path": path,
@@ -875,33 +962,44 @@ def validate_candidate_directory(transitions_fd: int) -> None:
 
 
 def validate_operation_lock(fd: int) -> None:
-    info = os.fstat(fd)
+    before = os.fstat(fd)
+    if (
+        not stat.S_ISREG(before.st_mode)
+        or before.st_uid != os.geteuid()
+        or before.st_nlink != 1
+        or stat.S_IMODE(before.st_mode) != 0o600
+    ):
+        fail("PROMOTION_OPERATION_LOCK_INVALID")
+    os.lseek(fd, 0, os.SEEK_SET)
+    contents = read_all(fd)
+    after = os.fstat(fd)
+    if (
+        contents != OPERATION_LOCK_BYTES
+        or (before.st_dev, before.st_ino, before.st_size, before.st_mode, before.st_uid, before.st_nlink)
+        != (after.st_dev, after.st_ino, after.st_size, after.st_mode, after.st_uid, after.st_nlink)
+    ):
+        fail("PROMOTION_OPERATION_LOCK_INVALID")
+    os.lseek(fd, 0, os.SEEK_SET)
+
+
+def validate_operation_lock_candidate(transitions_fd: int, name: str) -> None:
+    if OPERATION_LOCK_CANDIDATE_NAME.fullmatch(name) is None:
+        fail("PROMOTION_OPERATION_LOCK_CANDIDATE_INVALID")
+    try:
+        info = os.stat(name, dir_fd=transitions_fd, follow_symlinks=False)
+    except OSError as error:
+        raise ReleaseError("PROMOTION_OPERATION_LOCK_CANDIDATE_INVALID") from error
     if (
         not stat.S_ISREG(info.st_mode)
         or info.st_uid != os.geteuid()
         or info.st_nlink != 1
-        or info.st_mode & 0o777 != 0o600
+        or info.st_size > len(OPERATION_LOCK_BYTES)
+        or stat.S_IMODE(info.st_mode) not in (0o000, 0o200, 0o400, 0o600)
     ):
-        fail("PROMOTION_OPERATION_LOCK_INVALID")
+        fail("PROMOTION_OPERATION_LOCK_CANDIDATE_INVALID")
 
 
-def open_operation_lock(transitions_fd: int, root_path: str) -> int:
-    try:
-        fd = os.open(
-            "operation.lock",
-            os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-            0o600,
-            dir_fd=transitions_fd,
-        )
-        os.fchmod(fd, 0o600)
-        os.fsync(fd)
-        os.fsync(transitions_fd)
-    except FileExistsError:
-        try:
-            fd = os.open("operation.lock", os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=transitions_fd)
-        except OSError as error:
-            raise ReleaseError("PROMOTION_OPERATION_LOCK_INVALID") from error
-    validate_operation_lock(fd)
+def acquire_operation_lock(fd: int, root_path: str) -> int:
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError as error:
@@ -910,6 +1008,99 @@ def open_operation_lock(transitions_fd: int, root_path: str) -> int:
     if test_fault_enabled(root_path, "operation-lock-hold"):
         time.sleep(2)
     return fd
+
+
+def open_published_operation_lock(transitions_fd: int, root_path: str) -> int:
+    try:
+        fd = os.open("operation.lock", os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=transitions_fd)
+    except OSError as error:
+        raise ReleaseError("PROMOTION_OPERATION_LOCK_INVALID") from error
+    try:
+        validate_operation_lock(fd)
+    except BaseException:
+        os.close(fd)
+        raise
+    return acquire_operation_lock(fd, root_path)
+
+
+def open_operation_lock(transitions_fd: int, root_path: str) -> int:
+    try:
+        existing_fd = os.open(
+            "operation.lock", os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=transitions_fd
+        )
+    except FileNotFoundError:
+        existing_fd = None
+    except OSError as error:
+        raise ReleaseError("PROMOTION_OPERATION_LOCK_INVALID") from error
+    if existing_fd is not None:
+        try:
+            validate_operation_lock(existing_fd)
+        except BaseException:
+            os.close(existing_fd)
+            raise
+        return acquire_operation_lock(existing_fd, root_path)
+
+    candidate_name = f"operation-lock-{os.urandom(16).hex()}.candidate"
+    try:
+        candidate_fd = os.open(
+            candidate_name,
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+            dir_fd=transitions_fd,
+        )
+    except OSError as error:
+        raise ReleaseError("PROMOTION_OPERATION_LOCK_CANDIDATE_INVALID") from error
+    try:
+        test_crash(root_path, "operation-lock-crash-after-candidate-create")
+        os.fchmod(candidate_fd, 0o600)
+        candidate_info = os.fstat(candidate_fd)
+        if (
+            not stat.S_ISREG(candidate_info.st_mode)
+            or candidate_info.st_uid != os.geteuid()
+            or candidate_info.st_nlink != 1
+            or stat.S_IMODE(candidate_info.st_mode) != 0o600
+        ):
+            fail("PROMOTION_OPERATION_LOCK_CANDIDATE_INVALID")
+        test_crash(root_path, "operation-lock-crash-after-candidate-fchmod")
+        requested = os.environ.get("CABOHEALTH_TEST_FAULT", "")
+        byte_prefix = "operation-lock-crash-after-byte-"
+        if requested.startswith(byte_prefix) and test_fault_enabled(root_path, requested):
+            offset_text = requested.removeprefix(byte_prefix)
+            if not offset_text.isascii() or not offset_text.isdigit():
+                fail("TEST_FRAME_CUT_INVALID")
+            offset = int(offset_text)
+            if not 0 <= offset <= len(OPERATION_LOCK_BYTES):
+                fail("TEST_FRAME_CUT_INVALID")
+            write_all(candidate_fd, OPERATION_LOCK_BYTES[:offset])
+            os._exit(86)
+        write_all(candidate_fd, OPERATION_LOCK_BYTES)
+        test_crash(root_path, "operation-lock-crash-after-candidate-write")
+        os.fsync(candidate_fd)
+        test_crash(root_path, "operation-lock-crash-after-candidate-fsync")
+        validate_operation_lock(candidate_fd)
+        try:
+            fcntl.flock(candidate_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ReleaseError("PROMOTION_OPERATION_LOCK_CANDIDATE_INVALID") from error
+        if test_fault_enabled(root_path, "operation-lock-hold-before-publish"):
+            time.sleep(2)
+        try:
+            rename_with_flag(transitions_fd, candidate_name, transitions_fd, "operation.lock", "noreplace")
+        except ReleaseError:
+            os.close(candidate_fd)
+            return open_published_operation_lock(transitions_fd, root_path)
+        test_crash(root_path, "operation-lock-crash-after-publish")
+        os.fsync(transitions_fd)
+        test_crash(root_path, "operation-lock-crash-after-directory-fsync")
+        if test_fault_enabled(root_path, "operation-lock-hold"):
+            time.sleep(2)
+        return candidate_fd
+    except BaseException:
+        try:
+            os.close(candidate_fd)
+        except OSError:
+            pass
+        raise
 
 
 def read_transition_file(transitions_fd: int, name: str) -> bytes:
@@ -1003,6 +1194,9 @@ def parse_transition_files(transitions_fd: int) -> tuple[dict[int, dict[str, Any
                 validate_operation_lock(fd)
             finally:
                 os.close(fd)
+            continue
+        if OPERATION_LOCK_CANDIDATE_NAME.fullmatch(name) is not None:
+            validate_operation_lock_candidate(transitions_fd, name)
             continue
         if name == "candidates":
             validate_candidate_directory(transitions_fd)
@@ -1750,15 +1944,9 @@ def unit_inventories(
     stage_parent_fd, stage_leaf = open_parent_for_target(stage_public_fd, target)
     live_parent_fd, live_leaf = open_parent_for_target(live_public_fd, target)
     try:
-        stage_hash, stage_identity = inventory_leaf(
-            stage_parent_fd, stage_leaf, payload_paths, target, with_identity=True
-        )
-        live_hash, live_identity = inventory_leaf(
-            live_parent_fd, live_leaf, payload_paths, target, with_identity=True
-        )
-        slot_hash, slot_identity = inventory_leaf(
-            rollback_fd, slot, payload_paths, target, with_identity=True
-        )
+        stage_hash, stage_identity = probe_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
+        live_hash, live_identity = probe_leaf(live_parent_fd, live_leaf, payload_paths, target)
+        slot_hash, slot_identity = probe_leaf(rollback_fd, slot, payload_paths, target)
         return (
             stage_parent_fd, stage_leaf, live_parent_fd, live_leaf,
             stage_hash, stage_identity, live_hash, live_identity, slot_hash, slot_identity,
@@ -1801,28 +1989,36 @@ def physical_state(
             return label
     if entry["original"] == "present":
         if (
-            stage_hash == old_hash
-            and stage_identity == destination_identity
-            and live_identity not in (None, source_identity, destination_identity)
+            (stage_identity == destination_identity or live_identity == source_identity)
+            and stage_identity is not None
+            and live_identity is not None
             and slot_identity is None
         ):
             return "promotion-exchange-unvalidated"
         if (
             stage_identity is None
-            and live_identity not in (None, source_identity, destination_identity)
-            and slot_identity == source_identity
+            and live_identity is not None
+            and slot_identity is not None
+            and (slot_identity == destination_identity or live_identity == source_identity)
+        ):
+            return "promotion-complete-unvalidated"
+        if (
+            stage_identity is None
+            and live_identity is not None
+            and slot_identity is not None
+            and (slot_identity == source_identity or live_identity == destination_identity)
         ):
             return "rollback-exchange-unvalidated"
     elif (
         stage_identity is None
-        and live_identity not in (None, source_identity)
+        and live_identity is not None
         and slot_identity is None
     ):
         return "promotion-noreplace-unvalidated"
     elif (
         stage_identity is None
         and live_identity is None
-        and slot_identity not in (None, source_identity)
+        and slot_identity is not None
     ):
         return "rollback-noreplace-unvalidated"
     fail(f"PROMOTION_PHYSICAL_STATE_INVALID: {entry['target']}")
@@ -1868,6 +2064,7 @@ def validate_all_physical_states(
                 "exchanged",
                 "promoted",
                 "promotion-exchange-unvalidated",
+                "promotion-complete-unvalidated",
                 "promotion-noreplace-unvalidated",
             ):
                 fail(f"PROMOTION_PHYSICAL_STATE_INVALID: {target}")
@@ -1888,6 +2085,107 @@ def validate_all_physical_states(
     return states
 
 
+def mutate_leaf_bytes(parent_fd: int, leaf: str) -> None:
+    fd = os.open(leaf, os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent_fd)
+    try:
+        os.ftruncate(fd, 0)
+        write_all(fd, b"unreviewed same-inode bytes\n")
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def mutate_leaf_mode(parent_fd: int, leaf: str) -> None:
+    fd = os.open(leaf, OPEN_FILE_READ, dir_fd=parent_fd)
+    try:
+        info = os.fstat(fd)
+        os.fchmod(fd, 0o700 if stat.S_ISDIR(info.st_mode) else 0o600)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def mutate_directory_tree(parent_fd: int, leaf: str, child_name: str = "round4-unreviewed") -> None:
+    directory_fd = os.open(leaf, OPEN_DIR, dir_fd=parent_fd)
+    try:
+        child_fd = os.open(
+            child_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+            dir_fd=directory_fd,
+        )
+        try:
+            os.fchmod(child_fd, 0o644)
+            write_all(child_fd, b"unreviewed tree entry\n")
+            os.fsync(child_fd)
+        finally:
+            os.close(child_fd)
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def create_fault_leaf(parent_fd: int, kind: str, name: str) -> None:
+    if kind == "symlink":
+        os.symlink("round4-never-follow", name, dir_fd=parent_fd)
+    elif kind == "fifo":
+        os.mkfifo(name, 0o600, dir_fd=parent_fd)
+    elif kind == "special":
+        os.mkdir(name, 0o700, dir_fd=parent_fd)
+    else:
+        fail("TEST_OPERAND_SUBSTITUTION_INVALID")
+
+
+def substitute_leaf_for_fault(parent_fd: int, leaf: str, kind: str, name: str) -> None:
+    create_fault_leaf(parent_fd, kind, name)
+    rename_with_flag(parent_fd, leaf, parent_fd, name, "exchange")
+
+
+def quarantine_live_leaf(
+    live_parent_fd: int,
+    live_leaf: str,
+    private_parent_fd: int,
+    private_leaf: str,
+    target: str,
+) -> None:
+    if stat_if_present(live_parent_fd, live_leaf) is None:
+        return
+    rename_with_flag(live_parent_fd, live_leaf, private_parent_fd, private_leaf, "noreplace")
+    fsync_rename_directories(live_parent_fd, private_parent_fd)
+    if stat_if_present(live_parent_fd, live_leaf) is not None:
+        fail(f"OPERAND_SUBSTITUTION_QUARANTINE_INVALID: {target}")
+
+
+def leaf_matches(
+    parent_fd: int,
+    leaf: str,
+    payload_paths: tuple[str, ...],
+    target: str,
+    expected_hash: str | None,
+    expected_identity: dict[str, Any] | None,
+) -> bool:
+    actual_hash, actual_identity = probe_leaf(parent_fd, leaf, payload_paths, target)
+    return actual_hash == expected_hash and actual_identity == expected_identity
+
+
+def quarantine_unreviewed_live(
+    live_parent_fd: int,
+    live_leaf: str,
+    private_parent_fd: int,
+    private_leaf: str,
+    payload_paths: tuple[str, ...],
+    target: str,
+    reviewed: tuple[tuple[str, dict[str, Any]], ...],
+) -> None:
+    live_hash, live_identity = probe_leaf(live_parent_fd, live_leaf, payload_paths, target)
+    if live_identity is None or any(
+        live_hash == reviewed_hash and live_identity == reviewed_identity
+        for reviewed_hash, reviewed_identity in reviewed
+    ):
+        return
+    quarantine_live_leaf(live_parent_fd, live_leaf, private_parent_fd, private_leaf, target)
+
+
 def finish_promoted_physical_state(
     root_path: str,
     entry: dict[str, Any],
@@ -1906,32 +2204,206 @@ def finish_promoted_physical_state(
         _stage_hash, _stage_identity, _live_hash, _live_identity, _slot_hash, _slot_identity,
     ) = unit_inventories(stage_public_fd, live_public_fd, rollback_fd, index)
     try:
+        reviewed_live_states = (
+            (new_hash, entry["sourceIdentity"]),
+            (old_hash, entry["destinationIdentity"]),
+        )
+        completion_error: BaseException | None = None
+        if current == "promotion-complete-unvalidated":
+            if not leaf_matches(
+                rollback_fd,
+                slot,
+                payload_paths,
+                target,
+                old_hash,
+                entry["destinationIdentity"],
+            ):
+                quarantine_unreviewed_live(
+                    live_parent_fd,
+                    live_leaf,
+                    stage_parent_fd,
+                    stage_leaf,
+                    payload_paths,
+                    target,
+                    reviewed_live_states,
+                )
+                fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORE_OPERAND_INVALID")
+            try:
+                rename_with_flag(rollback_fd, slot, stage_parent_fd, stage_leaf, "noreplace")
+                if test_fault_enabled(root_path, "promotion-complete-recovery-fsync-oserror"):
+                    raise OSError(errno.EIO, "INJECTED_PROMOTION_COMPLETE_RECOVERY_FSYNC_OSERROR")
+                fsync_rename_directories(rollback_fd, stage_parent_fd)
+            except BaseException as recovery_error:
+                completion_error = recovery_error
+            if not (
+                leaf_matches(
+                    stage_parent_fd,
+                    stage_leaf,
+                    payload_paths,
+                    target,
+                    old_hash,
+                    entry["destinationIdentity"],
+                )
+                and leaf_matches(rollback_fd, slot, payload_paths, target, None, None)
+            ):
+                quarantine_unreviewed_live(
+                    live_parent_fd,
+                    live_leaf,
+                    stage_parent_fd,
+                    stage_leaf,
+                    payload_paths,
+                    target,
+                    reviewed_live_states,
+                )
+                detail = describe_exception(completion_error) if completion_error else "TOPOLOGY_INVALID"
+                fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {detail}")
+            current = "promotion-exchange-unvalidated"
         if current == "promotion-exchange-unvalidated":
+            if not leaf_matches(
+                stage_parent_fd,
+                stage_leaf,
+                payload_paths,
+                target,
+                old_hash,
+                entry["destinationIdentity"],
+            ):
+                quarantine_unreviewed_live(
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    reviewed_live_states,
+                )
+                fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORE_OPERAND_INVALID")
+            recovery_mutation = test_fault_requested(
+                root_path,
+                "promotion-recovery-destination-same-inode-mutation",
+                "promotion-recovery-destination-mutation-safe-crash",
+            )
+            if recovery_mutation is not None:
+                mutate_leaf_bytes(stage_parent_fd, stage_leaf)
             try:
                 rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
                 fsync_rename_directories(stage_parent_fd, live_parent_fd)
-                _restored_hash, restored_identity = inventory_leaf(
-                    live_parent_fd, live_leaf, payload_paths, target, with_identity=True
-                )
-                if restored_identity != entry["destinationIdentity"]:
-                    fail(f"OPERAND_SUBSTITUTION_REVERSAL_INVALID: {target}")
             except BaseException as recovery_error:
+                try:
+                    quarantine_unreviewed_live(
+                        live_parent_fd,
+                        live_leaf,
+                        rollback_fd,
+                        slot,
+                        payload_paths,
+                        target,
+                        reviewed_live_states,
+                    )
+                except BaseException as quarantine_error:
+                    raise ReleaseError(
+                        f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
+                        f"PRIMARY={describe_exception(recovery_error)} "
+                        f"QUARANTINE={describe_exception(quarantine_error)}"
+                    ) from quarantine_error
                 raise ReleaseError(
                     f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {describe_exception(recovery_error)}"
                 ) from recovery_error
-            fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
+            restored_hash, restored_identity = probe_leaf(
+                live_parent_fd, live_leaf, payload_paths, target
+            )
+            if restored_hash == old_hash and restored_identity == entry["destinationIdentity"]:
+                if completion_error is not None:
+                    fail(
+                        f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
+                        f"PRIMARY={describe_exception(completion_error)} RESTORED_STATE_SAFE"
+                    )
+                fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
+            try:
+                quarantine_unreviewed_live(
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    reviewed_live_states,
+                )
+            except BaseException as quarantine_error:
+                raise ReleaseError(
+                    f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
+                    f"QUARANTINE={describe_exception(quarantine_error)}"
+                ) from quarantine_error
+            if recovery_mutation == "promotion-recovery-destination-mutation-safe-crash":
+                os._exit(86)
+            fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORED_STATE_INVALID")
         if current == "promotion-noreplace-unvalidated":
             try:
                 rename_with_flag(live_parent_fd, live_leaf, stage_parent_fd, stage_leaf, "noreplace")
                 fsync_rename_directories(live_parent_fd, stage_parent_fd)
-                if inventory_leaf(live_parent_fd, live_leaf, payload_paths, target) is not None:
+                if not leaf_matches(live_parent_fd, live_leaf, payload_paths, target, None, None):
+                    fail(f"OPERAND_SUBSTITUTION_REVERSAL_INVALID: {target}")
+                if not leaf_matches(
+                    stage_parent_fd,
+                    stage_leaf,
+                    payload_paths,
+                    target,
+                    new_hash,
+                    entry["sourceIdentity"],
+                ):
                     fail(f"OPERAND_SUBSTITUTION_REVERSAL_INVALID: {target}")
             except BaseException as recovery_error:
+                try:
+                    quarantine_live_leaf(live_parent_fd, live_leaf, rollback_fd, slot, target)
+                except BaseException as quarantine_error:
+                    raise ReleaseError(
+                        f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
+                        f"PRIMARY={describe_exception(recovery_error)} "
+                        f"QUARANTINE={describe_exception(quarantine_error)}"
+                    ) from quarantine_error
                 raise ReleaseError(
                     f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {describe_exception(recovery_error)}"
                 ) from recovery_error
             fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
         if entry["original"] == "present" and current == "prepared":
+            if test_fault_enabled(root_path, "promote-exchange-live-symlink-crash"):
+                create_fault_leaf(rollback_fd, "symlink", "fault-substitute")
+                rename_with_flag(
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    "fault-substitute",
+                    "exchange",
+                )
+                rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
+                os._exit(86)
+            round4_fault = test_fault_requested(
+                root_path,
+                "promote-exchange-same-inode-bytes-crash",
+                "promote-exchange-symlink-crash",
+                "promote-exchange-fifo-crash",
+                "promote-exchange-special-crash",
+                "promote-exchange-wrong-mode-crash",
+                "promote-exchange-wrong-tree-crash",
+                "promote-exchange-nonascii-wrong-tree-crash",
+                "promote-exchange-directory-wrong-mode-crash",
+            )
+            if round4_fault is not None:
+                if "same-inode-bytes" in round4_fault:
+                    mutate_leaf_bytes(stage_parent_fd, stage_leaf)
+                elif "wrong-tree" in round4_fault:
+                    mutate_directory_tree(
+                        stage_parent_fd,
+                        stage_leaf,
+                        "round4-ñ" if "nonascii" in round4_fault else "round4-unreviewed",
+                    )
+                elif "wrong-mode" in round4_fault:
+                    mutate_leaf_mode(stage_parent_fd, stage_leaf)
+                else:
+                    kind = "symlink" if "symlink" in round4_fault else (
+                        "fifo" if "fifo" in round4_fault else "special"
+                    )
+                    substitute_leaf_for_fault(stage_parent_fd, stage_leaf, kind, "fault-round4")
+                rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
+                os._exit(86)
             if test_fault_enabled(root_path, "promote-exchange-substitute-source-crash"):
                 rename_with_flag(
                     stage_parent_fd, stage_leaf, stage_parent_fd, "fault-substitute", "exchange"
@@ -1942,14 +2414,64 @@ def finish_promoted_physical_state(
             def validate_exchange() -> None:
                 if test_fault_enabled(root_path, "promotion-post-exchange-inventory-error"):
                     fail(f"PROMOTION_POST_EXCHANGE_INVENTORY_FAILED: {target}")
-                after_live = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
-                after_stage = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
+                after_live, after_live_identity = inventory_leaf(
+                    live_parent_fd, live_leaf, payload_paths, target, with_identity=True
+                )
+                after_stage, after_stage_identity = inventory_leaf(
+                    stage_parent_fd, stage_leaf, payload_paths, target, with_identity=True
+                )
                 if (
                     after_live != new_hash
+                    or after_live_identity != entry["sourceIdentity"]
                     or after_stage != old_hash
+                    or after_stage_identity != entry["destinationIdentity"]
                     or test_fault_enabled(root_path, "promotion-post-exchange-mismatch")
                 ):
                     fail(f"PROMOTION_RACE_OR_TAMPER_DETECTED: {target}")
+
+            def precheck_exchange_reversal() -> None:
+                if not leaf_matches(
+                    stage_parent_fd,
+                    stage_leaf,
+                    payload_paths,
+                    target,
+                    old_hash,
+                    entry["destinationIdentity"],
+                ):
+                    fail(f"PROMOTION_REVERSAL_OPERAND_INVALID: {target}")
+
+            def validate_exchange_reversal() -> None:
+                if not (
+                    leaf_matches(
+                        live_parent_fd,
+                        live_leaf,
+                        payload_paths,
+                        target,
+                        old_hash,
+                        entry["destinationIdentity"],
+                    )
+                    and leaf_matches(
+                        stage_parent_fd,
+                        stage_leaf,
+                        payload_paths,
+                        target,
+                        new_hash,
+                        entry["sourceIdentity"],
+                    )
+                    and leaf_matches(rollback_fd, slot, payload_paths, target, None, None)
+                ):
+                    fail(f"PROMOTION_REVERSAL_STATE_INVALID: {target}")
+
+            def secure_exchange_reversal() -> None:
+                quarantine_unreviewed_live(
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    reviewed_live_states,
+                )
 
             reversible_rename(
                 root_path,
@@ -1961,15 +2483,41 @@ def finish_promoted_physical_state(
                 validate_exchange,
                 "promotion-post-exchange",
                 "promote",
+                reversal_precheck=precheck_exchange_reversal,
+                reversal_mutation=lambda: mutate_leaf_bytes(stage_parent_fd, stage_leaf),
+                reversal_validator=validate_exchange_reversal,
+                reversal_safety=secure_exchange_reversal,
             )
             current = "exchanged"
         if entry["original"] == "present" and current == "exchanged":
             rename_with_flag(stage_parent_fd, stage_leaf, rollback_fd, slot, "noreplace")
+            test_crash(root_path, "promote-slot-crash-after-namespace")
+            if test_fault_enabled(root_path, "promote-slot-same-inode-live-mutation-crash"):
+                mutate_leaf_bytes(live_parent_fd, live_leaf)
+                os._exit(86)
             fsync_rename_directories(stage_parent_fd, rollback_fd)
-            if inventory_leaf(rollback_fd, slot, payload_paths, target) != old_hash:
+            slot_hash, slot_identity = inventory_leaf(
+                rollback_fd, slot, payload_paths, target, with_identity=True
+            )
+            if slot_hash != old_hash or slot_identity != entry["destinationIdentity"]:
                 fail(f"PROMOTION_ROLLBACK_SLOT_MISMATCH: {target}")
             current = "promoted"
         if entry["original"] == "absent" and current == "prepared":
+            round4_fault = test_fault_requested(
+                root_path,
+                "promote-noreplace-same-inode-bytes-crash",
+                "promote-noreplace-symlink-crash",
+                "promote-noreplace-wrong-tree-crash",
+            )
+            if round4_fault is not None:
+                if "same-inode-bytes" in round4_fault:
+                    mutate_leaf_bytes(stage_parent_fd, stage_leaf)
+                elif "wrong-tree" in round4_fault:
+                    mutate_directory_tree(stage_parent_fd, stage_leaf)
+                else:
+                    substitute_leaf_for_fault(stage_parent_fd, stage_leaf, "symlink", "fault-round4")
+                rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "noreplace")
+                os._exit(86)
             if test_fault_enabled(root_path, "promote-noreplace-substitute-source-crash"):
                 rename_with_flag(
                     stage_parent_fd, stage_leaf, stage_parent_fd, "fault-substitute", "exchange"
@@ -1980,8 +2528,37 @@ def finish_promoted_physical_state(
             def validate_noreplace() -> None:
                 if test_fault_enabled(root_path, "promotion-post-noreplace-inventory-error"):
                     fail(f"PROMOTION_POST_NOREPLACE_INVENTORY_FAILED: {target}")
-                if inventory_leaf(live_parent_fd, live_leaf, payload_paths, target) != new_hash:
+                after_live, after_live_identity = inventory_leaf(
+                    live_parent_fd, live_leaf, payload_paths, target, with_identity=True
+                )
+                if after_live != new_hash or after_live_identity != entry["sourceIdentity"]:
                     fail(f"PROMOTION_RACE_OR_TAMPER_DETECTED: {target}")
+
+            def validate_noreplace_reversal() -> None:
+                if not (
+                    leaf_matches(live_parent_fd, live_leaf, payload_paths, target, None, None)
+                    and leaf_matches(
+                        stage_parent_fd,
+                        stage_leaf,
+                        payload_paths,
+                        target,
+                        new_hash,
+                        entry["sourceIdentity"],
+                    )
+                    and leaf_matches(rollback_fd, slot, payload_paths, target, None, None)
+                ):
+                    fail(f"PROMOTION_REVERSAL_STATE_INVALID: {target}")
+
+            def secure_noreplace_reversal() -> None:
+                quarantine_unreviewed_live(
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    reviewed_live_states,
+                )
 
             reversible_rename(
                 root_path,
@@ -1993,6 +2570,8 @@ def finish_promoted_physical_state(
                 validate_noreplace,
                 "promotion-post-noreplace",
                 "promote",
+                reversal_validator=validate_noreplace_reversal,
+                reversal_safety=secure_noreplace_reversal,
             )
             current = "promoted"
         if current != "promoted":
@@ -2147,34 +2726,163 @@ def rollback_promoted_unit(
     new_hash = expected_unit_hash(payload_paths, buffers)
     old_hash = entry["oldInventorySha256"]
     (
-        stage_parent_fd, _stage_leaf, live_parent_fd, live_leaf,
+        stage_parent_fd, stage_leaf, live_parent_fd, live_leaf,
         _stage_hash, _stage_identity, _live_hash, _live_identity, _slot_hash, _slot_identity,
     ) = unit_inventories(stage_public_fd, live_public_fd, rollback_fd, index)
     try:
+        reviewed_live_states = (
+            (new_hash, entry["sourceIdentity"]),
+            (old_hash, entry["destinationIdentity"]),
+        )
         if current == "rolled-back":
             return
         if current == "rollback-exchange-unvalidated":
+            if not leaf_matches(
+                rollback_fd,
+                slot,
+                payload_paths,
+                target,
+                new_hash,
+                entry["sourceIdentity"],
+            ):
+                quarantine_unreviewed_live(
+                    live_parent_fd,
+                    live_leaf,
+                    stage_parent_fd,
+                    stage_leaf,
+                    payload_paths,
+                    target,
+                    reviewed_live_states,
+                )
+                fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORE_OPERAND_INVALID")
             try:
                 rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "exchange")
                 fsync_rename_directories(rollback_fd, live_parent_fd)
-                _restored_hash, restored_identity = inventory_leaf(
-                    live_parent_fd, live_leaf, payload_paths, target, with_identity=True
+            except BaseException as recovery_error:
+                try:
+                    quarantine_unreviewed_live(
+                        live_parent_fd,
+                        live_leaf,
+                        stage_parent_fd,
+                        stage_leaf,
+                        payload_paths,
+                        target,
+                        reviewed_live_states,
+                    )
+                except BaseException as quarantine_error:
+                    raise ReleaseError(
+                        f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
+                        f"PRIMARY={describe_exception(recovery_error)} "
+                        f"QUARANTINE={describe_exception(quarantine_error)}"
+                    ) from quarantine_error
+                raise ReleaseError(
+                    f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {describe_exception(recovery_error)}"
+                ) from recovery_error
+            restored_hash, restored_identity = probe_leaf(
+                live_parent_fd, live_leaf, payload_paths, target
+            )
+            if restored_hash == new_hash and restored_identity == entry["sourceIdentity"]:
+                fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
+            try:
+                quarantine_unreviewed_live(
+                    live_parent_fd,
+                    live_leaf,
+                    stage_parent_fd,
+                    stage_leaf,
+                    payload_paths,
+                    target,
+                    reviewed_live_states,
                 )
-                if restored_identity != entry["sourceIdentity"]:
-                    fail(f"OPERAND_SUBSTITUTION_REVERSAL_INVALID: {target}")
+            except BaseException as quarantine_error:
+                raise ReleaseError(
+                    f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
+                    f"QUARANTINE={describe_exception(quarantine_error)}"
+                ) from quarantine_error
+            fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORED_STATE_INVALID")
+        if current == "rollback-noreplace-unvalidated":
+            if not leaf_matches(live_parent_fd, live_leaf, payload_paths, target, None, None):
+                fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: LIVE_ABSENCE_INVALID")
+            if not leaf_matches(
+                rollback_fd,
+                slot,
+                payload_paths,
+                target,
+                new_hash,
+                entry["sourceIdentity"],
+            ):
+                test_crash(root_path, "rollback-noreplace-recovery-safe-crash")
+                fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
+            try:
+                rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "noreplace")
+                fsync_rename_directories(rollback_fd, live_parent_fd)
+            except BaseException as recovery_error:
+                if stat_if_present(live_parent_fd, live_leaf) is None:
+                    fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
+                raise ReleaseError(
+                    f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {describe_exception(recovery_error)}"
+                ) from recovery_error
+            restored_hash, restored_identity = probe_leaf(
+                live_parent_fd, live_leaf, payload_paths, target
+            )
+            if restored_hash == new_hash and restored_identity == entry["sourceIdentity"]:
+                fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
+            try:
+                quarantine_unreviewed_live(
+                    live_parent_fd,
+                    live_leaf,
+                    stage_parent_fd,
+                    stage_leaf,
+                    payload_paths,
+                    target,
+                    reviewed_live_states,
+                )
             except BaseException as recovery_error:
                 raise ReleaseError(
                     f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {describe_exception(recovery_error)}"
                 ) from recovery_error
-            fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
-        if current == "rollback-noreplace-unvalidated":
-            # The reviewed original state is absence. Reintroducing the unknown slot
-            # inode into the live namespace would be less safe than retaining that
-            # absence, so stop with the unverified inode quarantined in rollback.
-            fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
+            fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORED_STATE_INVALID")
         if current != "promoted":
             fail(f"ROLLBACK_STATE_INVALID: {target}")
         if entry["original"] == "present":
+            if test_fault_enabled(root_path, "rollback-exchange-live-symlink-crash"):
+                create_fault_leaf(rollback_fd, "symlink", "fault-substitute")
+                rename_with_flag(
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    "fault-substitute",
+                    "exchange",
+                )
+                rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "exchange")
+                os._exit(86)
+            round4_fault = test_fault_requested(
+                root_path,
+                "rollback-exchange-same-inode-bytes-crash",
+                "rollback-exchange-symlink-crash",
+                "rollback-exchange-fifo-crash",
+                "rollback-exchange-special-crash",
+                "rollback-exchange-wrong-mode-crash",
+                "rollback-exchange-wrong-tree-crash",
+                "rollback-exchange-directory-wrong-mode-crash",
+            )
+            if round4_fault is not None:
+                if "same-inode-bytes" in round4_fault:
+                    mutate_leaf_bytes(rollback_fd, slot)
+                elif "wrong-tree" in round4_fault:
+                    mutate_directory_tree(rollback_fd, slot)
+                elif "wrong-mode" in round4_fault:
+                    mutate_leaf_mode(rollback_fd, slot)
+                else:
+                    substitute_leaf_for_fault(
+                        rollback_fd,
+                        slot,
+                        "symlink" if "symlink" in round4_fault else (
+                            "fifo" if "fifo" in round4_fault else "special"
+                        ),
+                        "fault-substitute",
+                    )
+                rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "exchange")
+                os._exit(86)
             if test_fault_enabled(root_path, "rollback-exchange-substitute-source-crash"):
                 rename_with_flag(rollback_fd, slot, rollback_fd, "fault-substitute", "exchange")
                 rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "exchange")
@@ -2183,14 +2891,64 @@ def rollback_promoted_unit(
             def validate_exchange() -> None:
                 if test_fault_enabled(root_path, "rollback-post-exchange-inventory-error"):
                     fail(f"ROLLBACK_POST_EXCHANGE_INVENTORY_FAILED: {target}")
-                restored = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
-                displaced = inventory_leaf(rollback_fd, slot, payload_paths, target)
+                restored, restored_identity = inventory_leaf(
+                    live_parent_fd, live_leaf, payload_paths, target, with_identity=True
+                )
+                displaced, displaced_identity = inventory_leaf(
+                    rollback_fd, slot, payload_paths, target, with_identity=True
+                )
                 if (
                     restored != old_hash
+                    or restored_identity != entry["destinationIdentity"]
                     or displaced != new_hash
+                    or displaced_identity != entry["sourceIdentity"]
                     or test_fault_enabled(root_path, "rollback-post-exchange-mismatch")
                 ):
                     fail(f"ROLLBACK_RESTORE_MISMATCH: {target}")
+
+            def precheck_exchange_reversal() -> None:
+                if not leaf_matches(
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    new_hash,
+                    entry["sourceIdentity"],
+                ):
+                    fail(f"ROLLBACK_REVERSAL_OPERAND_INVALID: {target}")
+
+            def validate_exchange_reversal() -> None:
+                if not (
+                    leaf_matches(stage_parent_fd, stage_leaf, payload_paths, target, None, None)
+                    and leaf_matches(
+                        live_parent_fd,
+                        live_leaf,
+                        payload_paths,
+                        target,
+                        new_hash,
+                        entry["sourceIdentity"],
+                    )
+                    and leaf_matches(
+                        rollback_fd,
+                        slot,
+                        payload_paths,
+                        target,
+                        old_hash,
+                        entry["destinationIdentity"],
+                    )
+                ):
+                    fail(f"ROLLBACK_REVERSAL_STATE_INVALID: {target}")
+
+            def secure_exchange_reversal() -> None:
+                quarantine_unreviewed_live(
+                    live_parent_fd,
+                    live_leaf,
+                    stage_parent_fd,
+                    stage_leaf,
+                    payload_paths,
+                    target,
+                    reviewed_live_states,
+                )
 
             reversible_rename(
                 root_path,
@@ -2203,8 +2961,43 @@ def rollback_promoted_unit(
                 "rollback-post-exchange",
                 "rollback",
                 lambda: tamper_live_leaf_mode(live_parent_fd, live_leaf),
+                reversal_precheck=precheck_exchange_reversal,
+                reversal_mutation=lambda: mutate_leaf_bytes(rollback_fd, slot),
+                reversal_validator=validate_exchange_reversal,
+                reversal_safety=secure_exchange_reversal,
             )
         else:
+            round4_fault = test_fault_requested(
+                root_path,
+                "rollback-noreplace-same-inode-bytes-crash",
+                "rollback-noreplace-symlink-crash",
+                "rollback-noreplace-fifo-crash",
+                "rollback-noreplace-special-crash",
+                "rollback-noreplace-wrong-mode-crash",
+                "rollback-noreplace-wrong-tree-crash",
+                "rollback-noreplace-directory-wrong-mode-crash",
+            )
+            if round4_fault is not None:
+                if "same-inode-bytes" in round4_fault:
+                    mutate_leaf_bytes(live_parent_fd, live_leaf)
+                elif "wrong-tree" in round4_fault:
+                    mutate_directory_tree(live_parent_fd, live_leaf)
+                elif "wrong-mode" in round4_fault:
+                    mutate_leaf_mode(live_parent_fd, live_leaf)
+                else:
+                    kind = "symlink" if "symlink" in round4_fault else (
+                        "fifo" if "fifo" in round4_fault else "special"
+                    )
+                    create_fault_leaf(rollback_fd, kind, "fault-substitute")
+                    rename_with_flag(
+                        live_parent_fd,
+                        live_leaf,
+                        rollback_fd,
+                        "fault-substitute",
+                        "exchange",
+                    )
+                rename_with_flag(live_parent_fd, live_leaf, rollback_fd, slot, "noreplace")
+                os._exit(86)
             if test_fault_enabled(root_path, "rollback-noreplace-substitute-source-crash"):
                 rename_with_flag(
                     live_parent_fd, live_leaf, rollback_fd, "fault-substitute", "exchange"
@@ -2213,11 +3006,52 @@ def rollback_promoted_unit(
                 os._exit(86)
 
             def validate_noreplace() -> None:
+                slot_hash, slot_identity = inventory_leaf(
+                    rollback_fd, slot, payload_paths, target, with_identity=True
+                )
                 if (
                     inventory_leaf(live_parent_fd, live_leaf, payload_paths, target) is not None
-                    or inventory_leaf(rollback_fd, slot, payload_paths, target) != new_hash
+                    or slot_hash != new_hash
+                    or slot_identity != entry["sourceIdentity"]
                 ):
                     fail(f"ROLLBACK_RESTORE_MISMATCH: {target}")
+
+            def precheck_noreplace_reversal() -> None:
+                if not leaf_matches(
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    new_hash,
+                    entry["sourceIdentity"],
+                ):
+                    fail(f"ROLLBACK_REVERSAL_OPERAND_INVALID: {target}")
+
+            def validate_noreplace_reversal() -> None:
+                if not (
+                    leaf_matches(stage_parent_fd, stage_leaf, payload_paths, target, None, None)
+                    and leaf_matches(
+                        live_parent_fd,
+                        live_leaf,
+                        payload_paths,
+                        target,
+                        new_hash,
+                        entry["sourceIdentity"],
+                    )
+                    and leaf_matches(rollback_fd, slot, payload_paths, target, None, None)
+                ):
+                    fail(f"ROLLBACK_REVERSAL_STATE_INVALID: {target}")
+
+            def secure_noreplace_reversal() -> None:
+                quarantine_unreviewed_live(
+                    live_parent_fd,
+                    live_leaf,
+                    stage_parent_fd,
+                    stage_leaf,
+                    payload_paths,
+                    target,
+                    reviewed_live_states,
+                )
 
             reversible_rename(
                 root_path,
@@ -2229,6 +3063,9 @@ def rollback_promoted_unit(
                 validate_noreplace,
                 "rollback-post-noreplace",
                 "rollback",
+                reversal_precheck=precheck_noreplace_reversal,
+                reversal_validator=validate_noreplace_reversal,
+                reversal_safety=secure_noreplace_reversal,
             )
     finally:
         os.close(stage_parent_fd)
@@ -2267,6 +3104,7 @@ def rollback_next(
             "exchanged",
             "promoted",
             "promotion-exchange-unvalidated",
+            "promotion-complete-unvalidated",
             "promotion-noreplace-unvalidated",
         ):
             entry = latest[candidate]

@@ -46,6 +46,7 @@ const targets = Object.freeze([
   'public_html/apps/clinic-guide',
   'public_html/.well-known/apple-app-site-association',
 ]);
+const operationLockBytes = Buffer.from('CABOHEALTH_OPERATION_LOCK_V1\n');
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -109,6 +110,7 @@ function runHelper(root, command, transport, environment = {}, extraArguments = 
     encoding: 'utf8',
     input: canonicalJson(transport),
     env: { ...process.env, ...environment },
+    timeout: 5000,
   });
 }
 
@@ -342,6 +344,9 @@ test('prepared operand identity reverses source substitution followed by a hard 
       const reviewedOld = original === 'present'
         ? readFileSync(join(root, 'public_html/apps/.htaccess'))
         : null;
+      const reviewedOldInode = reviewedOld
+        ? statSync(join(root, 'public_html/apps/.htaccess')).ino
+        : null;
       writePath(
         root,
         `stage/${transport.releaseId}/public_html/apps/fault-substitute`,
@@ -355,9 +360,11 @@ test('prepared operand identity reverses source substitution followed by a hard 
       assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
       const recovered = runHelper(root, 'rollback-next', transport, {}, ['0']);
       assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
-      assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
-      if (reviewedOld) assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), reviewedOld);
-      else assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), false);
+      assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_(?:RECOVERED|RECOVERY_FAILED)/u);
+      if (reviewedOld) {
+        assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), reviewedOld);
+        assert.equal(statSync(join(root, 'public_html/apps/.htaccess')).ino, reviewedOldInode);
+      } else assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), false);
     });
   }
 });
@@ -415,5 +422,361 @@ test('a retained operation lock prevents two legitimate commands from acting on 
   const firstStatus = await new Promise((resolvePromise) => first.on('close', resolvePromise));
   assert.equal(firstStatus, 0, Buffer.concat(firstError).toString() || Buffer.concat(firstOutput).toString());
   assert.equal(JSON.parse(Buffer.concat(firstOutput).toString()).index, 0);
+  assert.equal(existsSync(join(root, 'public_html/apps/shared')), false);
+});
+
+test('recovery reverses invalid promotion operands from durable identity before strict inventory', async (context) => {
+  for (const [original, fault] of [
+    ['present', 'promote-exchange-same-inode-bytes-crash'],
+    ['present', 'promote-exchange-symlink-crash'],
+    ['present', 'promote-exchange-fifo-crash'],
+    ['present', 'promote-exchange-special-crash'],
+    ['present', 'promote-exchange-wrong-mode-crash'],
+    ['absent', 'promote-noreplace-same-inode-bytes-crash'],
+    ['absent', 'promote-noreplace-symlink-crash'],
+  ]) {
+    await context.test(`${original}-${fault}`, () => {
+      const { root, transport } = setup(original);
+      const reviewedOld = original === 'present'
+        ? readFileSync(join(root, 'public_html/apps/.htaccess'))
+        : null;
+      const reviewedOldInode = reviewedOld
+        ? statSync(join(root, 'public_html/apps/.htaccess')).ino
+        : null;
+      const crashed = runHelper(root, 'promote-next', transport, { CABOHEALTH_TEST_FAULT: fault });
+      assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+      const recovered = runHelper(root, 'rollback-next', transport, {}, ['0']);
+      assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+      assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_(?:RECOVERED|RECOVERY_FAILED)/u);
+      if (reviewedOld) {
+        assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), reviewedOld);
+        assert.equal(statSync(join(root, 'public_html/apps/.htaccess')).mode & 0o777, 0o644);
+        assert.equal(statSync(join(root, 'public_html/apps/.htaccess')).ino, reviewedOldInode);
+      } else {
+        assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), false);
+      }
+    });
+  }
+});
+
+test('present promotion reconciles a hard crash immediately after publishing the rollback slot', () => {
+  const { root, transport } = setup('present');
+  const reviewedOld = readFileSync(join(root, 'public_html/apps/.htaccess'));
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-slot-crash-after-namespace',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const recovered = runHelper(root, 'rollback-next', transport, {}, ['0']);
+  assert.equal(recovered.status, 0, recovered.stderr || recovered.stdout);
+  assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), reviewedOld);
+});
+
+test('present promotion reverses a same-inode live mutation after rollback-slot publication', () => {
+  const { root, transport } = setup('present');
+  const reviewedOld = readFileSync(join(root, 'public_html/apps/.htaccess'));
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-slot-same-inode-live-mutation-crash',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const recovered = runHelper(root, 'rollback-next', transport, {}, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), reviewedOld);
+});
+
+test('promotion-complete recovery reconciles a post-namespace directory-fsync error safely', () => {
+  const { root, transport } = setup('present');
+  const reviewedOld = readFileSync(join(root, 'public_html/apps/.htaccess'));
+  const reviewedOldInode = statSync(join(root, 'public_html/apps/.htaccess')).ino;
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-slot-same-inode-live-mutation-crash',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const recovered = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promotion-complete-recovery-fsync-oserror',
+  }, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /INJECTED_PROMOTION_COMPLETE_RECOVERY_FSYNC_OSERROR.*RESTORED_STATE_SAFE/u);
+  assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), reviewedOld);
+  assert.equal(statSync(join(root, 'public_html/apps/.htaccess')).ino, reviewedOldInode);
+});
+
+test('live-side exchange substitutions fail closed on reviewed bytes after a hard crash', async (context) => {
+  await context.test('promotion live operand', () => {
+    const { root, transport } = setup('present');
+    const reviewedNew = newBytes(transport);
+    const crashed = runHelper(root, 'promote-next', transport, {
+      CABOHEALTH_TEST_FAULT: 'promote-exchange-live-symlink-crash',
+    });
+    assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+    const recovered = runHelper(root, 'rollback-next', transport, {}, ['0']);
+    assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+    assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERY_FAILED/u);
+    assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), reviewedNew);
+    assert.equal(statSync(join(root, 'public_html/apps/.htaccess')).mode & 0o777, 0o644);
+  });
+
+  await context.test('rollback live operand', () => {
+    const { root, transport } = setup('present');
+    const reviewedOld = readFileSync(join(root, 'public_html/apps/.htaccess'));
+    const reviewedOldInode = statSync(join(root, 'public_html/apps/.htaccess')).ino;
+    assert.equal(runHelper(root, 'promote-next', transport).status, 0);
+    const crashed = runHelper(root, 'rollback-next', transport, {
+      CABOHEALTH_TEST_FAULT: 'rollback-exchange-live-symlink-crash',
+    }, ['0']);
+    assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+    const recovered = runHelper(root, 'rollback-next', transport, {}, ['0']);
+    assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+    assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERY_FAILED/u);
+    assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), reviewedOld);
+    assert.equal(statSync(join(root, 'public_html/apps/.htaccess')).ino, reviewedOldInode);
+  });
+});
+
+test('directory identity recovery reverses wrong-mode and wrong-tree operands after exchange and no-replace', async (context) => {
+  for (const [original, fault] of [
+    ['present', 'promote-exchange-wrong-tree-crash'],
+    ['present', 'promote-exchange-nonascii-wrong-tree-crash'],
+    ['present', 'promote-exchange-directory-wrong-mode-crash'],
+    ['absent', 'promote-noreplace-wrong-tree-crash'],
+  ]) {
+    await context.test(`${original}-${fault}`, () => {
+      const { root, transport } = setup('absent');
+      if (original === 'present') {
+        for (const name of ['logo.png', 'motion.js', 'shell.js', 'styles.css']) {
+          writePath(root, `public_html/apps/shared/${name}`, `reviewed old ${name}\n`);
+        }
+      }
+      assert.equal(runHelper(root, 'promote-next', transport).status, 0);
+      const reviewedOld = original === 'present'
+        ? new Map(['logo.png', 'motion.js', 'shell.js', 'styles.css'].map((name) => [
+          name,
+          readFileSync(join(root, `public_html/apps/shared/${name}`)),
+        ]))
+        : null;
+      const reviewedOldInode = original === 'present'
+        ? statSync(join(root, 'public_html/apps/shared')).ino
+        : null;
+      const crashed = runHelper(root, 'promote-next', transport, { CABOHEALTH_TEST_FAULT: fault });
+      assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+      const recovered = runHelper(root, 'rollback-next', transport, {}, ['1']);
+      assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+      assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_(?:RECOVERED|RECOVERY_FAILED)/u);
+      if (reviewedOld) {
+        assert.equal(statSync(join(root, 'public_html/apps/shared')).mode & 0o777, 0o755);
+        assert.equal(statSync(join(root, 'public_html/apps/shared')).ino, reviewedOldInode);
+        assert.deepEqual(readdirSync(join(root, 'public_html/apps/shared')).sort(), [...reviewedOld.keys()].sort());
+        for (const [name, bytes] of reviewedOld) {
+          assert.deepEqual(readFileSync(join(root, `public_html/apps/shared/${name}`)), bytes);
+        }
+      } else {
+        assert.equal(existsSync(join(root, 'public_html/apps/shared')), false);
+      }
+    });
+  }
+});
+
+test('absent rollback recovery never republishes an invalid private slot at a crash boundary', () => {
+  const { root, transport } = setup('absent');
+  assert.equal(runHelper(root, 'promote-next', transport).status, 0);
+  const crashed = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'rollback-noreplace-same-inode-bytes-crash',
+  }, ['0']);
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const recoveryCrash = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'rollback-noreplace-recovery-safe-crash',
+  }, ['0']);
+  assert.equal(recoveryCrash.status, 86, recoveryCrash.stderr || recoveryCrash.stdout);
+  assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), false);
+});
+
+test('rollback recovery reverses present and absent mutations before validating restored live state', async (context) => {
+  for (const [original, fault] of [
+    ['present', 'rollback-exchange-same-inode-bytes-crash'],
+    ['present', 'rollback-exchange-symlink-crash'],
+    ['present', 'rollback-exchange-fifo-crash'],
+    ['present', 'rollback-exchange-special-crash'],
+    ['present', 'rollback-exchange-wrong-mode-crash'],
+    ['absent', 'rollback-noreplace-same-inode-bytes-crash'],
+    ['absent', 'rollback-noreplace-symlink-crash'],
+    ['absent', 'rollback-noreplace-fifo-crash'],
+    ['absent', 'rollback-noreplace-special-crash'],
+    ['absent', 'rollback-noreplace-wrong-mode-crash'],
+  ]) {
+    await context.test(`${original}-${fault}`, () => {
+      const { root, transport } = setup(original);
+      const promoted = runHelper(root, 'promote-next', transport);
+      assert.equal(promoted.status, 0, promoted.stderr || promoted.stdout);
+      const reviewedNew = newBytes(transport);
+      const reviewedNewInode = statSync(join(root, 'public_html/apps/.htaccess')).ino;
+      const crashed = runHelper(root, 'rollback-next', transport, {
+        CABOHEALTH_TEST_FAULT: fault,
+      }, ['0']);
+      assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+      const recovered = runHelper(root, 'rollback-next', transport, {}, ['0']);
+      assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+      assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_(?:RECOVERED|RECOVERY_FAILED)/u);
+      if (original === 'present') {
+        assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), reviewedNew);
+        assert.equal(statSync(join(root, 'public_html/apps/.htaccess')).mode & 0o777, 0o644);
+        assert.equal(statSync(join(root, 'public_html/apps/.htaccess')).ino, reviewedNewInode);
+      } else {
+        assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), false);
+      }
+    });
+  }
+});
+
+test('directory rollback recovery handles wrong-tree and wrong-mode exchange and no-replace operands', async (context) => {
+  for (const [original, fault] of [
+    ['present', 'rollback-exchange-wrong-tree-crash'],
+    ['present', 'rollback-exchange-directory-wrong-mode-crash'],
+    ['absent', 'rollback-noreplace-wrong-tree-crash'],
+    ['absent', 'rollback-noreplace-directory-wrong-mode-crash'],
+  ]) {
+    await context.test(`${original}-${fault}`, () => {
+      const { root, transport } = setup('absent');
+      if (original === 'present') {
+        for (const name of ['logo.png', 'motion.js', 'shell.js', 'styles.css']) {
+          writePath(root, `public_html/apps/shared/${name}`, `reviewed old ${name}\n`);
+        }
+      }
+      assert.equal(runHelper(root, 'promote-next', transport).status, 0);
+      assert.equal(runHelper(root, 'promote-next', transport).status, 0);
+      const reviewedNew = original === 'present'
+        ? new Map(['logo.png', 'motion.js', 'shell.js', 'styles.css'].map((name) => [
+          name,
+          readFileSync(join(root, `public_html/apps/shared/${name}`)),
+        ]))
+        : null;
+      const reviewedNewInode = original === 'present'
+        ? statSync(join(root, 'public_html/apps/shared')).ino
+        : null;
+      const crashed = runHelper(root, 'rollback-next', transport, {
+        CABOHEALTH_TEST_FAULT: fault,
+      }, ['1']);
+      assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+      const recovered = runHelper(root, 'rollback-next', transport, {}, ['1']);
+      assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+      assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_(?:RECOVERED|RECOVERY_FAILED)/u);
+      if (reviewedNew) {
+        assert.equal(statSync(join(root, 'public_html/apps/shared')).ino, reviewedNewInode);
+        assert.equal(statSync(join(root, 'public_html/apps/shared')).mode & 0o777, 0o755);
+        assert.deepEqual(readdirSync(join(root, 'public_html/apps/shared')).sort(), [...reviewedNew.keys()].sort());
+        for (const [name, bytes] of reviewedNew) {
+          assert.deepEqual(readFileSync(join(root, `public_html/apps/shared/${name}`)), bytes);
+        }
+      } else {
+        assert.equal(existsSync(join(root, 'public_html/apps/shared')), false);
+      }
+    });
+  }
+});
+
+test('substitution during recovery is detected and quarantined without leaving unknown bytes live', () => {
+  const { root, transport } = setup('present');
+  writePath(root, `stage/${transport.releaseId}/public_html/apps/fault-substitute`, 'first unknown operand\n');
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-exchange-substitute-source-crash',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const recovered = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promotion-recovery-destination-same-inode-mutation',
+  }, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERY_FAILED/u);
+  assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), false);
+});
+
+test('recovery-time destination mutation is quarantined before the next injected hard crash', () => {
+  const { root, transport } = setup('present');
+  writePath(root, `stage/${transport.releaseId}/public_html/apps/fault-substitute`, 'first unknown operand\n');
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-exchange-substitute-source-crash',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const recoveryCrash = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promotion-recovery-destination-mutation-safe-crash',
+  }, ['0']);
+  assert.equal(recoveryCrash.status, 86, recoveryCrash.stderr || recoveryCrash.stdout);
+  assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), false);
+});
+
+test('operation lock bootstrap survives every private-candidate durability boundary under a strict umask', async (context) => {
+  const faults = [
+    'operation-lock-crash-after-candidate-create',
+    'operation-lock-crash-after-candidate-fchmod',
+    ...Array.from({ length: operationLockBytes.length + 1 }, (_unused, offset) => `operation-lock-crash-after-byte-${offset}`),
+    'operation-lock-crash-after-candidate-write',
+    'operation-lock-crash-after-candidate-fsync',
+    'operation-lock-crash-after-publish',
+    'operation-lock-crash-after-directory-fsync',
+  ];
+  for (const fault of faults) {
+    await context.test(fault, () => {
+      const { root, transport } = setup('absent');
+      for (const container of ['apps', 'app', '.well-known']) {
+        mkdirSync(join(root, 'public_html', container), { mode: 0o755 });
+      }
+      const transitions = join(root, 'rollback', transport.releaseId, 'transitions');
+      mkdirSync(transitions, { recursive: true, mode: 0o700 });
+      const priorUmask = process.umask(0o777);
+      let crashed;
+      try {
+        crashed = runHelper(root, 'promote-next', transport, { CABOHEALTH_TEST_FAULT: fault });
+      } finally {
+        process.umask(priorUmask);
+      }
+      assert.equal(crashed.status, 86, `${fault}\n${crashed.stderr || crashed.stdout}`);
+      const lockPath = join(transitions, 'operation.lock');
+      const published = fault === 'operation-lock-crash-after-publish'
+        || fault === 'operation-lock-crash-after-directory-fsync';
+      assert.equal(existsSync(lockPath), published);
+      const resumed = runHelper(root, 'promote-next', transport);
+      assert.equal(resumed.status, 0, resumed.stderr || resumed.stdout);
+      assert.equal(statSync(lockPath).mode & 0o777, 0o600);
+      assert.deepEqual(readFileSync(lockPath), operationLockBytes);
+      for (const name of readdirSync(transitions).filter((entry) => entry.startsWith('operation-lock-'))) {
+        assert.match(name, /^operation-lock-[a-f0-9]{32}\.candidate$/u);
+        assert.equal([0o000, 0o200, 0o400, 0o600].includes(statSync(join(transitions, name)).mode & 0o777), true);
+      }
+    });
+  }
+});
+
+test('concurrent private lock candidates publish one authority and serialize on that inode', async () => {
+  const { root, transport } = setup('absent');
+  const spawnCommand = (fault) => {
+    const child = spawn('python3', [helperPath, 'promote-next', root, transport.releaseId], {
+      cwd: projectRoot,
+      env: { ...process.env, CABOHEALTH_TEST_FAULT: fault },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    child.stdin.end(canonicalJson(transport));
+    const stdout = [];
+    const stderr = [];
+    child.stdout.on('data', (chunk) => stdout.push(chunk));
+    child.stderr.on('data', (chunk) => stderr.push(chunk));
+    return {
+      child,
+      result: new Promise((resolvePromise) => child.on('close', (status) => resolvePromise({
+        status,
+        stdout: Buffer.concat(stdout).toString(),
+        stderr: Buffer.concat(stderr).toString(),
+      }))),
+    };
+  };
+  const first = spawnCommand('operation-lock-hold-before-publish');
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 150));
+  const second = spawnCommand('operation-lock-hold');
+  const [firstResult, secondResult] = await Promise.all([first.result, second.result]);
+  const results = [firstResult, secondResult];
+  assert.equal(results.filter(({ status }) => status === 0).length, 1, JSON.stringify(results));
+  const busy = results.find(({ status }) => status === 1);
+  assert.ok(busy, JSON.stringify(results));
+  assert.match(busy.stderr, /PROMOTION_OPERATION_BUSY/u);
+  const lockPath = join(root, 'rollback', transport.releaseId, 'transitions/operation.lock');
+  assert.equal(statSync(lockPath).mode & 0o777, 0o600);
+  assert.deepEqual(readFileSync(lockPath), operationLockBytes);
   assert.equal(existsSync(join(root, 'public_html/apps/shared')), false);
 });
