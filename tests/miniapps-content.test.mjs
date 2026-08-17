@@ -98,7 +98,7 @@ test('canonical public miniapp content contains no prohibited product behavior o
   }
 });
 
-test('clinic checklist remains bilingual, non-collecting and independent of unconfirmed owner facts', () => {
+test('clinic checklist remains bilingual and non-collecting while contact facts match the owner confirmation exactly', () => {
   const guide = readJson('content/clinic-guide.json');
   const contacts = readJson('release/public-contact-facts.json');
   const requiredGroups = [
@@ -123,13 +123,47 @@ test('clinic checklist remains bilingual, non-collecting and independent of unco
     }
   }
 
-  assert.equal(contacts.status, 'awaiting-owner-confirmation');
-  assert.equal(contacts.ownerConfirmedAt, null);
-  assert.equal(Object.keys(contacts.facts).length, 7);
-  for (const [name, fact] of Object.entries(contacts.facts)) {
-    assert.equal(fact.value, null, `${name} must remain unconfirmed in Task 6A`);
-    assert.equal(fact.sourceUrl, null, `${name} source must remain unconfirmed in Task 6A`);
-  }
+  assert.deepEqual(contacts, {
+    status: 'owner-confirmed',
+    ownerConfirmedAt: '2026-08-17T02:33:24.000Z',
+    facts: {
+      publicEmail: {
+        value: 'ivan@ivanguaderrama.com',
+        sourceUrl: 'https://cabohealth.org/app/support/',
+        sourceStatus: 'owner-confirmed-source',
+      },
+      phone: {
+        value: '+526241224865',
+        sourceUrl: 'https://www.cabohealth.org/contact.html',
+        sourceStatus: 'owner-confirmed-source',
+      },
+      whatsApp: {
+        value: 'https://wa.me/526241224865',
+        sourceUrl: 'https://www.cabohealth.org/contact.html',
+        sourceStatus: 'owner-confirmed-source',
+      },
+      address: {
+        value: 'In front of Plaza Amelia Wilkes, Hidalgo, Calle Cabo San Lucas 10, Centro, 23410 Cabo San Lucas, B.C.S., Mexico',
+        sourceUrl: 'https://cabohealth.org/app/support/',
+        sourceStatus: 'owner-confirmed-source',
+      },
+      hours: {
+        value: 'Monday–Friday, 10:00 AM–4:00 PM',
+        sourceUrl: 'https://cabohealth.org/app/support/',
+        sourceStatus: 'owner-confirmed-source',
+      },
+      appleMapsDestination: {
+        value: 'https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes%2C%20Hidalgo%2C%20Calle%20Cabo%20San%20Lucas%2010%2C%20Centro%2C%2023410%20Cabo%20San%20Lucas%2C%20B.C.S.%2C%20Mexico&name=Cabo%20Health',
+        sourceUrl: 'https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes%2C%20Hidalgo%2C%20Calle%20Cabo%20San%20Lucas%2010%2C%20Centro%2C%2023410%20Cabo%20San%20Lucas%2C%20B.C.S.%2C%20Mexico&name=Cabo%20Health',
+        sourceStatus: 'owner-confirmed-source',
+      },
+      serviceLanguages: {
+        value: ['English', 'Spanish'],
+        sourceUrl: 'https://cabohealth.org/app/support/',
+        sourceStatus: 'owner-confirmed-source',
+      },
+    },
+  });
 });
 
 test('content files live at the canonical paths consumed by both native and web surfaces', () => {

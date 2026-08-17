@@ -40,6 +40,7 @@ const requiredCsp = {
 };
 const task6ASourceFixturePaths = [
   'assets/logo.png',
+  'content/clinic-guide.json',
   'content/recipes.json',
   'miniapps/clinic-guide/app.js',
   'miniapps/clinic-guide/index.html',
@@ -50,6 +51,7 @@ const task6ASourceFixturePaths = [
   'miniapps/shared/security-headers.conf',
   'miniapps/shared/shell.js',
   'miniapps/shared/styles.css',
+  'release/public-contact-facts.json',
   'web-hosting/cabohealth.org/apps/.htaccess',
 ];
 
@@ -97,21 +99,21 @@ function parseCsp(value) {
 }
 
 function exactConfirmedFacts() {
-  const confirmedSource = {
-    sourceUrl: 'https://cabohealth.org/contact-source/',
-    sourceStatus: 'owner-confirmed-source',
-  };
   return {
     status: 'owner-confirmed',
-    ownerConfirmedAt: '2026-08-16T18:30:00.000Z',
+    ownerConfirmedAt: '2026-08-17T02:33:24.000Z',
     facts: {
-      publicEmail: { value: 'hello@example.test', ...confirmedSource },
-      phone: { value: '+526241234567', ...confirmedSource },
-      whatsApp: { value: 'https://wa.me/526241234567', ...confirmedSource },
-      address: { value: 'Confirmed clinic address', ...confirmedSource },
-      hours: { value: 'Confirmed clinic hours', ...confirmedSource },
-      appleMapsDestination: { value: 'https://maps.apple.com/?address=Confirmed%20Clinic', ...confirmedSource },
-      serviceLanguages: { value: ['English', 'Español'], ...confirmedSource },
+      publicEmail: { value: 'ivan@ivanguaderrama.com', sourceUrl: 'https://cabohealth.org/app/support/', sourceStatus: 'owner-confirmed-source' },
+      phone: { value: '+526241224865', sourceUrl: 'https://www.cabohealth.org/contact.html', sourceStatus: 'owner-confirmed-source' },
+      whatsApp: { value: 'https://wa.me/526241224865', sourceUrl: 'https://www.cabohealth.org/contact.html', sourceStatus: 'owner-confirmed-source' },
+      address: { value: 'In front of Plaza Amelia Wilkes, Hidalgo, Calle Cabo San Lucas 10, Centro, 23410 Cabo San Lucas, B.C.S., Mexico', sourceUrl: 'https://cabohealth.org/app/support/', sourceStatus: 'owner-confirmed-source' },
+      hours: { value: 'Monday–Friday, 10:00 AM–4:00 PM', sourceUrl: 'https://cabohealth.org/app/support/', sourceStatus: 'owner-confirmed-source' },
+      appleMapsDestination: {
+        value: 'https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes%2C%20Hidalgo%2C%20Calle%20Cabo%20San%20Lucas%2010%2C%20Centro%2C%2023410%20Cabo%20San%20Lucas%2C%20B.C.S.%2C%20Mexico&name=Cabo%20Health',
+        sourceUrl: 'https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes%2C%20Hidalgo%2C%20Calle%20Cabo%20San%20Lucas%2010%2C%20Centro%2C%2023410%20Cabo%20San%20Lucas%2C%20B.C.S.%2C%20Mexico&name=Cabo%20Health',
+        sourceStatus: 'owner-confirmed-source',
+      },
+      serviceLanguages: { value: ['English', 'Spanish'], sourceUrl: 'https://cabohealth.org/app/support/', sourceStatus: 'owner-confirmed-source' },
     },
   };
 }
@@ -134,6 +136,30 @@ async function withHealthyBuild(assertion) {
   const outputRoot = join(tempRoot, 'dist');
   try {
     await materializeHealthyDirectory(outputRoot);
+    await assertion(outputRoot);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+async function materializeReleaseDirectory(outputRoot, sourceRoot = projectRoot) {
+  const { createReleaseArtifactPlan } = await import(buildModuleUrl.href);
+  const plan = createReleaseArtifactPlan(sourceRoot);
+  mkdirSync(outputRoot);
+  for (const [relativePath, bytes] of plan.files) {
+    const path = join(outputRoot, relativePath);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, bytes);
+  }
+  writeFileSync(join(outputRoot, 'manifest.json'), `${JSON.stringify(plan.manifest, null, 2)}\n`);
+  return plan;
+}
+
+async function withReleaseBuild(assertion) {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-release-miniapps-'));
+  const outputRoot = join(tempRoot, 'dist');
+  try {
+    await materializeReleaseDirectory(outputRoot);
     await assertion(outputRoot);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
@@ -466,32 +492,142 @@ test('production build rejects every incomplete or malformed owner-fact record',
   const blankLanguages = structuredClone(valid);
   blankLanguages.facts.serviceLanguages.value = ['English', ' '];
   invalidRecords.push(blankLanguages);
+  for (const [factName, replacement] of [
+    ['publicEmail', 'other@example.test'],
+    ['phone', '+526241224866'],
+    ['whatsApp', 'https://wa.me/526241224866'],
+    ['address', 'Different address'],
+    ['hours', 'Different hours'],
+    ['serviceLanguages', ['English', 'Español']],
+  ]) {
+    const changed = structuredClone(valid);
+    changed.facts[factName].value = replacement;
+    invalidRecords.push(changed);
+  }
+  const changedConfirmation = structuredClone(valid);
+  changedConfirmation.ownerConfirmedAt = '2026-08-17T02:33:25.000Z';
+  invalidRecords.push(changedConfirmation);
+  const changedSource = structuredClone(valid);
+  changedSource.facts.publicEmail.sourceUrl = 'https://cabohealth.org/app/other/';
+  invalidRecords.push(changedSource);
 
   for (const [index, record] of invalidRecords.entries()) {
     assert.notDeepEqual(validatePublicContactFacts(record), [], `invalid record ${index} passed`);
   }
 });
 
-test('production build fails closed before touching output while owner facts or Task 6B are pending', async () => {
-  const { buildMiniapps } = await import(buildModuleUrl.href);
+test('production build emits a deterministic immutable release capsule for exactly two roots', async () => {
+  const { buildMiniapps, readVerifiedMiniappArtifact } = await import(buildModuleUrl.href);
   const tempRoot = mkdtempSync(join(tmpdir(), 'cabohealth-release-gate-'));
   const outputRoot = join(tempRoot, 'dist');
-  mkdirSync(outputRoot);
-  writeFileSync(join(outputRoot, 'sentinel.txt'), 'preserve me\n');
   try {
-    await assert.rejects(
-      buildMiniapps({ projectRoot, outputRoot, mode: 'release' }),
-      /PUBLIC_CONTACT_FACTS_INCOMPLETE/u,
+    const manifest = await buildMiniapps({ projectRoot, outputRoot, mode: 'release' });
+    assert.deepEqual(manifest.entrySlugs, ['healthy-recipes', 'clinic-guide']);
+    assert.deepEqual(manifest.blockedEntrySlugs, []);
+    assert.equal(manifest.mode, 'release');
+    assert.equal(manifest.releaseReady, true);
+    assert.equal(lstatSync(outputRoot).isFile(), true);
+    const artifact = readVerifiedMiniappArtifact({
+      projectRoot,
+      outputRoot,
+      expectedEntrySlugs: ['healthy-recipes', 'clinic-guide'],
+    });
+    assert.deepEqual(
+      [...artifact.files.keys()].filter((path) => path.endsWith('/index.html')),
+      ['apps/clinic-guide/index.html', 'apps/healthy-recipes/index.html'],
     );
-    assert.equal(readFileSync(join(outputRoot, 'sentinel.txt'), 'utf8'), 'preserve me\n');
-
-    await assert.rejects(
-      buildMiniapps({ projectRoot, outputRoot, mode: 'release', contactFacts: exactConfirmedFacts() }),
-      /CLINIC_GUIDE_TASK_6B_PENDING/u,
-    );
-    assert.equal(readFileSync(join(outputRoot, 'sentinel.txt'), 'utf8'), 'preserve me\n');
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('release renderer preserves the complete bilingual Clinic Guide without JavaScript', async () => {
+  await withReleaseBuild(async (outputRoot) => {
+    const html = readFileSync(join(outputRoot, 'apps/clinic-guide/index.html'), 'utf8');
+    const guide = readJson('content/clinic-guide.json');
+
+    assert.match(html, /^<!doctype html>\n<html lang="en">/u);
+    assert.equal((html.match(/<title>/gu) ?? []).length, 1);
+    assert.match(html, /<title>Clinic Guide \| CaboHealth<\/title>/u);
+    assert.match(html, /<meta name="description" content="[^"]+">/u);
+    assert.match(html, /<link rel="canonical" href="https:\/\/cabohealth\.org\/apps\/clinic-guide\/">/u);
+    assert.equal((html.match(/<main\b/gu) ?? []).length, 1);
+    assert.equal((html.match(/<h1\b/gu) ?? []).length, 1);
+    assert.match(html, /data-language="en"[^>]*aria-pressed="true"/u);
+    assert.match(html, /data-language="es-MX"[^>]*aria-pressed="false"/u);
+    assert.match(html, /<time datetime="2026-08-16">2026-08-16<\/time>/u);
+    assert.doesNotMatch(html, /\shidden(?:\s|=|>)/u);
+
+    for (const group of guide.groups) {
+      assert.ok(html.includes(group.title.en), `${group.id} English title missing`);
+      assert.ok(html.includes(group.title['es-MX']), `${group.id} Spanish title missing`);
+      for (const item of group.items) {
+        assert.ok(html.includes(item.text.en), `${item.id} English text missing`);
+        assert.ok(html.includes(item.text['es-MX']), `${item.id} Spanish text missing`);
+      }
+    }
+    assert.ok(html.includes(guide.emergency.en));
+    assert.ok(html.includes(guide.emergency['es-MX']));
+    assert.match(html, /Accessibility and language/u);
+    assert.match(html, /English, Spanish/u);
+    assert.match(html, /In front of Plaza Amelia Wilkes, Hidalgo, Calle Cabo San Lucas 10, Centro, 23410 Cabo San Lucas, B\.C\.S\., Mexico/u);
+    assert.match(html, /Monday–Friday, 10:00 AM–4:00 PM/u);
+    assert.doesNotMatch(html, /verified Apple listing|Apple place-card/iu);
+  });
+});
+
+test('Clinic Guide actions exactly match the native allowlist and remain literal same-window anchors', async () => {
+  await withReleaseBuild(async (outputRoot) => {
+    const html = readFileSync(join(outputRoot, 'apps/clinic-guide/index.html'), 'utf8');
+    const actions = [
+      'mailto:ivan@ivanguaderrama.com',
+      'tel:+526241224865',
+      'https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes%2C%20Hidalgo%2C%20Calle%20Cabo%20San%20Lucas%2010%2C%20Centro%2C%2023410%20Cabo%20San%20Lucas%2C%20B.C.S.%2C%20Mexico&amp;name=Cabo%20Health',
+      'https://wa.me/526241224865',
+      'https://cabohealth.org/app/privacy/',
+      'https://cabohealth.org/app/terms/',
+      'https://cabohealth.org/app/support/',
+      'https://cabohealth.org/app/report-content/',
+    ];
+    for (const href of actions) assert.match(html, new RegExp(`href="${href.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}"`, 'u'));
+    assert.equal((html.match(/data-external-action/gu) ?? []).length, actions.length);
+    assert.doesNotMatch(html, /target\s*=|window\.open|location\s*=|location\.href/iu);
+  });
+});
+
+test('release artifact has strict CSP and no remote subresources, collection forms, analytics or native bridge', async () => {
+  await withReleaseBuild(async (outputRoot) => {
+    const allText = walk(outputRoot)
+      .filter((path) => /\.(?:html|css|js)$/u.test(path))
+      .map((path) => readFileSync(path, 'utf8'))
+      .join('\n');
+    const clinicHtml = readFileSync(join(outputRoot, 'apps/clinic-guide/index.html'), 'utf8');
+    const csp = clinicHtml.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/u)?.[1];
+    assert.deepEqual(parseCsp(csp), requiredCsp);
+    assert.doesNotMatch(allText, /<form\b|<textarea\b|type=["']file|fetch\s*\(|XMLHttpRequest|EventSource|WebSocket|Worker\s*\(|sendBeacon|window\.ReactNativeWebView|postMessage\s*\(|target\s*=|window\.open/iu);
+    assert.doesNotMatch(allText, /(?:src|srcset)=["'](?:https?:)?\/\//iu);
+    assert.doesNotMatch(allText, /(?:@import|url\s*\()\s*["']?(?:https?:)?\/\//iu);
+    assert.doesNotMatch(allText, /analytics|tracking|advertising|patient portal|medical record|buy now|purchase|subscribe/iu);
+  });
+});
+
+test('release build and independent attestation reject source drift and produce identical bytes', async () => {
+  const { buildMiniapps, createReleaseArtifactPlan } = await import(buildModuleUrl.href);
+  const firstRoot = mkdtempSync(join(tmpdir(), 'cabohealth-release-determinism-a-'));
+  const secondRoot = mkdtempSync(join(tmpdir(), 'cabohealth-release-determinism-b-'));
+  const fixtureRoot = createTask6ASourceFixture('cabohealth-release-attestation-');
+  try {
+    await buildMiniapps({ projectRoot, outputRoot: join(firstRoot, 'dist'), mode: 'release' });
+    await buildMiniapps({ projectRoot, outputRoot: join(secondRoot, 'dist'), mode: 'release' });
+    assert.deepEqual(readFileSync(join(firstRoot, 'dist')), readFileSync(join(secondRoot, 'dist')));
+    assert.ok(createReleaseArtifactPlan(fixtureRoot));
+    const clinicPath = join(fixtureRoot, 'miniapps/clinic-guide/index.html');
+    writeFileSync(clinicPath, `${readFileSync(clinicPath, 'utf8')}\n<!-- drift -->\n`);
+    assert.throws(() => createReleaseArtifactPlan(fixtureRoot), /ATTESTATION|reviewed source/iu);
+  } finally {
+    rmSync(firstRoot, { recursive: true, force: true });
+    rmSync(secondRoot, { recursive: true, force: true });
+    rmSync(fixtureRoot, { recursive: true, force: true });
   }
 });
 
