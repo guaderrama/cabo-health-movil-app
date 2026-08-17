@@ -173,6 +173,31 @@ function rejectUnapprovedHostedResourceUrls(source, label) {
   }
 }
 
+function rejectContradictoryCaboHealthEntityClaims(source, label) {
+  const normalized = source.replace(/[`*_]/gu, '');
+  const entityTerms = '(?:legal\\s+entity|company|organization|corporation)';
+  const entityQualifiers = '(?:(?:separate|registered|legal)\\s+){0,2}';
+  const predicateClaim = new RegExp(
+    `\\bCabo\\s+Health\\b\\s+(?:is|acts|operates|functions|serves|constitutes|represents|exists|has\\s+been\\s+registered|was\\s+registered)\\s+(?:as\\s+)?(?:an?\\s+|the\\s+)?${entityQualifiers}${entityTerms}\\b`,
+    'iu',
+  );
+  const appositiveClaim = new RegExp(
+    `\\bCabo\\s+Health\\b\\s*,\\s*(?:an?\\s+|the\\s+)?${entityQualifiers}${entityTerms}\\b`,
+    'iu',
+  );
+  const nameAsEntityClaim = new RegExp(
+    `\\bCabo\\s+Health\\b\\s+${entityQualifiers}(?:company|organization|corporation)\\b`,
+    'iu',
+  );
+  if (
+    predicateClaim.test(normalized)
+    || appositiveClaim.test(normalized)
+    || nameAsEntityClaim.test(normalized)
+  ) {
+    errors.push(`${label} contradicts the individual trade-brand disclosure by claiming Cabo Health is a legal entity, company, or organization`);
+  }
+}
+
 function verifyManifest() {
   const manifest = readJson('release-manifest.json');
   if (!manifest) return;
@@ -343,14 +368,17 @@ function verifyManifest() {
     'status',
   ])) errors.push('DSA draft must contain the exact app-level fields');
   if (dsa?.status !== 'pending-save') errors.push('DSA status must remain pending-save');
-  if (
-    dsa?.scope !== 'app-level'
-    || dsa?.traderStatus !== 'non-trader/outside-EU-scope'
-    || !equalJson(dsa?.releaseTerritories, ['MEX', 'USA'])
-    || dsa?.reassessBeforeAddingEuTerritory !== true
-    || dsa?.globalAccountState !== 'unchanged'
-  ) {
-    errors.push('App-level DSA facts must match the Mexico/US-only release, preserve global state, and require EU reassessment');
+  if (dsa?.scope !== 'app-level' || dsa?.traderStatus !== 'non-trader/outside-EU-scope') {
+    errors.push('App-level DSA status must remain non-trader/outside-EU-scope');
+  }
+  if (!equalJson(dsa?.releaseTerritories, ['MEX', 'USA'])) {
+    errors.push('DSA release territories must be exactly MEX and USA');
+  }
+  if (dsa?.reassessBeforeAddingEuTerritory !== true) {
+    errors.push('DSA must require reassessment before adding any EU territory');
+  }
+  if (dsa?.globalAccountState !== 'unchanged') {
+    errors.push('DSA draft must not change global account state');
   }
 
   const contentRights = appStoreDraft?.contentRights;
@@ -496,6 +524,7 @@ function verifyAuthoritativeProjectState() {
 function verifyLocalization(locale) {
   const source = read(`${locale}.md`);
   if (!source) return;
+  rejectContradictoryCaboHealthEntityClaims(source, `${locale} public metadata`);
   const sections = parseLevelTwoSections(source, locale);
   const required = [
     'Name',
@@ -564,6 +593,7 @@ function verifyReviewNotes() {
     errors.push('Guideline 4.7 resource list must contain exactly the two approved entries');
   }
   if (excludedNamedScope.test(body)) errors.push('Review Notes name excluded release scope');
+  rejectContradictoryCaboHealthEntityClaims(body, 'Review Notes');
   if (/(?:password|passcode|secret|api[-_ ]?key|token|contrase[ñn]a|clave|access code|demo code|reviewer code)\s*[:=]\s*\S+/iu.test(body)) {
     errors.push('Review Notes appear to contain a credential');
   }
@@ -633,7 +663,8 @@ function verifyPrivacy() {
   ) {
     errors.push('App Privacy draft must retain both conditional recommendation paths');
   }
-  read('app-privacy.md');
+  const privacyDraft = read('app-privacy.md');
+  rejectContradictoryCaboHealthEntityClaims(privacyDraft, 'App Privacy draft');
 }
 
 function verifyAgeRating() {
@@ -677,7 +708,8 @@ function verifyAgeRating() {
   if (age.conditions?.healthOrWellnessTopics?.requiredAnswer !== 'Yes') {
     errors.push('9+ projection requires healthOrWellnessTopics=Yes');
   }
-  read('age-rating.md');
+  const ageRatingDraft = read('age-rating.md');
+  rejectContradictoryCaboHealthEntityClaims(ageRatingDraft, 'age-rating draft');
 }
 
 function verifyScreenshots() {
@@ -699,7 +731,8 @@ function verifyScreenshots() {
   if (Object.values(screenshots.requiredEvidence ?? {}).some((value) => value !== null)) {
     errors.push('Screenshot evidence must remain null before exact-RC capture');
   }
-  read('screenshots/storyboard.md');
+  const screenshotStoryboard = read('screenshots/storyboard.md');
+  rejectContradictoryCaboHealthEntityClaims(screenshotStoryboard, 'screenshot storyboard');
 }
 
 function verifyHumanChecklists() {
@@ -711,8 +744,17 @@ function verifyHumanChecklists() {
     'declarations.md',
     'submission-gates.md',
   ];
+  const labels = {
+    'testflight-what-to-test.md': 'TestFlight draft',
+    'accessibility-nutrition-label-evidence.md': 'accessibility draft',
+    'content-rights-and-brand.md': 'brand rights draft',
+    'unsigned-ownership-declaration.md': 'ownership declaration',
+    'declarations.md': 'declarations draft',
+    'submission-gates.md': 'submission gates',
+  };
   for (const file of required) {
     const source = read(file);
+    rejectContradictoryCaboHealthEntityClaims(source, labels[file]);
     if (/\[[xX]\]/u.test(source)) errors.push(`${file} contains an unsupported completed evidence checkbox`);
   }
   const accessibility = read('accessibility-nutrition-label-evidence.md');

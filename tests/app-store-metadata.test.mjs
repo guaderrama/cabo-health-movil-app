@@ -257,10 +257,15 @@ test('metadata verifier rejects owner, category, territory, platform, rights, an
     ['seller mismatch', (manifest) => { manifest.ownerSeller.legalSeller = 'Another Seller'; }, /legal seller must remain Ivan Guaderrama/i],
     ['Medical category retained', (manifest) => { manifest.appStoreDraft.categories.primary = 'Medical'; }, /categories must replace Medical with Health & Fitness and Food & Drink/i],
     ['extra territory', (manifest) => { manifest.appStoreDraft.availability.territories.push('CAN'); }, /territories must be exactly MEX and USA/i],
-    ['EU territory without DSA reassessment', (manifest) => {
-      manifest.appStoreDraft.availability.territories = ['MEX', 'USA', 'FRA'];
-      manifest.appStoreDraft.dsa.releaseTerritories = ['MEX', 'USA', 'FRA'];
-    }, /territories must be exactly MEX and USA|EU territory requires DSA reassessment/i],
+    ['DSA EU reassessment disabled', (manifest) => {
+      manifest.appStoreDraft.dsa.reassessBeforeAddingEuTerritory = false;
+    }, /DSA must require reassessment before adding any EU territory/i],
+    ['DSA global account state changed', (manifest) => {
+      manifest.appStoreDraft.dsa.globalAccountState = 'changed';
+    }, /DSA draft must not change global account state/i],
+    ['DSA release territories mismatch availability', (manifest) => {
+      manifest.appStoreDraft.dsa.releaseTerritories = ['MEX'];
+    }, /DSA release territories must be exactly MEX and USA/i],
     ['automatic future territories', (manifest) => { manifest.appStoreDraft.availability.automaticFutureTerritories = true; }, /automatic future territories must remain disabled/i],
     ['Mac Apple Silicon enabled', (manifest) => { manifest.appStoreDraft.availability.macAppleSiliconAvailable = true; }, /Mac Apple Silicon availability must remain off/i],
     ['Vision Pro enabled', (manifest) => { manifest.appStoreDraft.availability.visionProAvailable = true; }, /Vision Pro availability must remain off/i],
@@ -303,6 +308,48 @@ test('metadata verifier rejects Review Notes without the individual seller and t
       assert.equal(result.status, 1, result.stdout || result.stderr);
       assert.match(result.stderr, /Review Notes missing the individual seller and trade-brand disclosure/i);
     },
+  );
+});
+
+test('metadata verifier rejects contradictory Cabo Health entity claims while retaining the truthful disclosure', async (t) => {
+  const mutations = [
+    ['Review Notes', 'review-notes.md', (source) => `${source}\nCabo Health is a registered organization.\n`],
+    ['brand rights draft', 'content-rights-and-brand.md', (source) => `${source}\nCabo Health operates as a company.\n`],
+    ['declarations draft', 'declarations.md', (source) => `${source}\nCabo Health is a legal entity.\n`],
+    ['submission gates', 'submission-gates.md', (source) => `${source}\nCabo Health, a separate company, submits this app.\n`],
+    ['en-US public metadata', 'en-US.md', (source) => source.replace(
+      'CaboHealth brings two carefully curated public wellness resources into one calm, bilingual experience.',
+      'Cabo Health is a company.\n\nCaboHealth brings two carefully curated public wellness resources into one calm, bilingual experience.',
+    )],
+    ['App Privacy draft', 'app-privacy.md', (source) => `${source}\nCabo Health has been registered as an organization.\n`],
+  ];
+
+  for (const [label, relativePath, mutate] of mutations) {
+    await t.test(label, () => withReleaseFixture(
+      (root) => {
+        const file = join(root, releasePath, relativePath);
+        const source = readFileSync(file, 'utf8');
+        writeFileSync(file, mutate(source));
+      },
+      (result) => {
+        assert.equal(result.status, 1, `${label} contradiction bypassed verifier:\n${result.stdout}${result.stderr}`);
+        assert.match(
+          result.stderr,
+          new RegExp(`${label} contradicts.*legal entity, company, or organization`, 'i'),
+        );
+      },
+    ));
+  }
+});
+
+test('metadata verifier permits ordinary Apple Developer Program and third-party organization references', () => {
+  withReleaseFixture(
+    (root) => {
+      const file = join(root, releasePath, 'review-notes.md');
+      const source = readFileSync(file, 'utf8');
+      writeFileSync(file, `${source}\nApple is a third-party organization that operates the Apple Developer Program.\n`);
+    },
+    (result) => assert.equal(result.status, 0, result.stderr || result.stdout),
   );
 });
 
