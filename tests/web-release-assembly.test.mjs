@@ -88,8 +88,7 @@ function fixtureTransport() {
 
 function materializeFixture(transport = fixtureTransport()) {
   const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-release-fixture-'));
-  mkdirSync(join(root, 'release'));
-  const result = spawnSync('python3', [helperPath, 'materialize-local', root], {
+  const result = spawnSync('python3', [helperPath, 'materialize-stage', root, transport.releaseId], {
     cwd: projectRoot,
     encoding: 'utf8',
     input: canonicalJson(transport),
@@ -152,20 +151,17 @@ test('the real assembler fails closed on pending compliance before its first out
   assert.equal(existsSync(join(projectRoot, 'release/web-bundles')), false);
 });
 
-test('descriptor-relative materialization creates the exact immutable 14-file bundle', () => {
+test('descriptor-relative staging creates the exact private 14-file tree', () => {
   const { result, root, transport } = materializeFixture();
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
-  const bundleRoot = join(root, 'release/web-bundles', transport.releaseId);
+  const bundleRoot = join(root, 'stage', transport.releaseId, 'public_html');
   for (const entry of transport.files) {
     const path = join(bundleRoot, entry.path);
     assert.deepEqual(readFileSync(path), Buffer.from(entry.bytesBase64, 'base64'));
-    assert.equal(statSync(path).mode & 0o777, 0o444);
+    assert.equal(statSync(path).mode & 0o777, 0o644);
   }
-  assert.equal(statSync(bundleRoot).mode & 0o777, 0o555);
-  const transportPath = join(root, 'release/web-bundles', `${transport.releaseId}.transport.json`);
-  assert.equal(readFileSync(transportPath, 'utf8'), canonicalJson(transport));
-  assert.equal(statSync(transportPath).mode & 0o777, 0o444);
+  assert.equal(statSync(bundleRoot).mode & 0o777, 0o700);
 });
 
 test('two independent captured maps produce the same independently derived release transport', async () => {
@@ -286,12 +282,15 @@ test('atomic local promotion and rollback change only the nine leaves and restor
   }
   for (const [path, bytes] of sentinels) assert.deepEqual(readFileSync(join(root, path)), bytes);
 
-  const rollbackResult = spawnSync(
-    'python3',
-    [helperPath, 'rollback-local', root, transport.releaseId],
-    { cwd: projectRoot, encoding: 'utf8', input: canonicalJson(transport) },
-  );
-  assert.equal(rollbackResult.status, 0, rollbackResult.stderr || rollbackResult.stdout);
+  for (let index = promoteTargets.length - 1; index >= 0; index -= 1) {
+    const rollbackResult = spawnSync(
+      'python3',
+      [helperPath, 'rollback-next', root, transport.releaseId, String(index)],
+      { cwd: projectRoot, encoding: 'utf8', input: canonicalJson(transport) },
+    );
+    assert.equal(rollbackResult.status, 0, rollbackResult.stderr || rollbackResult.stdout);
+    assert.equal(JSON.parse(rollbackResult.stdout).index, index);
+  }
   for (const [path, bytes] of oldFiles) assert.deepEqual(readFileSync(join(root, path)), bytes);
   for (const path of [
     'public_html/app/terms',
@@ -306,10 +305,11 @@ test('atomic local promotion and rollback change only the nine leaves and restor
   assert.equal(transitions.some((record) => record.includes(root)), false);
 });
 
-test('artifact provenance is exclusively published only after independent descriptor-bound assembly', async () => {
+test('materialize-release rejects pending and coordinated compliance/legal/AASA/header authority before its first inode creation', async () => {
   const { createWebReleaseTransport } = await import('../scripts/assemble-web-release.mjs');
   const root = mkdtempSync(join(fixtureTmp, 'cabohealth-authoritative-release-fixture-'));
   mkdirSync(join(root, 'release'));
+  copyFileSync(join(projectRoot, 'release/compliance-facts.json'), join(root, 'release/compliance-facts.json'));
   const inputPaths = [
     'web-hosting/cabohealth.org/app/privacy/index.html',
     'web-hosting/cabohealth.org/app/terms/index.html',
@@ -325,43 +325,77 @@ test('artifact provenance is exclusively published only after independent descri
   chmodSync(join(root, 'miniapps/dist'), 0o400);
   const capsuleBytes = readFileSync(join(root, 'miniapps/dist'));
   const capsule = JSON.parse(capsuleBytes.toString('utf8'));
-  const outputs = new Map([
-    ['.well-known/apple-app-site-association', readFileSync(join(root, 'web-hosting/cabohealth.org/.well-known/apple-app-site-association'))],
-    ['app/privacy/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/privacy/index.html'))],
-    ['app/report-content/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/report-content/index.html'))],
-    ['app/support/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/support/index.html'))],
-    ['app/terms/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/terms/index.html'))],
-    ...capsule.files.map(({ path, bytesBase64 }) => [path, Buffer.from(bytesBase64, 'base64')]),
-  ]);
-  const transport = createWebReleaseTransport(outputs);
-  const manifest = fixtureArtifactManifest(transport);
-  const inputBytes = new Map([['miniapps/dist', capsuleBytes], ...inputPaths.map((path) => [path, readFileSync(join(root, path))])]);
-  manifest.inputs = manifest.inputs.map((entry) => ({
-    ...entry,
-    size: inputBytes.get(entry.path).byteLength,
-    sha256: sha256(inputBytes.get(entry.path)),
-  }));
-  const publish = (candidate = manifest) => spawnSync('python3', [helperPath, 'materialize-release', root], {
+  const envelope = () => {
+    const outputs = new Map([
+      ['.well-known/apple-app-site-association', readFileSync(join(root, 'web-hosting/cabohealth.org/.well-known/apple-app-site-association'))],
+      ['app/privacy/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/privacy/index.html'))],
+      ['app/report-content/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/report-content/index.html'))],
+      ['app/support/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/support/index.html'))],
+      ['app/terms/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/terms/index.html'))],
+      ...capsule.files.map(({ path, bytesBase64 }) => [path, Buffer.from(bytesBase64, 'base64')]),
+    ]);
+    const transport = createWebReleaseTransport(outputs);
+    const manifest = fixtureArtifactManifest(transport);
+    const inputBytes = new Map([['miniapps/dist', capsuleBytes], ...inputPaths.map((path) => [path, readFileSync(join(root, path))])]);
+    manifest.inputs = manifest.inputs.map((entry) => ({
+      ...entry,
+      size: inputBytes.get(entry.path).byteLength,
+      sha256: sha256(inputBytes.get(entry.path)),
+    }));
+    return { transport, manifest };
+  };
+  const publish = (candidate) => spawnSync('python3', [helperPath, 'materialize-release', root], {
     cwd: projectRoot,
     encoding: 'utf8',
-    input: canonicalJson({ transport, manifest: candidate }),
+    input: canonicalJson(candidate),
   });
 
-  const first = publish();
-  assert.equal(first.status, 0, first.stderr || first.stdout);
-  const path = join(root, 'release/web-artifacts.json');
-  assert.equal(readFileSync(path, 'utf8'), canonicalJson(manifest));
-  assert.equal(statSync(path).mode & 0o777, 0o444);
-  const before = statSync(path);
-  const second = publish();
-  assert.equal(second.status, 0, second.stderr || second.stdout);
-  const after = statSync(path);
-  assert.equal(after.ino, before.ino);
-  assert.equal(after.mtimeMs, before.mtimeMs);
-  const fabricated = structuredClone(manifest);
-  fabricated.inputs[0].sha256 = '0'.repeat(64);
-  const rejected = publish(fabricated);
-  assert.equal(rejected.status, 1, rejected.stderr || rejected.stdout);
+  const pending = publish(envelope());
+  assert.equal(pending.status, 1, pending.stderr || pending.stdout);
+  assert.match(pending.stderr, /COMPLIANCE_FACTS_INCOMPLETE/u);
+  assert.equal(existsSync(join(root, 'release/web-bundles')), false);
+  assert.equal(existsSync(join(root, 'release/web-artifacts.json')), false);
+
+  const factsPath = join(root, 'release/compliance-facts.json');
+  const facts = JSON.parse(readFileSync(factsPath, 'utf8'));
+  facts.releaseReady = true;
+  facts.legalEntity.legalSignOffStatus = 'approved';
+  facts.hosting.logTypes = { value: ['access-log'], status: 'verified' };
+  facts.hosting.retention = { value: { description: 'reviewed retention' }, status: 'verified' };
+  facts.hosting.deletionProcess = { value: { description: 'reviewed deletion' }, status: 'verified' };
+  facts.support.responseSla = { value: { description: 'reviewed response policy' }, status: 'verified' };
+  facts.contentRights = { value: { approved: true, scope: 'reviewed scope' }, status: 'verified' };
+  facts.exportCompliance = { value: { approved: true, determination: 'reviewed determination' }, status: 'verified' };
+  facts.medicalDevice = { value: { basis: 'reviewed basis', isMedicalDevice: false }, status: 'verified' };
+  facts.ageRating.host = { value: 4, status: 'verified' };
+  facts.ageRating.miniapps['healthy-recipes'] = { value: 4, status: 'verified' };
+  facts.ageRating.miniapps['clinic-guide'] = { value: 4, status: 'verified' };
+  writeFileSync(factsPath, canonicalJson(facts));
+  for (const slug of ['privacy', 'terms', 'support', 'report-content']) {
+    const legalPath = join(root, `web-hosting/cabohealth.org/app/${slug}/index.html`);
+    writeFileSync(legalPath, `${readFileSync(legalPath, 'utf8')}<!-- coordinated unreviewed legal mutation -->\n`);
+  }
+  writeFileSync(
+    join(root, 'web-hosting/cabohealth.org/apps/.htaccess'),
+    '# coordinated unreviewed security-envelope mutation\n',
+  );
+  const aasaPath = join(root, 'web-hosting/cabohealth.org/.well-known/apple-app-site-association');
+  const coordinatedAasa = JSON.parse(readFileSync(aasaPath, 'utf8'));
+  coordinatedAasa.applinks.details[0].components.push({ '/': '/apps/unreviewed-third/' });
+  writeFileSync(aasaPath, canonicalJson(coordinatedAasa));
+  const coordinated = publish(envelope());
+  assert.equal(coordinated.status, 1, coordinated.stderr || coordinated.stdout);
+  assert.match(coordinated.stderr, /FINAL_LEGAL_PINS_INCOMPLETE/u);
+  assert.equal(existsSync(join(root, 'release/web-bundles')), false);
+  assert.equal(existsSync(join(root, 'release/web-artifacts.json')), false);
+
+  const bypass = spawnSync('python3', [helperPath, 'materialize-local', root], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    input: canonicalJson(envelope().transport),
+  });
+  assert.equal(bypass.status, 1, bypass.stderr || bypass.stdout);
+  assert.equal(existsSync(join(root, 'release/web-bundles')), false);
 });
 
 test('materializer rejects schema, path, metadata, byte, and reviewed-release mutations before output writes', async (context) => {
@@ -384,13 +418,13 @@ test('materializer rejects schema, path, metadata, byte, and reviewed-release mu
       const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-reject-fixture-'));
       mkdirSync(join(root, 'release'));
       writeFileSync(join(root, 'release/sentinel.txt'), 'unchanged\n', { flag: 'wx' });
-      const result = spawnSync('python3', [helperPath, 'materialize-local', root], {
+      const result = spawnSync('python3', [helperPath, 'materialize-stage', root, value.releaseId], {
         cwd: projectRoot,
         encoding: 'utf8',
         input: canonicalJson(value),
       });
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.equal(existsSync(join(root, 'release/web-bundles')), false);
+      assert.equal(existsSync(join(root, 'stage')), false);
       assert.equal(readFileSync(join(root, 'release/sentinel.txt'), 'utf8'), 'unchanged\n');
     });
   }
@@ -399,18 +433,18 @@ test('materializer rejects schema, path, metadata, byte, and reviewed-release mu
 test('pre-existing partial final directory is quarantined in place without replacement or cleanup', () => {
   const transport = fixtureTransport();
   const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-partial-fixture-'));
-  mkdirSync(join(root, 'release'));
-  mkdirSync(join(root, 'release/web-bundles'));
-  mkdirSync(join(root, 'release/web-bundles', transport.releaseId));
-  writeFileSync(join(root, 'release/web-bundles', transport.releaseId, 'sentinel.txt'), 'partial\n', { flag: 'wx' });
-  const result = spawnSync('python3', [helperPath, 'materialize-local', root], {
+  mkdirSync(join(root, 'stage'), { mode: 0o700 });
+  mkdirSync(join(root, 'stage', transport.releaseId), { mode: 0o700 });
+  mkdirSync(join(root, 'stage', transport.releaseId, 'public_html'), { mode: 0o700 });
+  writeFileSync(join(root, 'stage', transport.releaseId, 'public_html/sentinel.txt'), 'partial\n', { flag: 'wx' });
+  const result = spawnSync('python3', [helperPath, 'materialize-stage', root, transport.releaseId], {
     cwd: projectRoot,
     encoding: 'utf8',
     input: canonicalJson(transport),
   });
   assert.equal(result.status, 1, result.stdout || result.stderr);
-  assert.equal(readFileSync(join(root, 'release/web-bundles', transport.releaseId, 'sentinel.txt'), 'utf8'), 'partial\n');
-  assert.equal(existsSync(join(root, 'release/web-bundles', transport.releaseId, '.well-known')), false);
+  assert.equal(readFileSync(join(root, 'stage', transport.releaseId, 'public_html/sentinel.txt'), 'utf8'), 'partial\n');
+  assert.equal(existsSync(join(root, 'stage', transport.releaseId, 'public_html/.well-known')), false);
 });
 
 test('reviewed input capture rejects a symlinked leaf and leaves the outside sentinel unchanged', () => {
@@ -480,5 +514,6 @@ test('promotion rejects unexpected target inventory before changing any live lea
   assert.equal(result.status, 1, result.stdout || result.stderr);
   assert.equal(readFileSync(join(root, 'public_html/apps/shared/unexpected.txt'), 'utf8'), 'must survive\n');
   assert.equal(readFileSync(join(root, 'public_html/index.php'), 'utf8'), 'wordpress unchanged\n');
-  assert.equal(existsSync(join(root, 'rollback')), false);
+  assert.equal(existsSync(join(root, 'rollback', transport.releaseId, 'transitions/operation.lock')), true);
+  assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), false);
 });

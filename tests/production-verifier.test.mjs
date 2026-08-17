@@ -116,23 +116,43 @@ function fixtureBrowserEvidence(artifact, authority) {
     .filter(({ path }) => path.endsWith('.html'))
     .map(({ path }) => `/${path.replace(/index\.html$/u, '')}`);
   const observations = [];
-  for (const viewport of ['mobile', 'desktop']) {
+  for (const viewport of [
+    { id: 'iphone-390x844', width: 390, height: 844 },
+    { id: 'compact-320x568', width: 320, height: 568 },
+  ]) {
     for (const locale of ['en-US', 'es-MX']) {
       for (const javascript of ['enabled', 'disabled']) {
         for (const path of routes) {
           const url = new URL(path, 'https://cabohealth.org/').href;
           observations.push({
             path,
-            viewport,
-            locale,
+            requestedViewport: viewport.id,
+            requestedLocale: locale,
             javascript,
+            actualWidth: viewport.width,
+            actualHeight: viewport.height,
+            visualWidth: viewport.width,
+            visualHeight: viewport.height,
+            effectiveLocale: locale,
             documentUrl: url,
             readyState: 'complete',
             bodyTextLength: 120,
             canonicalHref: url,
+            javascriptSentinel: path.startsWith('/apps/')
+              ? (javascript === 'enabled' ? 'enhanced' : 'static')
+              : 'not-applicable',
+            reducedMotionMatches: true,
+            animationSuppressed: true,
+            pauseKeyboardVerified: true,
+            focusVerified: true,
+            navigationVerified: true,
+            documentRequestSeen: true,
             unexpectedRequestCount: 0,
             consoleErrorCount: 0,
             miniappReady: javascript === 'enabled' && path.startsWith('/apps/'),
+            noJsControlsDisabled: true,
+            bilingualStaticVisible: true,
+            challengeSha256: 'e'.repeat(64),
           });
         }
       }
@@ -146,13 +166,9 @@ function fixtureBrowserEvidence(artifact, authority) {
     artifactSha256: authority.reviewedArtifactSha256,
     checkedAt: '2026-08-18T01:03:30.000Z',
     nonceSha256: 'f'.repeat(64),
-    viewports: ['mobile', 'desktop'],
-    locales: ['en-US', 'es-MX'],
-    javascriptModes: ['enabled', 'disabled'],
     routes,
     observations,
   };
-  evidence.measurementSha256 = sha256(Buffer.from(`${JSON.stringify(evidence)}\n`));
   return evidence;
 }
 
@@ -275,9 +291,17 @@ test('sanitized production evidence reconciles the exact artifact URL set withou
     },
   };
 
-  assert.equal(validateProductionEvidence(evidence, artifact, authority), true);
+  const reviewedBrowserMeasurement = {
+    reviewedBrowserMeasurementSha256: sha256(Buffer.from(`${JSON.stringify(evidence.browser)}\n`)),
+  };
+  assert.equal(validateProductionEvidence(evidence, artifact, authority, reviewedBrowserMeasurement), true);
   assert.throws(
-    () => validateProductionEvidence({ ...evidence, rawHeaders: { server: 'secret' } }, artifact, authority),
+    () => validateProductionEvidence(
+      { ...evidence, rawHeaders: { server: 'secret' } },
+      artifact,
+      authority,
+      reviewedBrowserMeasurement,
+    ),
     /PRODUCTION_EVIDENCE_SCHEMA_INVALID/u,
   );
   const mutations = [
@@ -291,7 +315,11 @@ test('sanitized production evidence reconciles the exact artifact URL set withou
   for (const [name, mutate] of mutations) {
     const changed = structuredClone(evidence);
     mutate(changed);
-    assert.throws(() => validateProductionEvidence(changed, artifact, authority), undefined, name);
+    assert.throws(
+      () => validateProductionEvidence(changed, artifact, authority, reviewedBrowserMeasurement),
+      undefined,
+      name,
+    );
   }
 });
 

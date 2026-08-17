@@ -217,7 +217,7 @@ test('post-exchange rollback failures and syscall-boundary tamper never leave th
       const { root, transport } = setupPromotion('present');
       assert.equal(runHelper(root, 'promote-next', transport, [transport.releaseId]).status, 0);
       const reviewedNew = expectedNew(transport);
-      const result = runHelper(root, 'rollback-local', transport, [transport.releaseId], {
+      const result = runHelper(root, 'rollback-next', transport, [transport.releaseId, '0'], {
         CABOHEALTH_TEST_FAULT: fault,
       });
       assert.equal(result.status, 1, result.stderr || result.stdout);
@@ -246,7 +246,7 @@ test('rollback reconciles every promotion crash window from durable intent witho
           CABOHEALTH_TEST_FAULT: fault,
         });
         assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
-        const rolledBack = runHelper(root, 'rollback-local', transport, [transport.releaseId]);
+        const rolledBack = runHelper(root, 'rollback-next', transport, [transport.releaseId, '0']);
         assert.equal(rolledBack.status, 0, rolledBack.stderr || rolledBack.stdout);
         if (old) assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), old);
         else assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), false);
@@ -269,11 +269,11 @@ test('rollback resumes every rollback crash window idempotently for present and 
         const { root, transport } = setupPromotion(original);
         const old = original === 'present' ? readFileSync(join(root, 'public_html/apps/.htaccess')) : null;
         assert.equal(runHelper(root, 'promote-next', transport, [transport.releaseId]).status, 0);
-        const crashed = runHelper(root, 'rollback-local', transport, [transport.releaseId], {
+        const crashed = runHelper(root, 'rollback-next', transport, [transport.releaseId, '0'], {
           CABOHEALTH_TEST_FAULT: fault,
         });
         assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
-        const resumed = runHelper(root, 'rollback-local', transport, [transport.releaseId]);
+        const resumed = runHelper(root, 'rollback-next', transport, [transport.releaseId, '0']);
         assert.equal(resumed.status, 0, resumed.stderr || resumed.stdout);
         if (old) assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), old);
         else assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), false);
@@ -346,7 +346,7 @@ test('browser evidence rejects free-standing booleans and stale or cross-release
 });
 
 test('reviewed browser measurement executes an exact artifact-bound WebDriver matrix', async () => {
-  const { measureBrowserEvidence, validateBrowserEvidence } = await import('../scripts/verify-production.mjs');
+  const { browserEvidenceSha256, measureBrowserEvidence, validateBrowserEvidence } = await import('../scripts/verify-production.mjs');
   assert.equal(typeof measureBrowserEvidence, 'function');
   const artifact = fixtureArtifact();
   const authority = {
@@ -355,6 +355,12 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
   };
   const sessions = new Map();
   let nextSession = 0;
+  let driverFault = null;
+  let urlCommandCount = 0;
+  let tabActionCount = 0;
+  let spaceActionCount = 0;
+  let enterActionCount = 0;
+  let noPreferenceCommandCount = 0;
   const server = createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -363,22 +369,152 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
     let value = null;
     if (request.method === 'POST' && request.url === '/session') {
       const sessionId = `session-${nextSession++}`;
-      sessions.set(sessionId, { url: null, capabilities: body.capabilities.alwaysMatch });
-      value = { sessionId, capabilities: {} };
+      const requested = body.capabilities.alwaysMatch;
+      const options = requested['goog:chromeOptions'];
+      const requestedMetrics = options?.mobileEmulation?.deviceMetrics ?? { width: 1024, height: 768 };
+      const metrics = driverFault === 'ignored-viewport' ? { width: 1024, height: 768 } : requestedMetrics;
+      const requestedLocale = options?.prefs?.['intl.accept_languages'] ?? 'en-US';
+      const locale = driverFault === 'ignored-locale' ? 'en-US' : requestedLocale;
+      let javascriptEnabled = options?.prefs?.['profile.managed_default_content_settings.javascript'] !== 2;
+      if (driverFault === 'force-js-disabled') javascriptEnabled = false;
+      if (driverFault === 'force-js-enabled') javascriptEnabled = true;
+      sessions.set(sessionId, {
+        url: null,
+        metrics,
+        locale,
+        javascriptEnabled,
+        reducedMotion: false,
+        activeTarget: null,
+        pauseActionCount: 0,
+        requests: [],
+        browserLogReadCount: 0,
+      });
+      value = {
+        sessionId,
+        capabilities: {
+          browserName: driverFault === 'ignored-capabilities' ? 'safari' : 'chrome',
+          acceptInsecureCerts: false,
+          pageLoadStrategy: 'normal',
+        },
+      };
     } else if (sessionMatch) {
       const session = sessions.get(sessionMatch[1]);
       const command = sessionMatch[2] ?? '';
-      if (request.method === 'POST' && command === 'url') session.url = body.url;
+      if (request.method === 'POST' && command === 'url') {
+        urlCommandCount += 1;
+        session.url = body.url;
+        session.activeTarget = null;
+        session.pauseActionCount = 0;
+        session.requests.push(body.url);
+      }
+      else if (request.method === 'GET' && command === 'url') value = session.url;
+      else if (request.method === 'GET' && command === 'log/types') value = ['browser', 'performance'];
+      else if (request.method === 'POST' && command === 'goog/cdp/execute') {
+        if (body.params.features[0].value === 'no-preference') noPreferenceCommandCount += 1;
+        session.reducedMotion = driverFault === 'ignored-reduced-motion'
+          ? false
+          : body.params.features[0].value === 'reduce';
+        value = {};
+      }
+      else if (request.method === 'POST' && command === 'actions') {
+        for (const source of body.actions ?? []) {
+          for (const action of source.actions ?? []) {
+            if (action.type !== 'keyDown') continue;
+            if (action.value === '\uE004') {
+              tabActionCount += 1;
+              if (driverFault !== 'ignored-focus') {
+                const miniapp = new URL(session.url).pathname.startsWith('/apps/');
+                session.activeTarget = miniapp && session.javascriptEnabled && session.pauseActionCount === 0
+                  ? 'motion-toggle'
+                  : 'legal-link';
+              }
+            } else if (action.value === '\uE00D') {
+              spaceActionCount += 1;
+              if (
+                driverFault !== 'ignored-pause'
+                && session.activeTarget === 'motion-toggle'
+                && !session.reducedMotion
+              ) session.pauseActionCount += 1;
+            } else if (action.value === '\uE007') {
+              enterActionCount += 1;
+              if (session.activeTarget === 'legal-link' && driverFault !== 'ignored-navigation') {
+                session.url = 'https://cabohealth.org/app/privacy/';
+                session.requests.push(session.url);
+              }
+            }
+          }
+        }
+        value = null;
+      }
       else if (request.method === 'POST' && command === 'execute/sync') {
+        const miniapp = new URL(session.url).pathname.startsWith('/apps/');
+        const observesLegalArticles = body.script.includes('article[lang="en"]')
+          && body.script.includes('article[lang="es-MX"]');
+        const reducedMotionBlocksCanvas = session.reducedMotion
+          && driverFault !== 'running-canvas-under-reduced-motion';
+        const controlsDisabled = driverFault === 'enabled-disabled-js-controls'
+          ? false
+          : !session.javascriptEnabled;
         value = {
           documentUrl: session.url,
           readyState: 'complete',
           bodyTextLength: 120,
           canonicalHref: session.url,
+          actualWidth: session.metrics.width,
+          actualHeight: session.metrics.height,
+          visualWidth: session.metrics.width,
+          visualHeight: session.metrics.height,
+          effectiveLocale: session.locale,
+          javascriptSentinel: miniapp
+            ? (session.javascriptEnabled ? 'enhanced' : 'static')
+            : 'not-applicable',
+          reducedMotionMatches: session.reducedMotion,
+          animationSuppressed: session.reducedMotion,
+          pauseKeyboardVerified: !miniapp || !session.javascriptEnabled || session.pauseActionCount >= 2,
+          motionToggleDisabled: reducedMotionBlocksCanvas || !session.javascriptEnabled,
+          motionStatus: reducedMotionBlocksCanvas || !session.javascriptEnabled
+            ? 'Static composition / Composición estática'
+            : (session.pauseActionCount % 2 === 1 ? 'paused' : 'playing'),
+          motionStatic: !miniapp || reducedMotionBlocksCanvas || !session.javascriptEnabled,
+          focusVerified: session.activeTarget !== null,
+          focusTarget: session.activeTarget,
+          navigationHref: session.activeTarget === 'legal-link'
+            ? 'https://cabohealth.org/app/privacy/'
+            : null,
+          noJsControlsDisabled: !miniapp || session.javascriptEnabled || controlsDisabled,
+          bilingualStaticVisible: miniapp || observesLegalArticles,
+          challengeEcho: driverFault === 'stale-challenge' ? 'stale' : body.args?.[1],
           unexpectedRequestCount: 0,
-          miniappReady: true,
+          miniappReady: miniapp && session.javascriptEnabled,
         };
-      } else if (request.method === 'POST' && command === 'log') value = [];
+      } else if (request.method === 'POST' && command === 'log') {
+        if (body.type === 'performance') {
+          const requestLog = driverFault === 'missing-navigation-request'
+            ? session.requests.slice(0, 1)
+            : session.requests;
+          value = driverFault === 'missing-document-request' ? [] : requestLog.map((url) => ({
+            level: 'INFO', message: JSON.stringify({
+              message: {
+                method: 'Network.requestWillBeSent',
+                params: { request: { url } },
+              },
+            }),
+          }));
+          session.requests.length = 0;
+          if (driverFault === 'external-request') value.push({ level: 'INFO', message: JSON.stringify({
+            message: {
+              method: 'Network.requestWillBeSent',
+              params: { request: { url: 'https://evil.invalid/tracker.js' } },
+            },
+          }) });
+        } else {
+          session.browserLogReadCount += 1;
+          value = driverFault === 'console-error'
+            || (driverFault === 'late-console-error' && session.browserLogReadCount === 1)
+            ? [{ level: 'SEVERE', message: 'fixture error' }]
+            : [];
+        }
+      }
       else if (request.method === 'DELETE' && command === '') sessions.delete(sessionMatch[1]);
     }
     response.writeHead(200, { 'Content-Type': 'application/json' });
@@ -394,31 +530,77 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       webdriverUrl: `http://127.0.0.1:${address.port}/`,
       productionConfirmation: 'cabohealth.org',
       checkedAt: '2026-08-18T02:03:04.000Z',
-      nonce: Buffer.alloc(16, 7),
     });
     assert.equal(validateBrowserEvidence(evidence, artifact, authority), true);
     assert.equal(evidence.observations.length, 48);
+    assert.equal(Object.hasOwn(evidence, 'measurementSha256'), false);
+    assert.deepEqual([...new Set(evidence.observations.map(({ actualWidth, actualHeight }) => `${actualWidth}x${actualHeight}`))], [
+      '390x844',
+      '320x568',
+    ]);
+    assert.equal(evidence.observations.every(({ effectiveLocale }) => ['en-US', 'es-MX'].includes(effectiveLocale)), true);
+    assert.equal(evidence.observations
+      .filter(({ javascript, path }) => javascript === 'disabled' && path.startsWith('/apps/'))
+      .every(({ miniappReady, javascriptSentinel }) => !miniappReady && javascriptSentinel === 'static'), true);
+    assert.equal(evidence.observations
+      .filter(({ path }) => path.startsWith('/app/'))
+      .every(({ bilingualStaticVisible }) => bilingualStaticVisible), true);
+    assert.equal(urlCommandCount, 48);
+    assert.equal(tabActionCount, 56);
+    assert.equal(spaceActionCount, 16);
+    assert.equal(enterActionCount, 48);
+    assert.equal(noPreferenceCommandCount, 8);
     const stale = structuredClone(evidence);
     stale.releaseId = `web-v1-${'0'.repeat(64)}`;
-    assert.throws(() => validateBrowserEvidence(stale, artifact, authority), /BROWSER_EVIDENCE/u);
-    const fabricated = structuredClone(evidence);
-    fabricated.observations[0].bodyTextLength = 0;
-    assert.throws(() => validateBrowserEvidence(fabricated, artifact, authority), /BROWSER_EVIDENCE/u);
+    assert.throws(() => validateBrowserEvidence(stale, artifact, authority, {
+      reviewedBrowserMeasurementSha256: browserEvidenceSha256(stale),
+    }), /BROWSER_EVIDENCE/u);
+    const handAuthoredClone = structuredClone(evidence);
+    assert.throws(() => validateBrowserEvidence(handAuthoredClone, artifact, authority), /BROWSER_RUNNER_RECEIPT_REQUIRED/u);
+    for (const fault of [
+      'ignored-capabilities',
+      'ignored-viewport',
+      'ignored-locale',
+      'force-js-disabled',
+      'force-js-enabled',
+      'enabled-disabled-js-controls',
+      'stale-challenge',
+      'ignored-reduced-motion',
+      'running-canvas-under-reduced-motion',
+      'ignored-pause',
+      'ignored-focus',
+      'ignored-navigation',
+      'missing-document-request',
+      'missing-navigation-request',
+      'external-request',
+      'console-error',
+      'late-console-error',
+    ]) {
+      driverFault = fault;
+      await assert.rejects(measureBrowserEvidence({
+        artifact,
+        ...authority,
+        baseUrl: 'https://cabohealth.org/',
+        webdriverUrl: `http://127.0.0.1:${address.port}/`,
+        productionConfirmation: 'cabohealth.org',
+        checkedAt: '2026-08-18T02:03:04.000Z',
+      }), /(?:BROWSER|WEBDRIVER)_/u, fault);
+    }
+    driverFault = null;
   } finally {
     await new Promise((resolvePromise) => server.close(resolvePromise));
   }
 });
 
-test('direct manifest helper rejects fabricated provenance even with a recomputed caller hash', () => {
+test('the real materialize-release boundary rejects caller-fabricated provenance while compliance is pending', () => {
   const transport = fixtureTransport();
   const artifact = fixtureArtifact(transport);
   const root = mkdtempSync(join(fixtureTmp, 'cabohealth-provenance-fixture-'));
   mkdirSync(join(root, 'release'));
-  assert.equal(runHelper(root, 'materialize-local', transport).status, 0);
-  const manifestHash = sha256(Buffer.from(canonicalJson(artifact)));
+  copyFileSync(join(projectRoot, 'release/compliance-facts.json'), join(root, 'release/compliance-facts.json'));
   const result = spawnSync(
     'python3',
-    [helperPath, 'publish-manifest-local', root, manifestHash],
+    [helperPath, 'materialize-release', root],
     {
       cwd: projectRoot,
       encoding: 'utf8',
@@ -426,6 +608,8 @@ test('direct manifest helper rejects fabricated provenance even with a recompute
     },
   );
   assert.equal(result.status, 1, result.stderr || result.stdout);
+  assert.match(result.stderr, /COMPLIANCE_FACTS_INCOMPLETE/u);
+  assert.equal(existsSync(join(root, 'release/web-bundles')), false);
   assert.equal(existsSync(join(root, 'release/web-artifacts.json')), false);
 });
 

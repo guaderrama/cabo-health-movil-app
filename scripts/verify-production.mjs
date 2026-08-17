@@ -256,11 +256,12 @@ export function validateServerInventoryEvidence(value, artifact, authority) {
 }
 
 const BROWSER_VIEWPORTS = Object.freeze([
-  Object.freeze({ id: 'mobile', width: 390, height: 844 }),
-  Object.freeze({ id: 'desktop', width: 1440, height: 900 }),
+  Object.freeze({ id: 'iphone-390x844', width: 390, height: 844 }),
+  Object.freeze({ id: 'compact-320x568', width: 320, height: 568 }),
 ]);
 const BROWSER_LOCALES = Object.freeze(['en-US', 'es-MX']);
 const BROWSER_JAVASCRIPT_MODES = Object.freeze(['enabled', 'disabled']);
+const browserRunnerReceipts = new WeakSet();
 
 function browserRoutes(artifact) {
   return artifact.files
@@ -268,12 +269,11 @@ function browserRoutes(artifact) {
     .map(({ path }) => publicUrlPath(path));
 }
 
-function browserMeasurementBody(value) {
-  const { measurementSha256: _measurementSha256, ...body } = value;
-  return body;
+export function browserEvidenceSha256(value) {
+  return sha256(Buffer.from(canonicalJson(value)));
 }
 
-export function validateBrowserEvidence(value, artifact, authority) {
+export function validateBrowserEvidence(value, artifact, authority, reviewedMeasurement = undefined) {
   validateArtifactAuthority(artifact, authority);
   assertExactKeys(value, [
     'schemaVersion',
@@ -283,13 +283,23 @@ export function validateBrowserEvidence(value, artifact, authority) {
     'artifactSha256',
     'checkedAt',
     'nonceSha256',
-    'viewports',
-    'locales',
-    'javascriptModes',
     'routes',
     'observations',
-    'measurementSha256',
   ], 'BROWSER_EVIDENCE');
+  const runnerCreated = browserRunnerReceipts.has(value);
+  if (!runnerCreated) {
+    if (reviewedMeasurement === undefined) throw new Error('BROWSER_RUNNER_RECEIPT_REQUIRED');
+    assertExactKeys(
+      reviewedMeasurement,
+      ['reviewedBrowserMeasurementSha256'],
+      'REVIEWED_BROWSER_MEASUREMENT',
+    );
+    if (
+      typeof reviewedMeasurement.reviewedBrowserMeasurementSha256 !== 'string'
+      || !SHA256.test(reviewedMeasurement.reviewedBrowserMeasurementSha256)
+      || reviewedMeasurement.reviewedBrowserMeasurementSha256 !== browserEvidenceSha256(value)
+    ) throw new Error('BROWSER_RUNNER_RECEIPT_REQUIRED');
+  }
   const routes = browserRoutes(artifact);
   if (
     value.schemaVersion !== 1
@@ -300,14 +310,10 @@ export function validateBrowserEvidence(value, artifact, authority) {
     || !isCanonicalUtcTimestamp(value.checkedAt)
     || typeof value.nonceSha256 !== 'string'
     || !SHA256.test(value.nonceSha256)
-    || JSON.stringify(value.viewports) !== JSON.stringify(BROWSER_VIEWPORTS.map(({ id }) => id))
-    || JSON.stringify(value.locales) !== JSON.stringify(BROWSER_LOCALES)
-    || JSON.stringify(value.javascriptModes) !== JSON.stringify(BROWSER_JAVASCRIPT_MODES)
     || JSON.stringify(value.routes) !== JSON.stringify(routes)
     || !Array.isArray(value.observations)
     || value.observations.length !== BROWSER_VIEWPORTS.length * BROWSER_LOCALES.length
       * BROWSER_JAVASCRIPT_MODES.length * routes.length
-    || value.measurementSha256 !== sha256(Buffer.from(canonicalJson(browserMeasurementBody(value))))
   ) throw new Error('BROWSER_EVIDENCE_INVALID');
   let index = 0;
   for (const viewport of BROWSER_VIEWPORTS) {
@@ -317,32 +323,67 @@ export function validateBrowserEvidence(value, artifact, authority) {
           const observation = value.observations[index];
           assertExactKeys(observation, [
             'path',
-            'viewport',
-            'locale',
+            'requestedViewport',
+            'requestedLocale',
             'javascript',
+            'actualWidth',
+            'actualHeight',
+            'visualWidth',
+            'visualHeight',
+            'effectiveLocale',
             'documentUrl',
             'readyState',
             'bodyTextLength',
             'canonicalHref',
+            'javascriptSentinel',
+            'reducedMotionMatches',
+            'animationSuppressed',
+            'pauseKeyboardVerified',
+            'focusVerified',
+            'navigationVerified',
+            'documentRequestSeen',
             'unexpectedRequestCount',
             'consoleErrorCount',
             'miniappReady',
+            'noJsControlsDisabled',
+            'bilingualStaticVisible',
+            'challengeSha256',
           ], 'BROWSER_OBSERVATION');
           const expectedUrl = new URL(path, 'https://cabohealth.org/').href;
+          const miniapp = path.startsWith('/apps/');
+          const expectedSentinel = miniapp
+            ? (javascript === 'enabled' ? 'enhanced' : 'static')
+            : 'not-applicable';
           if (
             observation.path !== path
-            || observation.viewport !== viewport.id
-            || observation.locale !== locale
+            || observation.requestedViewport !== viewport.id
+            || observation.requestedLocale !== locale
             || observation.javascript !== javascript
+            || observation.actualWidth !== viewport.width
+            || observation.actualHeight !== viewport.height
+            || observation.visualWidth !== viewport.width
+            || observation.visualHeight !== viewport.height
+            || observation.effectiveLocale !== locale
             || observation.documentUrl !== expectedUrl
             || observation.readyState !== 'complete'
             || !Number.isSafeInteger(observation.bodyTextLength)
             || observation.bodyTextLength <= 0
             || observation.canonicalHref !== expectedUrl
+            || observation.javascriptSentinel !== expectedSentinel
+            || observation.reducedMotionMatches !== true
+            || observation.animationSuppressed !== true
+            || observation.pauseKeyboardVerified !== true
+            || observation.focusVerified !== true
+            || observation.navigationVerified !== true
+            || observation.documentRequestSeen !== true
             || observation.unexpectedRequestCount !== 0
             || observation.consoleErrorCount !== 0
             || typeof observation.miniappReady !== 'boolean'
-            || (javascript === 'enabled' && path.startsWith('/apps/') && observation.miniappReady !== true)
+            || observation.miniappReady !== (miniapp && javascript === 'enabled')
+            || observation.noJsControlsDisabled !== true
+            || observation.bilingualStaticVisible !== true
+            || typeof observation.challengeSha256 !== 'string'
+            || !SHA256.test(observation.challengeSha256)
           ) throw new Error(`BROWSER_EVIDENCE_INVALID: ${path}:${index}`);
           index += 1;
         }
@@ -382,6 +423,43 @@ async function webdriverCommand(base, path, method = 'POST', body = undefined) {
   return envelope.value;
 }
 
+function browserObservationChallenge(nonce, binding) {
+  return sha256(Buffer.concat([nonce, Buffer.from(canonicalJson(binding))]));
+}
+
+function performanceRequestUrls(logs) {
+  if (!Array.isArray(logs)) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+  const urls = [];
+  for (const entry of logs) {
+    if (!entry || typeof entry.message !== 'string') throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+    let parsed;
+    try {
+      parsed = JSON.parse(entry.message);
+    } catch {
+      throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+    }
+    if (parsed?.message?.method === 'Network.requestWillBeSent') {
+      const url = parsed.message.params?.request?.url;
+      if (typeof url !== 'string') throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+      urls.push(url);
+    }
+  }
+  return urls;
+}
+
+async function webdriverKeyAction(webdriver, sessionId, value) {
+  await webdriverCommand(webdriver, `/session/${sessionId}/actions`, 'POST', {
+    actions: [{
+      type: 'key',
+      id: 'cabohealth-browser-keyboard',
+      actions: [
+        { type: 'keyDown', value },
+        { type: 'keyUp', value },
+      ],
+    }],
+  });
+}
+
 export async function measureBrowserEvidence({
   artifact,
   reviewedReleaseId,
@@ -390,14 +468,14 @@ export async function measureBrowserEvidence({
   webdriverUrl,
   productionConfirmation = null,
   checkedAt = new Date().toISOString(),
-  nonce = randomBytes(16),
 }) {
   const authority = { reviewedReleaseId, reviewedArtifactSha256 };
   validateArtifactAuthority(artifact, authority);
   const base = assertAllowedBaseUrl(baseUrl, productionConfirmation);
   if (base.href !== 'https://cabohealth.org/') throw new Error('BROWSER_PRODUCTION_ORIGIN_REQUIRED');
   const webdriver = assertLoopbackWebDriverUrl(webdriverUrl);
-  if (!Buffer.isBuffer(nonce) || nonce.byteLength !== 16 || !isCanonicalUtcTimestamp(checkedAt)) {
+  const nonce = randomBytes(16);
+  if (!isCanonicalUtcTimestamp(checkedAt)) {
     throw new Error('BROWSER_MEASUREMENT_INPUT_INVALID');
   }
   const routes = browserRoutes(artifact);
@@ -409,8 +487,8 @@ export async function measureBrowserEvidence({
     for (const locale of BROWSER_LOCALES) {
       for (const javascript of BROWSER_JAVASCRIPT_MODES) {
         const chromePreferences = {
-          intl: { accept_languages: locale },
-          profile: { managed_default_content_settings: { javascript: javascript === 'enabled' ? 1 : 2 } },
+          'intl.accept_languages': locale,
+          'profile.managed_default_content_settings.javascript': javascript === 'enabled' ? 1 : 2,
         };
         const created = await webdriverCommand(webdriver, '/session', 'POST', {
           capabilities: {
@@ -418,41 +496,231 @@ export async function measureBrowserEvidence({
               browserName: 'chrome',
               acceptInsecureCerts: false,
               pageLoadStrategy: 'normal',
-              'goog:chromeOptions': { prefs: chromePreferences },
-              'goog:loggingPrefs': { browser: 'ALL' },
+              'goog:chromeOptions': {
+                prefs: chromePreferences,
+                mobileEmulation: {
+                  deviceMetrics: {
+                    width: viewport.width,
+                    height: viewport.height,
+                    pixelRatio: 3,
+                    mobile: true,
+                    touch: true,
+                  },
+                },
+              },
+              'goog:loggingPrefs': { browser: 'ALL', performance: 'ALL' },
             },
           },
         });
         const sessionId = created?.sessionId;
-        if (typeof sessionId !== 'string' || !/^[A-Za-z0-9._-]+$/u.test(sessionId)) {
+        if (
+          typeof sessionId !== 'string'
+          || !/^[A-Za-z0-9._-]+$/u.test(sessionId)
+          || created?.capabilities?.browserName !== 'chrome'
+          || created.capabilities.acceptInsecureCerts !== false
+          || created.capabilities.pageLoadStrategy !== 'normal'
+        ) {
           throw new Error('WEBDRIVER_SESSION_INVALID');
         }
         try {
-          await webdriverCommand(webdriver, `/session/${sessionId}/window/rect`, 'POST', {
-            width: viewport.width,
-            height: viewport.height,
-          });
+          const logTypes = await webdriverCommand(webdriver, `/session/${sessionId}/log/types`, 'GET');
+          if (!Array.isArray(logTypes) || !['browser', 'performance'].every((type) => logTypes.includes(type))) {
+            throw new Error('WEBDRIVER_LOG_CAPABILITY_INVALID');
+          }
           for (const path of routes) {
             const url = new URL(path, base).href;
-            await webdriverCommand(webdriver, `/session/${sessionId}/url`, 'POST', { url });
-            const measured = await webdriverCommand(webdriver, `/session/${sessionId}/execute/sync`, 'POST', {
-              script: `return (() => ({documentUrl: location.href, readyState: document.readyState, bodyTextLength: (document.body?.innerText || '').trim().length, canonicalHref: document.querySelector('link[rel="canonical"]')?.href || null, unexpectedRequestCount: performance.getEntriesByType('resource').filter((entry) => !arguments[0].includes(entry.name)).length, miniappReady: document.documentElement.dataset.ready === 'true'}))();`,
-              args: [allowedUrls],
-            });
-            const logs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'browser' });
-            if (!Array.isArray(logs)) throw new Error('WEBDRIVER_LOG_INVALID');
-            observations.push({
+            const miniapp = path.startsWith('/apps/');
+            const challenge = browserObservationChallenge(nonce, {
+              releaseId: artifact.releaseId,
+              artifactSha256: reviewedArtifactSha256,
+              routes,
               path,
-              viewport: viewport.id,
+              viewport,
               locale,
               javascript,
+            });
+            const discardedBrowserLogs = await webdriverCommand(
+              webdriver,
+              `/session/${sessionId}/log`,
+              'POST',
+              { type: 'browser' },
+            );
+            if (!Array.isArray(discardedBrowserLogs)) throw new Error('WEBDRIVER_LOG_INVALID');
+            if (discardedBrowserLogs.some(({ level } = {}) => ['SEVERE', 'ERROR'].includes(level))) {
+              throw new Error('BROWSER_CONSOLE_ERROR');
+            }
+            performanceRequestUrls(await webdriverCommand(
+              webdriver,
+              `/session/${sessionId}/log`,
+              'POST',
+              { type: 'performance' },
+            ));
+            await webdriverCommand(webdriver, `/session/${sessionId}/goog/cdp/execute`, 'POST', {
+              cmd: 'Emulation.setEmulatedMedia',
+              params: {
+                media: '',
+                features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+              },
+            });
+            await webdriverCommand(webdriver, `/session/${sessionId}/url`, 'POST', { url });
+            const probe = async () => {
+              const measured = await webdriverCommand(webdriver, `/session/${sessionId}/execute/sync`, 'POST', {
+                script: `return (() => {
+                const allowed = arguments[0];
+                const challenge = arguments[1];
+                const javascriptMode = arguments[2];
+                const miniapp = location.pathname.startsWith('/apps/');
+                const controls = [...document.querySelectorAll('[data-language], [data-motion-toggle], [data-recipe-search], [data-recipe-filter], [data-favorite-recipe], [data-checklist-item]')];
+                const englishBlocks = [...document.querySelectorAll('[data-locale="en"], article[lang="en"]')];
+                const spanishBlocks = [...document.querySelectorAll('[data-locale="es-MX"], article[lang="es-MX"]')];
+                const visible = (node) => !node.hidden
+                  && getComputedStyle(node).display !== 'none'
+                  && getComputedStyle(node).visibility !== 'hidden';
+                const active = document.activeElement;
+                const activeStyle = active && active !== document.body ? getComputedStyle(active) : null;
+                const activeHref = active?.tagName === 'A' ? active.href : null;
+                const navigationHref = typeof activeHref === 'string'
+                  && activeHref.startsWith('https://cabohealth.org/app/') ? activeHref : null;
+                const focusTarget = active?.matches?.('[data-motion-toggle]')
+                  ? 'motion-toggle'
+                  : (navigationHref ? 'legal-link' : 'other');
+                const motionToggle = document.querySelector('[data-motion-toggle]');
+                const motionStatus = document.querySelector('[data-motion-status]');
+                const motionStatusText = motionStatus?.textContent?.trim() ?? null;
+                const staticMotionStatuses = new Set([
+                  'A static composition is shown.',
+                  'Se muestra una composición estática.',
+                  'Static composition / Composición estática',
+                ]);
+                const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+                return {
+                  documentUrl: location.href,
+                  readyState: document.readyState,
+                  bodyTextLength: (document.body?.innerText || '').trim().length,
+                  canonicalHref: document.querySelector('link[rel="canonical"]')?.href || null,
+                  actualWidth: innerWidth,
+                  actualHeight: innerHeight,
+                  visualWidth: visualViewport?.width ?? innerWidth,
+                  visualHeight: visualViewport?.height ?? innerHeight,
+                  effectiveLocale: navigator.language,
+                  javascriptSentinel: miniapp ? (document.documentElement.dataset.enhanced === 'true' ? 'enhanced' : 'static') : 'not-applicable',
+                  reducedMotionMatches: matchMedia('(prefers-reduced-motion: reduce)').matches,
+                  animationSuppressed: document.getAnimations().every((animation) => animation.playState !== 'running'),
+                  motionToggleDisabled: motionToggle?.disabled ?? true,
+                  motionStatus: motionStatusText,
+                  motionStatic: !miniapp || (motionToggle?.disabled === true && staticMotionStatuses.has(motionStatusText)),
+                  focusTarget,
+                  focusVerified: Boolean(activeStyle)
+                    && activeStyle.outlineStyle !== 'none'
+                    && Number.parseFloat(activeStyle.outlineWidth) > 0,
+                  navigationHref,
+                  unexpectedResourceCount: resources.filter((resource) => !allowed.includes(resource)).length,
+                  miniappReady: miniapp && document.documentElement.dataset.enhanced === 'true',
+                  noJsControlsDisabled: !miniapp || (javascriptMode === 'disabled' ? controls.length > 0 && controls.every((control) => control.disabled) : controls.some((control) => !control.disabled)),
+                  bilingualStaticVisible: englishBlocks.length > 0
+                    && spanishBlocks.length > 0
+                    && (miniapp && javascriptMode === 'enabled'
+                      ? true
+                      : englishBlocks.some(visible) && spanishBlocks.some(visible)),
+                  challengeEcho: challenge,
+                };
+              })();`,
+                args: [allowedUrls, challenge, javascript],
+              });
+              if (measured?.challengeEcho !== challenge) throw new Error('BROWSER_RUNNER_CHALLENGE_INVALID');
+              return measured;
+            };
+            const measured = await probe();
+            let pauseKeyboardVerified = true;
+            if (miniapp && javascript === 'enabled') {
+              await webdriverCommand(webdriver, `/session/${sessionId}/goog/cdp/execute`, 'POST', {
+                cmd: 'Emulation.setEmulatedMedia',
+                params: {
+                  media: '',
+                  features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
+                },
+              });
+              let motionFocused = null;
+              for (let attempt = 0; attempt < 64; attempt += 1) {
+                await webdriverKeyAction(webdriver, sessionId, '\uE004');
+                motionFocused = await probe();
+                if (motionFocused.focusTarget === 'motion-toggle') break;
+              }
+              if (
+                !motionFocused
+                || motionFocused.focusTarget !== 'motion-toggle'
+                || motionFocused.focusVerified !== true
+                || motionFocused.reducedMotionMatches !== false
+                || motionFocused.motionToggleDisabled !== false
+              ) throw new Error('BROWSER_PAUSE_KEYBOARD_INVALID');
+              const beforePause = motionFocused.motionStatus;
+              await webdriverKeyAction(webdriver, sessionId, '\uE00D');
+              const paused = await probe();
+              await webdriverKeyAction(webdriver, sessionId, '\uE00D');
+              const resumed = await probe();
+              pauseKeyboardVerified = paused.focusTarget === 'motion-toggle'
+                && paused.motionStatus !== beforePause
+                && resumed.motionStatus === beforePause;
+            }
+            let navigationFocus = null;
+            for (let attempt = 0; attempt < 96; attempt += 1) {
+              await webdriverKeyAction(webdriver, sessionId, '\uE004');
+              navigationFocus = await probe();
+              if (
+                navigationFocus.focusTarget === 'legal-link'
+                && navigationFocus.focusVerified === true
+                && allowedUrls.includes(navigationFocus.navigationHref)
+              ) break;
+            }
+            const navigationHref = navigationFocus?.navigationHref;
+            if (
+              navigationFocus?.focusTarget !== 'legal-link'
+              || navigationFocus.focusVerified !== true
+              || typeof navigationHref !== 'string'
+              || !allowedUrls.includes(navigationHref)
+            ) throw new Error('BROWSER_KEYBOARD_FOCUS_INVALID');
+            await webdriverKeyAction(webdriver, sessionId, '\uE007');
+            const navigationVerified = await webdriverCommand(
+              webdriver,
+              `/session/${sessionId}/url`,
+              'GET',
+            ) === navigationHref;
+            const browserLogs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'browser' });
+            if (!Array.isArray(browserLogs)) throw new Error('WEBDRIVER_LOG_INVALID');
+            const performanceLogs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'performance' });
+            const requestUrls = performanceRequestUrls(performanceLogs);
+            const originalRequestCount = requestUrls.filter((requestUrl) => requestUrl === url).length;
+            const navigationRequestCount = requestUrls.filter((requestUrl) => requestUrl === navigationHref).length;
+            observations.push({
+              path,
+              requestedViewport: viewport.id,
+              requestedLocale: locale,
+              javascript,
+              actualWidth: measured?.actualWidth,
+              actualHeight: measured?.actualHeight,
+              visualWidth: measured?.visualWidth,
+              visualHeight: measured?.visualHeight,
+              effectiveLocale: measured?.effectiveLocale,
               documentUrl: measured?.documentUrl,
               readyState: measured?.readyState,
               bodyTextLength: measured?.bodyTextLength,
               canonicalHref: measured?.canonicalHref,
-              unexpectedRequestCount: measured?.unexpectedRequestCount,
-              consoleErrorCount: logs.filter(({ level }) => ['SEVERE', 'ERROR'].includes(level)).length,
+              javascriptSentinel: measured?.javascriptSentinel,
+              reducedMotionMatches: measured?.reducedMotionMatches,
+              animationSuppressed: measured?.animationSuppressed === true
+                && measured?.motionStatic === true,
+              pauseKeyboardVerified,
+              focusVerified: navigationFocus?.focusVerified,
+              navigationVerified,
+              documentRequestSeen: originalRequestCount >= 1
+                && navigationRequestCount >= (navigationHref === url ? 2 : 1),
+              unexpectedRequestCount: requestUrls.filter((requestUrl) => !allowedUrls.includes(requestUrl)).length
+                + (measured?.unexpectedResourceCount ?? 0),
+              consoleErrorCount: browserLogs.filter(({ level }) => ['SEVERE', 'ERROR'].includes(level)).length,
               miniappReady: measured?.miniappReady,
+              noJsControlsDisabled: measured?.noJsControlsDisabled,
+              bilingualStaticVisible: measured?.bilingualStaticVisible,
+              challengeSha256: sha256(Buffer.from(challenge)),
             });
           }
         } finally {
@@ -469,13 +737,14 @@ export async function measureBrowserEvidence({
     artifactSha256: reviewedArtifactSha256,
     checkedAt,
     nonceSha256: sha256(nonce),
-    viewports: BROWSER_VIEWPORTS.map(({ id }) => id),
-    locales: [...BROWSER_LOCALES],
-    javascriptModes: [...BROWSER_JAVASCRIPT_MODES],
     routes,
     observations,
   };
-  evidence.measurementSha256 = sha256(Buffer.from(canonicalJson(evidence)));
+  for (const observation of evidence.observations) Object.freeze(observation);
+  Object.freeze(evidence.routes);
+  Object.freeze(evidence.observations);
+  Object.freeze(evidence);
+  browserRunnerReceipts.add(evidence);
   validateBrowserEvidence(evidence, artifact, authority);
   return evidence;
 }
@@ -650,7 +919,7 @@ export async function verifyOrigin({
   };
 }
 
-export function validateProductionEvidence(evidence, artifact, authority) {
+export function validateProductionEvidence(evidence, artifact, authority, reviewedBrowserMeasurement) {
   validateArtifactAuthority(artifact, authority);
   assertExactKeys(evidence, [
     'schemaVersion',
@@ -701,7 +970,7 @@ export function validateProductionEvidence(evidence, artifact, authority) {
   }
 
   validateServerInventoryEvidence(evidence.serverInventory, artifact, authority);
-  validateBrowserEvidence(evidence.browser, artifact, authority);
+  validateBrowserEvidence(evidence.browser, artifact, authority, reviewedBrowserMeasurement);
   assertExactKeys(evidence.controls, ['unrelatedAssetRetained', 'terminalRouteRetained'], 'PRODUCTION_CONTROLS');
   if (
     evidence.controls.unrelatedAssetRetained !== true
@@ -806,14 +1075,18 @@ export async function verifyAppleCdn({
   return { status: 'verified', sha256: expected.sha256 };
 }
 
-export function checkSanitizedProductionEvidence(root = projectRoot, authority = undefined) {
+export function checkSanitizedProductionEvidence(
+  root = projectRoot,
+  authority = undefined,
+  reviewedBrowserMeasurement = undefined,
+) {
   const evidencePath = resolve(root, 'release/production-urls.json');
   if (!existsSync(evidencePath)) throw new Error('PRODUCTION_EVIDENCE_MISSING');
   const artifactPath = resolve(root, 'release/web-artifacts.json');
   if (!existsSync(artifactPath)) throw new Error('WEB_ARTIFACT_EVIDENCE_MISSING');
   const evidence = parseCanonicalFile(evidencePath, 'PRODUCTION_EVIDENCE');
   const artifact = parseCanonicalFile(artifactPath, 'WEB_ARTIFACT_EVIDENCE');
-  validateProductionEvidence(evidence, artifact, authority);
+  validateProductionEvidence(evidence, artifact, authority, reviewedBrowserMeasurement);
   if (evidence.appleCdn.status !== 'verified') throw new Error('APPLE_CDN_PENDING_PROPAGATION');
   return true;
 }
@@ -839,6 +1112,12 @@ function reviewedAuthority(arguments_) {
   };
 }
 
+function reviewedBrowserMeasurement(arguments_) {
+  return {
+    reviewedBrowserMeasurementSha256: optionValue(arguments_, 'reviewed-browser-measurement-sha256'),
+  };
+}
+
 function parseCanonicalStdin(label) {
   const raw = readFileSync(0, 'utf8');
   if (raw.startsWith('\ufeff')) throw new Error(`${label}_NONCANONICAL`);
@@ -858,9 +1137,13 @@ async function runCli() {
     if (arguments_.length > 1) assertArgumentSet(arguments_.slice(1), [
       `--reviewed-release-id=${optionValue(arguments_.slice(1), 'reviewed-release-id')}`,
       `--reviewed-artifact-sha256=${optionValue(arguments_.slice(1), 'reviewed-artifact-sha256')}`,
+      `--reviewed-browser-measurement-sha256=${optionValue(arguments_.slice(1), 'reviewed-browser-measurement-sha256')}`,
     ]);
     const authority = arguments_.length === 1 ? undefined : reviewedAuthority(arguments_.slice(1));
-    checkSanitizedProductionEvidence(projectRoot, authority);
+    const browserMeasurement = arguments_.length === 1
+      ? undefined
+      : reviewedBrowserMeasurement(arguments_.slice(1));
+    checkSanitizedProductionEvidence(projectRoot, authority, browserMeasurement);
     console.log('Sanitized production evidence verified.');
     return;
   }
@@ -920,7 +1203,6 @@ async function runCli() {
       webdriverUrl,
       productionConfirmation: 'cabohealth.org',
       checkedAt: new Date().toISOString(),
-      nonce: randomBytes(32),
     });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     return;

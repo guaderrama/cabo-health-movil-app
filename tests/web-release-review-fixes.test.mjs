@@ -264,22 +264,19 @@ test('central active-resource policy rejects every reviewed URL-bearing tag and 
   }
 });
 
-test('immutable bundle re-verification rejects empty extras and owner-writable crash state', async (context) => {
+test('private stage re-verification rejects empty extras and wrong root mode', async (context) => {
   for (const mutation of ['empty-extra', 'unsealed-root']) {
     await context.test(mutation, () => {
       const transport = fixtureTransport();
       const root = mkdtempSync(join(fixtureTmp, 'cabohealth-exact-tree-fixture-'));
-      mkdirSync(join(root, 'release'));
-      const first = runHelper(root, 'materialize-local', transport);
+      const first = runHelper(root, 'materialize-stage', transport, [transport.releaseId]);
       assert.equal(first.status, 0, first.stderr || first.stdout);
-      const bundle = join(root, 'release/web-bundles', transport.releaseId);
+      const bundle = join(root, 'stage', transport.releaseId, 'public_html');
       if (mutation === 'empty-extra') {
-        chmodSync(bundle, 0o755);
         mkdirSync(join(bundle, 'unexpected-empty'));
-        chmodSync(bundle, 0o555);
       }
-      else chmodSync(bundle, 0o700);
-      const second = runHelper(root, 'materialize-local', transport);
+      else chmodSync(bundle, 0o755);
+      const second = runHelper(root, 'materialize-stage', transport, [transport.releaseId]);
       assert.equal(second.status, 1, second.stderr || second.stdout);
       assert.equal(existsSync(join(bundle, '.well-known/apple-app-site-association')), true);
     });
@@ -297,7 +294,12 @@ test('absolute root walk rejects a symlinked intermediate ancestor without touch
   mkdirSync(outside);
   writeFileSync(join(outside, 'sentinel.txt'), 'outside unchanged\n', { flag: 'wx' });
   symlinkSync(real, join(parent, 'linked-root'));
-  const result = runHelper(join(parent, 'linked-root/root'), 'materialize-local', transport);
+  const result = runHelper(
+    join(parent, 'linked-root/root'),
+    'materialize-stage',
+    transport,
+    [transport.releaseId],
+  );
   assert.equal(result.status, 1, result.stderr || result.stdout);
   assert.equal(readFileSync(join(outside, 'sentinel.txt'), 'utf8'), 'outside unchanged\n');
   assert.equal(existsSync(join(real, 'root/release/web-bundles')), false);
@@ -317,13 +319,9 @@ test('root identity binding rejects a parent-entry swap without touching either 
   mkdirSync(root, { mode: 0o755 });
   mkdirSync(join(root, 'release'));
   writeFileSync(join(root, 'replacement-sentinel.txt'), 'replacement unchanged\n', { flag: 'wx' });
-  const result = runHelper(
-    root,
-    'materialize-local',
-    transport,
-    [],
-    { CABOHEALTH_EXPECTED_ROOT_ID: expectedRootIdentity },
-  );
+  const result = runHelper(root, 'materialize-stage', transport, [transport.releaseId], {
+    CABOHEALTH_EXPECTED_ROOT_ID: expectedRootIdentity,
+  });
   assert.equal(result.status, 1, result.stderr || result.stdout);
   assert.equal(readFileSync(join(retained, 'original-sentinel.txt'), 'utf8'), 'original unchanged\n');
   assert.equal(readFileSync(join(root, 'replacement-sentinel.txt'), 'utf8'), 'replacement unchanged\n');
@@ -393,8 +391,10 @@ test('promote-next stops after one unit and rollback restores a root-probe failu
         assert.equal(existsSync(join(root, 'stage', transport.releaseId, 'public_html', stageTarget)), true);
       }
       assert.equal(readFileSync(join(root, 'public_html/index.php'), 'utf8'), 'wordpress sentinel\n');
-      const rollback = runHelper(root, 'rollback-local', transport, [transport.releaseId]);
-      assert.equal(rollback.status, 0, rollback.stderr || rollback.stdout);
+      for (let index = stopIndex; index >= 0; index -= 1) {
+        const rollback = runHelper(root, 'rollback-next', transport, [transport.releaseId, String(index)]);
+        assert.equal(rollback.status, 0, rollback.stderr || rollback.stdout);
+      }
       assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), oldHtaccess);
       assert.deepEqual(readFileSync(join(root, 'public_html/apps/shared/shell.js')), oldShared);
       for (const target of targets.slice(2)) assert.equal(existsSync(join(root, target)), false, target);
@@ -415,7 +415,7 @@ test('rollback rejects a tampered slot before exchange and keeps reviewed new by
   const expectedNew = Buffer.from(transport.files.find(({ path }) => path === 'apps/.htaccess').bytesBase64, 'base64');
   const slot = join(root, 'rollback', transport.releaseId, '00-apps-htaccess');
   writeFileSync(slot, 'tampered rollback slot\n');
-  const rollback = runHelper(root, 'rollback-local', transport, [transport.releaseId]);
+  const rollback = runHelper(root, 'rollback-next', transport, [transport.releaseId, '0']);
   assert.equal(rollback.status, 1, rollback.stderr || rollback.stdout);
   assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), expectedNew);
 });
@@ -523,7 +523,9 @@ test('stage policy, modes, root identity, and partial journal fail closed withou
     const transport = fixtureTransport();
     const root = mkdtempSync(join(fixtureTmp, 'cabohealth-root-id-fixture-'));
     mkdirSync(join(root, 'release'));
-    const result = runHelper(root, 'materialize-local', transport, [], { CABOHEALTH_EXPECTED_ROOT_ID: '1:1' });
+    const result = runHelper(root, 'materialize-stage', transport, [transport.releaseId], {
+      CABOHEALTH_EXPECTED_ROOT_ID: '1:1',
+    });
     assert.equal(result.status, 1, result.stderr || result.stdout);
     assert.equal(existsSync(join(root, 'release/web-bundles')), false);
   });
@@ -541,9 +543,10 @@ test('stage policy, modes, root identity, and partial journal fail closed withou
       { flag: 'wx', mode: 0o600 },
     );
     const result = runHelper(root, 'promote-next', transport, [transport.releaseId]);
-    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.match(result.stderr, /ROLLBACK_TRANSITION_INVALID/u);
     assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), firstLive);
-    assert.equal(existsSync(join(root, 'public_html/apps/shared')), true);
+    assert.equal(existsSync(join(root, 'public_html/apps/shared')), false);
   });
 
   await context.test('journal mode', () => {
@@ -588,7 +591,7 @@ test('rollback rejects link, special, directory, mode, and post-exchange mismatc
         : mutation === 'post-exchange-error'
           ? { CABOHEALTH_TEST_FAULT: 'rollback-post-exchange-inventory-error' }
           : {};
-      const result = runHelper(root, 'rollback-local', transport, [transport.releaseId], env);
+      const result = runHelper(root, 'rollback-next', transport, [transport.releaseId, '0'], env);
       assert.equal(result.status, 1, result.stderr || result.stdout);
       assert.deepEqual(readFileSync(join(root, 'public_html/apps/.htaccess')), expectedNew);
     });
