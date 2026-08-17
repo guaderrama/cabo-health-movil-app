@@ -16,12 +16,24 @@ import {
   readVerifiedMiniappArtifact,
 } from './build-miniapps.mjs';
 import { canonicalAasaBytes, readReleaseIdentity } from './generate-aasa.mjs';
+import { assertStaticWebPolicy } from './web-release-policy.mjs';
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const APP_ID = 'DQ8PH2DZ3R.com.cabohealth.app';
 const helperPath = resolve(projectRoot, 'scripts/secure_web_release.py');
 const CAPSULE_SHA256 = 'b5f4f2a39a46df12f12c017e6ef31fbff0aeb71045b3af5a7456be852fea9334';
 const CAPSULE_SIZE = 161867;
+export const REVIEWED_MINIAPP_FILE_PINS = Object.freeze([
+  Object.freeze({ path: 'apps/.htaccess', size: 568, sha256: '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da' }),
+  Object.freeze({ path: 'apps/clinic-guide/app.js', size: 1436, sha256: '1565868ae2bc74769e5d036bc697a4e1d81f91740345ba67edf0628af5813243' }),
+  Object.freeze({ path: 'apps/clinic-guide/index.html', size: 20481, sha256: 'a0246074ba7734df7e28354a6ecfff39ac08d7ddd1da4e295f66f11ec77a18ee' }),
+  Object.freeze({ path: 'apps/healthy-recipes/app.js', size: 4049, sha256: '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090' }),
+  Object.freeze({ path: 'apps/healthy-recipes/index.html', size: 55957, sha256: '5f22027afcd1600fa36cd77974d48b6d2ddc4fe26e27fcf57f206a8520413829' }),
+  Object.freeze({ path: 'apps/shared/logo.png', size: 13598, sha256: 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117' }),
+  Object.freeze({ path: 'apps/shared/motion.js', size: 8996, sha256: '9ac97593f7339f6b7f1b9f4da6dafed4084185440022604b75754377291e56b7' }),
+  Object.freeze({ path: 'apps/shared/shell.js', size: 3769, sha256: 'd53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103' }),
+  Object.freeze({ path: 'apps/shared/styles.css', size: 9887, sha256: 'db0f0c531c453455d63aadba1dd4a99008337e555a746a7cbfee19e5a3d8f3ef' }),
+]);
 const LEGAL_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const LEGAL_SOURCES = Object.freeze([
   Object.freeze({ slug: 'privacy', source: 'web-hosting/cabohealth.org/app/privacy/index.html', output: 'app/privacy/index.html' }),
@@ -158,7 +170,7 @@ function assertExactKeys(value, keys, label) {
   ) throw new Error(`${label}_SCHEMA_INVALID`);
 }
 
-function assertFinalLegalPins(reviewedLegalSha256) {
+export function assertFinalLegalPins(reviewedLegalSha256) {
   assertExactKeys(reviewedLegalSha256, ['privacy', 'report-content', 'support', 'terms'], 'FINAL_LEGAL_PINS');
   for (const [slug, hash] of Object.entries(reviewedLegalSha256)) {
     if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/u.test(hash)) {
@@ -166,9 +178,10 @@ function assertFinalLegalPins(reviewedLegalSha256) {
     }
     if (hash === DRAFT_LEGAL_SHA256[slug]) throw new Error(`DRAFT_LEGAL_PIN_FORBIDDEN: ${slug}`);
   }
+  return true;
 }
 
-function readCapsuleSnapshot(root) {
+export function captureReviewedCapsule(root, artifactReader = readVerifiedMiniappArtifact) {
   const capsulePath = resolve(root, 'miniapps/dist');
   const beforePathStats = lstatSync(capsulePath);
   if (
@@ -196,7 +209,7 @@ function readCapsuleSnapshot(root) {
   if (bytes.byteLength !== CAPSULE_SIZE || sha256(bytes) !== CAPSULE_SHA256) {
     throw new Error('TASK6B_CAPSULE_ATTESTATION_FAILED');
   }
-  const artifact = readVerifiedMiniappArtifact({
+  const artifact = artifactReader({
     projectRoot: root,
     outputRoot: capsulePath,
     expectedEntrySlugs: ['healthy-recipes', 'clinic-guide'],
@@ -215,17 +228,24 @@ function readCapsuleSnapshot(root) {
     || JSON.stringify(artifact.manifest.entrySlugs) !== JSON.stringify(['healthy-recipes', 'clinic-guide'])
     || JSON.stringify([...artifact.files.keys()]) !== JSON.stringify(MINIAPP_PATHS)
   ) throw new Error('TASK6B_CAPSULE_PAYLOAD_INVALID');
+  for (const pin of REVIEWED_MINIAPP_FILE_PINS) {
+    const captured = artifact.files.get(pin.path);
+    if (!Buffer.isBuffer(captured) || captured.byteLength !== pin.size || sha256(captured) !== pin.sha256) {
+      throw new Error(`TASK6B_CAPTURED_BUFFER_PIN_MISMATCH: ${pin.path}`);
+    }
+  }
   return {
     bytes,
     files: new Map([...artifact.files].map(([path, contents]) => [path, Buffer.from(contents)])),
   };
 }
 
-function runInputCapture(root) {
+function runInputCapture(root, expectedRootIdentity = attestRoot(root)) {
   const result = spawnSync('python3', [helperPath, 'capture-reviewed-inputs', root], {
     cwd: root,
     encoding: 'utf8',
     maxBuffer: 4 * 1024 * 1024,
+    env: { ...process.env, CABOHEALTH_EXPECTED_ROOT_ID: expectedRootIdentity },
   });
   if (result.status !== 0) throw new Error(`WEB_INPUT_CAPTURE_FAILED: ${result.stderr.trim()}`);
   let snapshot;
@@ -261,7 +281,32 @@ function runInputCapture(root) {
     ) throw new Error(`WEB_INPUT_CAPTURE_INVALID: ${entry.path ?? index}`);
     files.set(entry.path, bytes);
   }
+  if (attestRoot(root) !== expectedRootIdentity) throw new Error('WEB_RELEASE_PROJECT_ROOT_CHANGED');
   return files;
+}
+
+function attestRoot(root) {
+  const result = spawnSync('python3', [helperPath, 'root-identity', resolve(root)], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) throw new Error(`WEB_RELEASE_PROJECT_ROOT_UNSAFE: ${result.stderr.trim()}`);
+  let value;
+  try {
+    value = JSON.parse(result.stdout);
+  } catch {
+    throw new Error('WEB_RELEASE_ROOT_IDENTITY_INVALID');
+  }
+  assertExactKeys(value, ['schemaVersion', 'device', 'inode'], 'WEB_RELEASE_ROOT_IDENTITY');
+  if (
+    value.schemaVersion !== 1
+    || !Number.isSafeInteger(value.device)
+    || !Number.isSafeInteger(value.inode)
+    || value.device < 0
+    || value.inode <= 0
+    || `${JSON.stringify(value)}\n` !== result.stdout
+  ) throw new Error('WEB_RELEASE_ROOT_IDENTITY_INVALID');
+  return `${value.device}:${value.inode}`;
 }
 
 function tags(text, name) {
@@ -274,6 +319,7 @@ function attribute(tag, name) {
 }
 
 function assertFinalLegalHtml(slug, bytes) {
+  assertStaticWebPolicy(`app/${slug}/index.html`, bytes);
   const text = bytes.toString('utf8');
   if (!Buffer.from(text, 'utf8').equals(bytes)) throw new Error(`LEGAL_UTF8_INVALID: ${slug}`);
   const canonicals = tags(text, 'link').filter((tag) => attribute(tag, 'rel')?.toLowerCase() === 'canonical');
@@ -315,15 +361,20 @@ export function createWebArtifactManifest(transport, inputs) {
   };
 }
 
-export function planWebRelease(root = projectRoot, reviewedLegalSha256 = FINAL_LEGAL_SHA256) {
+export function planWebRelease(
+  root = projectRoot,
+  reviewedLegalSha256 = FINAL_LEGAL_SHA256,
+  expectedRootIdentity = attestRoot(root),
+) {
   const lexicalRoot = resolve(root);
+  if (attestRoot(lexicalRoot) !== expectedRootIdentity) throw new Error('WEB_RELEASE_PROJECT_ROOT_CHANGED');
   const rootStats = lstatSync(lexicalRoot);
   if (!rootStats.isDirectory() || rootStats.isSymbolicLink() || realpathSync(lexicalRoot) !== lexicalRoot) {
     throw new Error('WEB_RELEASE_PROJECT_ROOT_UNSAFE');
   }
   assertFinalLegalPins(reviewedLegalSha256);
-  const capsule = readCapsuleSnapshot(lexicalRoot);
-  const capturedInputs = runInputCapture(lexicalRoot);
+  const capsule = captureReviewedCapsule(lexicalRoot);
+  const capturedInputs = runInputCapture(lexicalRoot, expectedRootIdentity);
   const { appId } = readReleaseIdentity(lexicalRoot);
   if (appId !== APP_ID) throw new Error('WEB_RELEASE_APP_ID_INVALID');
 
@@ -375,26 +426,29 @@ export function planWebRelease(root = projectRoot, reviewedLegalSha256 = FINAL_L
     inputFor('web-hosting/cabohealth.org/apps/.htaccess', 'apache-security', capturedInputs.get('web-hosting/cabohealth.org/apps/.htaccess')),
   ];
   const manifest = createWebArtifactManifest(transport, inputs);
+  if (attestRoot(lexicalRoot) !== expectedRootIdentity) throw new Error('WEB_RELEASE_PROJECT_ROOT_CHANGED');
   return Object.freeze({ manifest, transport });
 }
 
-function assertComplianceReady(root) {
+function assertComplianceReady(root, rootIdentity) {
   const result = spawnSync(
     process.execPath,
-    [resolve(root, 'scripts/verify-minimal-v1.mjs'), root],
+    [resolve(projectRoot, 'scripts/verify-minimal-v1.mjs'), root],
     { cwd: root, encoding: 'utf8' },
   );
   if (result.status !== 0) {
     throw new Error('COMPLIANCE_FACTS_INCOMPLETE');
   }
+  if (attestRoot(root) !== rootIdentity) throw new Error('WEB_RELEASE_PROJECT_ROOT_CHANGED');
 }
 
-function runMutationHelper(arguments_, root, input) {
+function runMutationHelper(arguments_, root, input, rootIdentity) {
   const result = spawnSync('python3', [helperPath, ...arguments_], {
     cwd: root,
     encoding: 'utf8',
     input,
     maxBuffer: 8 * 1024 * 1024,
+    env: { ...process.env, CABOHEALTH_EXPECTED_ROOT_ID: rootIdentity },
   });
   if (result.status !== 0) {
     throw new Error(`WEB_RELEASE_DESCRIPTOR_HELPER_FAILED: ${result.stderr.trim()}`);
@@ -404,18 +458,21 @@ function runMutationHelper(arguments_, root, input) {
 
 export function assembleWebRelease({ root = projectRoot, mode = 'check' } = {}) {
   if (!['check', 'assemble'].includes(mode)) throw new Error('WEB_RELEASE_MODE_INVALID');
-  assertComplianceReady(root);
-  const plan = planWebRelease(root, FINAL_LEGAL_SHA256);
+  const rootIdentity = attestRoot(root);
+  assertComplianceReady(root, rootIdentity);
+  const plan = planWebRelease(root, FINAL_LEGAL_SHA256, rootIdentity);
   if (mode === 'check') return plan;
   runMutationHelper(
     ['materialize-local', root],
     root,
     canonicalJson(plan.transport),
+    rootIdentity,
   );
   runMutationHelper(
-    ['publish-manifest-local', root],
+    ['publish-manifest-local', root, sha256(Buffer.from(canonicalJson(plan.manifest)))],
     root,
     canonicalJson({ transport: plan.transport, manifest: plan.manifest }),
+    rootIdentity,
   );
   return plan;
 }

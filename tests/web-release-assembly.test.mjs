@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const fixtureTmp = realpathSync(tmpdir());
 const assemblerPath = join(projectRoot, 'scripts/assemble-web-release.mjs');
 const helperPath = join(projectRoot, 'scripts/secure_web_release.py');
 const payloadPaths = Object.freeze([
@@ -86,7 +87,7 @@ function fixtureTransport() {
 }
 
 function materializeFixture(transport = fixtureTransport()) {
-  const root = mkdtempSync(join(tmpdir(), 'cabohealth-web-release-fixture-'));
+  const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-release-fixture-'));
   mkdirSync(join(root, 'release'));
   const result = spawnSync('python3', [helperPath, 'materialize-local', root], {
     cwd: projectRoot,
@@ -192,7 +193,7 @@ test('two independent captured maps produce the same independently derived relea
 });
 
 test('input capture reads only the fixed public source allowlist through retained directory descriptors', () => {
-  const root = mkdtempSync(join(tmpdir(), 'cabohealth-web-input-fixture-'));
+  const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-input-fixture-'));
   const sourcePaths = [
     'miniapps/shared/security-headers.conf',
     'web-hosting/cabohealth.org/.well-known/apple-app-site-association',
@@ -221,7 +222,7 @@ test('input capture reads only the fixed public source allowlist through retaine
 
 test('remote materialization foundation creates only the nine fixed promotion leaves in a private local stage', () => {
   const transport = fixtureTransport();
-  const root = mkdtempSync(join(tmpdir(), 'cabohealth-web-stage-fixture-'));
+  const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-stage-fixture-'));
   const result = spawnSync('python3', [helperPath, 'materialize-stage', root, transport.releaseId], {
     cwd: projectRoot,
     encoding: 'utf8',
@@ -236,13 +237,13 @@ test('remote materialization foundation creates only the nine fixed promotion le
       Buffer.from(entry.bytesBase64, 'base64'),
     );
   }
-  assert.equal(statSync(join(publicRoot, 'apps')).mode & 0o777, 0o700);
+  assert.equal(statSync(join(publicRoot, 'apps')).mode & 0o777, 0o755);
   assert.equal(statSync(join(publicRoot, 'apps/shared')).mode & 0o777, 0o755);
 });
 
 test('atomic local promotion and rollback change only the nine leaves and restore present and absent targets', () => {
   const transport = fixtureTransport();
-  const root = mkdtempSync(join(tmpdir(), 'cabohealth-web-promote-fixture-'));
+  const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-promote-fixture-'));
   const stageResult = spawnSync('python3', [helperPath, 'materialize-stage', root, transport.releaseId], {
     cwd: projectRoot,
     encoding: 'utf8',
@@ -268,12 +269,15 @@ test('atomic local promotion and rollback change only the nine leaves and restor
   ]);
   for (const [path, bytes] of sentinels) writeFixturePath(root, path, bytes);
 
-  const promoteResult = spawnSync(
-    'python3',
-    [helperPath, 'promote-local', root, transport.releaseId],
-    { cwd: projectRoot, encoding: 'utf8', input: canonicalJson(transport) },
-  );
-  assert.equal(promoteResult.status, 0, promoteResult.stderr || promoteResult.stdout);
+  for (let index = 0; index < promoteTargets.length; index += 1) {
+    const promoteResult = spawnSync(
+      'python3',
+      [helperPath, 'promote-next', root, transport.releaseId],
+      { cwd: projectRoot, encoding: 'utf8', input: canonicalJson(transport) },
+    );
+    assert.equal(promoteResult.status, 0, promoteResult.stderr || promoteResult.stdout);
+    assert.equal(JSON.parse(promoteResult.stdout).index, index);
+  }
   for (const entry of transport.files) {
     assert.deepEqual(
       readFileSync(join(root, 'public_html', entry.path)),
@@ -305,7 +309,8 @@ test('artifact provenance is exclusively published only after descriptor-relativ
   const { result, root, transport } = materializeFixture();
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const manifest = fixtureArtifactManifest(transport);
-  const publish = () => spawnSync('python3', [helperPath, 'publish-manifest-local', root], {
+  const manifestSha256 = sha256(Buffer.from(canonicalJson(manifest)));
+  const publish = (reviewedHash = manifestSha256) => spawnSync('python3', [helperPath, 'publish-manifest-local', root, reviewedHash], {
     cwd: projectRoot,
     encoding: 'utf8',
     input: canonicalJson({ transport, manifest }),
@@ -322,6 +327,14 @@ test('artifact provenance is exclusively published only after descriptor-relativ
   const after = statSync(path);
   assert.equal(after.ino, before.ino);
   assert.equal(after.mtimeMs, before.mtimeMs);
+  const fabricated = structuredClone(manifest);
+  fabricated.inputs[0].sha256 = '0'.repeat(64);
+  const rejected = spawnSync('python3', [helperPath, 'publish-manifest-local', root, manifestSha256], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    input: canonicalJson({ transport, manifest: fabricated }),
+  });
+  assert.equal(rejected.status, 1, rejected.stderr || rejected.stdout);
 });
 
 test('materializer rejects schema, path, metadata, byte, and reviewed-release mutations before output writes', async (context) => {
@@ -341,7 +354,7 @@ test('materializer rejects schema, path, metadata, byte, and reviewed-release mu
     await context.test(name, () => {
       const value = structuredClone(fixtureTransport());
       mutate(value);
-      const root = mkdtempSync(join(tmpdir(), 'cabohealth-web-reject-fixture-'));
+      const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-reject-fixture-'));
       mkdirSync(join(root, 'release'));
       writeFileSync(join(root, 'release/sentinel.txt'), 'unchanged\n', { flag: 'wx' });
       const result = spawnSync('python3', [helperPath, 'materialize-local', root], {
@@ -358,7 +371,7 @@ test('materializer rejects schema, path, metadata, byte, and reviewed-release mu
 
 test('pre-existing partial final directory is quarantined in place without replacement or cleanup', () => {
   const transport = fixtureTransport();
-  const root = mkdtempSync(join(tmpdir(), 'cabohealth-web-partial-fixture-'));
+  const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-partial-fixture-'));
   mkdirSync(join(root, 'release'));
   mkdirSync(join(root, 'release/web-bundles'));
   mkdirSync(join(root, 'release/web-bundles', transport.releaseId));
@@ -374,7 +387,7 @@ test('pre-existing partial final directory is quarantined in place without repla
 });
 
 test('reviewed input capture rejects a symlinked leaf and leaves the outside sentinel unchanged', () => {
-  const root = mkdtempSync(join(tmpdir(), 'cabohealth-web-symlink-fixture-'));
+  const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-symlink-fixture-'));
   const outside = join(root, 'outside-sentinel.html');
   writeFileSync(outside, 'outside\n', { flag: 'wx' });
   const sourcePaths = [
@@ -407,7 +420,7 @@ test('remote stage rejects a coordinated transport edit when the independently r
   files.set('apps/shared/shell.js', Buffer.from('coordinated tamper\n'));
   const tampered = module.createWebReleaseTransport(files);
   assert.notEqual(tampered.releaseId, original.releaseId);
-  const root = mkdtempSync(join(tmpdir(), 'cabohealth-web-reviewed-id-fixture-'));
+  const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-reviewed-id-fixture-'));
   const result = spawnSync(
     'python3',
     [helperPath, 'materialize-stage', root, original.releaseId],
@@ -419,7 +432,7 @@ test('remote stage rejects a coordinated transport edit when the independently r
 
 test('promotion rejects unexpected target inventory before changing any live leaf', () => {
   const transport = fixtureTransport();
-  const root = mkdtempSync(join(tmpdir(), 'cabohealth-web-inventory-fixture-'));
+  const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-inventory-fixture-'));
   const stage = spawnSync(
     'python3',
     [helperPath, 'materialize-stage', root, transport.releaseId],
@@ -434,7 +447,7 @@ test('promotion rejects unexpected target inventory before changing any live lea
   writeFixturePath(root, 'public_html/index.php', 'wordpress unchanged\n');
   const result = spawnSync(
     'python3',
-    [helperPath, 'promote-local', root, transport.releaseId],
+    [helperPath, 'promote-next', root, transport.releaseId],
     { cwd: projectRoot, encoding: 'utf8', input: canonicalJson(transport) },
   );
   assert.equal(result.status, 1, result.stdout || result.stderr);

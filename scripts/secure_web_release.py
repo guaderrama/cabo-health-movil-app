@@ -12,6 +12,7 @@ import base64
 import ctypes
 import errno
 import hashlib
+from html.parser import HTMLParser
 import json
 import os
 import platform
@@ -99,6 +100,20 @@ ALLOWED_MEDIA_TYPES = {
 }
 ALLOWED_KINDS = {"task6b-miniapp", "task7-legal", "aasa", "apache-security"}
 OPEN_DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+OPEN_FILE_READ = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+TREE_DIRECTORIES = (
+    "",
+    ".well-known",
+    "app",
+    "app/privacy",
+    "app/report-content",
+    "app/support",
+    "app/terms",
+    "apps",
+    "apps/clinic-guide",
+    "apps/healthy-recipes",
+    "apps/shared",
+)
 UNITS = (
     ("apps/.htaccess", "00-apps-htaccess", ("apps/.htaccess",)),
     ("apps/shared", "01-apps-shared", (
@@ -164,6 +179,30 @@ INPUT_MANIFEST_KINDS = (
     "apache-security",
     "apache-security",
 )
+URL_ATTRIBUTE_POLICY = {
+    "img": ("src", "srcset"),
+    "source": ("src", "srcset"),
+    "video": ("src", "poster"),
+    "audio": ("src",),
+    "track": ("src",),
+    "link": ("href",),
+    "script": ("src",),
+    "iframe": ("src",),
+    "embed": ("src",),
+    "object": ("data",),
+    "form": ("action",),
+    "input": ("src", "formaction"),
+    "button": ("formaction",),
+    "use": ("href", "xlink:href"),
+    "image": ("href", "xlink:href"),
+    "a": ("ping",),
+    "area": ("ping",),
+    "base": ("href",),
+    "body": ("background",),
+    "table": ("background",),
+    "td": ("background",),
+    "th": ("background",),
+}
 
 
 class ReleaseError(Exception):
@@ -172,6 +211,15 @@ class ReleaseError(Exception):
 
 def fail(message: str) -> None:
     raise ReleaseError(message)
+
+
+def test_fault_enabled(root_path: str, name: str) -> bool:
+    requested = os.environ.get("CABOHEALTH_TEST_FAULT")
+    if requested != name:
+        return False
+    if "cabohealth-" not in os.path.basename(root_path) or "-fixture-" not in os.path.basename(root_path):
+        fail("TEST_FAULT_FORBIDDEN")
+    return True
 
 
 def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -224,6 +272,53 @@ def expected_kind(path: str) -> str:
     if path.startswith("app/"):
         return "task7-legal"
     return "aasa"
+
+
+def reviewed_local_url(value: str) -> bool:
+    if not value or value.startswith("//") or "\\" in value:
+        return False
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        return False
+    if value.startswith("https://cabohealth.org/") or value.startswith("/"):
+        return True
+    return re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", value) is None
+
+
+class ActiveResourceParser(HTMLParser):
+    def __init__(self, path: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.path = path
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if tag.lower() == "meta" and (values.get("http-equiv") or "").lower() == "refresh":
+            fail(f"WEB_ACTIVE_RESOURCE_FORBIDDEN: {self.path}: meta[refresh]")
+        for attribute in URL_ATTRIBUTE_POLICY.get(tag.lower(), ()):
+            value = values.get(attribute)
+            if value is None:
+                continue
+            candidates = [value]
+            if attribute == "srcset":
+                candidates = [item.strip().split()[0] if item.strip() else "" for item in value.split(",")]
+            if any(not reviewed_local_url(candidate) for candidate in candidates):
+                fail(f"WEB_ACTIVE_RESOURCE_FORBIDDEN: {self.path}: {tag}[{attribute}]")
+
+
+def assert_static_web_policy(path: str, contents: bytes) -> None:
+    try:
+        text = contents.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ReleaseError(f"WEB_STATIC_POLICY_UTF8_INVALID: {path}") from error
+    parser = ActiveResourceParser(path)
+    try:
+        parser.feed(text)
+        parser.close()
+    except ReleaseError:
+        raise
+    except Exception as error:
+        raise ReleaseError(f"WEB_STATIC_POLICY_HTML_INVALID: {path}") from error
+    if re.search(r"@import\s+(?:url\()?\s*[\"']?(?:https?:|//)|url\(\s*[\"']?(?:https?:|//)|http://", text, re.I):
+        fail(f"WEB_ACTIVE_RESOURCE_FORBIDDEN: {path}: css-url")
 
 
 def parse_transport(raw: bytes) -> tuple[dict[str, Any], dict[str, bytes]]:
@@ -283,6 +378,8 @@ def parse_transport(raw: bytes) -> tuple[dict[str, Any], dict[str, bytes]]:
             fail(f"TRANSPORT_FILE_ENCODING_NONCANONICAL: {path}")
         if len(contents) != item["size"] or hashlib.sha256(contents).hexdigest() != item["sha256"]:
             fail(f"TRANSPORT_FILE_BYTES_INVALID: {path}")
+        if path.endswith(".html"):
+            assert_static_web_policy(path, contents)
         buffers[path] = contents
         metadata.append({key: item[key] for key in META_KEYS})
     if tuple(paths) != PAYLOAD_PATHS or len(set(paths)) != len(paths):
@@ -303,40 +400,70 @@ def parse_transport(raw: bytes) -> tuple[dict[str, Any], dict[str, bytes]]:
     return value, buffers
 
 
-def validate_owned_directory(fd: int, label: str, *, writable: bool = False) -> os.stat_result:
+def validate_owned_directory(fd: int, label: str, *, mode: int | None = None) -> os.stat_result:
     info = os.fstat(fd)
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
         fail(f"UNOWNED_DIRECTORY: {label}")
     if info.st_mode & 0o022:
         fail(f"UNSAFE_DIRECTORY_MODE: {label}")
+    if mode is not None and info.st_mode & 0o777 != mode:
+        fail(f"DIRECTORY_MODE_INVALID: {label}")
     return info
 
 
-def open_directory(name: str, parent_fd: int, label: str, *, writable: bool = False) -> int:
+def open_directory(name: str, parent_fd: int, label: str, *, mode: int | None = None) -> int:
     try:
         fd = os.open(name, OPEN_DIR, dir_fd=parent_fd)
     except OSError as error:
         raise ReleaseError(f"UNSAFE_DIRECTORY: {label}") from error
-    validate_owned_directory(fd, label, writable=writable)
+    validate_owned_directory(fd, label, mode=mode)
     return fd
 
 
 def open_root(path: str) -> int:
+    if not os.path.isabs(path) or os.path.normpath(path) != path:
+        fail("UNSAFE_ROOT_DIRECTORY")
+    directory_fd = os.open("/", OPEN_DIR)
     try:
-        fd = os.open(path, OPEN_DIR)
-    except OSError as error:
-        raise ReleaseError("UNSAFE_ROOT_DIRECTORY") from error
-    validate_owned_directory(fd, "root")
-    return fd
+        components = path.split("/")[1:]
+        if not components or any(component in ("", ".", "..") for component in components):
+            fail("UNSAFE_ROOT_DIRECTORY")
+        for index, component in enumerate(components):
+            try:
+                child_fd = os.open(component, OPEN_DIR, dir_fd=directory_fd)
+            except OSError as error:
+                raise ReleaseError("UNSAFE_ROOT_DIRECTORY") from error
+            info = os.fstat(child_fd)
+            if (
+                not stat.S_ISDIR(info.st_mode)
+                or info.st_uid not in (0, os.geteuid())
+                or info.st_mode & 0o022
+            ):
+                os.close(child_fd)
+                fail("UNSAFE_ROOT_DIRECTORY")
+            os.close(directory_fd)
+            directory_fd = child_fd
+            if index == len(components) - 1:
+                validate_owned_directory(directory_fd, "root")
+                expected = os.environ.get("CABOHEALTH_EXPECTED_ROOT_ID")
+                actual = f"{info.st_dev}:{info.st_ino}"
+                if expected is not None and expected != actual:
+                    fail("ROOT_IDENTITY_MISMATCH")
+        return directory_fd
+    except Exception:
+        os.close(directory_fd)
+        raise
 
 
-def ensure_directory(name: str, parent_fd: int, label: str) -> int:
+def ensure_directory(name: str, parent_fd: int, label: str, mode: int = 0o700) -> int:
     try:
-        os.mkdir(name, 0o700, dir_fd=parent_fd)
+        os.mkdir(name, mode, dir_fd=parent_fd)
         os.fsync(parent_fd)
     except FileExistsError:
         pass
-    return open_directory(name, parent_fd, label)
+    fd = open_directory(name, parent_fd, label, mode=mode)
+    os.fsync(fd)
+    return fd
 
 
 def rename_with_flag(src_fd: int, src: str, dst_fd: int, dst: str, operation: str) -> None:
@@ -393,7 +520,7 @@ def read_fixed_file(root_fd: int, path: str) -> bytes:
                 directory_fd = child_fd
                 continue
             try:
-                file_fd = os.open(component, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+                file_fd = os.open(component, OPEN_FILE_READ, dir_fd=directory_fd)
             except OSError as error:
                 raise ReleaseError(f"UNSAFE_INPUT_FILE: {path}") from error
             try:
@@ -416,7 +543,7 @@ def open_parent_for_target(public_fd: int, target: str) -> tuple[int, str]:
     directory_fd = os.dup(public_fd)
     try:
         for component in components[:-1]:
-            child_fd = open_directory(component, directory_fd, target, writable=True)
+            child_fd = open_directory(component, directory_fd, target, mode=0o755)
             os.close(directory_fd)
             directory_fd = child_fd
         return directory_fd, components[-1]
@@ -433,56 +560,88 @@ def stat_if_present(parent_fd: int, name: str) -> os.stat_result | None:
 
 
 def inventory_leaf(parent_fd: int, name: str, expected_paths: tuple[str, ...], target: str) -> str | None:
-    info = stat_if_present(parent_fd, name)
-    if info is None:
+    try:
+        fd = os.open(name, OPEN_FILE_READ, dir_fd=parent_fd)
+    except FileNotFoundError:
         return None
-    if info.st_uid != os.geteuid():
-        fail(f"UNOWNED_LIVE_TARGET: {target}")
+    except OSError as error:
+        raise ReleaseError(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}") from error
     entries: list[dict[str, Any]] = []
     expects_file = expected_paths == (target,)
-    if stat.S_ISREG(info.st_mode):
-        if not expects_file or info.st_nlink != 1 or info.st_mode & 0o111:
-            fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
-        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
-        try:
+    try:
+        info = os.fstat(fd)
+        if info.st_uid != os.geteuid():
+            fail(f"UNOWNED_LIVE_TARGET: {target}")
+        if stat.S_ISREG(info.st_mode):
+            if not expects_file or info.st_nlink != 1 or info.st_mode & 0o777 != 0o644:
+                fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
             contents = read_all(fd)
-        finally:
-            os.close(fd)
-        entries.append({
-            "path": expected_paths[0],
-            "size": len(contents),
-            "sha256": hashlib.sha256(contents).hexdigest(),
-            "mode": f"{info.st_mode & 0o777:04o}",
-        })
-    elif stat.S_ISDIR(info.st_mode):
-        if expects_file:
-            fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
-        leaf_fd = open_directory(name, parent_fd, target, writable=True)
-        try:
+            after = os.fstat(fd)
+            if (info.st_dev, info.st_ino, info.st_size, info.st_mode, info.st_uid, info.st_nlink) != (
+                after.st_dev, after.st_ino, after.st_size, after.st_mode, after.st_uid, after.st_nlink
+            ):
+                fail(f"LIVE_TARGET_CHANGED_DURING_INVENTORY: {target}")
+            entries.append({
+                "path": expected_paths[0],
+                "size": len(contents),
+                "sha256": hashlib.sha256(contents).hexdigest(),
+                "mode": "0644",
+            })
+        elif stat.S_ISDIR(info.st_mode):
+            if expects_file or info.st_mode & 0o777 != 0o755:
+                fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
             prefix = f"{target}/"
             relative_expected = tuple(path.removeprefix(prefix) for path in expected_paths)
-            found = list_regular_tree(leaf_fd)
+            found = tuple(sorted(os.listdir(fd), key=lambda item: item.encode("ascii")))
             if found != relative_expected:
                 fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
             for relative_path, full_path in zip(found, expected_paths, strict=True):
-                contents = read_fixed_file(leaf_fd, relative_path)
-                file_parent_fd, file_name = open_parent_for_target(leaf_fd, relative_path)
                 try:
-                    file_info = os.stat(file_name, dir_fd=file_parent_fd, follow_symlinks=False)
+                    file_fd = os.open(relative_path, OPEN_FILE_READ, dir_fd=fd)
+                except OSError as error:
+                    raise ReleaseError(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}") from error
+                try:
+                    before = os.fstat(file_fd)
+                    if (
+                        not stat.S_ISREG(before.st_mode)
+                        or before.st_uid != os.geteuid()
+                        or before.st_nlink != 1
+                        or before.st_mode & 0o777 != 0o644
+                    ):
+                        fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
+                    contents = read_all(file_fd)
+                    after = os.fstat(file_fd)
+                    if (before.st_dev, before.st_ino, before.st_size, before.st_mode, before.st_uid, before.st_nlink) != (
+                        after.st_dev, after.st_ino, after.st_size, after.st_mode, after.st_uid, after.st_nlink
+                    ):
+                        fail(f"LIVE_TARGET_CHANGED_DURING_INVENTORY: {target}")
+                    entries.append({
+                        "path": full_path,
+                        "size": len(contents),
+                        "sha256": hashlib.sha256(contents).hexdigest(),
+                        "mode": "0644",
+                    })
                 finally:
-                    os.close(file_parent_fd)
-                if file_info.st_mode & 0o111:
-                    fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
-                entries.append({
-                    "path": full_path,
-                    "size": len(contents),
-                    "sha256": hashlib.sha256(contents).hexdigest(),
-                    "mode": f"{file_info.st_mode & 0o777:04o}",
-                })
-        finally:
-            os.close(leaf_fd)
-    else:
-        fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
+                    os.close(file_fd)
+            after_directory = os.fstat(fd)
+            if (info.st_dev, info.st_ino, info.st_mode) != (
+                after_directory.st_dev, after_directory.st_ino, after_directory.st_mode
+            ):
+                fail(f"LIVE_TARGET_CHANGED_DURING_INVENTORY: {target}")
+        else:
+            fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
+    finally:
+        os.close(fd)
+    return hashlib.sha256(canonical_json(entries)).hexdigest()
+
+
+def expected_unit_hash(payload_paths: tuple[str, ...], buffers: dict[str, bytes]) -> str:
+    entries = [{
+        "path": path,
+        "size": len(buffers[path]),
+        "sha256": hashlib.sha256(buffers[path]).hexdigest(),
+        "mode": "0644",
+    } for path in payload_paths]
     return hashlib.sha256(canonical_json(entries)).hexdigest()
 
 
@@ -502,17 +661,28 @@ def create_journal(rollback_fd: int) -> int:
         )
     except OSError as error:
         raise ReleaseError("ROLLBACK_JOURNAL_COLLISION") from error
+    os.fchmod(fd, 0o600)
+    os.fsync(fd)
     os.fsync(rollback_fd)
     return fd
 
 
 def open_journal(rollback_fd: int) -> int:
     try:
-        fd = os.open("journal.jsonl", os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW, dir_fd=rollback_fd)
+        fd = os.open(
+            "journal.jsonl",
+            os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK,
+            dir_fd=rollback_fd,
+        )
     except OSError as error:
         raise ReleaseError("ROLLBACK_JOURNAL_INVALID") from error
     info = os.fstat(fd)
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1:
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or info.st_uid != os.geteuid()
+        or info.st_nlink != 1
+        or info.st_mode & 0o777 != 0o600
+    ):
         os.close(fd)
         fail("ROLLBACK_JOURNAL_INVALID")
     return fd
@@ -537,11 +707,36 @@ def append_journal(fd: int, entry: dict[str, Any]) -> None:
 
 def read_journal(rollback_fd: int) -> list[dict[str, Any]]:
     try:
-        fd = os.open("journal.jsonl", os.O_RDONLY | os.O_NOFOLLOW, dir_fd=rollback_fd)
+        fd = os.open("journal.jsonl", OPEN_FILE_READ, dir_fd=rollback_fd)
     except OSError as error:
         raise ReleaseError("ROLLBACK_JOURNAL_INVALID") from error
     try:
+        before = os.fstat(fd)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.geteuid()
+            or before.st_nlink != 1
+            or before.st_mode & 0o777 != 0o600
+        ):
+            fail("ROLLBACK_JOURNAL_INVALID")
         raw = read_all(fd)
+        after = os.fstat(fd)
+        if (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mode,
+            before.st_uid,
+            before.st_nlink,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mode,
+            after.st_uid,
+            after.st_nlink,
+        ):
+            fail("ROLLBACK_JOURNAL_CHANGED_DURING_READ")
     finally:
         os.close(fd)
     entries = []
@@ -631,34 +826,68 @@ def create_file(parent_fd: int, name: str, contents: bytes, path: str, final_mod
     os.fsync(parent_fd)
 
 
-def verify_tree(root_fd: int, buffers: dict[str, bytes], file_mode: int = 0o444) -> None:
-    found: list[str] = []
+def verify_tree(
+    root_fd: int,
+    buffers: dict[str, bytes],
+    file_mode: int = 0o444,
+    root_mode: int = 0o555,
+    directory_mode: int = 0o555,
+) -> None:
+    found_files: list[str] = []
+    found_directories: list[str] = [""]
+    root_before = validate_owned_directory(root_fd, "materialized-root", mode=root_mode)
 
     def walk(directory_fd: int, prefix: str) -> None:
+        before_directory = os.fstat(directory_fd)
         for name in sorted(os.listdir(directory_fd), key=lambda item: item.encode("ascii")):
             path = f"{prefix}/{name}" if prefix else name
-            info = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-            if stat.S_ISDIR(info.st_mode):
-                child_fd = open_directory(name, directory_fd, path, writable=True)
-                try:
-                    walk(child_fd, path)
-                finally:
-                    os.close(child_fd)
-                continue
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o777 != file_mode:
-                fail(f"MATERIALIZED_ENTRY_INVALID: {path}")
-            found.append(path)
-            if path not in buffers:
-                fail(f"MATERIALIZED_UNKNOWN_PATH: {path}")
-            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
             try:
-                if read_all(fd) != buffers[path]:
-                    fail(f"MATERIALIZED_BYTES_MISMATCH: {path}")
+                entry_fd = os.open(name, OPEN_FILE_READ, dir_fd=directory_fd)
+            except OSError as error:
+                raise ReleaseError(f"MATERIALIZED_ENTRY_INVALID: {path}") from error
+            try:
+                before = os.fstat(entry_fd)
+                if before.st_uid != os.geteuid():
+                    fail(f"MATERIALIZED_ENTRY_INVALID: {path}")
+                if stat.S_ISDIR(before.st_mode):
+                    if before.st_mode & 0o777 != directory_mode or path not in TREE_DIRECTORIES:
+                        fail(f"MATERIALIZED_DIRECTORY_INVALID: {path}")
+                    found_directories.append(path)
+                    walk(entry_fd, path)
+                elif stat.S_ISREG(before.st_mode):
+                    if before.st_nlink != 1 or before.st_mode & 0o777 != file_mode or path not in buffers:
+                        fail(f"MATERIALIZED_ENTRY_INVALID: {path}")
+                    contents = read_all(entry_fd)
+                    after = os.fstat(entry_fd)
+                    identity = lambda info: (
+                        info.st_dev,
+                        info.st_ino,
+                        info.st_size,
+                        info.st_mode,
+                        info.st_uid,
+                        info.st_nlink,
+                    )
+                    if identity(before) != identity(after):
+                        fail(f"MATERIALIZED_ENTRY_CHANGED: {path}")
+                    if contents != buffers[path]:
+                        fail(f"MATERIALIZED_BYTES_MISMATCH: {path}")
+                    found_files.append(path)
+                else:
+                    fail(f"MATERIALIZED_ENTRY_INVALID: {path}")
             finally:
-                os.close(fd)
+                os.close(entry_fd)
+        after_directory = os.fstat(directory_fd)
+        if (before_directory.st_dev, before_directory.st_ino) != (
+            after_directory.st_dev,
+            after_directory.st_ino,
+        ):
+            fail(f"MATERIALIZED_DIRECTORY_CHANGED: {prefix or '.'}")
 
     walk(root_fd, "")
-    if tuple(found) != PAYLOAD_PATHS:
+    root_after = os.fstat(root_fd)
+    if (root_before.st_dev, root_before.st_ino) != (root_after.st_dev, root_after.st_ino):
+        fail("MATERIALIZED_DIRECTORY_CHANGED: .")
+    if tuple(found_files) != PAYLOAD_PATHS or tuple(sorted(found_directories)) != tuple(sorted(TREE_DIRECTORIES)):
         fail("MATERIALIZED_FILE_SET_INVALID")
 
 
@@ -674,10 +903,10 @@ def materialize_new(bundle_fd: int, buffers: dict[str, bytes]) -> None:
                     directories[child] = ensure_directory(component, directories[parent], "/".join(child))
                 parent = child
             create_file(directories[parent], components[-1], buffers[path], path)
-        verify_tree(bundle_fd, buffers)
         for components, fd in sorted(directories.items(), key=lambda item: len(item[0]), reverse=True):
             os.fchmod(fd, 0o555)
             os.fsync(fd)
+        verify_tree(bundle_fd, buffers)
     finally:
         for fd in directories.values():
             os.close(fd)
@@ -701,7 +930,7 @@ def materialize_local(root_path: str, raw: bytes) -> str:
                         or transport_info.st_mode & 0o777 != 0o444
                     ):
                         fail("TRANSPORT_PUBLICATION_COLLISION")
-                    transport_fd = os.open(transport_name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=bundles_fd)
+                    transport_fd = os.open(transport_name, OPEN_FILE_READ, dir_fd=bundles_fd)
                     try:
                         if read_all(transport_fd) != raw:
                             fail("TRANSPORT_PUBLICATION_COLLISION")
@@ -714,7 +943,7 @@ def materialize_local(root_path: str, raw: bytes) -> str:
                 except FileExistsError:
                     created = False
                 bundle_fd = open_directory(
-                    transport["releaseId"], bundles_fd, transport["releaseId"], writable=created
+                    transport["releaseId"], bundles_fd, transport["releaseId"], mode=None if created else 0o555
                 )
                 try:
                     if created:
@@ -743,13 +972,11 @@ def materialize_stage_new(public_fd: int, buffers: dict[str, bytes]) -> None:
             for component in components[:-1]:
                 child = (*parent, component)
                 if child not in directories:
-                    directories[child] = ensure_directory(component, directories[parent], "/".join(child))
+                    directories[child] = ensure_directory(component, directories[parent], "/".join(child), 0o755)
                 parent = child
             create_file(directories[parent], components[-1], buffers[path], path, 0o644)
-        verify_tree(public_fd, buffers, 0o644)
-        for components, fd in sorted(directories.items(), key=lambda item: len(item[0]), reverse=True):
-            if len(components) >= 2:
-                os.fchmod(fd, 0o755)
+        verify_tree(public_fd, buffers, 0o644, 0o700, 0o755)
+        for fd in directories.values():
             os.fsync(fd)
     finally:
         for fd in directories.values():
@@ -770,18 +997,18 @@ def materialize_stage(root_path: str, release_argument: str, raw: bytes) -> str:
             except FileExistsError:
                 created = False
             release_fd = open_directory(
-                transport["releaseId"], stage_fd, f"stage/{transport['releaseId']}", writable=created
+                transport["releaseId"], stage_fd, f"stage/{transport['releaseId']}", mode=0o700
             )
             try:
                 if created:
                     public_fd = ensure_directory("public_html", release_fd, "stage/public_html")
                 else:
-                    public_fd = open_directory("public_html", release_fd, "stage/public_html", writable=True)
+                    public_fd = open_directory("public_html", release_fd, "stage/public_html", mode=0o700)
                 try:
                     if created:
                         materialize_stage_new(public_fd, buffers)
                     else:
-                        verify_tree(public_fd, buffers, 0o644)
+                        verify_tree(public_fd, buffers, 0o644, 0o700, 0o755)
                 finally:
                     os.close(public_fd)
             finally:
@@ -799,7 +1026,7 @@ def open_optional_container(public_fd: int, name: str) -> int | None:
         return None
     if not stat.S_ISDIR(info.st_mode):
         fail(f"UNSAFE_LIVE_PARENT: public_html/{name}")
-    return open_directory(name, public_fd, f"public_html/{name}", writable=True)
+    return open_directory(name, public_fd, f"public_html/{name}", mode=0o755)
 
 
 def unit_is_new(public_fd: int, payload_paths: tuple[str, ...], buffers: dict[str, bytes]) -> bool:
@@ -815,101 +1042,197 @@ def validate_release_argument(argument: str, transport: dict[str, Any]) -> None:
         fail("RELEASE_ARGUMENT_INVALID")
 
 
-def promote_local(root_path: str, release_argument: str, raw: bytes) -> str:
+def inventory_live(root_path: str, release_argument: str, raw: bytes) -> dict[str, Any]:
+    transport, buffers = parse_transport(raw)
+    validate_release_argument(release_argument, transport)
+    root_fd = open_root(root_path)
+    try:
+        public_fd = open_directory("public_html", root_fd, "public_html", mode=0o755)
+        try:
+            hashes: list[str] = []
+            file_count = 0
+            for index in (1, 6, 7):
+                target, _slot, payload_paths = UNITS[index]
+                parent_fd, leaf = open_parent_for_target(public_fd, target)
+                try:
+                    actual = inventory_leaf(parent_fd, leaf, payload_paths, target)
+                finally:
+                    os.close(parent_fd)
+                expected = expected_unit_hash(payload_paths, buffers)
+                if actual != expected:
+                    fail("SERVER_INVENTORY_INVALID")
+                hashes.append(actual)
+                file_count += len(payload_paths)
+        finally:
+            os.close(public_fd)
+    finally:
+        os.close(root_fd)
+    return {
+        "status": "verified",
+        "rootCount": 3,
+        "fileCount": file_count,
+        "inventorySha256": hashlib.sha256(canonical_json(hashes)).hexdigest(),
+    }
+
+
+def promote_next(root_path: str, release_argument: str, raw: bytes) -> dict[str, Any]:
     transport, buffers = parse_transport(raw)
     validate_release_argument(release_argument, transport)
     root_fd = open_root(root_path)
     try:
         stage_fd = open_directory("stage", root_fd, "stage")
         try:
-            release_fd = open_directory(release_argument, stage_fd, f"stage/{release_argument}", writable=True)
+            release_fd = open_directory(release_argument, stage_fd, f"stage/{release_argument}", mode=0o700)
             try:
-                stage_public_fd = open_directory("public_html", release_fd, "stage/public_html", writable=True)
+                stage_public_fd = open_directory("public_html", release_fd, "stage/public_html", mode=0o700)
             finally:
                 os.close(release_fd)
         finally:
             os.close(stage_fd)
         try:
-            live_public_fd = open_directory("public_html", root_fd, "public_html", writable=True)
+            live_public_fd = open_directory("public_html", root_fd, "public_html", mode=0o755)
             try:
-                if os.fstat(stage_public_fd).st_dev != os.fstat(live_public_fd).st_dev:
+                if (
+                    os.fstat(stage_public_fd).st_dev != os.fstat(live_public_fd).st_dev
+                    or test_fault_enabled(root_path, "promotion-cross-device")
+                ):
                     fail("PROMOTION_CROSS_DEVICE_FORBIDDEN")
-                verify_tree(stage_public_fd, buffers, 0o644)
-
+                rollback_root_info = stat_if_present(root_fd, "rollback")
+                existing_release = False
+                if rollback_root_info is not None:
+                    existing_rollback_root_fd = open_directory("rollback", root_fd, "rollback", mode=0o700)
+                    try:
+                        existing_release = stat_if_present(existing_rollback_root_fd, release_argument) is not None
+                    finally:
+                        os.close(existing_rollback_root_fd)
                 preflight: list[tuple[str, str | None]] = []
-                containers: dict[str, int | None] = {}
-                try:
-                    for name in ("apps", "app", ".well-known"):
-                        containers[name] = open_optional_container(live_public_fd, name)
+                if not existing_release:
                     for target, _slot, payload_paths in UNITS:
                         parent_name, leaf_name = target.split("/", 1)
-                        parent_fd = containers[parent_name]
+                        parent_fd = open_optional_container(live_public_fd, parent_name)
                         if parent_fd is None:
                             old_hash = None
                         else:
-                            if "/" in leaf_name:
-                                os.close(parent_fd)
-                                containers[parent_name] = open_optional_container(live_public_fd, parent_name)
-                                parent_fd, leaf_name = open_parent_for_target(live_public_fd, target)
-                                try:
-                                    old_hash = inventory_leaf(parent_fd, leaf_name, payload_paths, target)
-                                finally:
-                                    os.close(parent_fd)
-                            else:
+                            try:
                                 old_hash = inventory_leaf(parent_fd, leaf_name, payload_paths, target)
+                            finally:
+                                os.close(parent_fd)
                         preflight.append(("present" if old_hash is not None else "absent", old_hash))
-                finally:
-                    for fd in containers.values():
-                        if fd is not None:
-                            os.close(fd)
+                    for name in ("apps", "app", ".well-known"):
+                        container_fd = ensure_directory(name, live_public_fd, f"public_html/{name}", 0o755)
+                        os.close(container_fd)
 
-                for name in ("apps", "app", ".well-known"):
-                    container_fd = ensure_directory(name, live_public_fd, f"public_html/{name}")
-                    os.close(container_fd)
                 rollback_root_fd = ensure_directory("rollback", root_fd, "rollback")
                 try:
-                    if os.fstat(rollback_root_fd).st_dev != os.fstat(live_public_fd).st_dev:
+                    if (
+                        os.fstat(rollback_root_fd).st_dev != os.fstat(live_public_fd).st_dev
+                        or os.fstat(stage_public_fd).st_dev != os.fstat(live_public_fd).st_dev
+                    ):
                         fail("PROMOTION_CROSS_DEVICE_FORBIDDEN")
-                    try:
-                        os.mkdir(release_argument, 0o700, dir_fd=rollback_root_fd)
-                        os.fsync(rollback_root_fd)
-                    except FileExistsError as error:
-                        raise ReleaseError("ROLLBACK_RELEASE_COLLISION") from error
-                    rollback_fd = open_directory(release_argument, rollback_root_fd, f"rollback/{release_argument}")
-                    try:
-                        journal_fd = create_journal(rollback_fd)
+                    if existing_release:
+                        created_rollback = False
+                    else:
                         try:
-                            for index, (target, slot, payload_paths) in enumerate(UNITS):
-                                original, old_hash = preflight[index]
-                                stage_parent_fd, stage_leaf = open_parent_for_target(stage_public_fd, target)
-                                live_parent_fd, live_leaf = open_parent_for_target(live_public_fd, target)
-                                try:
-                                    current_hash = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
-                                    if ("present" if current_hash is not None else "absent", current_hash) != (original, old_hash):
-                                        fail(f"LIVE_TARGET_RACE_DETECTED: {target}")
-                                    prepared = journal_entry(index, target, slot, original, old_hash, "prepared")
-                                    append_journal(journal_fd, prepared)
-                                    if original == "present":
-                                        rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
-                                        swapped_old_hash = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
-                                        if swapped_old_hash != old_hash or not unit_is_new(live_public_fd, payload_paths, buffers):
-                                            rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
-                                            fail(f"PROMOTION_RACE_OR_TAMPER_DETECTED: {target}")
-                                        rename_with_flag(stage_parent_fd, stage_leaf, rollback_fd, slot, "noreplace")
-                                    else:
-                                        rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "noreplace")
-                                        if not unit_is_new(live_public_fd, payload_paths, buffers):
-                                            rename_with_flag(live_parent_fd, live_leaf, stage_parent_fd, stage_leaf, "noreplace")
-                                            fail(f"PROMOTION_RACE_OR_TAMPER_DETECTED: {target}")
+                            os.mkdir(release_argument, 0o700, dir_fd=rollback_root_fd)
+                            os.fsync(rollback_root_fd)
+                            created_rollback = True
+                        except FileExistsError as error:
+                            raise ReleaseError("ROLLBACK_RELEASE_COLLISION") from error
+                    rollback_fd = open_directory(
+                        release_argument,
+                        rollback_root_fd,
+                        f"rollback/{release_argument}",
+                        mode=0o700,
+                    )
+                    try:
+                        if created_rollback:
+                            journal_fd = create_journal(rollback_fd)
+                            try:
+                                for index, (target, slot, _payload_paths) in enumerate(UNITS):
+                                    original, old_hash = preflight[index]
                                     append_journal(
                                         journal_fd,
-                                        journal_entry(index, target, slot, original, old_hash, "promoted"),
+                                        journal_entry(index, target, slot, original, old_hash, "prepared"),
                                     )
-                                finally:
-                                    os.close(stage_parent_fd)
-                                    os.close(live_parent_fd)
+                            finally:
+                                os.close(journal_fd)
+
+                        latest = validate_journal(read_journal(rollback_fd))
+                        if len(latest) != len(UNITS):
+                            fail("ROLLBACK_JOURNAL_INVALID")
+                        if any(entry["state"] == "rolled-back" for entry in latest.values()):
+                            fail("PROMOTION_AFTER_ROLLBACK_FORBIDDEN")
+                        pending = [index for index, entry in latest.items() if entry["state"] == "prepared"]
+                        if not pending:
+                            fail("PROMOTION_ALREADY_COMPLETE")
+                        index = min(pending)
+                        entry = latest[index]
+                        target, slot, payload_paths = UNITS[index]
+                        new_hash = expected_unit_hash(payload_paths, buffers)
+                        stage_parent_fd, stage_leaf = open_parent_for_target(stage_public_fd, target)
+                        live_parent_fd, live_leaf = open_parent_for_target(live_public_fd, target)
+                        try:
+                            stage_hash = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
+                            live_hash = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
+                            slot_hash = inventory_leaf(rollback_fd, slot, payload_paths, target)
+                            old_hash = entry["oldInventorySha256"]
+                            if entry["original"] == "present":
+                                if live_hash == new_hash and stage_hash == old_hash and slot_hash is None:
+                                    rename_with_flag(stage_parent_fd, stage_leaf, rollback_fd, slot, "noreplace")
+                                    stage_hash = None
+                                    slot_hash = inventory_leaf(rollback_fd, slot, payload_paths, target)
+                                if live_hash == new_hash and stage_hash is None and slot_hash == old_hash:
+                                    pass
+                                elif live_hash == old_hash and stage_hash == new_hash and slot_hash is None:
+                                    rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
+                                    try:
+                                        if test_fault_enabled(root_path, "promotion-post-exchange-inventory-error"):
+                                            fail(f"PROMOTION_POST_EXCHANGE_INVENTORY_FAILED: {target}")
+                                        after_live = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
+                                        after_stage = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
+                                        if after_live != new_hash or after_stage != old_hash:
+                                            fail(f"PROMOTION_RACE_OR_TAMPER_DETECTED: {target}")
+                                    except ReleaseError:
+                                        rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
+                                        raise
+                                    rename_with_flag(stage_parent_fd, stage_leaf, rollback_fd, slot, "noreplace")
+                                    if inventory_leaf(rollback_fd, slot, payload_paths, target) != old_hash:
+                                        fail(f"PROMOTION_ROLLBACK_SLOT_MISMATCH: {target}")
+                                else:
+                                    fail(f"PROMOTION_STATE_INVALID: {target}")
+                            else:
+                                if live_hash == new_hash and stage_hash is None and slot_hash is None:
+                                    pass
+                                elif live_hash is None and stage_hash == new_hash and slot_hash is None:
+                                    rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "noreplace")
+                                    try:
+                                        if test_fault_enabled(root_path, "promotion-post-noreplace-inventory-error"):
+                                            fail(f"PROMOTION_POST_NOREPLACE_INVENTORY_FAILED: {target}")
+                                        if inventory_leaf(live_parent_fd, live_leaf, payload_paths, target) != new_hash:
+                                            fail(f"PROMOTION_RACE_OR_TAMPER_DETECTED: {target}")
+                                    except ReleaseError:
+                                        rename_with_flag(live_parent_fd, live_leaf, stage_parent_fd, stage_leaf, "noreplace")
+                                        raise
+                                else:
+                                    fail(f"PROMOTION_STATE_INVALID: {target}")
+                            journal_fd = open_journal(rollback_fd)
+                            try:
+                                append_journal(
+                                    journal_fd,
+                                    journal_entry(index, target, slot, entry["original"], old_hash, "promoted"),
+                                )
+                            finally:
+                                os.close(journal_fd)
                         finally:
-                            os.close(journal_fd)
+                            os.close(stage_parent_fd)
+                            os.close(live_parent_fd)
+                        return {
+                            "schemaVersion": 1,
+                            "index": index,
+                            "target": f"public_html/{target}",
+                            "status": "unit-promoted",
+                            "complete": index == len(UNITS) - 1,
+                        }
                     finally:
                         os.close(rollback_fd)
                 finally:
@@ -920,12 +1243,16 @@ def promote_local(root_path: str, release_argument: str, raw: bytes) -> str:
             os.close(stage_public_fd)
     finally:
         os.close(root_fd)
-    return "promoted"
+    fail("PROMOTION_STATE_INVALID")
 
 
 def validate_journal(entries: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     latest: dict[int, dict[str, Any]] = {}
-    allowed_transitions = {None: "prepared", "prepared": "promoted", "promoted": "rolled-back"}
+    allowed_transitions = {
+        None: {"prepared"},
+        "prepared": {"promoted", "rolled-back"},
+        "promoted": {"rolled-back"},
+    }
     for entry in entries:
         index = entry.get("index")
         if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(UNITS):
@@ -948,7 +1275,7 @@ def validate_journal(entries: list[dict[str, Any]]) -> dict[int, dict[str, Any]]
         if previous and any(entry[key] != previous[key] for key in JOURNAL_KEYS if key != "state"):
             fail("ROLLBACK_JOURNAL_INVALID")
         previous_state = previous["state"] if previous else None
-        if allowed_transitions.get(previous_state) != entry["state"]:
+        if entry["state"] not in allowed_transitions.get(previous_state, set()):
             fail("ROLLBACK_JOURNAL_INVALID")
         latest[index] = entry
     if sorted(latest) != list(range(len(latest))):
@@ -963,20 +1290,27 @@ def rollback_local(root_path: str, release_argument: str, raw: bytes) -> str:
     try:
         stage_fd = open_directory("stage", root_fd, "stage")
         try:
-            stage_release_fd = open_directory(release_argument, stage_fd, f"stage/{release_argument}", writable=True)
+            stage_release_fd = open_directory(release_argument, stage_fd, f"stage/{release_argument}", mode=0o700)
             try:
-                stage_public_fd = open_directory("public_html", stage_release_fd, "stage/public_html", writable=True)
+                stage_public_fd = open_directory("public_html", stage_release_fd, "stage/public_html", mode=0o700)
             finally:
                 os.close(stage_release_fd)
         finally:
             os.close(stage_fd)
-        live_public_fd = open_directory("public_html", root_fd, "public_html", writable=True)
+        live_public_fd = open_directory("public_html", root_fd, "public_html", mode=0o755)
         try:
-            rollback_root_fd = open_directory("rollback", root_fd, "rollback")
+            rollback_root_fd = open_directory("rollback", root_fd, "rollback", mode=0o700)
             try:
-                rollback_fd = open_directory(release_argument, rollback_root_fd, f"rollback/{release_argument}")
+                rollback_fd = open_directory(
+                    release_argument,
+                    rollback_root_fd,
+                    f"rollback/{release_argument}",
+                    mode=0o700,
+                )
                 try:
                     latest = validate_journal(read_journal(rollback_fd))
+                    if len(latest) != len(UNITS):
+                        fail("ROLLBACK_JOURNAL_INVALID")
                     if latest and all(entry["state"] == "rolled-back" for entry in latest.values()):
                         fail("ROLLBACK_ALREADY_APPLIED")
                     journal_fd = open_journal(rollback_fd)
@@ -988,30 +1322,62 @@ def rollback_local(root_path: str, release_argument: str, raw: bytes) -> str:
                             target, slot, payload_paths = UNITS[index]
                             live_parent_fd, live_leaf = open_parent_for_target(live_public_fd, target)
                             try:
-                                is_new = unit_is_new(live_public_fd, payload_paths, buffers)
-                                slot_info = stat_if_present(rollback_fd, slot)
-                                if entry["original"] == "present":
-                                    if is_new and slot_info is not None:
-                                        rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "exchange")
-                                    elif is_new:
-                                        stage_parent_fd, stage_leaf = open_parent_for_target(stage_public_fd, target)
-                                        try:
-                                            stage_hash = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
-                                            if stage_hash != entry["oldInventorySha256"]:
-                                                fail(f"ROLLBACK_OLD_TARGET_MISSING: {target}")
+                                new_hash = expected_unit_hash(payload_paths, buffers)
+                                old_hash = entry["oldInventorySha256"]
+                                live_hash = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
+                                slot_hash = inventory_leaf(rollback_fd, slot, payload_paths, target)
+                                stage_parent_fd, stage_leaf = open_parent_for_target(stage_public_fd, target)
+                                try:
+                                    stage_hash = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
+                                    if entry["state"] == "prepared":
+                                        expected_live = old_hash if entry["original"] == "present" else None
+                                        if live_hash != expected_live or stage_hash != new_hash or slot_hash is not None:
+                                            fail(f"ROLLBACK_PREPARED_STATE_INVALID: {target}")
+                                    elif entry["original"] == "present":
+                                        if live_hash == old_hash and slot_hash == new_hash and stage_hash is None:
+                                            pass
+                                        elif live_hash == new_hash and slot_hash == old_hash and stage_hash is None:
+                                            rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "exchange")
+                                            try:
+                                                if test_fault_enabled(root_path, "rollback-post-exchange-inventory-error"):
+                                                    fail(f"ROLLBACK_POST_EXCHANGE_INVENTORY_FAILED: {target}")
+                                                restored = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
+                                                displaced = inventory_leaf(rollback_fd, slot, payload_paths, target)
+                                                if (
+                                                    restored != old_hash
+                                                    or displaced != new_hash
+                                                    or test_fault_enabled(root_path, "rollback-post-exchange-mismatch")
+                                                ):
+                                                    fail(f"ROLLBACK_RESTORE_MISMATCH: {target}")
+                                            except ReleaseError:
+                                                rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "exchange")
+                                                raise
+                                        elif live_hash == new_hash and slot_hash is None and stage_hash == old_hash:
                                             rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
-                                        finally:
-                                            os.close(stage_parent_fd)
-                                    current_hash = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
-                                    if current_hash != entry["oldInventorySha256"]:
-                                        fail(f"ROLLBACK_RESTORE_MISMATCH: {target}")
-                                else:
-                                    if is_new:
-                                        if slot_info is not None:
-                                            fail(f"ROLLBACK_COLLISION: {target}")
-                                        rename_with_flag(live_parent_fd, live_leaf, rollback_fd, slot, "noreplace")
-                                    elif stat_if_present(live_parent_fd, live_leaf) is not None:
-                                        fail(f"ROLLBACK_TARGET_RACE: {target}")
+                                            try:
+                                                restored = inventory_leaf(live_parent_fd, live_leaf, payload_paths, target)
+                                                displaced = inventory_leaf(stage_parent_fd, stage_leaf, payload_paths, target)
+                                                if restored != old_hash or displaced != new_hash:
+                                                    fail(f"ROLLBACK_RESTORE_MISMATCH: {target}")
+                                            except ReleaseError:
+                                                rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
+                                                raise
+                                        else:
+                                            fail(f"ROLLBACK_STATE_INVALID: {target}")
+                                    else:
+                                        if live_hash is None and slot_hash == new_hash and stage_hash is None:
+                                            pass
+                                        elif live_hash == new_hash and slot_hash is None and stage_hash is None:
+                                            rename_with_flag(live_parent_fd, live_leaf, rollback_fd, slot, "noreplace")
+                                            if (
+                                                inventory_leaf(live_parent_fd, live_leaf, payload_paths, target) is not None
+                                                or inventory_leaf(rollback_fd, slot, payload_paths, target) != new_hash
+                                            ):
+                                                fail(f"ROLLBACK_RESTORE_MISMATCH: {target}")
+                                        else:
+                                            fail(f"ROLLBACK_STATE_INVALID: {target}")
+                                finally:
+                                    os.close(stage_parent_fd)
                                 append_journal(
                                     journal_fd,
                                     journal_entry(
@@ -1019,7 +1385,7 @@ def rollback_local(root_path: str, release_argument: str, raw: bytes) -> str:
                                         target,
                                         slot,
                                         entry["original"],
-                                        entry["oldInventorySha256"],
+                                        old_hash,
                                         "rolled-back",
                                     ),
                                 )
@@ -1074,7 +1440,9 @@ def validate_artifact_manifest(manifest: Any, transport: dict[str, Any]) -> byte
     return canonical_json(manifest)
 
 
-def publish_manifest_local(root_path: str, raw: bytes) -> str:
+def publish_manifest_local(root_path: str, reviewed_manifest_sha256: str, raw: bytes) -> str:
+    if not SHA256.fullmatch(reviewed_manifest_sha256):
+        fail("REVIEWED_MANIFEST_SHA256_INVALID")
     try:
         envelope = json.loads(raw.decode("utf-8"), object_pairs_hook=reject_duplicate_keys)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -1084,6 +1452,8 @@ def publish_manifest_local(root_path: str, raw: bytes) -> str:
     exact_keys(envelope, ("transport", "manifest"), "WEB_ARTIFACT_ENVELOPE")
     transport, buffers = parse_transport(canonical_json(envelope["transport"]))
     manifest_bytes = validate_artifact_manifest(envelope["manifest"], transport)
+    if hashlib.sha256(manifest_bytes).hexdigest() != reviewed_manifest_sha256:
+        fail("REVIEWED_MANIFEST_SHA256_MISMATCH")
 
     root_fd = open_root(root_path)
     try:
@@ -1091,7 +1461,7 @@ def publish_manifest_local(root_path: str, raw: bytes) -> str:
         try:
             bundles_fd = open_directory("web-bundles", release_fd, "release/web-bundles")
             try:
-                bundle_fd = open_directory(transport["releaseId"], bundles_fd, transport["releaseId"], writable=True)
+                bundle_fd = open_directory(transport["releaseId"], bundles_fd, transport["releaseId"], mode=0o555)
                 try:
                     verify_tree(bundle_fd, buffers)
                 finally:
@@ -1115,7 +1485,7 @@ def publish_manifest_local(root_path: str, raw: bytes) -> str:
                 or existing.st_mode & 0o777 != 0o444
             ):
                 fail("WEB_ARTIFACT_MANIFEST_COLLISION")
-            fd = os.open("web-artifacts.json", os.O_RDONLY | os.O_NOFOLLOW, dir_fd=release_fd)
+            fd = os.open("web-artifacts.json", OPEN_FILE_READ, dir_fd=release_fd)
             try:
                 if read_all(fd) != manifest_bytes:
                     fail("WEB_ARTIFACT_MANIFEST_COLLISION")
@@ -1129,6 +1499,18 @@ def publish_manifest_local(root_path: str, raw: bytes) -> str:
 
 
 def main(argv: list[str]) -> int:
+    if len(argv) == 3 and argv[1] == "root-identity":
+        root_fd = open_root(argv[2])
+        try:
+            info = os.fstat(root_fd)
+            sys.stdout.buffer.write(canonical_json({
+                "schemaVersion": 1,
+                "device": info.st_dev,
+                "inode": info.st_ino,
+            }))
+        finally:
+            os.close(root_fd)
+        return 0
     if len(argv) == 3 and argv[1] == "materialize-local":
         result = materialize_local(argv[2], sys.stdin.buffer.read())
         print(result)
@@ -1140,24 +1522,20 @@ def main(argv: list[str]) -> int:
         result = materialize_stage(argv[2], argv[3], sys.stdin.buffer.read())
         print(result)
         return 0
-    if len(argv) == 4 and argv[1] == "promote-local":
-        raw = sys.stdin.buffer.read()
-        try:
-            print(promote_local(argv[2], argv[3], raw))
-        except ReleaseError as promotion_error:
-            try:
-                rollback_local(argv[2], argv[3], raw)
-            except ReleaseError:
-                raise promotion_error
-            raise ReleaseError(f"{promotion_error}; AUTO_ROLLBACK_APPLIED") from None
+    if len(argv) == 4 and argv[1] == "promote-next":
+        outcome = promote_next(argv[2], argv[3], sys.stdin.buffer.read())
+        sys.stdout.buffer.write(canonical_json(outcome))
         return 0
     if len(argv) == 4 and argv[1] == "rollback-local":
         print(rollback_local(argv[2], argv[3], sys.stdin.buffer.read()))
         return 0
-    if len(argv) == 3 and argv[1] == "publish-manifest-local":
-        print(publish_manifest_local(argv[2], sys.stdin.buffer.read()))
+    if len(argv) == 4 and argv[1] == "inventory-live":
+        sys.stdout.buffer.write(canonical_json(inventory_live(argv[2], argv[3], sys.stdin.buffer.read())))
         return 0
-    fail("Usage: secure_web_release.py <materialize-local|materialize-stage|capture-reviewed-inputs|promote-local|rollback-local|publish-manifest-local> <owned-root> [release-id]")
+    if len(argv) == 4 and argv[1] == "publish-manifest-local":
+        print(publish_manifest_local(argv[2], argv[3], sys.stdin.buffer.read()))
+        return 0
+    fail("Usage: secure_web_release.py <root-identity|materialize-local|materialize-stage|capture-reviewed-inputs|promote-next|rollback-local|inventory-live|publish-manifest-local> <owned-root> [release-id]")
 
 
 if __name__ == "__main__":

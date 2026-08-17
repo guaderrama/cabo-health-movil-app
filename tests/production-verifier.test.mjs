@@ -59,16 +59,60 @@ function localOriginArtifact() {
     sha256: sha256(bytes),
     mediaType: mediaType(path),
     deployMode: '0644',
-    kind: 'fixture',
+    kind: path === 'apps/.htaccess' ? 'apache-security'
+      : path.startsWith('apps/') ? 'task6b-miniapp'
+        : path.startsWith('app/') ? 'task7-legal' : 'aasa',
   }));
+  const promoteTargets = [
+    'public_html/apps/.htaccess', 'public_html/apps/shared', 'public_html/app/privacy',
+    'public_html/app/terms', 'public_html/app/support', 'public_html/app/report-content',
+    'public_html/apps/healthy-recipes', 'public_html/apps/clinic-guide',
+    'public_html/.well-known/apple-app-site-association',
+  ];
+  const policy = {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-public-web-v1',
+    appId: 'DQ8PH2DZ3R.com.cabohealth.app',
+    entrySlugs: ['healthy-recipes', 'clinic-guide'],
+    legalSlugs: ['privacy', 'terms', 'support', 'report-content'],
+    promoteTargets,
+    files,
+  };
+  const inventorySha256 = sha256(Buffer.from(`${JSON.stringify(policy)}\n`));
+  const inputPolicy = [
+    ['miniapps/dist', 'task6b-miniapp'],
+    ['web-hosting/cabohealth.org/app/privacy/index.html', 'task7-legal'],
+    ['web-hosting/cabohealth.org/app/terms/index.html', 'task7-legal'],
+    ['web-hosting/cabohealth.org/app/support/index.html', 'task7-legal'],
+    ['web-hosting/cabohealth.org/app/report-content/index.html', 'task7-legal'],
+    ['web-hosting/cabohealth.org/.well-known/apple-app-site-association', 'aasa'],
+    ['miniapps/shared/security-headers.conf', 'apache-security'],
+    ['web-hosting/cabohealth.org/apps/.htaccess', 'apache-security'],
+  ];
+  const artifact = {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-public-web-v1',
+    releaseId: `web-v1-${inventorySha256}`,
+    inventorySha256,
+    appId: policy.appId,
+    entrySlugs: policy.entrySlugs,
+    legalSlugs: policy.legalSlugs,
+    promoteTargets,
+    inputs: inputPolicy.map(([path, kind], index) => ({ path, size: index + 1, sha256: `${index}`.repeat(64), kind })),
+    files,
+  };
   return {
-    artifact: { releaseId: `web-v1-${'d'.repeat(64)}`, inventorySha256: 'd'.repeat(64), files },
+    artifact,
+    authority: {
+      reviewedReleaseId: artifact.releaseId,
+      reviewedArtifactSha256: sha256(Buffer.from(`${JSON.stringify(artifact)}\n`)),
+    },
     bodies,
   };
 }
 
 async function runMutatedOrigin(verifyOrigin, mutate) {
-  const { artifact, bodies } = localOriginArtifact();
+  const { artifact, authority, bodies } = localOriginArtifact();
   const routeToPath = new Map([...bodies.keys()].map((path) => [
     `/${path.replace(/index\.html$/u, '')}`,
     path,
@@ -82,6 +126,8 @@ async function runMutatedOrigin(verifyOrigin, mutate) {
       : 'text/plain; charset=utf-8' };
     if (request.url === '/apps/') status = 403;
     else if (request.url === '/apps/.htaccess' || request.url?.startsWith('/apps/task-8-unknown-')) status = 404;
+    else if (request.url === '/unrelated-control.pdf') status = 200;
+    else if (request.url === '/remediated-terminal-route') status = 410;
     else if (request.url !== '/' && !path) status = 404;
     if (path?.startsWith('apps/')) Object.assign(headers, {
       'Content-Security-Policy': miniappCsp,
@@ -102,7 +148,17 @@ async function runMutatedOrigin(verifyOrigin, mutate) {
   await new Promise((resolvePromise) => server.listen(0, '127.0.0.1', resolvePromise));
   try {
     const address = server.address();
-    return await verifyOrigin({ artifact, baseUrl: `http://127.0.0.1:${address.port}` });
+    return await verifyOrigin({
+      artifact,
+      ...authority,
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      sensitiveControls: {
+        unrelatedPath: '/unrelated-control.pdf',
+        unrelatedExpectedStatuses: [200],
+        terminalPath: '/remediated-terminal-route',
+        terminalExpectedStatuses: [410],
+      },
+    });
   } finally {
     await new Promise((resolvePromise) => server.close(resolvePromise));
   }
@@ -122,41 +178,8 @@ test('sanitized production evidence reconciles the exact artifact URL set withou
   const { validateProductionEvidence } = await import('../scripts/verify-production.mjs');
   assert.equal(typeof validateProductionEvidence, 'function');
 
-  const files = [
-    ['.well-known/apple-app-site-association', 'application/json'],
-    ['app/privacy/index.html', 'text/html; charset=utf-8'],
-    ['app/report-content/index.html', 'text/html; charset=utf-8'],
-    ['app/support/index.html', 'text/html; charset=utf-8'],
-    ['app/terms/index.html', 'text/html; charset=utf-8'],
-    ['apps/.htaccess', 'text/plain; charset=utf-8'],
-    ['apps/clinic-guide/app.js', 'text/javascript; charset=utf-8'],
-    ['apps/clinic-guide/index.html', 'text/html; charset=utf-8'],
-    ['apps/healthy-recipes/app.js', 'text/javascript; charset=utf-8'],
-    ['apps/healthy-recipes/index.html', 'text/html; charset=utf-8'],
-    ['apps/shared/logo.png', 'image/png'],
-    ['apps/shared/motion.js', 'text/javascript; charset=utf-8'],
-    ['apps/shared/shell.js', 'text/javascript; charset=utf-8'],
-    ['apps/shared/styles.css', 'text/css; charset=utf-8'],
-  ].map(([path, mediaType]) => ({
-    path,
-    size: 1,
-    sha256: 'a'.repeat(64),
-    mediaType,
-    deployMode: '0644',
-    kind: path.startsWith('apps/') ? 'task6b-miniapp' : 'task7-legal',
-  }));
-  const artifact = {
-    schemaVersion: 1,
-    artifactKind: 'cabohealth-public-web-v1',
-    releaseId: `web-v1-${'b'.repeat(64)}`,
-    inventorySha256: 'b'.repeat(64),
-    appId: 'DQ8PH2DZ3R.com.cabohealth.app',
-    entrySlugs: ['healthy-recipes', 'clinic-guide'],
-    legalSlugs: ['privacy', 'terms', 'support', 'report-content'],
-    promoteTargets: [],
-    inputs: [],
-    files,
-  };
+  const { artifact, authority } = localOriginArtifact();
+  const { files } = artifact;
   const evidenceUrls = files
     .filter(({ path }) => path !== 'apps/.htaccess')
     .map(({ path, sha256, mediaType }) => ({
@@ -179,8 +202,16 @@ test('sanitized production evidence reconciles the exact artifact URL set withou
       status: 'verified',
       checkedAt: '2026-08-18T01:03:03.000Z',
       rootStatus: 200,
+      unknownSlugStatus: 404,
+      unknownSlugNonceSha256: 'f'.repeat(64),
       urls: evidenceUrls,
     },
+    serverInventory: { status: 'verified', rootCount: 3, fileCount: 8, inventorySha256: 'e'.repeat(64) },
+    browser: {
+      status: 'verified', viewportCount: 2, localeCount: 2, javascriptModeCount: 2,
+      unexpectedRequests: 0, consoleErrors: 0, noJsReadable: true,
+    },
+    controls: { unrelatedAssetRetained: true, terminalRouteRetained: true },
     appleCdn: {
       status: 'pending-propagation',
       checkedAt: '2026-08-18T01:04:03.000Z',
@@ -193,9 +224,9 @@ test('sanitized production evidence reconciles the exact artifact URL set withou
     },
   };
 
-  assert.equal(validateProductionEvidence(evidence, artifact), true);
+  assert.equal(validateProductionEvidence(evidence, artifact, authority), true);
   assert.throws(
-    () => validateProductionEvidence({ ...evidence, rawHeaders: { server: 'secret' } }, artifact),
+    () => validateProductionEvidence({ ...evidence, rawHeaders: { server: 'secret' } }, artifact, authority),
     /PRODUCTION_EVIDENCE_SCHEMA_INVALID/u,
   );
   const mutations = [
@@ -209,14 +240,14 @@ test('sanitized production evidence reconciles the exact artifact URL set withou
   for (const [name, mutate] of mutations) {
     const changed = structuredClone(evidence);
     mutate(changed);
-    assert.throws(() => validateProductionEvidence(changed, artifact), undefined, name);
+    assert.throws(() => validateProductionEvidence(changed, artifact, authority), undefined, name);
   }
 });
 
 test('origin verification accepts exact local HTTP responses and emits only sanitized booleans and hashes', async () => {
   const { verifyOrigin } = await import('../scripts/verify-production.mjs');
   assert.equal(typeof verifyOrigin, 'function');
-  const { artifact, bodies } = localOriginArtifact();
+  const { artifact, authority, bodies } = localOriginArtifact();
   const routeToPath = new Map([...bodies.keys()].map((path) => [
     `/${path.replace(/index\.html$/u, '')}`,
     path,
@@ -225,6 +256,16 @@ test('origin verification accepts exact local HTTP responses and emits only sani
     if (request.url === '/') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end('<!doctype html><title>control</title>');
+      return;
+    }
+    if (request.url === '/unrelated-control.pdf') {
+      response.writeHead(200, { 'Content-Type': 'application/pdf' });
+      response.end('control');
+      return;
+    }
+    if (request.url === '/remediated-terminal-route') {
+      response.writeHead(410, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('gone');
       return;
     }
     if (request.url === '/apps/' || request.url === '/apps/.htaccess') {
@@ -265,7 +306,12 @@ test('origin verification accepts exact local HTTP responses and emits only sani
     const address = server.address();
     const result = await verifyOrigin({
       artifact,
+      ...authority,
       baseUrl: `http://127.0.0.1:${address.port}`,
+      sensitiveControls: {
+        unrelatedPath: '/unrelated-control.pdf', unrelatedExpectedStatuses: [200],
+        terminalPath: '/remediated-terminal-route', terminalExpectedStatuses: [410],
+      },
     });
     assert.equal(result.rootStatus, 200);
     assert.equal(result.urls.length, 13);
@@ -298,4 +344,49 @@ test('origin verifier rejects response, header, body, content, and negative-rout
       await assert.rejects(() => runMutatedOrigin(verifyOrigin, mutate), expected);
     });
   }
+});
+
+test('Apple CDN verifier rejects stale, redirecting, cookie-bearing, wrong-type, and unauthorized endpoints', async (context) => {
+  const { verifyAppleCdn } = await import('../scripts/verify-production.mjs');
+  const { artifact, authority, bodies } = localOriginArtifact();
+  const expectedBody = bodies.get('.well-known/apple-app-site-association');
+  async function run({ body = expectedBody, status = 200, headers = { 'Content-Type': 'application/json' } } = {}) {
+    const server = createServer((_request, response) => {
+      response.writeHead(status, headers);
+      response.end(body);
+    });
+    await new Promise((resolvePromise) => server.listen(0, '127.0.0.1', resolvePromise));
+    try {
+      const address = server.address();
+      return await verifyAppleCdn({
+        artifact,
+        ...authority,
+        url: `http://127.0.0.1:${address.port}/aasa`,
+      });
+    } finally {
+      await new Promise((resolvePromise) => server.close(resolvePromise));
+    }
+  }
+  assert.deepEqual(await run(), { status: 'verified', sha256: artifact.files[0].sha256 });
+  const cases = [
+    ['stale body', { body: Buffer.from('{}\n') }, /APPLE_CDN_PENDING_PROPAGATION/u],
+    ['redirect', { status: 302, headers: { Location: '/other' } }, /APPLE_CDN_RESPONSE_INVALID/u],
+    ['wrong type', { headers: { 'Content-Type': 'text/plain' } }, /APPLE_CDN_CONTENT_TYPE_INVALID/u],
+    ['cookie', { headers: { 'Content-Type': 'application/json', 'Set-Cookie': 'secret=value' } }, /APPLE_CDN_SET_COOKIE_FORBIDDEN/u],
+  ];
+  for (const [name, options, expected] of cases) {
+    await context.test(name, async () => assert.rejects(() => run(options), expected));
+  }
+  await assert.rejects(
+    () => verifyAppleCdn({ artifact, ...authority, url: 'http://169.254.169.254/latest/meta-data' }),
+    /APPLE_CDN_NETWORK_FORBIDDEN/u,
+  );
+  await assert.rejects(
+    () => verifyAppleCdn({ artifact, ...authority, url: 'http://127.0.0.1:1/aasa?target=https://evil.invalid' }),
+    /APPLE_CDN_NETWORK_FORBIDDEN/u,
+  );
+  await assert.rejects(
+    () => verifyAppleCdn({ artifact, ...authority, productionConfirmation: 'wrong-host' }),
+    /APPLE_CDN_NETWORK_FORBIDDEN/u,
+  );
 });
