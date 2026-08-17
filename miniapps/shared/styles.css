@@ -256,11 +256,85 @@ main {
 .tool-panel,
 .information-panel,
 .recipe-card,
+.contact-panel,
+.checklist-group,
 .template-gate {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.84);
   box-shadow: 0 12px 35px rgba(8, 47, 67, 0.08);
+}
+
+.contact-panel,
+.contact-list,
+.checklist-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.contact-panel {
+  padding: clamp(1rem, 4vw, 1.5rem);
+}
+
+.contact-list {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.contact-list li {
+  padding: 1rem;
+  background: var(--mist);
+  border-radius: 14px;
+}
+
+.contact-list strong,
+.contact-list span {
+  display: block;
+}
+
+.contact-list a {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.checklist-heading {
+  margin-top: clamp(2.5rem, 7vw, 5rem);
+}
+
+.checklist-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+}
+
+.checklist-group {
+  padding: clamp(1rem, 4vw, 1.5rem);
+}
+
+.checklist-items {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0;
+  margin: 1rem 0 0;
+  list-style: none;
+}
+
+.checklist-item {
+  display: grid;
+  grid-template-columns: 1.4rem 1fr;
+  gap: 0.7rem;
+  align-items: start;
+  min-height: 44px;
+  padding: 0.75rem;
+  background: var(--mist);
+  border-radius: 12px;
+}
+
+.checklist-item input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0.15rem 0 0;
 }
 
 .tool-panel {

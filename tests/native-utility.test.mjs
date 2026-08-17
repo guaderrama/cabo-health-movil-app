@@ -98,10 +98,10 @@ test('visit checklist updates and resets idempotently without collecting health 
   }
 });
 
-test('unconfirmed owner facts keep contact, map, address, hours, and language actions unavailable', () => {
-  assert.equal(PUBLIC_CONTACT_FACTS.status, 'awaiting-owner-confirmation');
-  assert.equal(PUBLIC_CONTACT_FACTS.ownerConfirmedAt, null);
-  assert.equal(canUseContactActions(PUBLIC_CONTACT_FACTS), false);
+test('owner-confirmed facts make the exact complete contact record eligible', () => {
+  assert.equal(PUBLIC_CONTACT_FACTS.status, 'owner-confirmed');
+  assert.equal(PUBLIC_CONTACT_FACTS.ownerConfirmedAt, '2026-08-17T02:33:24.000Z');
+  assert.equal(canUseContactActions(PUBLIC_CONTACT_FACTS), true);
   assert.deepEqual(Object.keys(PUBLIC_CONTACT_FACTS.facts), [
     'publicEmail',
     'phone',
@@ -112,9 +112,9 @@ test('unconfirmed owner facts keep contact, map, address, hours, and language ac
     'serviceLanguages',
   ]);
   for (const fact of Object.values(PUBLIC_CONTACT_FACTS.facts)) {
-    assert.equal(fact.value, null);
-    assert.equal(fact.sourceUrl, null);
-    assert.equal(fact.sourceStatus, 'owner-confirmation-required');
+    assert.notEqual(fact.value, null);
+    assert.match(fact.sourceUrl, /^https:\/\//u);
+    assert.equal(fact.sourceStatus, 'owner-confirmed-source');
   }
 });
 

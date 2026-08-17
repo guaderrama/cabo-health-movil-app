@@ -180,12 +180,20 @@ test('opens each exact confirmed contact only for top-frame iOS clicks without n
   }
 });
 
-test('production owner contact allowlist remains empty while frozen facts are unconfirmed', () => {
-  assert.deepEqual(PUBLIC_CONTACT_URLS, []);
-  assert.deepEqual(
-    classify('mailto:owner@example.test', { navigationType: 'click' }, PUBLIC_CONTACT_URLS),
-    { decision: 'block', reason: 'external-not-allowlisted' },
-  );
+test('production owner contact allowlist matches the four exact Task 6B actions', () => {
+  const expected = [
+    'mailto:ivan@ivanguaderrama.com',
+    'tel:+526241224865',
+    'https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes%2C%20Hidalgo%2C%20Calle%20Cabo%20San%20Lucas%2010%2C%20Centro%2C%2023410%20Cabo%20San%20Lucas%2C%20B.C.S.%2C%20Mexico&name=Cabo%20Health',
+    'https://wa.me/526241224865',
+  ];
+  assert.deepEqual(PUBLIC_CONTACT_URLS, expected);
+  for (const url of expected) {
+    assert.deepEqual(
+      classify(url, { navigationType: 'click' }, PUBLIC_CONTACT_URLS),
+      { decision: 'open-external', reason: 'approved-contact-click' },
+    );
+  }
 });
 
 test('contact adapter rejects stale values unless the record and each contact source are confirmed', () => {

@@ -1,13 +1,13 @@
 {
-  "status": "awaiting-owner-confirmation",
-  "ownerConfirmedAt": null,
+  "status": "owner-confirmed",
+  "ownerConfirmedAt": "2026-08-17T02:33:24.000Z",
   "facts": {
-    "publicEmail": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
-    "phone": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
-    "whatsApp": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
-    "address": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
-    "hours": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
-    "appleMapsDestination": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" },
-    "serviceLanguages": { "value": null, "sourceUrl": null, "sourceStatus": "owner-confirmation-required" }
+    "publicEmail": { "value": "ivan@ivanguaderrama.com", "sourceUrl": "https://cabohealth.org/app/support/", "sourceStatus": "owner-confirmed-source" },
+    "phone": { "value": "+526241224865", "sourceUrl": "https://www.cabohealth.org/contact.html", "sourceStatus": "owner-confirmed-source" },
+    "whatsApp": { "value": "https://wa.me/526241224865", "sourceUrl": "https://www.cabohealth.org/contact.html", "sourceStatus": "owner-confirmed-source" },
+    "address": { "value": "In front of Plaza Amelia Wilkes, Hidalgo, Calle Cabo San Lucas 10, Centro, 23410 Cabo San Lucas, B.C.S., Mexico", "sourceUrl": "https://cabohealth.org/app/support/", "sourceStatus": "owner-confirmed-source" },
+    "hours": { "value": "Monday–Friday, 10:00 AM–4:00 PM", "sourceUrl": "https://cabohealth.org/app/support/", "sourceStatus": "owner-confirmed-source" },
+    "appleMapsDestination": { "value": "https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes%2C%20Hidalgo%2C%20Calle%20Cabo%20San%20Lucas%2010%2C%20Centro%2C%2023410%20Cabo%20San%20Lucas%2C%20B.C.S.%2C%20Mexico&name=Cabo%20Health", "sourceUrl": "https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes%2C%20Hidalgo%2C%20Calle%20Cabo%20San%20Lucas%2010%2C%20Centro%2C%2023410%20Cabo%20San%20Lucas%2C%20B.C.S.%2C%20Mexico&name=Cabo%20Health", "sourceStatus": "owner-confirmed-source" },
+    "serviceLanguages": { "value": ["English", "Spanish"], "sourceUrl": "https://cabohealth.org/app/support/", "sourceStatus": "owner-confirmed-source" }
   }
 }

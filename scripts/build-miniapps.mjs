@@ -18,6 +18,7 @@ const IMMUTABLE_ARTIFACT_PREFIX = '.dist-artifact-';
 const IMMUTABLE_ARTIFACT_NAME = /^\.dist-artifact-[a-f0-9]{48}\.capsule$/u;
 const LEGACY_CONTROLLED_BUILD_NAMES = Object.freeze(['.dist-stage', '.dist-stage.prepare']);
 const TASK6A_CAPSULE_KIND = 'cabohealth-miniapps-task-6a-capsule-v1';
+const TASK6B_CAPSULE_KIND = 'cabohealth-miniapps-task-6b-release-capsule-v1';
 export const MINIAPP_SECURITY_HEADERS = Object.freeze({
   'Content-Security-Policy': CONTENT_SECURITY_POLICY,
   'X-Content-Type-Options': 'nosniff',
@@ -46,6 +47,23 @@ const REQUIRED_FACT_KEYS = Object.freeze([
   'appleMapsDestination',
   'serviceLanguages',
 ]);
+const EXPECTED_PUBLIC_CONTACT_FACTS = Object.freeze({
+  status: 'owner-confirmed',
+  ownerConfirmedAt: '2026-08-17T02:33:24.000Z',
+  facts: {
+    publicEmail: { value: 'ivan@ivanguaderrama.com', sourceUrl: 'https://cabohealth.org/app/support/', sourceStatus: 'owner-confirmed-source' },
+    phone: { value: '+526241224865', sourceUrl: 'https://www.cabohealth.org/contact.html', sourceStatus: 'owner-confirmed-source' },
+    whatsApp: { value: 'https://wa.me/526241224865', sourceUrl: 'https://www.cabohealth.org/contact.html', sourceStatus: 'owner-confirmed-source' },
+    address: { value: 'In front of Plaza Amelia Wilkes, Hidalgo, Calle Cabo San Lucas 10, Centro, 23410 Cabo San Lucas, B.C.S., Mexico', sourceUrl: 'https://cabohealth.org/app/support/', sourceStatus: 'owner-confirmed-source' },
+    hours: { value: 'Monday–Friday, 10:00 AM–4:00 PM', sourceUrl: 'https://cabohealth.org/app/support/', sourceStatus: 'owner-confirmed-source' },
+    appleMapsDestination: {
+      value: 'https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes%2C%20Hidalgo%2C%20Calle%20Cabo%20San%20Lucas%2010%2C%20Centro%2C%2023410%20Cabo%20San%20Lucas%2C%20B.C.S.%2C%20Mexico&name=Cabo%20Health',
+      sourceUrl: 'https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes%2C%20Hidalgo%2C%20Calle%20Cabo%20San%20Lucas%2010%2C%20Centro%2C%2023410%20Cabo%20San%20Lucas%2C%20B.C.S.%2C%20Mexico&name=Cabo%20Health',
+      sourceStatus: 'owner-confirmed-source',
+    },
+    serviceLanguages: { value: ['English', 'Spanish'], sourceUrl: 'https://cabohealth.org/app/support/', sourceStatus: 'owner-confirmed-source' },
+  },
+});
 const EXPECTED_RECIPE_SLUGS = Object.freeze([
   'banana-tahini-cinnamon-toast',
   'black-bean-corn-skillet',
@@ -82,16 +100,18 @@ const SOURCE_FILES = Object.freeze([
 ]);
 const TASK6A_REVIEWED_SOURCE_SHA256 = Object.freeze({
   'assets/logo.png': 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117',
+  'content/clinic-guide.json': 'ee17b5427fb755385c1b0588b541808923db2e0831a68df5d58e6e0bb7faced6',
   'content/recipes.json': 'fbc9c338341653e87a744ae11906a1995ea642aa094ef4aaaf418f6bc819b9cf',
-  'miniapps/clinic-guide/app.js': '4f2f8fde380201d94bfe8c3b69674068e8c5ee11bb1e1600029eebcab27bec9b',
-  'miniapps/clinic-guide/index.html': '7742f1ebad943bec481d5d950909eb973083b4bc2e4f01380eecb05678117f4e',
+  'miniapps/clinic-guide/app.js': '1565868ae2bc74769e5d036bc697a4e1d81f91740345ba67edf0628af5813243',
+  'miniapps/clinic-guide/index.html': '9d4ede54f319269b7fae631e6002c53b1722247c40293d8b4f671c9ab574d860',
   'miniapps/healthy-recipes/app.js': '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090',
   'miniapps/healthy-recipes/index.html': 'b957146425693d892808044faed006cb991eeb8695ddb522baa625ffb319a481',
   'miniapps/shared/logo.png': 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117',
   'miniapps/shared/motion.js': '9ac97593f7339f6b7f1b9f4da6dafed4084185440022604b75754377291e56b7',
   'miniapps/shared/security-headers.conf': '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da',
   'miniapps/shared/shell.js': 'd53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103',
-  'miniapps/shared/styles.css': '1cfcd2166aebba9c02016441a8115333de2633792873b22ace3c8bb3cc8ad04d',
+  'miniapps/shared/styles.css': 'db0f0c531c453455d63aadba1dd4a99008337e555a746a7cbfee19e5a3d8f3ef',
+  'release/public-contact-facts.json': '99a351ac98d91dab160746e473492224471891ca72a4c70624cb88da02b930a1',
   'web-hosting/cabohealth.org/apps/.htaccess': '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da',
 });
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/u;
@@ -215,6 +235,9 @@ export function validatePublicContactFacts(record) {
       errors.push('appleMapsDestination.value must be an exact Apple Maps HTTPS URL');
     }
   }
+  if (!isDeepStrictEqual(record, EXPECTED_PUBLIC_CONTACT_FACTS)) {
+    errors.push('public contact facts must byte-semantically match the Task 6B owner confirmation');
+  }
   return errors;
 }
 
@@ -287,6 +310,52 @@ function validateRecipes(content) {
     /\b(?:cura|previene|trata)\s+(?:enfermedad|c[aá]ncer|diabetes)\b/iu,
   ]) {
     if (pattern.test(serialized)) errors.push(`recipes contain prohibited language matching ${pattern}`);
+  }
+  return errors;
+}
+
+function validateClinicGuide(content) {
+  const errors = [];
+  if (!content || typeof content !== 'object' || Array.isArray(content)) return ['clinic guide content must be an object'];
+  if (content.version !== '1.0.0') errors.push('clinicGuide.version must remain 1.0.0 for this release');
+  if (content.reviewedOn !== '2026-08-16') errors.push('clinicGuide.reviewedOn must match the frozen editorial review');
+  assertBilingualText(content.emergency, 'clinicGuide.emergency', errors);
+  assertBilingualText(content.privacy, 'clinicGuide.privacy', errors);
+  const expectedGroups = [
+    'appointment-confirmation',
+    'questions',
+    'travel-access',
+    'accessibility-language',
+    'what-to-bring',
+    'privacy',
+  ];
+  if (!Array.isArray(content.groups) || !isDeepStrictEqual(content.groups.map((group) => group?.id), expectedGroups)) {
+    errors.push('clinicGuide.groups must contain the exact approved visit-preparation groups');
+  } else {
+    for (const group of content.groups) {
+      assertBilingualText(group.title, `clinicGuide.${group.id}.title`, errors);
+      if (!Array.isArray(group.items) || group.items.length === 0) {
+        errors.push(`clinicGuide.${group.id}.items must be nonempty`);
+        continue;
+      }
+      for (const item of group.items) {
+        if (typeof item?.id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(item.id)) {
+          errors.push(`clinicGuide.${group.id} item id must be a slug`);
+        }
+        assertBilingualText(item?.text, `clinicGuide.${group.id}.${item?.id ?? 'missing'}`, errors);
+      }
+    }
+  }
+  if (!Array.isArray(content.sources) || content.sources.length === 0) errors.push('clinicGuide.sources must be nonempty');
+  const serialized = JSON.stringify(content);
+  for (const pattern of [
+    /\b(?:diagnoses?|diagnostica|diagnosticar)\b/iu,
+    /\b(?:dosage|dosing|dosificaci[oó]n)\b/iu,
+    /\b(?:patient portal|medical record|portal de pacientes|expediente cl[ií]nico)\b/iu,
+    /\b(?:analytics|tracking|advertising|publicidad|rastreo)\b/iu,
+    /\b(?:buy now|purchase|subscribe|comprar ahora|suscr[ií]bete)\b/iu,
+  ]) {
+    if (pattern.test(serialized)) errors.push(`clinic guide contains prohibited language matching ${pattern}`);
   }
   return errors;
 }
@@ -450,8 +519,103 @@ export function renderHealthyRecipesDocument(template, content) {
   return html;
 }
 
+function externalAction(href, labelEn, labelEs) {
+  return `<a href="${escapeHtml(href)}" data-external-action data-label-en="${escapeHtml(labelEn)}" data-label-es="${escapeHtml(labelEs)}"><span data-external-label>${escapeHtml(labelEn)} / ${escapeHtml(labelEs)}</span> <span class="external-marker" aria-hidden="true">↗</span></a>`;
+}
+
+function renderConfirmedPublicFacts(facts) {
+  const { publicEmail, phone, whatsApp, address, hours, appleMapsDestination, serviceLanguages } = facts.facts;
+  const rows = [
+    ['Email', 'Correo', publicEmail.value, externalAction(`mailto:${publicEmail.value}`, 'Email clinic', 'Enviar correo a la clínica')],
+    ['Phone', 'Teléfono', phone.value, externalAction(`tel:${phone.value}`, 'Call clinic', 'Llamar a la clínica')],
+    ['WhatsApp', 'WhatsApp', phone.value, externalAction(whatsApp.value, 'Open WhatsApp', 'Abrir WhatsApp')],
+    ['Address', 'Dirección', address.value, externalAction(appleMapsDestination.value, 'Open address destination', 'Abrir destino de la dirección')],
+    ['Hours', 'Horario', hours.value, ''],
+    ['Service languages', 'Idiomas de atención', serviceLanguages.value.join(', '), ''],
+  ];
+  return [
+    '        <ul class="contact-list">',
+    ...rows.map(([labelEn, labelEs, value, action]) => [
+      '          <li>',
+      `            <strong><span lang="en" data-locale="en">${escapeHtml(labelEn)}</span><span lang="es-MX" data-locale="es-MX">${escapeHtml(labelEs)}</span></strong>`,
+      `            <span>${escapeHtml(value)}</span>`,
+      action ? `            ${action}` : '',
+      '          </li>',
+    ].filter(Boolean).join('\n')),
+    '        </ul>',
+  ].join('\n');
+}
+
+function renderClinicGroup(group) {
+  return [
+    `        <article class="checklist-group" aria-labelledby="group-${group.id}">`,
+    `          <h3 id="group-${group.id}"><span lang="en" data-locale="en">${escapeHtml(group.title.en)}</span><span lang="es-MX" data-locale="es-MX">${escapeHtml(group.title['es-MX'])}</span></h3>`,
+    '          <ul class="checklist-items">',
+    ...group.items.map((item) => [
+      '            <li>',
+      '              <label class="checklist-item">',
+      `                <input type="checkbox" data-checklist-item="${escapeHtml(item.id)}" disabled>`,
+      `                <span><span lang="en" data-locale="en">${escapeHtml(item.text.en)}</span><span lang="es-MX" data-locale="es-MX">${escapeHtml(item.text['es-MX'])}</span></span>`,
+      '              </label>',
+      '            </li>',
+    ].join('\n')),
+    '          </ul>',
+    '        </article>',
+  ].join('\n');
+}
+
+function renderBilingualInformationPanel({ id, eyebrowEn, eyebrowEs, titleEn, titleEs, text }) {
+  return [
+    `        <section class="information-panel" aria-labelledby="${id}-en ${id}-es">`,
+    '          <div lang="en" data-locale="en">',
+    `            <p class="eyebrow">${escapeHtml(eyebrowEn)}</p>`,
+    `            <h2 id="${id}-en">${escapeHtml(titleEn)}</h2>`,
+    `            <p>${escapeHtml(text.en)}</p>`,
+    '          </div>',
+    '          <div lang="es-MX" data-locale="es-MX">',
+    `            <p class="eyebrow">${escapeHtml(eyebrowEs)}</p>`,
+    `            <h2 id="${id}-es">${escapeHtml(titleEs)}</h2>`,
+    `            <p>${escapeHtml(text['es-MX'])}</p>`,
+    '          </div>',
+    '        </section>',
+  ].join('\n');
+}
+
+export function renderClinicGuideDocument(template, content, facts) {
+  const replacements = {
+    CSP: CONTENT_SECURITY_POLICY,
+    CONFIRMED_PUBLIC_FACTS: renderConfirmedPublicFacts(facts),
+    CLINIC_GUIDE_SECTIONS: content.groups.map(renderClinicGroup).join('\n'),
+    EMERGENCY_GUIDANCE: renderBilingualInformationPanel({
+      id: 'emergency-guidance',
+      eyebrowEn: 'Emergency guidance',
+      eyebrowEs: 'Orientación de emergencia',
+      titleEn: 'Call local emergency services',
+      titleEs: 'Llama a los servicios locales de emergencia',
+      text: content.emergency,
+    }),
+    PRIVACY_GUIDANCE: renderBilingualInformationPanel({
+      id: 'privacy-guidance',
+      eyebrowEn: 'Privacy by design',
+      eyebrowEs: 'Privacidad desde el diseño',
+      titleEn: 'No private health information',
+      titleEs: 'Sin información privada de salud',
+      text: content.privacy,
+    }),
+    REVIEWED_ON: escapeHtml(content.reviewedOn),
+    REVIEWED_ON_ISO: escapeHtml(content.reviewedOn),
+    SOURCE_ITEMS: content.sources.map((source) => `            <li>${escapeHtml(source.title)}</li>`).join('\n'),
+  };
+  let html = template;
+  for (const [token, value] of Object.entries(replacements)) html = replaceToken(html, token, value);
+  if (/\{\{[A-Z0-9_]+\}\}/u.test(html)) throw new Error('Unresolved token in Clinic Guide output');
+  return html;
+}
+
 const TASK6A_ENTRY_SLUGS = Object.freeze(['healthy-recipes']);
 const TASK6A_BLOCKED_SLUGS = Object.freeze(['clinic-guide']);
+const TASK6B_ENTRY_SLUGS = APPROVED_MINIAPP_SLUGS;
+const TASK6B_BLOCKED_SLUGS = Object.freeze([]);
 const TASK6A_REVIEWED_ARTIFACTS = Object.freeze({
   'apps/.htaccess': Object.freeze({
     size: 568,
@@ -478,11 +642,60 @@ const TASK6A_REVIEWED_ARTIFACTS = Object.freeze({
     sha256: 'd53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103',
   }),
   'apps/shared/styles.css': Object.freeze({
-    size: 8715,
-    sha256: '1cfcd2166aebba9c02016441a8115333de2633792873b22ace3c8bb3cc8ad04d',
+    size: 9887,
+    sha256: 'db0f0c531c453455d63aadba1dd4a99008337e555a746a7cbfee19e5a3d8f3ef',
   }),
 });
 const TASK6A_ARTIFACT_PATHS = Object.freeze(Object.keys(TASK6A_REVIEWED_ARTIFACTS));
+const TASK6B_REVIEWED_ARTIFACTS = Object.freeze({
+  'apps/.htaccess': Object.freeze({
+    size: 568,
+    sha256: '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da',
+  }),
+  'apps/clinic-guide/app.js': Object.freeze({
+    size: 1436,
+    sha256: '1565868ae2bc74769e5d036bc697a4e1d81f91740345ba67edf0628af5813243',
+  }),
+  'apps/clinic-guide/index.html': Object.freeze({
+    size: 20481,
+    sha256: 'a0246074ba7734df7e28354a6ecfff39ac08d7ddd1da4e295f66f11ec77a18ee',
+  }),
+  'apps/healthy-recipes/app.js': Object.freeze({
+    size: 4049,
+    sha256: '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090',
+  }),
+  'apps/healthy-recipes/index.html': Object.freeze({
+    size: 55957,
+    sha256: '5f22027afcd1600fa36cd77974d48b6d2ddc4fe26e27fcf57f206a8520413829',
+  }),
+  'apps/shared/logo.png': Object.freeze({
+    size: 13598,
+    sha256: 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117',
+  }),
+  'apps/shared/motion.js': Object.freeze({
+    size: 8996,
+    sha256: '9ac97593f7339f6b7f1b9f4da6dafed4084185440022604b75754377291e56b7',
+  }),
+  'apps/shared/shell.js': Object.freeze({
+    size: 3769,
+    sha256: 'd53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103',
+  }),
+  'apps/shared/styles.css': Object.freeze({
+    size: 9887,
+    sha256: 'db0f0c531c453455d63aadba1dd4a99008337e555a746a7cbfee19e5a3d8f3ef',
+  }),
+});
+const TASK6B_ARTIFACT_PATHS = Object.freeze([
+  'apps/.htaccess',
+  'apps/clinic-guide/app.js',
+  'apps/clinic-guide/index.html',
+  'apps/healthy-recipes/app.js',
+  'apps/healthy-recipes/index.html',
+  'apps/shared/logo.png',
+  'apps/shared/motion.js',
+  'apps/shared/shell.js',
+  'apps/shared/styles.css',
+]);
 const TASK6A_MANIFEST_KEYS = Object.freeze([
   'blockedEntrySlugs',
   'entrySlugs',
@@ -513,12 +726,27 @@ function expectedHealthyArtifactFiles(projectRoot, recipes) {
   return new Map([...values.entries()].sort(([left], [right]) => left.localeCompare(right)));
 }
 
-function assertReviewedArtifactBuffers(files) {
-  if (!isDeepStrictEqual([...files.keys()], TASK6A_ARTIFACT_PATHS)) {
+function expectedReleaseArtifactFiles(projectRoot, recipes, clinicGuide, contactFacts) {
+  const values = new Map(expectedHealthyArtifactFiles(projectRoot, recipes));
+  values.set('apps/clinic-guide/app.js', readFileSync(join(projectRoot, 'miniapps/clinic-guide/app.js')));
+  values.set(
+    'apps/clinic-guide/index.html',
+    Buffer.from(normalizedText(renderClinicGuideDocument(
+      readText(join(projectRoot, 'miniapps/clinic-guide/index.html')),
+      clinicGuide,
+      contactFacts,
+    )), 'utf8'),
+  );
+  return new Map([...values.entries()].sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function assertReviewedArtifactBuffers(files, reviewedArtifacts, artifactPaths) {
+  if (!isDeepStrictEqual([...files.keys()], artifactPaths)) {
     throw new Error('MINIAPP_REVIEWED_ARTIFACT_ATTESTATION_FAILED: exact file set required');
   }
   for (const [path, bytes] of files) {
-    const reviewed = TASK6A_REVIEWED_ARTIFACTS[path];
+    const reviewed = reviewedArtifacts[path];
+    if (!reviewed) throw new Error(`MINIAPP_REVIEWED_ARTIFACT_ATTESTATION_FAILED: ${path}`);
     if (bytes.byteLength !== reviewed.size || sha256(bytes) !== reviewed.sha256) {
       throw new Error(`MINIAPP_REVIEWED_ARTIFACT_ATTESTATION_FAILED: ${path}`);
     }
@@ -542,6 +770,19 @@ function healthyManifest(recipes, files) {
     entrySlugs: [...TASK6A_ENTRY_SLUGS],
     blockedEntrySlugs: [...TASK6A_BLOCKED_SLUGS],
     releaseReady: false,
+    files: inventoryForBuffers(files),
+  };
+}
+
+function releaseManifest(recipes, clinicGuide, files) {
+  return {
+    schemaVersion: 1,
+    mode: 'release',
+    sourceVersion: `${recipes.version}+${clinicGuide.version}`,
+    reviewedOn: clinicGuide.reviewedOn,
+    entrySlugs: [...TASK6B_ENTRY_SLUGS],
+    blockedEntrySlugs: [...TASK6B_BLOCKED_SLUGS],
+    releaseReady: true,
     files: inventoryForBuffers(files),
   };
 }
@@ -593,25 +834,52 @@ function parseCanonicalManifest(root) {
   return { manifest, manifestBytes };
 }
 
-export function createHealthyArtifactPlan(projectRoot) {
+function createArtifactPlans(projectRoot) {
   const root = realpathSync(resolve(projectRoot));
   const immutableCandidateResidues = validateSourceInventory(root);
   validateReviewedSourceAttestation(root);
   const recipes = readJson(join(root, 'content/recipes.json'));
   const recipeErrors = validateRecipes(recipes);
   if (recipeErrors.length > 0) throw new Error(`MINIAPP_RECIPE_CONTENT_INVALID\n${recipeErrors.join('\n')}`);
-  const files = expectedHealthyArtifactFiles(root, recipes);
-  assertReviewedArtifactBuffers(files);
-  const manifest = healthyManifest(recipes, files);
-  const plan = Object.freeze({ files, manifest, projectRoot: root });
-  validateImmutableCandidateResidues(immutableCandidateResidues, plan);
-  return plan;
+  const clinicGuide = readJson(join(root, 'content/clinic-guide.json'));
+  const clinicErrors = validateClinicGuide(clinicGuide);
+  if (clinicErrors.length > 0) throw new Error(`MINIAPP_CLINIC_CONTENT_INVALID\n${clinicErrors.join('\n')}`);
+  const contactFacts = readJson(join(root, 'release/public-contact-facts.json'));
+  const contactErrors = validatePublicContactFacts(contactFacts);
+  if (contactErrors.length > 0) throw new Error(`PUBLIC_CONTACT_FACTS_INCOMPLETE\n${contactErrors.join('\n')}`);
+
+  const healthyFiles = expectedHealthyArtifactFiles(root, recipes);
+  assertReviewedArtifactBuffers(healthyFiles, TASK6A_REVIEWED_ARTIFACTS, TASK6A_ARTIFACT_PATHS);
+  const healthy = Object.freeze({
+    capsuleKind: TASK6A_CAPSULE_KIND,
+    files: healthyFiles,
+    manifest: healthyManifest(recipes, healthyFiles),
+    projectRoot: root,
+  });
+  const releaseFiles = expectedReleaseArtifactFiles(root, recipes, clinicGuide, contactFacts);
+  assertReviewedArtifactBuffers(releaseFiles, TASK6B_REVIEWED_ARTIFACTS, TASK6B_ARTIFACT_PATHS);
+  const release = Object.freeze({
+    capsuleKind: TASK6B_CAPSULE_KIND,
+    files: releaseFiles,
+    manifest: releaseManifest(recipes, clinicGuide, releaseFiles),
+    projectRoot: root,
+  });
+  validateImmutableCandidateResidues(immutableCandidateResidues, [healthy, release]);
+  return Object.freeze({ healthy, release });
+}
+
+export function createHealthyArtifactPlan(projectRoot) {
+  return createArtifactPlans(projectRoot).healthy;
+}
+
+export function createReleaseArtifactPlan(projectRoot) {
+  return createArtifactPlans(projectRoot).release;
 }
 
 function healthyArtifactCapsule(plan) {
   return {
     schemaVersion: 1,
-    kind: TASK6A_CAPSULE_KIND,
+    kind: plan.capsuleKind,
     manifest: plan.manifest,
     files: [...plan.files].map(([path, bytes]) => ({
       path,
@@ -626,8 +894,8 @@ function healthyArtifactCapsuleBytes(plan) {
   return Buffer.from(normalizedText(JSON.stringify(healthyArtifactCapsule(plan), null, 2)), 'utf8');
 }
 
-function validateImmutableCandidateResidues(paths, plan) {
-  const expected = healthyArtifactCapsuleBytes(plan);
+function validateImmutableCandidateResidues(paths, plans) {
+  const expectedCapsules = plans.map(healthyArtifactCapsuleBytes);
   for (const path of paths) {
     const stats = lstatSync(path);
     const mode = stats.mode & 0o777;
@@ -638,8 +906,10 @@ function validateImmutableCandidateResidues(paths, plan) {
       || ![0o400, 0o600].includes(mode)
       || stats.nlink < 1
       || stats.nlink > 2
-      || bytes.byteLength > expected.byteLength
-      || !bytes.equals(expected.subarray(0, bytes.byteLength))
+      || !expectedCapsules.some((expected) => (
+        bytes.byteLength <= expected.byteLength
+        && bytes.equals(expected.subarray(0, bytes.byteLength))
+      ))
     ) {
       throw new Error(`MINIAPP_IMMUTABLE_CANDIDATE_RESIDUE_INVALID: ${path}`);
     }
@@ -692,27 +962,42 @@ function verifyCapsuleArtifact(root, rootStats, plan) {
   }
 }
 
-export function verifyBuiltArtifact({ projectRoot, outputRoot, expectedEntrySlugs = TASK6A_ENTRY_SLUGS }) {
-  if (!isDeepStrictEqual(expectedEntrySlugs, TASK6A_ENTRY_SLUGS)) {
-    throw new Error('Task 6A verifier accepts only the exact Healthy Recipes entry root');
-  }
+function verifiedPlanForArtifact({ projectRoot, outputRoot, expectedEntrySlugs }) {
   const root = resolve(outputRoot);
   const rootStats = lstatIfPresent(root);
   if (!rootStats || rootStats.isSymbolicLink() || (!rootStats.isDirectory() && !rootStats.isFile())) {
     throw new Error('MINIAPP_ARTIFACT_VERIFICATION_FAILED: artifact root must be a real directory or immutable capsule');
   }
-  const plan = createHealthyArtifactPlan(projectRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-  if (rootStats.isDirectory()) verifyDirectoryArtifact(root, plan);
-  else verifyCapsuleArtifact(root, rootStats, plan);
-  const finalStats = lstatIfPresent(root);
-  assertUnchangedFilesystemObject(filesystemIdentity(root, rootStats), filesystemIdentity(root, finalStats), 'artifact root identity');
+  const plans = createArtifactPlans(projectRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+  let candidates;
+  if (expectedEntrySlugs === undefined) candidates = [plans.release, plans.healthy];
+  else if (isDeepStrictEqual(expectedEntrySlugs, TASK6B_ENTRY_SLUGS)) candidates = [plans.release];
+  else if (isDeepStrictEqual(expectedEntrySlugs, TASK6A_ENTRY_SLUGS)) candidates = [plans.healthy];
+  else throw new Error('Miniapp verifier requires exactly one approved entry-root set');
+
+  let lastError;
+  for (const plan of candidates) {
+    try {
+      if (rootStats.isDirectory()) verifyDirectoryArtifact(root, plan);
+      else verifyCapsuleArtifact(root, rootStats, plan);
+      const finalStats = lstatIfPresent(root);
+      assertUnchangedFilesystemObject(filesystemIdentity(root, rootStats), filesystemIdentity(root, finalStats), 'artifact root identity');
+      return plan;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error('MINIAPP_ARTIFACT_VERIFICATION_FAILED: artifact does not match an independently attested plan', { cause: lastError });
+}
+
+export function verifyBuiltArtifact({ projectRoot, outputRoot, expectedEntrySlugs }) {
+  verifiedPlanForArtifact({ projectRoot, outputRoot, expectedEntrySlugs });
   return true;
 }
 
-export function readVerifiedMiniappArtifact({ projectRoot, outputRoot }) {
+export function readVerifiedMiniappArtifact({ projectRoot, outputRoot, expectedEntrySlugs }) {
   const root = resolve(outputRoot);
-  verifyBuiltArtifact({ projectRoot, outputRoot: root });
-  const plan = createHealthyArtifactPlan(projectRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+  const plan = verifiedPlanForArtifact({ projectRoot, outputRoot: root, expectedEntrySlugs });
   const rootStats = lstatIfPresent(root);
   if (!rootStats || rootStats.isSymbolicLink()) {
     throw new Error('MINIAPP_ARTIFACT_CHANGED_DURING_SNAPSHOT: artifact root');
@@ -885,7 +1170,7 @@ export function assertVerifiedMiniappDeploymentSource({ projectRoot, outputRoot 
   if (!targetStats?.isDirectory() || targetStats.isSymbolicLink()) {
     throw new Error('MINIAPP_DEPLOYMENT_REQUIRES_REVIEWED_MATERIALIZATION: immutable capsule is verified but is not a deployable static directory');
   }
-  verifyBuiltArtifact({ projectRoot, outputRoot: target });
+  verifyBuiltArtifact({ projectRoot, outputRoot: target, expectedEntrySlugs: TASK6B_ENTRY_SLUGS });
   return target;
 }
 
@@ -1027,12 +1312,11 @@ export async function buildMiniapps({
     if (contactErrors.length > 0) {
       throw new Error(`PUBLIC_CONTACT_FACTS_INCOMPLETE\n${contactErrors.join('\n')}`);
     }
-    throw new Error('CLINIC_GUIDE_TASK_6B_PENDING: confirmed facts pass validation, but the deployable Clinic Guide renderer is intentionally not part of Task 6A');
   }
 
-  const plan = createHealthyArtifactPlan(root);
+  const plan = mode === 'release' ? createReleaseArtifactPlan(root) : createHealthyArtifactPlan(root);
   if (safePaths.targetIdentity) {
-    verifyBuiltArtifact({ projectRoot: root, outputRoot: target });
+    verifyBuiltArtifact({ projectRoot: root, outputRoot: target, expectedEntrySlugs: plan.manifest.entrySlugs });
     const current = describeSafeMiniappOutputPaths(pathInputs);
     if (
       !isDeepStrictEqual(current.parentChain, safePaths.parentChain)
@@ -1040,7 +1324,7 @@ export async function buildMiniapps({
     ) {
       throw new Error('MINIAPP_EXISTING_ARTIFACT_CHANGED_DURING_IDEMPOTENCE_CHECK');
     }
-    verifyBuiltArtifact({ projectRoot: root, outputRoot: target });
+    verifyBuiltArtifact({ projectRoot: root, outputRoot: target, expectedEntrySlugs: plan.manifest.entrySlugs });
     const final = describeSafeMiniappOutputPaths(pathInputs);
     if (
       !isDeepStrictEqual(final.parentChain, safePaths.parentChain)
@@ -1074,7 +1358,7 @@ export async function buildMiniapps({
     || candidateStats.dev !== targetStats.dev
     || candidateStats.ino !== targetStats.ino
   ) throw new Error('MINIAPP_CANONICAL_PUBLICATION_FAILED: immutable candidate identity changed after publication');
-  verifyBuiltArtifact({ projectRoot: root, outputRoot: target });
+  verifyBuiltArtifact({ projectRoot: root, outputRoot: target, expectedEntrySlugs: plan.manifest.entrySlugs });
   const finalStats = lstatIfPresent(target);
   assertUnchangedFilesystemObject(filesystemIdentity(target, targetStats), filesystemIdentity(target, finalStats), 'published canonical artifact');
   return plan.manifest;
@@ -1095,7 +1379,7 @@ async function runCli() {
   const artifactType = lstatSync(outputRoot).isDirectory()
     ? 'verified existing static directory'
     : 'verified immutable capsule; reviewed static-tree materialization is still required';
-  console.log(`Prepared ${manifest.entrySlugs.join(', ')} at miniapps/dist (${artifactType}; Task 6A; not release-ready).`);
+  console.log(`Prepared ${manifest.entrySlugs.join(', ')} at miniapps/dist (${artifactType}; releaseReady=${manifest.releaseReady}).`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

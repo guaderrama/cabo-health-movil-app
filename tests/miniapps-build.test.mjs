@@ -589,7 +589,7 @@ test('Clinic Guide actions exactly match the native allowlist and remain literal
       'https://cabohealth.org/app/support/',
       'https://cabohealth.org/app/report-content/',
     ];
-    for (const href of actions) assert.match(html, new RegExp(`href="${href.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}"`, 'u'));
+    for (const href of actions) assert.ok(html.includes(`href="${href}"`), `missing exact action ${href}`);
     assert.equal((html.match(/data-external-action/gu) ?? []).length, actions.length);
     assert.doesNotMatch(html, /target\s*=|window\.open|location\s*=|location\.href/iu);
   });
@@ -601,10 +601,15 @@ test('release artifact has strict CSP and no remote subresources, collection for
       .filter((path) => /\.(?:html|css|js)$/u.test(path))
       .map((path) => readFileSync(path, 'utf8'))
       .join('\n');
+    const allHtml = walk(outputRoot)
+      .filter((path) => path.endsWith('.html'))
+      .map((path) => readFileSync(path, 'utf8'))
+      .join('\n');
     const clinicHtml = readFileSync(join(outputRoot, 'apps/clinic-guide/index.html'), 'utf8');
     const csp = clinicHtml.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/u)?.[1];
     assert.deepEqual(parseCsp(csp), requiredCsp);
-    assert.doesNotMatch(allText, /<form\b|<textarea\b|type=["']file|fetch\s*\(|XMLHttpRequest|EventSource|WebSocket|Worker\s*\(|sendBeacon|window\.ReactNativeWebView|postMessage\s*\(|target\s*=|window\.open/iu);
+    assert.doesNotMatch(allText, /<form\b|<textarea\b|type=["']file|fetch\s*\(|XMLHttpRequest|EventSource|WebSocket|Worker\s*\(|sendBeacon|window\.ReactNativeWebView|postMessage\s*\(|window\.open/iu);
+    assert.doesNotMatch(allHtml, /\starget\s*=/iu);
     assert.doesNotMatch(allText, /(?:src|srcset)=["'](?:https?:)?\/\//iu);
     assert.doesNotMatch(allText, /(?:@import|url\s*\()\s*["']?(?:https?:)?\/\//iu);
     assert.doesNotMatch(allText, /analytics|tracking|advertising|patient portal|medical record|buy now|purchase|subscribe/iu);
@@ -1408,14 +1413,16 @@ test('preview sends the exact security headers for success and error responses',
   });
 });
 
-test('deployment source guard accepts only a verified canonical static tree and refuses capsules or source templates', async () => {
+test('deployment source guard accepts only a verified two-root release tree and refuses capsules, partial artifacts or templates', async () => {
   const { assertVerifiedMiniappDeploymentSource, buildMiniapps } = await import(buildModuleUrl.href);
   const directoryFixture = createTask6ASourceFixture('cabohealth-deploy-directory-');
   const capsuleFixture = createTask6ASourceFixture('cabohealth-deploy-capsule-');
+  const partialFixture = createTask6ASourceFixture('cabohealth-deploy-partial-');
   const directoryDist = join(directoryFixture, 'miniapps/dist');
   const capsuleDist = join(capsuleFixture, 'miniapps/dist');
+  const partialDist = join(partialFixture, 'miniapps/dist');
   try {
-    await materializeHealthyDirectory(directoryDist, directoryFixture);
+    await materializeReleaseDirectory(directoryDist, directoryFixture);
     assert.equal(
       assertVerifiedMiniappDeploymentSource({ projectRoot: directoryFixture, outputRoot: directoryDist }),
       realpathSync(directoryDist),
@@ -1428,7 +1435,13 @@ test('deployment source guard accepts only a verified canonical static tree and 
       /canonical|verified|deployment|unsafe/iu,
     );
 
-    await buildMiniapps({ projectRoot: capsuleFixture, outputRoot: capsuleDist, mode: 'healthy' });
+    await materializeHealthyDirectory(partialDist, partialFixture);
+    assert.throws(
+      () => assertVerifiedMiniappDeploymentSource({ projectRoot: partialFixture, outputRoot: partialDist }),
+      /release|artifact|verification|attested/iu,
+    );
+
+    await buildMiniapps({ projectRoot: capsuleFixture, outputRoot: capsuleDist, mode: 'release' });
     assert.throws(
       () => assertVerifiedMiniappDeploymentSource({ projectRoot: capsuleFixture, outputRoot: capsuleDist }),
       /reviewed materialization|not a deployable static directory/iu,
@@ -1436,6 +1449,7 @@ test('deployment source guard accepts only a verified canonical static tree and 
   } finally {
     rmSync(directoryFixture, { recursive: true, force: true });
     rmSync(capsuleFixture, { recursive: true, force: true });
+    rmSync(partialFixture, { recursive: true, force: true });
   }
 });
 

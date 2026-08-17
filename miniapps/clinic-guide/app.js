@@ -20,6 +20,7 @@ function readCheckedItems() {
 const checkedItems = readCheckedItems();
 for (const item of checklistItems) {
   item.checked = checkedItems.has(item.dataset.checklistItem);
+  item.disabled = false;
   item.addEventListener('change', () => {
     if (item.checked) checkedItems.add(item.dataset.checklistItem);
     else checkedItems.delete(item.dataset.checklistItem);

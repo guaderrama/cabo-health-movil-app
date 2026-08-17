@@ -155,7 +155,7 @@ function runCli() {
   server.listen(port, '127.0.0.1', () => {
     const address = server.address();
     const activePort = typeof address === 'object' && address ? address.port : port;
-    console.log(`Task 6A preview: http://127.0.0.1:${activePort}/apps/healthy-recipes/`);
+    console.log(`CaboHealth preview: http://127.0.0.1:${activePort}/apps/healthy-recipes/ and http://127.0.0.1:${activePort}/apps/clinic-guide/`);
   });
 }
 
