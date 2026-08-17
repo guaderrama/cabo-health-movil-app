@@ -10,6 +10,21 @@ const LEGAL_URLS = {
   Support: 'https://cabohealth.org/app/support/',
   'Report Content': 'https://cabohealth.org/app/report-content/',
 };
+const REQUIRED_COMPLIANCE_GATES = [
+  'appStore.seller',
+  'appStore.sellerRelationship',
+  'hosting.logTypes',
+  'hosting.retention',
+  'hosting.deletionProcess',
+  'support.responseSla',
+  'contentRights',
+  'exportCompliance',
+  'medicalDevice',
+  'ageRating.host',
+  'ageRating.miniapps.healthy-recipes',
+  'ageRating.miniapps.clinic-guide',
+  'phiRemediation',
+];
 
 function walk(directory) {
   if (!existsSync(directory)) {
@@ -125,6 +140,61 @@ function hasForbiddenUrlScheme(source) {
   return literals.some((literal) => /^\s*(?:javascript|data|file|content|intent):/i.test(literal));
 }
 
+function valueAtPath(value, path) {
+  return path.split('.').reduce((current, key) => current?.[key], value);
+}
+
+function catalogAgeRating(source, slug) {
+  const entry = source.match(new RegExp(`slug\\s*:\\s*['"]${slug}['"][\\s\\S]*?appStoreAgeRating\\s*:\\s*(null|\\d+)`));
+  if (!entry || entry[1] === 'null') return null;
+  return Number(entry[1]);
+}
+
+function verifyComplianceFacts(root, errors) {
+  const compliancePath = join(root, 'release', 'compliance-facts.json');
+  if (!existsSync(compliancePath)) {
+    errors.push('Missing release compliance facts: release/compliance-facts.json');
+    return;
+  }
+
+  let facts;
+  try {
+    facts = JSON.parse(readText(compliancePath));
+  } catch {
+    errors.push('Invalid release metadata JSON: release/compliance-facts.json');
+    return;
+  }
+
+  if (facts.legalEntity?.legalSignOffStatus !== 'approved') {
+    errors.push('Pending release gate: legalEntity.legalSignOffStatus');
+  }
+
+  for (const path of REQUIRED_COMPLIANCE_GATES) {
+    const gate = valueAtPath(facts, path);
+    if (gate?.status !== 'verified' || gate.value === null || gate.value === undefined) {
+      errors.push(`Pending release gate: ${path}`);
+    }
+  }
+
+  const hostRating = facts.ageRating?.host?.value;
+  const catalogPath = join(root, 'constants', 'publicMiniapps.ts');
+  const catalogSource = existsSync(catalogPath) ? readText(catalogPath) : '';
+  for (const slug of APPROVED_SLUGS) {
+    const frozenRating = facts.ageRating?.miniapps?.[slug]?.value;
+    const sourceRating = catalogAgeRating(catalogSource, slug);
+    if (Number.isInteger(frozenRating) && Number.isInteger(hostRating) && frozenRating > hostRating) {
+      errors.push(`Miniapp age rating exceeds host rating: ${slug}`);
+    }
+    if (Number.isInteger(frozenRating) && sourceRating !== frozenRating) {
+      errors.push(`Catalog age rating does not match compliance facts: ${slug}`);
+    }
+  }
+
+  if (facts.releaseReady !== true) {
+    errors.push('Release compliance facts are not marked ready');
+  }
+}
+
 function verify(root) {
   const errors = [];
   const appRoot = join(root, 'app');
@@ -190,6 +260,8 @@ function verify(root) {
       errors.push(`Missing legal URL: ${label}`);
     }
   }
+
+  verifyComplianceFacts(root, errors);
 
   return errors;
 }

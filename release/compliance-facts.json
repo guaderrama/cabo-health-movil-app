@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "brand": "CaboHealth",
+  "releaseReady": false,
+  "slice": "task-7a-local-draft",
+  "legalEntity": {
+    "name": "Cabo Health",
+    "nameStatus": "owner-confirmed",
+    "legalSignOffStatus": "pending"
+  },
+  "appStore": {
+    "seller": { "value": null, "status": "pending" },
+    "sellerRelationship": { "value": null, "status": "pending" }
+  },
+  "hosting": {
+    "provider": "Hostinger",
+    "logTypes": { "value": null, "status": "pending" },
+    "retention": { "value": null, "status": "pending" },
+    "deletionProcess": { "value": null, "status": "pending" }
+  },
+  "support": {
+    "contactFactsRef": "release/public-contact-facts.json",
+    "responseSla": { "value": null, "status": "pending" }
+  },
+  "contentRights": { "value": null, "status": "pending" },
+  "exportCompliance": { "value": null, "status": "pending" },
+  "medicalDevice": { "value": null, "status": "pending" },
+  "ageRating": {
+    "host": { "value": null, "status": "pending" },
+    "miniapps": {
+      "healthy-recipes": { "value": null, "status": "pending" },
+      "clinic-guide": { "value": null, "status": "pending" }
+    }
+  },
+  "phiRemediation": { "value": null, "status": "pending" }
+}

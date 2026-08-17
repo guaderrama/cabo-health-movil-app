@@ -32,7 +32,7 @@ function readJson(relativePath) {
 
 function attributeValues(html, attribute) {
   return [...html.matchAll(new RegExp(`\\b${attribute}\\s*=\\s*["']([^"']+)["']`, 'gi'))]
-    .map((match) => match[1]);
+    .map((match) => match[1].replaceAll('&amp;', '&'));
 }
 
 function sectionKeys(html, locale) {
@@ -180,6 +180,7 @@ test('legal pages use no forms, scripts, popups, tracking, or remote assets', ()
     assert.doesNotMatch(html, /\btarget\s*=/i);
     assert.doesNotMatch(html, /\bon\w+\s*=/i);
     assert.doesNotMatch(html, /window\.open|google-analytics|googletagmanager|tracking pixel|track(?:ing)?-id/i);
+    assert.doesNotMatch(html, /href=["'][^"']*&(?!(?:amp|lt|gt|quot|apos);)/i);
     assert.deepEqual(attributeValues(html, 'src'), []);
     for (const href of attributeValues(html, 'href')) {
       assert.match(href, /^(?:https:\/\/(?:cabohealth\.org|wa\.me|maps\.apple\.com)\/|mailto:|tel:)/i, `unsafe href in ${path}: ${href}`);

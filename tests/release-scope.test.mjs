@@ -28,7 +28,7 @@ function makePublicReleaseFixture() {
       "const terms = 'https://cabohealth.org/app/terms/';",
       "const support = 'https://cabohealth.org/app/support/';",
       "const reportContent = 'https://cabohealth.org/app/report-content/';",
-      "export const PUBLIC_MINIAPPS = [{ slug: 'healthy-recipes' }, { slug: 'clinic-guide' }];",
+      "export const PUBLIC_MINIAPPS = [{ slug: 'healthy-recipes', appStoreAgeRating: 4 }, { slug: 'clinic-guide', appStoreAgeRating: 4 }];",
       'void privacy; void terms; void support; void reportContent;',
       '',
     ].join('\n'),
@@ -39,6 +39,31 @@ function makePublicReleaseFixture() {
     JSON.stringify({ applinks: { details: [{ components: [{ '/': '/apps/healthy-recipes/' }, { '/': '/apps/clinic-guide/' }] }] } }),
   );
   writeFixtureFile(root, 'release/web-artifacts.json', JSON.stringify({ slugs: ['healthy-recipes', 'clinic-guide'] }));
+  writeFixtureFile(root, 'release/compliance-facts.json', JSON.stringify({
+    releaseReady: true,
+    legalEntity: { legalSignOffStatus: 'approved' },
+    appStore: {
+      seller: { value: 'fixture-seller', status: 'verified' },
+      sellerRelationship: { value: 'fixture-relationship', status: 'verified' },
+    },
+    hosting: {
+      logTypes: { value: ['fixture-log'], status: 'verified' },
+      retention: { value: 'fixture-retention', status: 'verified' },
+      deletionProcess: { value: 'fixture-deletion', status: 'verified' },
+    },
+    support: { responseSla: { value: 'fixture-sla', status: 'verified' } },
+    contentRights: { value: 'fixture-rights', status: 'verified' },
+    exportCompliance: { value: 'fixture-export', status: 'verified' },
+    medicalDevice: { value: 'fixture-medical-device', status: 'verified' },
+    ageRating: {
+      host: { value: 4, status: 'verified' },
+      miniapps: {
+        'healthy-recipes': { value: 4, status: 'verified' },
+        'clinic-guide': { value: 4, status: 'verified' },
+      },
+    },
+    phiRemediation: { value: 'fixture-remediation', status: 'verified' },
+  }));
   return root;
 }
 
