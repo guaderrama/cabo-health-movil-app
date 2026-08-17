@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "status": "draft-conditional",
+  "calculatedRating": null,
+  "projectedRating": "9+",
+  "conditions": {
+    "unrestrictedWebAccess": {
+      "requiredAnswer": false,
+      "basis": "The final binary must keep the exact two-domain/path navigation policy and must not expose arbitrary browsing."
+    },
+    "medicalOrTreatmentInformation": {
+      "requiredAnswer": "None",
+      "basis": "The exact two-module content must remain general recipes and visit preparation without personalized medical or treatment content."
+    },
+    "healthOrWellnessTopics": {
+      "requiredAnswer": "Yes",
+      "basis": "Both public resources contain general health-and-wellness information."
+    }
+  },
+  "otherSupportedAnswers": {
+    "parentalControls": false,
+    "ageAssurance": false,
+    "userGeneratedContent": false,
+    "socialMedia": false,
+    "socialMediaDisabledUnder13": false,
+    "messagingOrChat": false,
+    "advertising": false
+  },
+  "ownerConfirmationRequired": true,
+  "appStoreCalculationRequired": true
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "status": "pending-exact-rc-capture",
+  "marketingVersion": "3.0",
+  "buildNumber": "4",
+  "deviceClass": "iPhone 6.9-inch",
+  "locales": [
+    "en-US",
+    "es-MX"
+  ],
+  "sceneIds": [
+    "01-curated-catalog",
+    "02-native-recipe-browser",
+    "03-healthy-recipes",
+    "04-native-visit-checklist",
+    "05-clinic-guide",
+    "06-saved",
+    "07-settings-and-legal"
+  ],
+  "captures": [],
+  "requiredEvidence": {
+    "testFlightBuildId": null,
+    "sourceSha": null,
+    "imageHashes": null,
+    "ocrExcludedScopeCheck": null,
+    "humanVisualSignOff": null
+  }
+}

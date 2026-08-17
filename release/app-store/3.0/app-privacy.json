@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "status": "pending-hosting-retention-and-owner-approval",
+  "recommendedAppPrivacyAnswer": null,
+  "nativeBehavior": {
+    "account": false,
+    "healthInformationRequested": false,
+    "appGeneratedIdentifier": false,
+    "analytics": false,
+    "advertising": false,
+    "tracking": false,
+    "sensitivePermissions": [],
+    "localOnlyState": [
+      "saved public-module slugs and order",
+      "language, appearance, haptics, effects, and onboarding preferences",
+      "recipe favorite keys",
+      "visit-checklist completion state"
+    ]
+  },
+  "hostedTechnicalRequestLogs": {
+    "provider": "Hostinger",
+    "observedFields": [
+      "IP address",
+      "timestamp",
+      "HTTP method",
+      "requested resource",
+      "device and user-agent details",
+      "country",
+      "response bytes",
+      "latency"
+    ],
+    "purpose": [
+      "page delivery",
+      "security and troubleshooting"
+    ],
+    "retention": null,
+    "deletionProcess": null,
+    "linkedToIdentity": null,
+    "tracking": false
+  },
+  "conditionalRecommendation": {
+    "dataNotCollectedPath": "Use only if the final provider facts and Apple's current definitions/exceptions establish that no hosted request-log field must be declared, and owner/legal approves that conclusion.",
+    "dataCollectedPath": "If technical request-log fields are retained and fall within Apple's collection definition, disclose only the matching current categories, purposes, linkage, and retention facts; do not infer a category from this draft.",
+    "provisionalPurpose": [
+      "App Functionality",
+      "Fraud Prevention, Security, and Compliance"
+    ],
+    "provisionalCategoryMapping": [
+      "Diagnostics — Other Diagnostic Data, if supported by Apple's current definitions",
+      "Other Data, if required for retained access-log fields under Apple's current definitions",
+      "Identifiers — Device ID only if a persistent device-level identifier is actually present"
+    ]
+  }
+}

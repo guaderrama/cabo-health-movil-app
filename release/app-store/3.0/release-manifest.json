@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "app-store-metadata-candidate",
+  "candidate": {
+    "appleId": "6758285327",
+    "bundleIdentifier": "com.cabohealth.app",
+    "marketingVersion": "3.0",
+    "buildNumber": "4",
+    "status": "draft-blocked",
+    "appJsonUpdated": false,
+    "rcSourceSha": null,
+    "testFlightBuildId": null
+  },
+  "ascEvidence": {
+    "currentRejectedVersion": "3.0",
+    "selectedRejectedBuild": "2",
+    "highestTestFlightBuild": "3",
+    "highestTestFlightBuildStatus": "expired",
+    "nextCandidateBuild": "4"
+  },
+  "scope": {
+    "miniapps": [
+      {
+        "slug": "healthy-recipes",
+        "title": "Healthy Recipes",
+        "canonicalUrl": "https://cabohealth.org/apps/healthy-recipes/",
+        "universalLink": "https://cabohealth.org/apps/healthy-recipes/"
+      },
+      {
+        "slug": "clinic-guide",
+        "title": "CaboHealth Clinic Guide",
+        "canonicalUrl": "https://cabohealth.org/apps/clinic-guide/",
+        "universalLink": "https://cabohealth.org/apps/clinic-guide/"
+      }
+    ],
+    "access": "public",
+    "accountRequired": false,
+    "demoCredentialRequired": false,
+    "purchases": false,
+    "userGeneratedContent": false,
+    "nativeWebBridge": false,
+    "remoteCatalog": false,
+    "sensitivePermissions": []
+  },
+  "urls": {
+    "support": "https://cabohealth.org/app/support/",
+    "privacy": "https://cabohealth.org/app/privacy/",
+    "terms": "https://cabohealth.org/app/terms/",
+    "reportContent": "https://cabohealth.org/app/report-content/",
+    "marketing": "https://cabohealth.org/"
+  },
+  "copyright": {
+    "value": null,
+    "status": "pending-verified-rights-holder"
+  },
+  "gates": {
+    "legalEntitySignOff": "pending-owner-legal",
+    "sellerLegalEntity": "blocked-external",
+    "sellerRelationship": "blocked-external",
+    "brandAuthorization": "pending-owner-legal",
+    "contentRights": "pending-owner-legal",
+    "hostedRoutes": "pending-deployment",
+    "hostingLogTypes": "pending-task-7b",
+    "hostingLogRetention": "pending-owner-legal",
+    "hostingLogDeletion": "pending-owner-legal",
+    "supportResponseSla": "pending-owner",
+    "phiRemediation": "pending-owner-authorization",
+    "ageRating": "pending-app-store-calculation",
+    "medicalDevice": "pending-account-holder",
+    "exportCompliance": "pending-account-holder",
+    "exactReleaseCandidate": "pending-build-and-qa",
+    "accessibilityLabels": "pending-exact-rc-evidence",
+    "screenshots": "pending-exact-rc-capture"
+  }
+}
