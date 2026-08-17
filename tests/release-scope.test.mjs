@@ -16,6 +16,61 @@ function writeFixtureFile(root, relativePath, contents) {
   writeFileSync(target, contents);
 }
 
+function verifiedComplianceFacts() {
+  return {
+    schemaVersion: 1,
+    brand: 'CaboHealth',
+    releaseReady: true,
+    slice: 'task-7b-verified',
+    legalEntity: {
+      name: 'Cabo Health',
+      nameStatus: 'owner-confirmed',
+      legalSignOffStatus: 'approved',
+    },
+    appStore: {
+      seller: { value: 'Cabo Health', status: 'verified' },
+      sellerRelationship: { value: 'legal-healthcare-provider', status: 'verified' },
+    },
+    hosting: {
+      provider: 'Hostinger',
+      logTypes: { value: ['HTTP access log'], status: 'verified' },
+      retention: { value: { description: 'Verified retention policy' }, status: 'verified' },
+      deletionProcess: { value: { description: 'Verified deletion process' }, status: 'verified' },
+    },
+    support: {
+      contactFactsRef: 'release/public-contact-facts.json',
+      responseSla: { value: { description: 'Verified response policy' }, status: 'verified' },
+    },
+    contentRights: {
+      value: { approved: true, scope: 'Verified public-v1 content and assets' },
+      status: 'verified',
+    },
+    exportCompliance: {
+      value: { approved: true, determination: 'Verified export determination' },
+      status: 'verified',
+    },
+    medicalDevice: {
+      value: { isMedicalDevice: false, basis: 'Verified final-build determination' },
+      status: 'verified',
+    },
+    ageRating: {
+      host: { value: 4, status: 'verified' },
+      miniapps: {
+        'healthy-recipes': { value: 4, status: 'verified' },
+        'clinic-guide': { value: 4, status: 'verified' },
+      },
+    },
+    phiRemediation: {
+      value: { completed: true, evidenceRef: 'authorized-private-remediation-record' },
+      status: 'verified',
+    },
+  };
+}
+
+function writeComplianceFixture(root, facts) {
+  writeFixtureFile(root, 'release/compliance-facts.json', JSON.stringify(facts));
+}
+
 function makePublicReleaseFixture() {
   const root = mkdtempSync(join(tmpdir(), 'cabohealth-minimal-v1-'));
   writeFixtureFile(root, 'app/(main)/index.tsx', 'export default function Home() { return null; }\n');
@@ -39,31 +94,7 @@ function makePublicReleaseFixture() {
     JSON.stringify({ applinks: { details: [{ components: [{ '/': '/apps/healthy-recipes/' }, { '/': '/apps/clinic-guide/' }] }] } }),
   );
   writeFixtureFile(root, 'release/web-artifacts.json', JSON.stringify({ slugs: ['healthy-recipes', 'clinic-guide'] }));
-  writeFixtureFile(root, 'release/compliance-facts.json', JSON.stringify({
-    releaseReady: true,
-    legalEntity: { legalSignOffStatus: 'approved' },
-    appStore: {
-      seller: { value: 'fixture-seller', status: 'verified' },
-      sellerRelationship: { value: 'fixture-relationship', status: 'verified' },
-    },
-    hosting: {
-      logTypes: { value: ['fixture-log'], status: 'verified' },
-      retention: { value: 'fixture-retention', status: 'verified' },
-      deletionProcess: { value: 'fixture-deletion', status: 'verified' },
-    },
-    support: { responseSla: { value: 'fixture-sla', status: 'verified' } },
-    contentRights: { value: 'fixture-rights', status: 'verified' },
-    exportCompliance: { value: 'fixture-export', status: 'verified' },
-    medicalDevice: { value: 'fixture-medical-device', status: 'verified' },
-    ageRating: {
-      host: { value: 4, status: 'verified' },
-      miniapps: {
-        'healthy-recipes': { value: 4, status: 'verified' },
-        'clinic-guide': { value: 4, status: 'verified' },
-      },
-    },
-    phiRemediation: { value: 'fixture-remediation', status: 'verified' },
-  }));
+  writeComplianceFixture(root, verifiedComplianceFacts());
   return root;
 }
 
@@ -148,6 +179,86 @@ test('release scope verifier accepts a two-module public release artifact', () =
       assert.equal(result.status, 0, result.stderr || result.stdout);
     },
   );
+});
+
+test('release scope verifier rejects every malformed or contradictory compliance mutation', async (t) => {
+  const mutations = [
+    ['unknown root key', (facts) => { facts.unexpected = 'accepted'; }],
+    ['wrong schema version', (facts) => { facts.schemaVersion = 2; }],
+    ['wrong brand', (facts) => { facts.brand = 'Cabo Health'; }],
+    ['release-ready wrong type', (facts) => { facts.releaseReady = 'true'; }],
+    ['empty slice', (facts) => { facts.slice = ''; }],
+    ['unknown legal entity key', (facts) => { facts.legalEntity.unexpected = true; }],
+    ['wrong legal entity name', (facts) => { facts.legalEntity.name = 'Fixture Company'; }],
+    ['wrong legal entity name status', (facts) => { facts.legalEntity.nameStatus = 'verified'; }],
+    ['unknown app-store key', (facts) => { facts.appStore.unexpected = true; }],
+    ['unknown hosting key', (facts) => { facts.hosting.unexpected = true; }],
+    ['unknown support key', (facts) => { facts.support.unexpected = true; }],
+    ['unknown age-rating key', (facts) => { facts.ageRating.unexpected = true; }],
+    ['unknown gate key', (facts) => { facts.appStore.seller.unexpected = 'accepted'; }],
+    ['contradictory pending gate', (facts) => { facts.appStore.seller.pending = true; }],
+    ['empty seller', (facts) => { facts.appStore.seller.value = ''; }],
+    ['healthcare seller does not match entity', (facts) => { facts.appStore.seller.value = 'Another Seller'; }],
+    ['unsupported seller relationship', (facts) => { facts.appStore.sellerRelationship.value = 'fixture-relationship'; }],
+    ['wrong hosting provider', (facts) => { facts.hosting.provider = 'Fixture Hosting'; }],
+    ['empty log types', (facts) => { facts.hosting.logTypes.value = []; }],
+    ['blank log type', (facts) => { facts.hosting.logTypes.value = [' ']; }],
+    ['empty retention description', (facts) => { facts.hosting.retention.value.description = '  '; }],
+    ['unknown retention value key', (facts) => { facts.hosting.retention.value.unexpected = true; }],
+    ['wrong deletion value type', (facts) => { facts.hosting.deletionProcess.value = 'deleted'; }],
+    ['wrong contact facts reference', (facts) => { facts.support.contactFactsRef = 'release/other.json'; }],
+    ['empty response policy', (facts) => { facts.support.responseSla.value.description = ''; }],
+    ['unapproved content rights', (facts) => { facts.contentRights.value.approved = false; }],
+    ['unapproved export determination', (facts) => { facts.exportCompliance.value.approved = false; }],
+    ['empty medical-device basis', (facts) => { facts.medicalDevice.value.basis = ''; }],
+    ['false PHI remediation', (facts) => { facts.phiRemediation = { value: false, status: 'verified' }; }],
+    ['incomplete PHI remediation object', (facts) => { facts.phiRemediation.value = { completed: true }; }],
+    ['unknown PHI remediation value key', (facts) => { facts.phiRemediation.value.unexpected = true; }],
+    ['string host rating', (facts) => {
+      facts.ageRating.host.value = 'not-a-rating';
+      facts.ageRating.miniapps['healthy-recipes'].value = 'not-a-rating';
+      facts.ageRating.miniapps['clinic-guide'].value = 'not-a-rating';
+    }],
+    ['fractional rating', (facts) => { facts.ageRating.host.value = 4.5; }],
+    ['rating below range', (facts) => { facts.ageRating.host.value = 3; }],
+    ['rating above range', (facts) => { facts.ageRating.host.value = 19; }],
+    ['miniapp rating above host', (facts) => { facts.ageRating.miniapps['healthy-recipes'].value = 9; }],
+    ['unknown miniapp rating key', (facts) => { facts.ageRating.miniapps.unexpected = { value: 4, status: 'verified' }; }],
+    ['catalog rating left null', (facts, root) => {
+      writeFixtureFile(
+        root,
+        'constants/publicMiniapps.ts',
+        "export const PUBLIC_MINIAPP_SLUGS = ['healthy-recipes', 'clinic-guide'] as const;\nconst privacy = 'https://cabohealth.org/app/privacy/'; const terms = 'https://cabohealth.org/app/terms/'; const support = 'https://cabohealth.org/app/support/'; const reportContent = 'https://cabohealth.org/app/report-content/';\nexport const PUBLIC_MINIAPPS = [{ slug: 'healthy-recipes', appStoreAgeRating: null }, { slug: 'clinic-guide', appStoreAgeRating: null }];\nvoid privacy; void terms; void support; void reportContent;\n",
+      );
+    }],
+    ['catalog rating is fractional', (facts, root) => {
+      writeFixtureFile(
+        root,
+        'constants/publicMiniapps.ts',
+        "export const PUBLIC_MINIAPP_SLUGS = ['healthy-recipes', 'clinic-guide'] as const;\nconst privacy = 'https://cabohealth.org/app/privacy/'; const terms = 'https://cabohealth.org/app/terms/'; const support = 'https://cabohealth.org/app/support/'; const reportContent = 'https://cabohealth.org/app/report-content/';\nexport const PUBLIC_MINIAPPS = [{ slug: 'healthy-recipes', appStoreAgeRating: 4.5 }, { slug: 'clinic-guide', appStoreAgeRating: 4 }];\nvoid privacy; void terms; void support; void reportContent;\n",
+      );
+    }],
+    ['catalog duplicates an approved slug', (facts, root) => {
+      writeFixtureFile(
+        root,
+        'constants/publicMiniapps.ts',
+        "export const PUBLIC_MINIAPP_SLUGS = ['healthy-recipes', 'clinic-guide'] as const;\nconst privacy = 'https://cabohealth.org/app/privacy/'; const terms = 'https://cabohealth.org/app/terms/'; const support = 'https://cabohealth.org/app/support/'; const reportContent = 'https://cabohealth.org/app/report-content/';\nexport const PUBLIC_MINIAPPS = [{ slug: 'healthy-recipes', appStoreAgeRating: 4 }, { slug: 'healthy-recipes', appStoreAgeRating: 4 }, { slug: 'clinic-guide', appStoreAgeRating: 4 }];\nvoid privacy; void terms; void support; void reportContent;\n",
+      );
+    }],
+  ];
+
+  for (const [name, mutate] of mutations) {
+    await t.test(name, () => {
+      withFixture(
+        (root) => {
+          const facts = verifiedComplianceFacts();
+          mutate(facts, root);
+          writeComplianceFixture(root, facts);
+        },
+        (result) => assert.equal(result.status, 1, `${name} bypassed verifier:\n${result.stdout}${result.stderr}`),
+      );
+    });
+  }
 });
 
 test('release scope verifier accepts benign data and content object properties', () => {

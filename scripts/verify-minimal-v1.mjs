@@ -144,10 +144,90 @@ function valueAtPath(value, path) {
   return path.split('.').reduce((current, key) => current?.[key], value);
 }
 
-function catalogAgeRating(source, slug) {
-  const entry = source.match(new RegExp(`slug\\s*:\\s*['"]${slug}['"][\\s\\S]*?appStoreAgeRating\\s*:\\s*(null|\\d+)`));
-  if (!entry || entry[1] === 'null') return null;
-  return Number(entry[1]);
+function isPlainRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasExactKeys(value, path, expectedKeys, errors) {
+  if (!isPlainRecord(value)) {
+    errors.push(`Invalid compliance schema at ${path}: expected object`);
+    return false;
+  }
+  const actual = Object.keys(value).sort();
+  const expected = [...expectedKeys].sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    errors.push(`Invalid compliance schema at ${path}: expected only ${expected.join(', ')}`);
+    return false;
+  }
+  return true;
+}
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function describedValue(value, path, errors) {
+  return hasExactKeys(value, `${path}.value`, ['description'], errors)
+    && isNonEmptyString(value.description);
+}
+
+function approvedScopedValue(value, path, errors) {
+  return hasExactKeys(value, `${path}.value`, ['approved', 'scope'], errors)
+    && value.approved === true
+    && isNonEmptyString(value.scope);
+}
+
+function approvedDeterminationValue(value, path, errors) {
+  return hasExactKeys(value, `${path}.value`, ['approved', 'determination'], errors)
+    && value.approved === true
+    && isNonEmptyString(value.determination);
+}
+
+function medicalDeviceValue(value, path, errors) {
+  return hasExactKeys(value, `${path}.value`, ['basis', 'isMedicalDevice'], errors)
+    && typeof value.isMedicalDevice === 'boolean'
+    && isNonEmptyString(value.basis);
+}
+
+function phiRemediationValue(value, path, errors) {
+  return hasExactKeys(value, `${path}.value`, ['completed', 'evidenceRef'], errors)
+    && value.completed === true
+    && isNonEmptyString(value.evidenceRef);
+}
+
+function ageRatingValue(value) {
+  return Number.isInteger(value) && value >= 4 && value <= 18;
+}
+
+function validateGate(gate, path, valueValidator, errors) {
+  if (!hasExactKeys(gate, path, ['status', 'value'], errors)) return;
+  if (gate.status === 'pending') {
+    if (gate.value !== null) {
+      errors.push(`Invalid compliance gate at ${path}: pending gate must have null value`);
+    }
+    return;
+  }
+  if (gate.status !== 'verified') {
+    errors.push(`Invalid compliance gate at ${path}: status must be pending or verified`);
+    return;
+  }
+  if (!valueValidator(gate.value, path, errors)) {
+    errors.push(`Invalid verified compliance value at ${path}`);
+  }
+}
+
+function catalogAgeRatings(source) {
+  const slugMatches = [...source.matchAll(/\bslug\s*:\s*['"]([a-z0-9-]+)['"]/g)];
+  return slugMatches.map((match, index) => {
+    const end = slugMatches[index + 1]?.index ?? source.length;
+    const segment = source.slice(match.index, end);
+    const token = segment.match(/\bappStoreAgeRating\s*:\s*([^,\s}]+)/)?.[1];
+    let rating;
+    if (token === 'null') rating = null;
+    else if (token && /^-?\d+(?:\.\d+)?$/.test(token)) rating = Number(token);
+    else rating = Number.NaN;
+    return { slug: match[1], rating };
+  });
 }
 
 function verifyComplianceFacts(root, errors) {
@@ -165,6 +245,73 @@ function verifyComplianceFacts(root, errors) {
     return;
   }
 
+  hasExactKeys(facts, 'compliance', [
+    'schemaVersion',
+    'brand',
+    'releaseReady',
+    'slice',
+    'legalEntity',
+    'appStore',
+    'hosting',
+    'support',
+    'contentRights',
+    'exportCompliance',
+    'medicalDevice',
+    'ageRating',
+    'phiRemediation',
+  ], errors);
+  if (facts.schemaVersion !== 1) errors.push('Invalid compliance schemaVersion: expected 1');
+  if (facts.brand !== 'CaboHealth') errors.push('Invalid compliance brand: expected CaboHealth');
+  if (typeof facts.releaseReady !== 'boolean') errors.push('Invalid compliance releaseReady: expected boolean');
+  if (!isNonEmptyString(facts.slice)) errors.push('Invalid compliance slice: expected non-empty string');
+
+  if (hasExactKeys(facts.legalEntity, 'legalEntity', ['legalSignOffStatus', 'name', 'nameStatus'], errors)) {
+    if (facts.legalEntity.name !== 'Cabo Health') errors.push('Invalid legalEntity.name: expected Cabo Health');
+    if (facts.legalEntity.nameStatus !== 'owner-confirmed') {
+      errors.push('Invalid legalEntity.nameStatus: expected owner-confirmed');
+    }
+    if (!['pending', 'approved'].includes(facts.legalEntity.legalSignOffStatus)) {
+      errors.push('Invalid legalEntity.legalSignOffStatus');
+    }
+  }
+
+  hasExactKeys(facts.appStore, 'appStore', ['seller', 'sellerRelationship'], errors);
+  hasExactKeys(facts.hosting, 'hosting', ['deletionProcess', 'logTypes', 'provider', 'retention'], errors);
+  if (facts.hosting?.provider !== 'Hostinger') errors.push('Invalid hosting.provider: expected Hostinger');
+  hasExactKeys(facts.support, 'support', ['contactFactsRef', 'responseSla'], errors);
+  if (facts.support?.contactFactsRef !== 'release/public-contact-facts.json') {
+    errors.push('Invalid support.contactFactsRef');
+  }
+  hasExactKeys(facts.ageRating, 'ageRating', ['host', 'miniapps'], errors);
+  hasExactKeys(facts.ageRating?.miniapps, 'ageRating.miniapps', ['clinic-guide', 'healthy-recipes'], errors);
+
+  validateGate(facts.appStore?.seller, 'appStore.seller', isNonEmptyString, errors);
+  validateGate(
+    facts.appStore?.sellerRelationship,
+    'appStore.sellerRelationship',
+    (value) => ['legal-healthcare-provider', 'apple-written-direction'].includes(value),
+    errors,
+  );
+  validateGate(
+    facts.hosting?.logTypes,
+    'hosting.logTypes',
+    (value) => Array.isArray(value)
+      && value.length > 0
+      && value.every(isNonEmptyString)
+      && new Set(value).size === value.length,
+    errors,
+  );
+  validateGate(facts.hosting?.retention, 'hosting.retention', describedValue, errors);
+  validateGate(facts.hosting?.deletionProcess, 'hosting.deletionProcess', describedValue, errors);
+  validateGate(facts.support?.responseSla, 'support.responseSla', describedValue, errors);
+  validateGate(facts.contentRights, 'contentRights', approvedScopedValue, errors);
+  validateGate(facts.exportCompliance, 'exportCompliance', approvedDeterminationValue, errors);
+  validateGate(facts.medicalDevice, 'medicalDevice', medicalDeviceValue, errors);
+  validateGate(facts.ageRating?.host, 'ageRating.host', ageRatingValue, errors);
+  validateGate(facts.ageRating?.miniapps?.['healthy-recipes'], 'ageRating.miniapps.healthy-recipes', ageRatingValue, errors);
+  validateGate(facts.ageRating?.miniapps?.['clinic-guide'], 'ageRating.miniapps.clinic-guide', ageRatingValue, errors);
+  validateGate(facts.phiRemediation, 'phiRemediation', phiRemediationValue, errors);
+
   if (facts.legalEntity?.legalSignOffStatus !== 'approved') {
     errors.push('Pending release gate: legalEntity.legalSignOffStatus');
   }
@@ -179,15 +326,31 @@ function verifyComplianceFacts(root, errors) {
   const hostRating = facts.ageRating?.host?.value;
   const catalogPath = join(root, 'constants', 'publicMiniapps.ts');
   const catalogSource = existsSync(catalogPath) ? readText(catalogPath) : '';
+  const catalogRatings = catalogAgeRatings(catalogSource);
+  if (catalogRatings.length !== APPROVED_SLUGS.size) {
+    errors.push('Catalog must contain exactly two age-rating entries');
+  }
   for (const slug of APPROVED_SLUGS) {
     const frozenRating = facts.ageRating?.miniapps?.[slug]?.value;
-    const sourceRating = catalogAgeRating(catalogSource, slug);
+    const matchingCatalogRatings = catalogRatings.filter((entry) => entry.slug === slug);
+    if (matchingCatalogRatings.length !== 1) {
+      errors.push(`Catalog must contain exactly one age rating for: ${slug}`);
+    }
+    const sourceRating = matchingCatalogRatings[0]?.rating;
     if (Number.isInteger(frozenRating) && Number.isInteger(hostRating) && frozenRating > hostRating) {
       errors.push(`Miniapp age rating exceeds host rating: ${slug}`);
     }
     if (Number.isInteger(frozenRating) && sourceRating !== frozenRating) {
       errors.push(`Catalog age rating does not match compliance facts: ${slug}`);
     }
+  }
+
+  if (
+    facts.appStore?.sellerRelationship?.status === 'verified'
+    && facts.appStore.sellerRelationship.value === 'legal-healthcare-provider'
+    && facts.appStore?.seller?.value !== facts.legalEntity?.name
+  ) {
+    errors.push('App Store seller must match the legal healthcare provider name');
   }
 
   if (facts.releaseReady !== true) {

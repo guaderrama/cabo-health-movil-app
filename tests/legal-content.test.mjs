@@ -35,10 +35,93 @@ function attributeValues(html, attribute) {
     .map((match) => match[1].replaceAll('&amp;', '&'));
 }
 
-function sectionKeys(html, locale) {
+const forbiddenReleaseClaims = [
+  /access codes?/i,
+  /códigos? de acceso/i,
+  /biometric/i,
+  /biométr/i,
+  /Keychain/i,
+  /patient data/i,
+  /datos de pacientes/i,
+  /account deletion/i,
+  /eliminación de cuenta/i,
+  /iPad/i,
+  /minimum (?:supported )?(?:iOS|version)/i,
+  /(?:iOS|versión) mínim[oa]/i,
+  /\b(?:seller|vendor)\s+(?:is|of record|name|for)\b/i,
+  /\b(?:el\s+)?vendedor\s+(?:es|oficial|registrado|de)\b/i,
+  /age rating/i,
+  /clasificación por edad/i,
+  /medical device conclusion/i,
+  /conclusión de dispositivo médico/i,
+  /export compliance conclusion/i,
+  /conclusión de cumplimiento de exportación/i,
+  /\b(?:we|CaboHealth)\s+(?:own|owns)\b/i,
+  /\bCaboHealth\s+(?:retains|holds)\s+(?:all|exclusive)\s+rights\b/i,
+  /\b(?:nosotros|CaboHealth)\s+(?:poseemos|es dueño|es titular)\b/i,
+  /\bCaboHealth\s+(?:conserva|mantiene)\s+(?:todos|derechos exclusivos)\b/i,
+  /\b(?:you may use|hereby grants?|licensed? (?:to|for))\b/i,
+  /\b(?:puedes usar|por (?:la )?presente concede|licencia(?:do)? (?:a|para))\b/i,
+  /governed by (?:the )?laws? of|exclusive jurisdiction|courts? of [A-Z]/i,
+  /\b(?:Mexican|California) law applies\b/i,
+  /se (?:rige|rigen) por las leyes de|jurisdicción exclusiva|tribunales? de [A-ZÁÉÍÓÚ]/i,
+  /\baplican las leyes de\b/i,
+  /\b(?:respond\w*|repl(?:y|ies|ied)|resolv\w*|response|resolution)\b[^.]{0,80}\b(?:within|in (?:\d+|one|two|three)|by|no later than)\b/i,
+  /\b(?:respondemos|responderemos|respuesta|resolución)\b[^.]{0,80}\b(?:dentro de|en \d+|a más tardar)\b/i,
+  /logs?[^.]{0,80}\b(?:kept|retained|stored)\b[^.]{0,40}\b(?:for|until)\b/i,
+  /\b(?:keep|retain|store)\w*\b[^.]{0,40}\blogs?\b[^.]{0,40}\b(?:for|until)\b/i,
+  /registros?[^.]{0,80}\b(?:conservan|retienen|guardan)\b[^.]{0,40}\b(?:durante|hasta)\b/i,
+  /\b(?:conservamos|retenemos|guardamos)\b[^.]{0,40}\bregistros?\b[^.]{0,40}\b(?:durante|hasta)\b/i,
+  /logs?[^.]{0,80}\b(?:deleted|erased|purged)\b[^.]{0,40}\b(?:automatically|on request)\b/i,
+  /\b(?:delete|erase|purge)\w*\b[^.]{0,40}\blogs?\b[^.]{0,40}\b(?:after|automatically|on request)\b/i,
+  /registros?[^.]{0,80}\b(?:eliminan|borran|purgan)\b[^.]{0,40}\b(?:automáticamente|a solicitud)\b/i,
+  /\b(?:eliminamos|borramos|purgamos)\b[^.]{0,40}\bregistros?\b[^.]{0,40}\b(?:después|automáticamente|a solicitud)\b/i,
+  /\bPHI\b[^.]{0,80}\b(?:removed|remediated|cleared|deleted)\b/i,
+  /patient documents?[^.]{0,80}\b(?:removed|remediated|cleared|deleted)\b/i,
+  /\bPHI\b[^.]{0,80}\b(?:eliminad[oa]s?|remediad[oa]s?|retirad[oa]s?)\b/i,
+  /documentos? de pacientes?[^.]{0,80}\b(?:eliminad[oa]s?|remediad[oa]s?|retirad[oa]s?)\b/i,
+  /\b(?:no PHI remains|PHI-free)\b/i,
+  /\b(?:ya no queda PHI|sin PHI)\b/i,
+  /\brequires? iOS \d+|requiere iOS \d+\b/i,
+  /\bis (?:the )?(?:verified )?(?:seller|vendor)\b/i,
+  /\bes (?:el )?(?:vendedor|proveedor) (?:verificado|oficial)\b/i,
+];
+
+function articleForLocale(html, locale) {
   const article = html.match(new RegExp(`<article\\b[^>]*lang=["']${locale}["'][^>]*>([\\s\\S]*?)<\\/article>`, 'i'));
   assert.ok(article, `missing ${locale} policy article`);
-  return [...article[1].matchAll(/\bdata-policy-section=["']([^"']+)["']/gi)]
+  return article[1];
+}
+
+function sectionForLocale(html, locale, key) {
+  const article = articleForLocale(html, locale);
+  const section = article.match(new RegExp(`<section\\b[^>]*data-policy-section=["']${key}["'][^>]*>([\\s\\S]*?)<\\/section>`, 'i'));
+  assert.ok(section, `missing ${locale}.${key}`);
+  return section[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function assertNoUnverifiedClaims(html) {
+  for (const forbidden of forbiddenReleaseClaims) assert.doesNotMatch(html, forbidden);
+}
+
+function assertStaticLegalSurface(html, path) {
+  assert.doesNotMatch(html, /<(?:form|input|textarea|select|button|script|iframe|object|embed)\b/i);
+  assert.doesNotMatch(html, /<link\b(?=[^>]*\brel=["'][^"']*\bstylesheet\b)/i);
+  assert.doesNotMatch(html, /@import\b/i);
+  assert.doesNotMatch(html, /\burl\s*\(/i);
+  assert.doesNotMatch(html, /\b(?:srcset|poster)\s*=/i);
+  assert.doesNotMatch(html, /\btarget\s*=/i);
+  assert.doesNotMatch(html, /\bon\w+\s*=/i);
+  assert.doesNotMatch(html, /window\.open|google-analytics|googletagmanager|tracking pixel|track(?:ing)?-id/i);
+  assert.doesNotMatch(html, /href=["'][^"']*&(?!(?:amp|lt|gt|quot|apos);)/i);
+  assert.deepEqual(attributeValues(html, 'src'), []);
+  for (const href of attributeValues(html, 'href')) {
+    assert.match(href, /^(?:https:\/\/(?:cabohealth\.org|wa\.me|maps\.apple\.com)\/|mailto:|tel:)/i, `unsafe href in ${path}: ${href}`);
+  }
+}
+
+function sectionKeys(html, locale) {
+  return [...articleForLocale(html, locale).matchAll(/\bdata-policy-section=["']([^"']+)["']/gi)]
     .map((match) => match[1]);
 }
 
@@ -79,6 +162,49 @@ test('each legal surface has matching English and Spanish policy sections', () =
     const spanish = sectionKeys(html, 'es-MX');
     assert.ok(english.length >= 5, `${path} needs complete policy sections`);
     assert.deepEqual(spanish, english, `${path} bilingual section parity drifted`);
+  }
+});
+
+test('each bilingual section preserves its locale-specific substantive obligation', () => {
+  const obligations = {
+    privacy: {
+      scope: [/two public modules/i, /dos módulos públicos/i],
+      'data-boundary': [/do not request or collect health information/i, /no solicitan ni recopilan información de salud/i],
+      'local-state': [/remain on your device/i, /permanecen en tu dispositivo/i],
+      'hosting-logs': [/retention and deletion details are pending/i, /detalles de retención y eliminación están pendientes/i],
+      children: [/final children and age position remains pending/i, /postura final sobre niñez y edad sigue pendiente/i],
+      contact: [/Do not include health or other sensitive information/i, /No incluyas información de salud ni otra información sensible/i],
+      changes: [/Material changes will be published/i, /cambios materiales se publicarán/i],
+    },
+    terms: {
+      scope: [/do not diagnose, treat, prescribe/i, /No diagnostican, tratan, prescriben/i],
+      emergency: [/Call local emergency services/i, /Llama a los servicios locales de emergencia/i],
+      'acceptable-use': [/no user-generated content area/i, /no tienen un área de contenido generado por usuarios/i],
+      rights: [/rights review for this release remains? pending/i, /revisión de derechos de contenido para este lanzamiento sigue pendiente/i],
+      'external-services': [/separate services governed by their providers/i, /servicios separados regidos por sus proveedores/i],
+      availability: [/does not promise uninterrupted access/i, /no promete acceso ininterrumpido/i],
+      'approval-contact': [/subject to owner and legal approval/i, /sujetos a aprobación del propietario y legal/i],
+    },
+    support: {
+      contact: [/no response deadline is promised/i, /no se promete un plazo de respuesta/i],
+      recipes: [/Favorites are local to the device/i, /Los favoritos son locales al dispositivo/i],
+      clinic: [/module is not an emergency channel/i, /módulo no es un canal de emergencia/i],
+      privacy: [/do not request or collect health information/i, /no solicitan ni recopilan información de salud/i],
+      'report-content': [/without including sensitive information/i, /sin incluir información sensible/i],
+      scope: [/facts that are still pending are not stated here/i, /hechos de plataforma o lanzamiento que siguen pendientes/i],
+    },
+  };
+
+  for (const [page, sections] of Object.entries(obligations)) {
+    const html = readArtifact(pagePaths[page]);
+    for (const [section, [englishPattern, spanishPattern]] of Object.entries(sections)) {
+      const english = sectionForLocale(html, 'en', section);
+      const spanish = sectionForLocale(html, 'es-MX', section);
+      assert.ok(english.length >= 60, `${page}.${section}.en is not substantive`);
+      assert.ok(spanish.length >= 60, `${page}.${section}.es-MX is not substantive`);
+      assert.match(english, englishPattern, `${page}.${section}.en obligation drifted`);
+      assert.match(spanish, spanishPattern, `${page}.${section}.es-MX obligation drifted`);
+    }
   }
 });
 
@@ -147,44 +273,65 @@ test('Report Content is visible in both languages with an explicit contact path'
 
 test('legal pages contain no absent-v1 or unresolved release claims', () => {
   const combined = Object.values(pagePaths).map(readArtifact).join('\n');
-  for (const forbidden of [
-    /access codes?/i,
-    /códigos? de acceso/i,
-    /biometric/i,
-    /biométr/i,
-    /Keychain/i,
-    /patient data/i,
-    /datos de pacientes/i,
-    /account deletion/i,
-    /eliminación de cuenta/i,
-    /iPad/i,
-    /minimum iOS/i,
-    /iOS mínimo/i,
-    /App Store seller/i,
-    /vendedor de App Store/i,
-    /age rating/i,
-    /clasificación por edad/i,
-    /medical device conclusion/i,
-    /conclusión de dispositivo médico/i,
-    /export compliance conclusion/i,
-    /conclusión de cumplimiento de exportación/i,
-    /logs? (?:are|is) (?:kept|retained) for \d+/i,
-    /registros? (?:se )?(?:conservan|retienen) durante \d+/i,
-  ]) assert.doesNotMatch(combined, forbidden);
+  assertNoUnverifiedClaims(combined);
+});
+
+test('claim mutation matrix rejects SLA, jurisdiction, rights, seller, retention, and PHI inventions', () => {
+  const baseline = Object.values(pagePaths).map(readArtifact).join('\n');
+  const mutations = [
+    'We respond within 24 hours.',
+    'Responderemos dentro de 24 horas.',
+    'These terms are governed by the laws of Mexico.',
+    'Estos términos se rigen por las leyes de México.',
+    'CaboHealth owns all public content.',
+    'CaboHealth es titular de todo el contenido público.',
+    'You may use the public modules under this license.',
+    'Puedes usar los módulos públicos bajo esta licencia.',
+    'The seller is Cabo Health.',
+    'El vendedor es Cabo Health.',
+    'HTTP logs are retained until the end of each month.',
+    'Los registros HTTP se conservan durante treinta días.',
+    'HTTP logs are deleted automatically.',
+    'Los registros HTTP se eliminan automáticamente.',
+    'All PHI was removed from public hosting.',
+    'Los documentos de pacientes fueron retirados del alojamiento público.',
+    'The minimum supported version is iOS 18.',
+    'La versión mínima es iOS 18.',
+    'Support replies in two business days.',
+    'Mexican law applies.',
+    'CaboHealth retains all rights.',
+    'Cabo Health is the verified seller.',
+    'We keep HTTP logs for one month.',
+    'Eliminamos los registros automáticamente.',
+    'No PHI remains on the public site.',
+    'This app requires iOS 18 or later.',
+  ];
+
+  for (const mutation of mutations) {
+    assert.throws(() => assertNoUnverifiedClaims(`${baseline}\n<p>${mutation}</p>`), assert.AssertionError, mutation);
+  }
 });
 
 test('legal pages use no forms, scripts, popups, tracking, or remote assets', () => {
   for (const path of Object.values(pagePaths)) {
-    const html = readArtifact(path);
-    assert.doesNotMatch(html, /<(?:form|input|textarea|select|button|script|iframe)\b/i);
-    assert.doesNotMatch(html, /\btarget\s*=/i);
-    assert.doesNotMatch(html, /\bon\w+\s*=/i);
-    assert.doesNotMatch(html, /window\.open|google-analytics|googletagmanager|tracking pixel|track(?:ing)?-id/i);
-    assert.doesNotMatch(html, /href=["'][^"']*&(?!(?:amp|lt|gt|quot|apos);)/i);
-    assert.deepEqual(attributeValues(html, 'src'), []);
-    for (const href of attributeValues(html, 'href')) {
-      assert.match(href, /^(?:https:\/\/(?:cabohealth\.org|wa\.me|maps\.apple\.com)\/|mailto:|tel:)/i, `unsafe href in ${path}: ${href}`);
-    }
+    assertStaticLegalSurface(readArtifact(path), path);
+  }
+});
+
+test('active-resource mutation matrix rejects every supported remote loading mechanism', () => {
+  const baseline = readArtifact(pagePaths.privacy);
+  const mutations = [
+    '<script src="https://tracker.example/script.js"></script>',
+    '<link rel="stylesheet" href="https://cdn.example/style.css">',
+    '<style>@import "https://cdn.example/style.css";</style>',
+    '<style>.remote { background-image: url(https://cdn.example/pixel.png); }</style>',
+    '<form action="https://collector.example/"><input name="health"></form>',
+    '<a target="_blank" href="https://cabohealth.org/app/privacy/">Popup</a>',
+    '<iframe src="https://collector.example/"></iframe>',
+  ];
+
+  for (const mutation of mutations) {
+    assert.throws(() => assertStaticLegalSurface(`${baseline}\n${mutation}`, 'mutated privacy'), assert.AssertionError, mutation);
   }
 });
 
