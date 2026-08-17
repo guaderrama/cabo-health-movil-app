@@ -104,20 +104,228 @@ function assertNoUnverifiedClaims(html) {
   for (const forbidden of forbiddenReleaseClaims) assert.doesNotMatch(html, forbidden);
 }
 
-function assertStaticLegalSurface(html, path) {
-  assert.doesNotMatch(html, /<(?:form|input|textarea|select|button|script|iframe|object|embed)\b/i);
+function exactExplicitActionUrls() {
+  const { facts } = readJson('release/public-contact-facts.json');
+  return new Set([
+    ...Object.values(legalUrls),
+    `mailto:${facts.publicEmail.value}`,
+    `tel:${facts.phone.value}`,
+    facts.whatsApp.value,
+    facts.appleMapsDestination.value,
+  ]);
+}
+
+function openingTags(html, path) {
+  const tags = [];
+  let index = 0;
+  while (index < html.length) {
+    const start = html.indexOf('<', index);
+    if (start === -1) break;
+    if (html.startsWith('<!--', start)) {
+      const commentEnd = html.indexOf('-->', start + 4);
+      assert.notEqual(commentEnd, -1, `unterminated comment in ${path}`);
+      index = commentEnd + 3;
+      continue;
+    }
+    const name = html.slice(start + 1).match(/^([a-z][\w:-]*)\b/i)?.[1];
+    if (!name) {
+      index = start + 1;
+      continue;
+    }
+
+    const attributesStart = start + 1 + name.length;
+    let quote;
+    let end = attributesStart;
+    for (; end < html.length; end += 1) {
+      const character = html[end];
+      if (quote) {
+        if (character === quote) quote = undefined;
+      } else if (character === '"' || character === "'") {
+        quote = character;
+      } else if (character === '>') {
+        break;
+      } else if (character === '<') {
+        assert.fail(`nested < before tag close in ${path}`);
+      }
+    }
+    assert.equal(quote, undefined, `unterminated quoted attribute in ${path}`);
+    assert.ok(end < html.length, `unterminated <${name}> in ${path}`);
+    tags.push({
+      name: name.toLowerCase(),
+      source: html.slice(attributesStart, end),
+    });
+    index = end + 1;
+  }
+  return tags;
+}
+
+const namedHtmlCharacterReferences = new Map([
+  ['AMP', '&'],
+  ['GT', '>'],
+  ['LT', '<'],
+  ['QUOT', '"'],
+  ['amp', '&'],
+  ['apos', "'"],
+  ['gt', '>'],
+  ['lt', '<'],
+  ['quot', '"'],
+]);
+
+const htmlNumericReferenceReplacements = new Map([
+  [0x80, 0x20ac], [0x82, 0x201a], [0x83, 0x0192], [0x84, 0x201e],
+  [0x85, 0x2026], [0x86, 0x2020], [0x87, 0x2021], [0x88, 0x02c6],
+  [0x89, 0x2030], [0x8a, 0x0160], [0x8b, 0x2039], [0x8c, 0x0152],
+  [0x8e, 0x017d], [0x91, 0x2018], [0x92, 0x2019], [0x93, 0x201c],
+  [0x94, 0x201d], [0x95, 0x2022], [0x96, 0x2013], [0x97, 0x2014],
+  [0x98, 0x02dc], [0x99, 0x2122], [0x9a, 0x0161], [0x9b, 0x203a],
+  [0x9c, 0x0153], [0x9e, 0x017e], [0x9f, 0x0178],
+]);
+
+function numericHtmlCharacterReference(token, radix) {
+  let codePoint = Number.parseInt(token, radix);
+  codePoint = htmlNumericReferenceReplacements.get(codePoint) ?? codePoint;
+  if (codePoint === 0 || codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) {
+    codePoint = 0xfffd;
+  }
+  return String.fromCodePoint(codePoint);
+}
+
+function decodeFailClosedHtmlAttribute(rawValue, tagName, attributeName) {
+  if (rawValue === undefined) return undefined;
+  let decoded = '';
+  let index = 0;
+  while (index < rawValue.length) {
+    const ampersand = rawValue.indexOf('&', index);
+    if (ampersand === -1) return decoded + rawValue.slice(index);
+    decoded += rawValue.slice(index, ampersand);
+    const reference = rawValue.slice(ampersand);
+    const hexadecimal = reference.match(/^&#[xX]([0-9a-fA-F]+);?/);
+    const decimal = reference.match(/^&#([0-9]+);?/);
+    const named = reference.match(/^&([A-Za-z]+);/);
+    if (hexadecimal) {
+      decoded += numericHtmlCharacterReference(hexadecimal[1], 16);
+      index = ampersand + hexadecimal[0].length;
+    } else if (decimal) {
+      decoded += numericHtmlCharacterReference(decimal[1], 10);
+      index = ampersand + decimal[0].length;
+    } else if (named && namedHtmlCharacterReferences.has(named[1])) {
+      decoded += namedHtmlCharacterReferences.get(named[1]);
+      index = ampersand + named[0].length;
+    } else {
+      assert.fail(`unsupported or malformed character reference in ${attributeName} of <${tagName}>`);
+    }
+  }
+  return decoded;
+}
+
+function parsedTagAttributes(source, tagName) {
+  const attributes = new Map();
+  let index = 0;
+  while (index < source.length) {
+    while (/\s/.test(source[index])) index += 1;
+    if (index >= source.length) break;
+    if (source[index] === '/') {
+      assert.equal(source.slice(index).trim(), '/', `malformed self-close in <${tagName}>`);
+      break;
+    }
+
+    const nameStart = index;
+    while (index < source.length && !/[\s=/]/.test(source[index])) index += 1;
+    const name = source.slice(nameStart, index).toLowerCase();
+    assert.match(name, /^[^\u0000-\u001f\u007f"'<>/=]+$/, `malformed attribute in <${tagName}>`);
+    while (/\s/.test(source[index])) index += 1;
+
+    let value;
+    let quoted = false;
+    if (source[index] === '=') {
+      index += 1;
+      while (/\s/.test(source[index])) index += 1;
+      const delimiter = source[index];
+      if (delimiter === '"' || delimiter === "'") {
+        quoted = true;
+        index += 1;
+        const valueStart = index;
+        while (index < source.length && source[index] !== delimiter) index += 1;
+        assert.ok(index < source.length, `unterminated ${name} in <${tagName}>`);
+        value = source.slice(valueStart, index);
+        index += 1;
+      } else {
+        const valueStart = index;
+        while (index < source.length && !/\s/.test(source[index])) index += 1;
+        value = source.slice(valueStart, index);
+        assert.notEqual(value, '', `empty unquoted ${name} in <${tagName}>`);
+      }
+    }
+    assert.equal(attributes.has(name), false, `duplicate ${name} attribute in <${tagName}>`);
+    attributes.set(name, {
+      quoted,
+      rawValue: value,
+      value: decodeFailClosedHtmlAttribute(value, tagName, name),
+    });
+  }
+  return attributes;
+}
+
+function assertStaticLegalSurface(html, path, expectedCanonicalUrl) {
+  assert.doesNotMatch(html, /<!--/, `HTML comments are forbidden in ${path}`);
+  assert.doesNotMatch(html, /<(?:form|input|textarea|select|button|script|iframe|frame|frameset|object|embed|applet|svg)\b/i);
   assert.doesNotMatch(html, /<link\b(?=[^>]*\brel=["'][^"']*\bstylesheet\b)/i);
   assert.doesNotMatch(html, /@import\b/i);
   assert.doesNotMatch(html, /\burl\s*\(/i);
-  assert.doesNotMatch(html, /\b(?:srcset|poster)\s*=/i);
-  assert.doesNotMatch(html, /\btarget\s*=/i);
-  assert.doesNotMatch(html, /\bon\w+\s*=/i);
   assert.doesNotMatch(html, /window\.open|google-analytics|googletagmanager|tracking pixel|track(?:ing)?-id/i);
-  assert.doesNotMatch(html, /href=["'][^"']*&(?!(?:amp|lt|gt|quot|apos);)/i);
-  assert.deepEqual(attributeValues(html, 'src'), []);
-  for (const href of attributeValues(html, 'href')) {
-    assert.match(href, /^(?:https:\/\/(?:cabohealth\.org|wa\.me|maps\.apple\.com)\/|mailto:|tel:)/i, `unsafe href in ${path}: ${href}`);
+
+  const allowedActions = exactExplicitActionUrls();
+  const activeResourceAttributes = new Set([
+    'action',
+    'archive',
+    'attributionsrc',
+    'background',
+    'codebase',
+    'data',
+    'formaction',
+    'imagesizes',
+    'imagesrcset',
+    'longdesc',
+    'manifest',
+    'ping',
+    'poster',
+    'profile',
+    'src',
+    'srcdoc',
+    'srcset',
+    'xlink:href',
+  ]);
+  let canonicalLinks = 0;
+  for (const tag of openingTags(html, path)) {
+    const attributes = parsedTagAttributes(tag.source, tag.name);
+    for (const name of attributes.keys()) {
+      assert.equal(activeResourceAttributes.has(name), false, `${name} is forbidden in <${tag.name}> in ${path}`);
+      assert.equal(name.startsWith('on'), false, `event attribute ${name} is forbidden in ${path}`);
+    }
+    assert.equal(attributes.has('target'), false, `target is forbidden in ${path}`);
+    if (tag.name === 'meta' && attributes.get('http-equiv')?.value?.trim().toLowerCase() === 'refresh') {
+      assert.fail(`meta refresh is forbidden in ${path}`);
+    }
+
+    const hrefAttribute = attributes.get('href');
+    if (tag.name === 'link') {
+      assert.deepEqual([...attributes.keys()].sort(), ['href', 'rel'], `only an exact canonical <link> is allowed in ${path}`);
+      const relAttribute = attributes.get('rel');
+      assert.equal(relAttribute?.quoted, true, `canonical rel must be quoted in ${path}`);
+      assert.equal(relAttribute?.value, 'canonical', `only a canonical <link> is allowed in ${path}`);
+      assert.equal(hrefAttribute?.quoted, true, `canonical href must be quoted in ${path}`);
+      assert.equal(hrefAttribute?.value, expectedCanonicalUrl, `wrong canonical href in ${path}`);
+      canonicalLinks += 1;
+      continue;
+    }
+    if (!hrefAttribute) continue;
+
+    assert.equal(tag.name, 'a', `href is forbidden on <${tag.name}> in ${path}`);
+    assert.equal(hrefAttribute.quoted, true, `anchor href must be quoted in ${path}`);
+    assert.equal(allowedActions.has(hrefAttribute.value), true, `unsafe anchor href in ${path}: ${hrefAttribute.value}`);
+    assert.equal(attributes.has('download'), false, `download is forbidden in ${path}`);
   }
+  assert.equal(canonicalLinks, 1, `${path} must contain exactly one canonical link`);
 }
 
 function sectionKeys(html, locale) {
@@ -313,12 +521,12 @@ test('claim mutation matrix rejects SLA, jurisdiction, rights, seller, retention
 });
 
 test('legal pages use no forms, scripts, popups, tracking, or remote assets', () => {
-  for (const path of Object.values(pagePaths)) {
-    assertStaticLegalSurface(readArtifact(path), path);
+  for (const [page, path] of Object.entries(pagePaths)) {
+    assertStaticLegalSurface(readArtifact(path), path, legalUrls[page]);
   }
 });
 
-test('active-resource mutation matrix rejects every supported remote loading mechanism', () => {
+test('active-resource mutation matrix rejects every supported remote loading mechanism', async (t) => {
   const baseline = readArtifact(pagePaths.privacy);
   const mutations = [
     '<script src="https://tracker.example/script.js"></script>',
@@ -328,10 +536,28 @@ test('active-resource mutation matrix rejects every supported remote loading mec
     '<form action="https://collector.example/"><input name="health"></form>',
     '<a target="_blank" href="https://cabohealth.org/app/privacy/">Popup</a>',
     '<iframe src="https://collector.example/"></iframe>',
+    '<link rel="preload" as="style" href="https://cabohealth.org/asset.css">',
+    '<link rel="prefetch" href="https://cabohealth.org/future.html">',
+    '<link rel="modulepreload" href="https://cabohealth.org/module.js">',
+    '<svg><use href="https://cabohealth.org/sprite.svg#logo"></use></svg>',
+    '<svg><image xlink:href="https://cabohealth.org/image.svg"></image></svg>',
+    '<a href="https://cabohealth.org/app/privacy/" ping="https://cabohealth.org/ping">Tracked link</a>',
+    '<meta http-equiv="refresh" content="0;url=https://cabohealth.org/app/privacy/">',
+    '<base href="https://cabohealth.org/app/privacy/">',
+    '<link title=">" rel="preload" href="https://cabohealth.org/asset.css">',
+    '<img src=https://tracker.example/pixel>',
+    '<meta http-equiv="ref&#114;esh" content="0;url=https://tracker.example/">',
+    '<!--><img src=https://tracker.example/p>-->',
   ];
 
   for (const mutation of mutations) {
-    assert.throws(() => assertStaticLegalSurface(`${baseline}\n${mutation}`, 'mutated privacy'), assert.AssertionError, mutation);
+    await t.test(mutation, () => {
+      assert.throws(
+        () => assertStaticLegalSurface(`${baseline}\n${mutation}`, 'mutated privacy', legalUrls.privacy),
+        assert.AssertionError,
+        mutation,
+      );
+    });
   }
 });
 

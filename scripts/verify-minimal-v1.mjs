@@ -1,7 +1,9 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
+import ts from 'typescript';
 
 const APPROVED_SLUGS = new Set(['healthy-recipes', 'clinic-guide']);
+const APP_STORE_AGE_RATINGS = new Set([4, 9, 13, 16, 18]);
 const SOURCE_DIRECTORIES = ['app', 'components', 'constants', 'context', 'hooks', 'features'];
 const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.ts', '.tsx']);
 const LEGAL_URLS = {
@@ -60,12 +62,10 @@ function addUnexpectedSlugs(errors, source, slugs) {
 }
 
 function extractCatalogSlugs(source) {
-  const objectSlugs = [...source.matchAll(/\bslug\s*:\s*['"]([a-z0-9-]+)['"]/g)].map((match) => match[1]);
   const canonicalList = source.match(/\bPUBLIC_MINIAPP_SLUGS\s*=\s*\[([^\]]*)\]/);
-  const listSlugs = canonicalList
+  return canonicalList
     ? [...canonicalList[1].matchAll(/['"]([a-z0-9-]+)['"]/g)].map((match) => match[1])
     : [];
-  return [...objectSlugs, ...listSlugs];
 }
 
 function extractAasaSlugs(source) {
@@ -196,7 +196,7 @@ function phiRemediationValue(value, path, errors) {
 }
 
 function ageRatingValue(value) {
-  return Number.isInteger(value) && value >= 4 && value <= 18;
+  return APP_STORE_AGE_RATINGS.has(value);
 }
 
 function validateGate(gate, path, valueValidator, errors) {
@@ -216,21 +216,303 @@ function validateGate(gate, path, valueValidator, errors) {
   }
 }
 
-function catalogAgeRatings(source) {
-  const slugMatches = [...source.matchAll(/\bslug\s*:\s*['"]([a-z0-9-]+)['"]/g)];
-  return slugMatches.map((match, index) => {
-    const end = slugMatches[index + 1]?.index ?? source.length;
-    const segment = source.slice(match.index, end);
-    const token = segment.match(/\bappStoreAgeRating\s*:\s*([^,\s}]+)/)?.[1];
-    let rating;
-    if (token === 'null') rating = null;
-    else if (token && /^-?\d+(?:\.\d+)?$/.test(token)) rating = Number(token);
-    else rating = Number.NaN;
-    return { slug: match[1], rating };
-  });
+function staticBindings(sourceFile) {
+  const bindings = new Map();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.initializer) {
+        bindings.set(declaration.name.text, declaration.initializer);
+      }
+    }
+  }
+  return bindings;
 }
 
-function verifyComplianceFacts(root, errors) {
+function addBindingNames(name, names) {
+  if (ts.isIdentifier(name)) {
+    names.add(name.text);
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) addBindingNames(element.name, names);
+  }
+}
+
+function topLevelRuntimeBindings(sourceFile) {
+  const names = new Set();
+  for (const statement of sourceFile.statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        addBindingNames(declaration.name, names);
+      }
+      continue;
+    }
+    if (
+      (ts.isFunctionDeclaration(statement)
+        || ts.isClassDeclaration(statement)
+        || ts.isEnumDeclaration(statement)
+        || ts.isModuleDeclaration(statement))
+      && statement.name
+      && ts.isIdentifier(statement.name)
+    ) {
+      names.add(statement.name.text);
+      continue;
+    }
+    if (ts.isImportEqualsDeclaration(statement)) {
+      names.add(statement.name.text);
+      continue;
+    }
+    if (ts.isImportDeclaration(statement) && statement.importClause) {
+      if (statement.importClause.name) names.add(statement.importClause.name.text);
+      const bindings = statement.importClause.namedBindings;
+      if (bindings && ts.isNamespaceImport(bindings)) {
+        names.add(bindings.name.text);
+      } else if (bindings && ts.isNamedImports(bindings)) {
+        for (const element of bindings.elements) names.add(element.name.text);
+      }
+    }
+  }
+  return names;
+}
+
+function isStaticWrapperExpression(expression) {
+  return ts.isParenthesizedExpression(expression)
+    || ts.isAsExpression(expression)
+    || ts.isTypeAssertionExpression(expression)
+    || ts.isSatisfiesExpression(expression)
+    || ts.isNonNullExpression(expression);
+}
+
+function isGlobalObjectFreezeCall(expression, bindings) {
+  return ts.isCallExpression(expression)
+    && expression.arguments.length === 1
+    && ts.isPropertyAccessExpression(expression.expression)
+    && ts.isIdentifier(expression.expression.expression)
+    && expression.expression.expression.text === 'Object'
+    && expression.expression.name.text === 'freeze'
+    && !bindings.has('Object');
+}
+
+function resolveStaticReference(expression, bindings, visited) {
+  let current = expression;
+  while (current) {
+    if (isStaticWrapperExpression(current)) {
+      current = current.expression;
+      continue;
+    }
+    if (ts.isIdentifier(current)) {
+      if (visited.has(current.text) || !bindings.has(current.text)) return undefined;
+      visited.add(current.text);
+      current = bindings.get(current.text);
+      continue;
+    }
+    return current;
+  }
+  return undefined;
+}
+
+function isDeclarativeCatalogExpression(expression, bindings, seen = new Set()) {
+  let current = expression;
+  while (isStaticWrapperExpression(current)) current = current.expression;
+
+  if (
+    current.kind === ts.SyntaxKind.NullKeyword
+    || current.kind === ts.SyntaxKind.TrueKeyword
+    || current.kind === ts.SyntaxKind.FalseKeyword
+    || ts.isStringLiteral(current)
+    || ts.isNoSubstitutionTemplateLiteral(current)
+    || ts.isNumericLiteral(current)
+  ) {
+    return true;
+  }
+  if (
+    ts.isPrefixUnaryExpression(current)
+    && [ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken].includes(current.operator)
+    && ts.isNumericLiteral(current.operand)
+  ) {
+    return true;
+  }
+  if (ts.isIdentifier(current)) {
+    if (seen.has(current.text) || !bindings.has(current.text)) return false;
+    const visited = new Set(seen);
+    visited.add(current.text);
+    return isDeclarativeCatalogExpression(bindings.get(current.text), bindings, visited);
+  }
+  if (ts.isArrayLiteralExpression(current)) {
+    return current.elements.every((element) => !ts.isSpreadElement(element)
+      && isDeclarativeCatalogExpression(element, bindings, new Set(seen)));
+  }
+  if (ts.isObjectLiteralExpression(current)) {
+    return current.properties.every((property) => ts.isPropertyAssignment(property)
+      && !ts.isComputedPropertyName(property.name)
+      && isDeclarativeCatalogExpression(property.initializer, bindings, new Set(seen)));
+  }
+  if (isGlobalObjectFreezeCall(current, bindings)) {
+    return isDeclarativeCatalogExpression(current.arguments[0], bindings, new Set(seen));
+  }
+  return false;
+}
+
+function isDeclarativeCatalogModule(sourceFile, bindings) {
+  for (const statement of sourceFile.statements) {
+    if (ts.isVariableStatement(statement)) {
+      if (!(statement.declarationList.flags & ts.NodeFlags.Const)) return false;
+      if (statement.declarationList.declarations.some((declaration) => (
+        !declaration.initializer
+        || !isDeclarativeCatalogExpression(declaration.initializer, bindings)
+      ))) return false;
+      continue;
+    }
+    if (
+      ts.isInterfaceDeclaration(statement)
+      || ts.isTypeAliasDeclaration(statement)
+      || ts.isFunctionDeclaration(statement)
+      || ts.isEmptyStatement(statement)
+    ) {
+      continue;
+    }
+    if (
+      ts.isExpressionStatement(statement)
+      && ts.isVoidExpression(statement.expression)
+      && ts.isIdentifier(statement.expression.expression)
+      && bindings.has(statement.expression.expression.text)
+    ) {
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+function unwrapStaticExpression(expression, bindings, seen = new Set()) {
+  const visited = new Set(seen);
+  let current = expression;
+  while (current) {
+    current = resolveStaticReference(current, bindings, visited);
+    if (!current) return undefined;
+    if (isGlobalObjectFreezeCall(current, bindings)) {
+      current = current.arguments[0];
+      continue;
+    }
+    return current;
+  }
+  return undefined;
+}
+
+function frozenStaticArgument(expression, bindings) {
+  const resolved = resolveStaticReference(expression, bindings, new Set());
+  return resolved && isGlobalObjectFreezeCall(resolved, bindings)
+    ? resolved.arguments[0]
+    : undefined;
+}
+
+function staticPropertyName(name) {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  return undefined;
+}
+
+function readStaticScalar(expression, bindings) {
+  const resolved = unwrapStaticExpression(expression, bindings);
+  if (!resolved) return { ok: false };
+  if (resolved.kind === ts.SyntaxKind.NullKeyword) return { ok: true, value: null };
+  if (ts.isStringLiteral(resolved) || ts.isNoSubstitutionTemplateLiteral(resolved)) {
+    return { ok: true, value: resolved.text };
+  }
+  if (ts.isNumericLiteral(resolved)) return { ok: true, value: Number(resolved.text) };
+  if (
+    ts.isPrefixUnaryExpression(resolved)
+    && resolved.operator === ts.SyntaxKind.MinusToken
+    && ts.isNumericLiteral(resolved.operand)
+  ) {
+    return { ok: true, value: -Number(resolved.operand.text) };
+  }
+  return { ok: false };
+}
+
+function exportedPublicMiniappInitializer(sourceFile) {
+  const initializers = [];
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    const isExported = statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+    if (!isExported) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.name.text === 'PUBLIC_MINIAPPS') {
+        initializers.push(declaration.initializer);
+      }
+    }
+  }
+  return initializers;
+}
+
+function readExportedPublicMiniapps(source, errors) {
+  const sourceFile = ts.createSourceFile('publicMiniapps.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  if ((sourceFile.parseDiagnostics ?? []).length > 0) {
+    errors.push('Invalid TypeScript syntax in constants/publicMiniapps.ts');
+    return [];
+  }
+  if (topLevelRuntimeBindings(sourceFile).has('Object')) {
+    errors.push('PUBLIC_MINIAPPS must not shadow the global Object.freeze intrinsic');
+    return [];
+  }
+  const bindings = staticBindings(sourceFile);
+  if (!isDeclarativeCatalogModule(sourceFile, bindings)) {
+    errors.push('Catalog module must be side-effect-free declarative const data');
+    return [];
+  }
+  const initializers = exportedPublicMiniappInitializer(sourceFile);
+  if (initializers.length !== 1 || !initializers[0]) {
+    errors.push('Catalog must export exactly one initialized PUBLIC_MINIAPPS constant');
+    return [];
+  }
+  const frozenArray = frozenStaticArgument(initializers[0], bindings);
+  const array = frozenArray && unwrapStaticExpression(frozenArray, bindings);
+  if (!array || !ts.isArrayLiteralExpression(array)) {
+    errors.push('PUBLIC_MINIAPPS must resolve statically to an Object.freeze array literal');
+    return [];
+  }
+
+  const entries = [];
+  for (const [index, element] of array.elements.entries()) {
+    if (ts.isSpreadElement(element)) {
+      errors.push(`PUBLIC_MINIAPPS[${index}] must not use spread syntax`);
+      continue;
+    }
+    const frozenObject = frozenStaticArgument(element, bindings);
+    const object = frozenObject && unwrapStaticExpression(frozenObject, bindings);
+    if (!object || !ts.isObjectLiteralExpression(object)) {
+      errors.push(`PUBLIC_MINIAPPS[${index}] must resolve statically to an Object.freeze object literal`);
+      continue;
+    }
+    if (object.properties.some((property) => ts.isSpreadAssignment(property) || (property.name && ts.isComputedPropertyName(property.name)))) {
+      errors.push(`PUBLIC_MINIAPPS[${index}] must not use spread or computed properties`);
+      continue;
+    }
+
+    const property = (name) => object.properties.filter((candidate) => candidate.name && staticPropertyName(candidate.name) === name);
+    const slugProperties = property('slug');
+    const ratingProperties = property('appStoreAgeRating');
+    if (
+      slugProperties.length !== 1
+      || ratingProperties.length !== 1
+      || !ts.isPropertyAssignment(slugProperties[0])
+      || !ts.isPropertyAssignment(ratingProperties[0])
+    ) {
+      errors.push(`PUBLIC_MINIAPPS[${index}] must have one static slug and appStoreAgeRating`);
+      continue;
+    }
+    const slug = readStaticScalar(slugProperties[0].initializer, bindings);
+    const rating = readStaticScalar(ratingProperties[0].initializer, bindings);
+    if (!slug.ok || typeof slug.value !== 'string' || !rating.ok || (rating.value !== null && typeof rating.value !== 'number')) {
+      errors.push(`PUBLIC_MINIAPPS[${index}] has a non-static slug or appStoreAgeRating`);
+      continue;
+    }
+    entries.push({ slug: slug.value, rating: rating.value });
+  }
+  return entries;
+}
+
+function verifyComplianceFacts(root, errors, catalogRatings) {
   const compliancePath = join(root, 'release', 'compliance-facts.json');
   if (!existsSync(compliancePath)) {
     errors.push('Missing release compliance facts: release/compliance-facts.json');
@@ -324,9 +606,6 @@ function verifyComplianceFacts(root, errors) {
   }
 
   const hostRating = facts.ageRating?.host?.value;
-  const catalogPath = join(root, 'constants', 'publicMiniapps.ts');
-  const catalogSource = existsSync(catalogPath) ? readText(catalogPath) : '';
-  const catalogRatings = catalogAgeRatings(catalogSource);
   if (catalogRatings.length !== APPROVED_SLUGS.size) {
     errors.push('Catalog must contain exactly two age-rating entries');
   }
@@ -396,9 +675,17 @@ function verify(root) {
     }
   }
 
+  let catalogRatings = [];
   const catalogPath = join(root, 'constants', 'publicMiniapps.ts');
   if (existsSync(catalogPath)) {
-    addUnexpectedSlugs(errors, 'catalog', extractCatalogSlugs(readText(catalogPath)));
+    const catalogSource = readText(catalogPath);
+    catalogRatings = readExportedPublicMiniapps(catalogSource, errors);
+    addUnexpectedSlugs(errors, 'catalog', [
+      ...extractCatalogSlugs(catalogSource),
+      ...catalogRatings.map((entry) => entry.slug),
+    ]);
+  } else {
+    errors.push('Missing catalog: constants/publicMiniapps.ts');
   }
 
   for (const aasaPath of walk(root).filter((filePath) => basename(filePath) === 'apple-app-site-association')) {
@@ -424,7 +711,7 @@ function verify(root) {
     }
   }
 
-  verifyComplianceFacts(root, errors);
+  verifyComplianceFacts(root, errors, catalogRatings);
 
   return errors;
 }

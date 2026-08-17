@@ -71,9 +71,7 @@ function writeComplianceFixture(root, facts) {
   writeFixtureFile(root, 'release/compliance-facts.json', JSON.stringify(facts));
 }
 
-function makePublicReleaseFixture() {
-  const root = mkdtempSync(join(tmpdir(), 'cabohealth-minimal-v1-'));
-  writeFixtureFile(root, 'app/(main)/index.tsx', 'export default function Home() { return null; }\n');
+function writeCatalogFixture(root, healthyRating = 4, clinicRating = 4) {
   writeFixtureFile(
     root,
     'constants/publicMiniapps.ts',
@@ -83,11 +81,17 @@ function makePublicReleaseFixture() {
       "const terms = 'https://cabohealth.org/app/terms/';",
       "const support = 'https://cabohealth.org/app/support/';",
       "const reportContent = 'https://cabohealth.org/app/report-content/';",
-      "export const PUBLIC_MINIAPPS = [{ slug: 'healthy-recipes', appStoreAgeRating: 4 }, { slug: 'clinic-guide', appStoreAgeRating: 4 }];",
+      `export const PUBLIC_MINIAPPS = Object.freeze([Object.freeze({ slug: 'healthy-recipes', appStoreAgeRating: ${JSON.stringify(healthyRating)} }), Object.freeze({ slug: 'clinic-guide', appStoreAgeRating: ${JSON.stringify(clinicRating)} })]);`,
       'void privacy; void terms; void support; void reportContent;',
       '',
     ].join('\n'),
   );
+}
+
+function makePublicReleaseFixture() {
+  const root = mkdtempSync(join(tmpdir(), 'cabohealth-minimal-v1-'));
+  writeFixtureFile(root, 'app/(main)/index.tsx', 'export default function Home() { return null; }\n');
+  writeCatalogFixture(root);
   writeFixtureFile(
     root,
     'web-hosting/cabohealth.org/.well-known/apple-app-site-association',
@@ -222,6 +226,23 @@ test('release scope verifier rejects every malformed or contradictory compliance
     ['fractional rating', (facts) => { facts.ageRating.host.value = 4.5; }],
     ['rating below range', (facts) => { facts.ageRating.host.value = 3; }],
     ['rating above range', (facts) => { facts.ageRating.host.value = 19; }],
+    ['unsupported host rating category 5', (facts) => { facts.ageRating.host.value = 5; }],
+    ['unsupported miniapp and catalog rating category 8', (facts, root) => {
+      facts.ageRating.host.value = 9;
+      facts.ageRating.miniapps['healthy-recipes'].value = 8;
+      writeCatalogFixture(root, 8, 4);
+    }],
+    ['unsupported host rating category 14', (facts, root) => {
+      facts.ageRating.host.value = 14;
+      facts.ageRating.miniapps['healthy-recipes'].value = 13;
+      facts.ageRating.miniapps['clinic-guide'].value = 13;
+      writeCatalogFixture(root, 13, 13);
+    }],
+    ['unsupported miniapp and catalog rating category 17', (facts, root) => {
+      facts.ageRating.host.value = 18;
+      facts.ageRating.miniapps['healthy-recipes'].value = 17;
+      writeCatalogFixture(root, 17, 4);
+    }],
     ['miniapp rating above host', (facts) => { facts.ageRating.miniapps['healthy-recipes'].value = 9; }],
     ['unknown miniapp rating key', (facts) => { facts.ageRating.miniapps.unexpected = { value: 4, status: 'verified' }; }],
     ['catalog rating left null', (facts, root) => {
@@ -256,6 +277,88 @@ test('release scope verifier rejects every malformed or contradictory compliance
           writeComplianceFixture(root, facts);
         },
         (result) => assert.equal(result.status, 1, `${name} bypassed verifier:\n${result.stdout}${result.stderr}`),
+      );
+    });
+  }
+});
+
+test('release verifier reads the exported PUBLIC_MINIAPPS array instead of decoy rating literals', async (t) => {
+  const legalDeclarations = "const privacy = 'https://cabohealth.org/app/privacy/'; const terms = 'https://cabohealth.org/app/terms/'; const support = 'https://cabohealth.org/app/support/'; const reportContent = 'https://cabohealth.org/app/report-content/';\nvoid privacy; void terms; void support; void reportContent;\n";
+  const mutations = [
+    [
+      'decoys before a computed-slug exported array',
+      [
+        "const HEALTHY = 'healthy-recipes';",
+        "const CLINIC = 'clinic-guide';",
+        "const decoys = [{ slug: 'healthy-recipes', appStoreAgeRating: 4 }, { slug: 'clinic-guide', appStoreAgeRating: 4 }];",
+        'void decoys;',
+        'export const PUBLIC_MINIAPPS = [{ slug: HEALTHY, appStoreAgeRating: null }, { slug: CLINIC, appStoreAgeRating: null }];',
+        legalDeclarations,
+      ].join('\n'),
+    ],
+    [
+      'decoys after a frozen computed-slug exported array',
+      [
+        "const HEALTHY = 'healthy-recipes';",
+        "const CLINIC = 'clinic-guide';",
+        'const PENDING_RATING = null;',
+        'export const PUBLIC_MINIAPPS = Object.freeze([Object.freeze({ slug: HEALTHY, appStoreAgeRating: PENDING_RATING }), Object.freeze({ slug: CLINIC, appStoreAgeRating: PENDING_RATING })]);',
+        "const decoys = [{ slug: 'healthy-recipes', appStoreAgeRating: 4 }, { slug: 'clinic-guide', appStoreAgeRating: 4 }];",
+        'void decoys;',
+        legalDeclarations,
+      ].join('\n'),
+    ],
+    [
+      'decoys beside an aliased exported catalog',
+      [
+        "const HEALTHY = 'healthy-recipes';",
+        "const CLINIC = 'clinic-guide';",
+        'const actualCatalog = [{ slug: HEALTHY, appStoreAgeRating: null }, { slug: CLINIC, appStoreAgeRating: null }];',
+        'export const PUBLIC_MINIAPPS = actualCatalog;',
+        "const decoys = [{ slug: 'healthy-recipes', appStoreAgeRating: 4 }, { slug: 'clinic-guide', appStoreAgeRating: 4 }];",
+        'void decoys;',
+        legalDeclarations,
+      ].join('\n'),
+    ],
+    [
+      'a shadowed Object.freeze returns a different runtime catalog',
+      [
+        "const HEALTHY = 'healthy-recipes';",
+        "const CLINIC = 'clinic-guide';",
+        'function Object() {}',
+        'Object.freeze = () => [{ slug: HEALTHY, appStoreAgeRating: null }, { slug: CLINIC, appStoreAgeRating: null }];',
+        "export const PUBLIC_MINIAPPS = Object.freeze([{ slug: 'healthy-recipes', appStoreAgeRating: 4 }, { slug: 'clinic-guide', appStoreAgeRating: 4 }]);",
+        legalDeclarations,
+      ].join('\n'),
+    ],
+    [
+      'a mutable exported alias is changed after its verified-looking initializer',
+      [
+        "const catalog = [{ slug: 'healthy-recipes', appStoreAgeRating: 4 }, { slug: 'clinic-guide', appStoreAgeRating: 4 }];",
+        'export const PUBLIC_MINIAPPS = catalog;',
+        'catalog[0].appStoreAgeRating = null;',
+        'catalog[1].appStoreAgeRating = null;',
+        legalDeclarations,
+      ].join('\n'),
+    ],
+    [
+      'the global Object.freeze method is replaced before catalog initialization',
+      [
+        "const HEALTHY = 'healthy-recipes';",
+        "const CLINIC = 'clinic-guide';",
+        'const pendingCatalog = [{ slug: HEALTHY, appStoreAgeRating: null }, { slug: CLINIC, appStoreAgeRating: null }];',
+        '(Object as any).freeze = () => pendingCatalog;',
+        "export const PUBLIC_MINIAPPS = Object.freeze([Object.freeze({ slug: 'healthy-recipes', appStoreAgeRating: 4 }), Object.freeze({ slug: 'clinic-guide', appStoreAgeRating: 4 })]);",
+        legalDeclarations,
+      ].join('\n'),
+    ],
+  ];
+
+  for (const [name, source] of mutations) {
+    await t.test(name, () => {
+      withFixture(
+        (root) => writeFixtureFile(root, 'constants/publicMiniapps.ts', source),
+        (result) => assert.equal(result.status, 1, `${name} bypassed exported-catalog verification:\n${result.stdout}${result.stderr}`),
       );
     });
   }
