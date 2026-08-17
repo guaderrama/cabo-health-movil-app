@@ -186,6 +186,7 @@ CANDIDATE_NAME = re.compile(
 )
 OPERATION_LOCK_CANDIDATE_NAME = re.compile(r"^operation-lock-[a-f0-9]{32}\.candidate$")
 OPERATION_LOCK_BYTES = b"CABOHEALTH_OPERATION_LOCK_V1\n"
+QUARANTINE_SUFFIX = re.compile(r"^[a-f0-9]{32}$")
 IDENTITY_KEYS = ("device", "inode", "type")
 MANIFEST_KEYS = (
     "schemaVersion",
@@ -1966,6 +1967,7 @@ def physical_state(
     live_identity: dict[str, Any] | None,
     slot_hash: str | None,
     slot_identity: dict[str, Any] | None,
+    has_quarantine: bool = False,
 ) -> str:
     old_hash = entry["oldInventorySha256"]
     source_identity = entry["sourceIdentity"]
@@ -2021,6 +2023,8 @@ def physical_state(
         and slot_identity is not None
     ):
         return "rollback-noreplace-unvalidated"
+    if has_quarantine:
+        return "recovery-in-progress"
     fail(f"PROMOTION_PHYSICAL_STATE_INVALID: {entry['target']}")
 
 
@@ -2038,7 +2042,7 @@ def validate_all_physical_states(
     candidate = promoted_end if rolled_back_end == promoted_end and promoted_end < len(UNITS) else None
     states: dict[int, str] = {}
     for index, entry in latest.items():
-        target, _slot, payload_paths = UNITS[index]
+        target, slot, payload_paths = UNITS[index]
         (
             stage_parent_fd, _stage_leaf, live_parent_fd, _live_leaf,
             stage_hash, stage_identity, live_hash, live_identity, slot_hash, slot_identity,
@@ -2053,6 +2057,7 @@ def validate_all_physical_states(
                 live_identity,
                 slot_hash,
                 slot_identity,
+                bool(quarantine_names(rollback_fd, slot)),
             )
         finally:
             os.close(stage_parent_fd)
@@ -2066,6 +2071,7 @@ def validate_all_physical_states(
                 "promotion-exchange-unvalidated",
                 "promotion-complete-unvalidated",
                 "promotion-noreplace-unvalidated",
+                "recovery-in-progress",
             ):
                 fail(f"PROMOTION_PHYSICAL_STATE_INVALID: {target}")
         elif (
@@ -2076,6 +2082,7 @@ def validate_all_physical_states(
                 "rolled-back",
                 "rollback-exchange-unvalidated",
                 "rollback-noreplace-unvalidated",
+                "recovery-in-progress",
             )
         ):
             pass
@@ -2136,9 +2143,282 @@ def create_fault_leaf(parent_fd: int, kind: str, name: str) -> None:
         fail("TEST_OPERAND_SUBSTITUTION_INVALID")
 
 
+def create_fault_regular_leaf(parent_fd: int, name: str) -> None:
+    fd = os.open(
+        name,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        0o600,
+        dir_fd=parent_fd,
+    )
+    try:
+        os.fchmod(fd, 0o644)
+        write_all(fd, b"unreviewed recovery operand\n")
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def substitute_leaf_for_fault(parent_fd: int, leaf: str, kind: str, name: str) -> None:
     create_fault_leaf(parent_fd, kind, name)
     rename_with_flag(parent_fd, leaf, parent_fd, name, "exchange")
+
+
+def quarantine_name(slot: str) -> str:
+    return f"{slot}.quarantine-{os.urandom(16).hex()}"
+
+
+def quarantine_slot(name: str) -> str | None:
+    marker = ".quarantine-"
+    if marker not in name:
+        return None
+    slot, suffix = name.rsplit(marker, 1)
+    if slot not in {unit_slot for _target, unit_slot, _paths in UNITS}:
+        return None
+    if QUARANTINE_SUFFIX.fullmatch(suffix) is None:
+        return None
+    return slot
+
+
+def quarantine_names(rollback_fd: int, slot: str) -> tuple[str, ...]:
+    try:
+        names = tuple(sorted(
+            (
+                name for name in os.listdir(rollback_fd)
+                if quarantine_slot(name) == slot
+            ),
+            key=lambda value: value.encode("ascii"),
+        ))
+    except UnicodeEncodeError as error:
+        raise ReleaseError("ROLLBACK_UNKNOWN_PATH") from error
+    return names
+
+
+def validate_quarantine_residue(rollback_fd: int, name: str) -> None:
+    if quarantine_slot(name) is None:
+        fail("ROLLBACK_QUARANTINE_NAME_INVALID")
+    try:
+        info = os.stat(name, dir_fd=rollback_fd, follow_symlinks=False)
+    except OSError as error:
+        raise ReleaseError("ROLLBACK_QUARANTINE_INVALID") from error
+    if info.st_uid != os.geteuid():
+        fail("ROLLBACK_QUARANTINE_INVALID")
+
+
+def recovery_snapshot(
+    stage_parent_fd: int,
+    stage_leaf: str,
+    live_parent_fd: int,
+    live_leaf: str,
+    rollback_fd: int,
+    slot: str,
+    payload_paths: tuple[str, ...],
+    target: str,
+) -> dict[str, tuple[int, str, str | None, dict[str, Any] | None]]:
+    locations = {
+        "stage": (stage_parent_fd, stage_leaf),
+        "live": (live_parent_fd, live_leaf),
+        "slot": (rollback_fd, slot),
+    }
+    for name in quarantine_names(rollback_fd, slot):
+        locations[f"quarantine:{name}"] = (rollback_fd, name)
+    result: dict[str, tuple[int, str, str | None, dict[str, Any] | None]] = {}
+    for label, (parent_fd, leaf) in locations.items():
+        inventory_hash, identity = probe_leaf(parent_fd, leaf, payload_paths, target)
+        result[label] = (parent_fd, leaf, inventory_hash, identity)
+    return result
+
+
+def recovery_match(
+    location: tuple[int, str, str | None, dict[str, Any] | None],
+    expected: tuple[str, dict[str, Any]],
+) -> bool:
+    return location[2] == expected[0] and location[3] == expected[1]
+
+
+def record_recovery_error(
+    errors: list[tuple[str, BaseException]],
+    label: str,
+    error: BaseException,
+) -> None:
+    detail = describe_exception(error)
+    if not any(existing_label == label and describe_exception(existing) == detail for existing_label, existing in errors):
+        errors.append((label, error))
+
+
+def recovery_error_details(errors: list[tuple[str, BaseException]]) -> str:
+    return " ".join(f"{label}={describe_exception(error)}" for label, error in errors)
+
+
+def reconcile_recovery_topology(
+    root_path: str,
+    stage_parent_fd: int,
+    stage_leaf: str,
+    live_parent_fd: int,
+    live_leaf: str,
+    rollback_fd: int,
+    slot: str,
+    payload_paths: tuple[str, ...],
+    target: str,
+    desired_stage: tuple[str, dict[str, Any]] | None,
+    desired_live: tuple[str, dict[str, Any]] | None,
+    desired_slot: tuple[str, dict[str, Any]] | None,
+    initial_errors: tuple[tuple[str, BaseException], ...] = (),
+    canonical_required: bool = False,
+) -> None:
+    """Boundedly rebuild a reviewed-or-absent public topology.
+
+    Every namespace or durability failure is followed by a new descriptor-relative
+    probe.  Objects are never overwritten or deleted: a mismatched named operand is
+    moved to a fresh no-replace private quarantine name, where an exact recorded
+    inode/hash can still be found and restored on the next iteration.
+    """
+    desired = {
+        "stage": desired_stage,
+        "live": desired_live,
+        "slot": desired_slot,
+    }
+    errors = list(initial_errors)
+    injected_quarantine_fsync = False
+    force_final_probe_failure = test_fault_enabled(
+        root_path, "promotion-recovery-final-probe-oserror"
+    )
+    for _attempt in range(24):
+        try:
+            snapshot = recovery_snapshot(
+                stage_parent_fd,
+                stage_leaf,
+                live_parent_fd,
+                live_leaf,
+                rollback_fd,
+                slot,
+                payload_paths,
+                target,
+            )
+        except BaseException as error:
+            record_recovery_error(errors, "RECOVERY", error)
+            continue
+
+        moved = False
+        for label in ("live", "stage", "slot"):
+            location = snapshot[label]
+            expected = desired[label]
+            desired_live_available = desired_live is not None and any(
+                recovery_match(candidate, desired_live) for candidate in snapshot.values()
+            )
+            live_is_only_reviewed_fallback = (
+                label == "live"
+                and desired_live is not None
+                and not desired_live_available
+                and any(
+                    reviewed is not None and recovery_match(location, reviewed)
+                    for reviewed in desired.values()
+                )
+            )
+            if (
+                location[3] is None
+                or (expected is not None and recovery_match(location, expected))
+                or live_is_only_reviewed_fallback
+            ):
+                continue
+            destination = quarantine_name(slot)
+            try:
+                rename_with_flag(location[0], location[1], rollback_fd, destination, "noreplace")
+                test_crash(root_path, "promotion-recovery-relocate-restore-quarantine-crash")
+                test_crash(root_path, "promotion-recovery-destination-mutation-safe-crash")
+                if (
+                    not injected_quarantine_fsync
+                    and test_fault_enabled(root_path, "promotion-recovery-relocate-restore-compound-fsync")
+                ):
+                    injected_quarantine_fsync = True
+                    raise OSError(errno.EIO, "INJECTED_RECOVERY_QUARANTINE_FSYNC_OSERROR")
+                fsync_rename_directories(location[0], rollback_fd)
+            except BaseException as error:
+                record_recovery_error(errors, "RECOVERY", error)
+            moved = True
+            break
+        if moved:
+            continue
+
+        for label in ("live", "stage", "slot"):
+            expected = desired[label]
+            if expected is None or recovery_match(snapshot[label], expected):
+                continue
+            source = next(
+                (
+                    location for source_label, location in snapshot.items()
+                    if source_label.startswith("quarantine:") and recovery_match(location, expected)
+                ),
+                None,
+            )
+            if source is None:
+                continue
+            try:
+                rename_with_flag(source[0], source[1], snapshot[label][0], snapshot[label][1], "noreplace")
+                fsync_rename_directories(source[0], snapshot[label][0])
+            except BaseException as error:
+                record_recovery_error(errors, "RESTORE", error)
+            moved = True
+            break
+        if moved:
+            continue
+
+        canonical = all(
+            (location[3] is None if desired[label] is None else recovery_match(location, desired[label]))
+            for label, location in ((name, snapshot[name]) for name in ("stage", "live", "slot"))
+        )
+        live_location = snapshot["live"]
+        live_safe = live_location[3] is None or any(
+            expected is not None and recovery_match(live_location, expected)
+            for expected in desired.values()
+        )
+        details = recovery_error_details(errors)
+        if canonical or (live_safe and not canonical_required):
+            if force_final_probe_failure:
+                record_recovery_error(
+                    errors,
+                    "RECOVERY",
+                    ReleaseError("INJECTED_RECOVERY_FINAL_PROBE_RETRY"),
+                )
+                continue
+            suffix = f" {details}" if details else ""
+            fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}{suffix}")
+        break
+
+    final_snapshot: dict[str, tuple[int, str, str | None, dict[str, Any] | None]] | None = None
+    try:
+        if force_final_probe_failure:
+            raise OSError(errno.EIO, "INJECTED_RECOVERY_FINAL_PROBE_OSERROR")
+        final_snapshot = recovery_snapshot(
+            stage_parent_fd,
+            stage_leaf,
+            live_parent_fd,
+            live_leaf,
+            rollback_fd,
+            slot,
+            payload_paths,
+            target,
+        )
+    except BaseException as error:
+        record_recovery_error(errors, "RECOVERY", error)
+    if final_snapshot is not None:
+        canonical = all(
+            (final_snapshot[label][3] is None
+                if desired[label] is None else recovery_match(final_snapshot[label], desired[label]))
+            for label in ("stage", "live", "slot")
+        )
+        if canonical:
+            details = recovery_error_details(errors)
+            suffix = f" {details}" if details else ""
+            fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}{suffix}")
+        live_location = final_snapshot["live"]
+        if live_location[3] is None or any(
+            expected is not None and recovery_match(live_location, expected)
+            for expected in desired.values()
+        ):
+            errors.append(("RECOVERY", ReleaseError("BOUNDED_RECONCILIATION_INCOMPLETE_PUBLIC_STATE_SAFE")))
+    details = recovery_error_details(errors)
+    suffix = f" {details}" if details else ""
+    fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}{suffix}")
 
 
 def quarantine_live_leaf(
@@ -2208,6 +2488,22 @@ def finish_promoted_physical_state(
             (new_hash, entry["sourceIdentity"]),
             (old_hash, entry["destinationIdentity"]),
         )
+        if current == "recovery-in-progress":
+            reconcile_recovery_topology(
+                root_path,
+                stage_parent_fd,
+                stage_leaf,
+                live_parent_fd,
+                live_leaf,
+                rollback_fd,
+                slot,
+                payload_paths,
+                target,
+                (new_hash, entry["sourceIdentity"]),
+                (old_hash, entry["destinationIdentity"])
+                    if entry["original"] == "present" else None,
+                None,
+            )
         completion_error: BaseException | None = None
         if current == "promotion-complete-unvalidated":
             if not leaf_matches(
@@ -2218,16 +2514,22 @@ def finish_promoted_physical_state(
                 old_hash,
                 entry["destinationIdentity"],
             ):
-                quarantine_unreviewed_live(
-                    live_parent_fd,
-                    live_leaf,
+                reconcile_recovery_topology(
+                    root_path,
                     stage_parent_fd,
                     stage_leaf,
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
                     payload_paths,
                     target,
-                    reviewed_live_states,
+                    (new_hash, entry["sourceIdentity"]),
+                    (old_hash, entry["destinationIdentity"]),
+                    None,
+                    (("PRIMARY", ReleaseError("RESTORE_OPERAND_INVALID")),),
+                    True,
                 )
-                fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORE_OPERAND_INVALID")
             try:
                 rename_with_flag(rollback_fd, slot, stage_parent_fd, stage_leaf, "noreplace")
                 if test_fault_enabled(root_path, "promotion-complete-recovery-fsync-oserror"):
@@ -2246,19 +2548,30 @@ def finish_promoted_physical_state(
                 )
                 and leaf_matches(rollback_fd, slot, payload_paths, target, None, None)
             ):
-                quarantine_unreviewed_live(
-                    live_parent_fd,
-                    live_leaf,
+                topology_error = completion_error or ReleaseError("TOPOLOGY_INVALID")
+                reconcile_recovery_topology(
+                    root_path,
                     stage_parent_fd,
                     stage_leaf,
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
                     payload_paths,
                     target,
-                    reviewed_live_states,
+                    (new_hash, entry["sourceIdentity"]),
+                    (old_hash, entry["destinationIdentity"]),
+                    None,
+                    (("PRIMARY", topology_error),),
+                    True,
                 )
-                detail = describe_exception(completion_error) if completion_error else "TOPOLOGY_INVALID"
-                fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {detail}")
             current = "promotion-exchange-unvalidated"
         if current == "promotion-exchange-unvalidated":
+            if test_fault_enabled(
+                root_path, "promotion-recovery-relocate-restore-before-precheck"
+            ):
+                rename_with_flag(stage_parent_fd, stage_leaf, rollback_fd, slot, "noreplace")
+                fsync_rename_directories(stage_parent_fd, rollback_fd)
             if not leaf_matches(
                 stage_parent_fd,
                 stage_leaf,
@@ -2267,16 +2580,32 @@ def finish_promoted_physical_state(
                 old_hash,
                 entry["destinationIdentity"],
             ):
-                quarantine_unreviewed_live(
+                reconcile_recovery_topology(
+                    root_path,
+                    stage_parent_fd,
+                    stage_leaf,
                     live_parent_fd,
                     live_leaf,
                     rollback_fd,
                     slot,
                     payload_paths,
                     target,
-                    reviewed_live_states,
+                    (new_hash, entry["sourceIdentity"]),
+                    (old_hash, entry["destinationIdentity"]),
+                    None,
+                    (("PRIMARY", ReleaseError("RESTORE_OPERAND_INVALID")),),
+                    True,
                 )
-                fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORE_OPERAND_INVALID")
+            relocation_fault = test_fault_requested(
+                root_path,
+                "promotion-recovery-relocate-restore-to-slot",
+                "promotion-recovery-relocate-restore-compound-fsync",
+                "promotion-recovery-relocate-restore-quarantine-crash",
+                "promotion-recovery-final-probe-oserror",
+            )
+            if relocation_fault is not None:
+                rename_with_flag(stage_parent_fd, stage_leaf, rollback_fd, slot, "noreplace")
+                fsync_rename_directories(stage_parent_fd, rollback_fd)
             recovery_mutation = test_fault_requested(
                 root_path,
                 "promotion-recovery-destination-same-inode-mutation",
@@ -2288,54 +2617,68 @@ def finish_promoted_physical_state(
                 rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
                 fsync_rename_directories(stage_parent_fd, live_parent_fd)
             except BaseException as recovery_error:
-                try:
-                    quarantine_unreviewed_live(
-                        live_parent_fd,
-                        live_leaf,
-                        rollback_fd,
-                        slot,
-                        payload_paths,
-                        target,
-                        reviewed_live_states,
-                    )
-                except BaseException as quarantine_error:
-                    raise ReleaseError(
-                        f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
-                        f"PRIMARY={describe_exception(recovery_error)} "
-                        f"QUARANTINE={describe_exception(quarantine_error)}"
-                    ) from quarantine_error
-                raise ReleaseError(
-                    f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {describe_exception(recovery_error)}"
-                ) from recovery_error
-            restored_hash, restored_identity = probe_leaf(
-                live_parent_fd, live_leaf, payload_paths, target
-            )
-            if restored_hash == old_hash and restored_identity == entry["destinationIdentity"]:
-                if completion_error is not None:
-                    fail(
-                        f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
-                        f"PRIMARY={describe_exception(completion_error)} RESTORED_STATE_SAFE"
-                    )
-                fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
-            try:
-                quarantine_unreviewed_live(
+                reconcile_recovery_topology(
+                    root_path,
+                    stage_parent_fd,
+                    stage_leaf,
                     live_parent_fd,
                     live_leaf,
                     rollback_fd,
                     slot,
                     payload_paths,
                     target,
-                    reviewed_live_states,
+                    (new_hash, entry["sourceIdentity"]),
+                    (old_hash, entry["destinationIdentity"]),
+                    None,
+                    (("PRIMARY", recovery_error),),
                 )
-            except BaseException as quarantine_error:
-                raise ReleaseError(
-                    f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
-                    f"QUARANTINE={describe_exception(quarantine_error)}"
-                ) from quarantine_error
-            if recovery_mutation == "promotion-recovery-destination-mutation-safe-crash":
-                os._exit(86)
-            fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORED_STATE_INVALID")
+            restored_hash, restored_identity = probe_leaf(
+                live_parent_fd, live_leaf, payload_paths, target
+            )
+            if restored_hash == old_hash and restored_identity == entry["destinationIdentity"]:
+                initial_errors: tuple[tuple[str, BaseException], ...] = ()
+                if completion_error is not None:
+                    initial_errors = ((
+                        "PRIMARY",
+                        ReleaseError(
+                            f"{describe_exception(completion_error)} RESTORED_STATE_SAFE"
+                        ),
+                    ),)
+                reconcile_recovery_topology(
+                    root_path,
+                    stage_parent_fd,
+                    stage_leaf,
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    (new_hash, entry["sourceIdentity"]),
+                    (old_hash, entry["destinationIdentity"]),
+                    None,
+                    initial_errors,
+                )
+            reconcile_recovery_topology(
+                root_path,
+                stage_parent_fd,
+                stage_leaf,
+                live_parent_fd,
+                live_leaf,
+                rollback_fd,
+                slot,
+                payload_paths,
+                target,
+                (new_hash, entry["sourceIdentity"]),
+                (old_hash, entry["destinationIdentity"]),
+                None,
+                (("PRIMARY", ReleaseError("RESTORED_STATE_INVALID")),),
+                True,
+            )
         if current == "promotion-noreplace-unvalidated":
+            if test_fault_enabled(root_path, "promotion-noreplace-recovery-relocate-live-to-slot"):
+                rename_with_flag(live_parent_fd, live_leaf, rollback_fd, slot, "noreplace")
+                fsync_rename_directories(live_parent_fd, rollback_fd)
             try:
                 rename_with_flag(live_parent_fd, live_leaf, stage_parent_fd, stage_leaf, "noreplace")
                 fsync_rename_directories(live_parent_fd, stage_parent_fd)
@@ -2351,19 +2694,30 @@ def finish_promoted_physical_state(
                 ):
                     fail(f"OPERAND_SUBSTITUTION_REVERSAL_INVALID: {target}")
             except BaseException as recovery_error:
-                try:
-                    quarantine_live_leaf(live_parent_fd, live_leaf, rollback_fd, slot, target)
-                except BaseException as quarantine_error:
-                    raise ReleaseError(
-                        f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
-                        f"PRIMARY={describe_exception(recovery_error)} "
-                        f"QUARANTINE={describe_exception(quarantine_error)}"
-                    ) from quarantine_error
-                raise ReleaseError(
-                    f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {describe_exception(recovery_error)}"
-                ) from recovery_error
+                reconcile_recovery_topology(
+                    root_path,
+                    stage_parent_fd,
+                    stage_leaf,
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    (new_hash, entry["sourceIdentity"]),
+                    None,
+                    None,
+                    (("PRIMARY", recovery_error),),
+                )
             fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
         if entry["original"] == "present" and current == "prepared":
+            if test_fault_enabled(root_path, "promote-exchange-quarantined-source-crash"):
+                candidate = quarantine_name(slot)
+                rename_with_flag(stage_parent_fd, stage_leaf, rollback_fd, candidate, "noreplace")
+                fsync_rename_directories(stage_parent_fd, rollback_fd)
+                create_fault_regular_leaf(stage_parent_fd, stage_leaf)
+                rename_with_flag(stage_parent_fd, stage_leaf, live_parent_fd, live_leaf, "exchange")
+                os._exit(86)
             if test_fault_enabled(root_path, "promote-exchange-live-symlink-crash"):
                 create_fault_leaf(rollback_fd, "symlink", "fault-substitute")
                 rename_with_flag(
@@ -2629,8 +2983,10 @@ def open_release_state(root_path: str, release_argument: str, raw: bytes, *, cre
     allowed_rollback_names = {"transitions", *(slot for _target, slot, _paths in UNITS)}
     if "cabohealth-" in os.path.basename(root_path) and "-fixture-" in os.path.basename(root_path):
         allowed_rollback_names.add("fault-substitute")
-    if not rollback_names.issubset(allowed_rollback_names):
-        fail("ROLLBACK_UNKNOWN_PATH")
+    for name in rollback_names - allowed_rollback_names:
+        if quarantine_slot(name) is None:
+            fail("ROLLBACK_UNKNOWN_PATH")
+        validate_quarantine_residue(rollback_fd, name)
     transitions_fd = open_transitions(rollback_fd, create=create_rollback)
     operation_lock_fd = open_operation_lock(transitions_fd, root_path)
     latest, _attempts = parse_transition_files(transitions_fd)
@@ -2736,7 +3092,28 @@ def rollback_promoted_unit(
         )
         if current == "rolled-back":
             return
+        if current == "recovery-in-progress":
+            reconcile_recovery_topology(
+                root_path,
+                stage_parent_fd,
+                stage_leaf,
+                live_parent_fd,
+                live_leaf,
+                rollback_fd,
+                slot,
+                payload_paths,
+                target,
+                None,
+                (new_hash, entry["sourceIdentity"]),
+                (old_hash, entry["destinationIdentity"])
+                    if entry["original"] == "present" else None,
+            )
         if current == "rollback-exchange-unvalidated":
+            if test_fault_enabled(
+                root_path, "rollback-recovery-relocate-restore-before-precheck"
+            ):
+                rename_with_flag(rollback_fd, slot, stage_parent_fd, stage_leaf, "noreplace")
+                fsync_rename_directories(rollback_fd, stage_parent_fd)
             if not leaf_matches(
                 rollback_fd,
                 slot,
@@ -2745,63 +3122,104 @@ def rollback_promoted_unit(
                 new_hash,
                 entry["sourceIdentity"],
             ):
-                quarantine_unreviewed_live(
-                    live_parent_fd,
-                    live_leaf,
+                reconcile_recovery_topology(
+                    root_path,
                     stage_parent_fd,
                     stage_leaf,
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
                     payload_paths,
                     target,
-                    reviewed_live_states,
+                    None,
+                    (new_hash, entry["sourceIdentity"]),
+                    (old_hash, entry["destinationIdentity"]),
+                    (("PRIMARY", ReleaseError("RESTORE_OPERAND_INVALID")),),
+                    True,
                 )
-                fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORE_OPERAND_INVALID")
+            if test_fault_enabled(root_path, "rollback-recovery-relocate-restore-to-stage"):
+                rename_with_flag(rollback_fd, slot, stage_parent_fd, stage_leaf, "noreplace")
+                fsync_rename_directories(rollback_fd, stage_parent_fd)
             try:
                 rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "exchange")
                 fsync_rename_directories(rollback_fd, live_parent_fd)
             except BaseException as recovery_error:
-                try:
-                    quarantine_unreviewed_live(
-                        live_parent_fd,
-                        live_leaf,
-                        stage_parent_fd,
-                        stage_leaf,
-                        payload_paths,
-                        target,
-                        reviewed_live_states,
-                    )
-                except BaseException as quarantine_error:
-                    raise ReleaseError(
-                        f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
-                        f"PRIMARY={describe_exception(recovery_error)} "
-                        f"QUARANTINE={describe_exception(quarantine_error)}"
-                    ) from quarantine_error
-                raise ReleaseError(
-                    f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {describe_exception(recovery_error)}"
-                ) from recovery_error
+                reconcile_recovery_topology(
+                    root_path,
+                    stage_parent_fd,
+                    stage_leaf,
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    None,
+                    (new_hash, entry["sourceIdentity"]),
+                    (old_hash, entry["destinationIdentity"]),
+                    (("PRIMARY", recovery_error),),
+                )
             restored_hash, restored_identity = probe_leaf(
                 live_parent_fd, live_leaf, payload_paths, target
             )
             if restored_hash == new_hash and restored_identity == entry["sourceIdentity"]:
-                fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
-            try:
-                quarantine_unreviewed_live(
-                    live_parent_fd,
-                    live_leaf,
+                reconcile_recovery_topology(
+                    root_path,
                     stage_parent_fd,
                     stage_leaf,
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
                     payload_paths,
                     target,
-                    reviewed_live_states,
+                    None,
+                    (new_hash, entry["sourceIdentity"]),
+                    (old_hash, entry["destinationIdentity"]),
                 )
-            except BaseException as quarantine_error:
-                raise ReleaseError(
-                    f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: "
-                    f"QUARANTINE={describe_exception(quarantine_error)}"
-                ) from quarantine_error
-            fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORED_STATE_INVALID")
+            reconcile_recovery_topology(
+                root_path,
+                stage_parent_fd,
+                stage_leaf,
+                live_parent_fd,
+                live_leaf,
+                rollback_fd,
+                slot,
+                payload_paths,
+                target,
+                None,
+                (new_hash, entry["sourceIdentity"]),
+                (old_hash, entry["destinationIdentity"]),
+                (("PRIMARY", ReleaseError("RESTORED_STATE_INVALID")),),
+                True,
+            )
         if current == "rollback-noreplace-unvalidated":
+            if test_fault_enabled(
+                root_path,
+                "rollback-noreplace-recovery-relocate-slot-before-absence-precheck",
+            ):
+                rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "noreplace")
+                fsync_rename_directories(rollback_fd, live_parent_fd)
             if not leaf_matches(live_parent_fd, live_leaf, payload_paths, target, None, None):
-                fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: LIVE_ABSENCE_INVALID")
+                reconcile_recovery_topology(
+                    root_path,
+                    stage_parent_fd,
+                    stage_leaf,
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    None,
+                    (new_hash, entry["sourceIdentity"]),
+                    None,
+                    (("PRIMARY", ReleaseError("LIVE_ABSENCE_INVALID")),),
+                )
+            if test_fault_enabled(root_path, "rollback-noreplace-recovery-relocate-slot-to-live"):
+                rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "noreplace")
+                fsync_rename_directories(rollback_fd, live_parent_fd)
             if not leaf_matches(
                 rollback_fd,
                 slot,
@@ -2811,39 +3229,70 @@ def rollback_promoted_unit(
                 entry["sourceIdentity"],
             ):
                 test_crash(root_path, "rollback-noreplace-recovery-safe-crash")
-                fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
+                reconcile_recovery_topology(
+                    root_path,
+                    stage_parent_fd,
+                    stage_leaf,
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    None,
+                    (new_hash, entry["sourceIdentity"]),
+                    None,
+                )
             try:
                 rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "noreplace")
                 fsync_rename_directories(rollback_fd, live_parent_fd)
             except BaseException as recovery_error:
-                if stat_if_present(live_parent_fd, live_leaf) is None:
-                    fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
-                raise ReleaseError(
-                    f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {describe_exception(recovery_error)}"
-                ) from recovery_error
+                reconcile_recovery_topology(
+                    root_path,
+                    stage_parent_fd,
+                    stage_leaf,
+                    live_parent_fd,
+                    live_leaf,
+                    rollback_fd,
+                    slot,
+                    payload_paths,
+                    target,
+                    None,
+                    (new_hash, entry["sourceIdentity"]),
+                    None,
+                    (("PRIMARY", recovery_error),),
+                )
             restored_hash, restored_identity = probe_leaf(
                 live_parent_fd, live_leaf, payload_paths, target
             )
             if restored_hash == new_hash and restored_identity == entry["sourceIdentity"]:
                 fail(f"OPERAND_SUBSTITUTION_RECOVERED: {target}")
-            try:
-                quarantine_unreviewed_live(
-                    live_parent_fd,
-                    live_leaf,
-                    stage_parent_fd,
-                    stage_leaf,
-                    payload_paths,
-                    target,
-                    reviewed_live_states,
-                )
-            except BaseException as recovery_error:
-                raise ReleaseError(
-                    f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: {describe_exception(recovery_error)}"
-                ) from recovery_error
-            fail(f"OPERAND_SUBSTITUTION_RECOVERY_FAILED: {target}: RESTORED_STATE_INVALID")
+            reconcile_recovery_topology(
+                root_path,
+                stage_parent_fd,
+                stage_leaf,
+                live_parent_fd,
+                live_leaf,
+                rollback_fd,
+                slot,
+                payload_paths,
+                target,
+                None,
+                (new_hash, entry["sourceIdentity"]),
+                None,
+                (("PRIMARY", ReleaseError("RESTORED_STATE_INVALID")),),
+                True,
+            )
         if current != "promoted":
             fail(f"ROLLBACK_STATE_INVALID: {target}")
         if entry["original"] == "present":
+            if test_fault_enabled(root_path, "rollback-exchange-quarantined-destination-crash"):
+                candidate = quarantine_name(slot)
+                rename_with_flag(rollback_fd, slot, rollback_fd, candidate, "noreplace")
+                fsync_rename_directories(rollback_fd, rollback_fd)
+                create_fault_regular_leaf(rollback_fd, slot)
+                rename_with_flag(rollback_fd, slot, live_parent_fd, live_leaf, "exchange")
+                os._exit(86)
             if test_fault_enabled(root_path, "rollback-exchange-live-symlink-crash"):
                 create_fault_leaf(rollback_fd, "symlink", "fault-substitute")
                 rename_with_flag(
@@ -3106,6 +3555,7 @@ def rollback_next(
             "promotion-exchange-unvalidated",
             "promotion-complete-unvalidated",
             "promotion-noreplace-unvalidated",
+            "recovery-in-progress",
         ):
             entry = latest[candidate]
             finish_promoted_physical_state(
@@ -3144,7 +3594,7 @@ def rollback_next(
         if index != expected_index:
             fail("ROLLBACK_EXPECTED_INDEX_MISMATCH")
         entry = latest[index]
-        target, _slot, payload_paths = UNITS[index]
+        target, slot, payload_paths = UNITS[index]
         (
             stage_parent_fd, _stage_leaf, live_parent_fd, _live_leaf,
             stage_hash, stage_identity, live_hash, live_identity, slot_hash, slot_identity,
@@ -3159,6 +3609,7 @@ def rollback_next(
                 live_identity,
                 slot_hash,
                 slot_identity,
+                bool(quarantine_names(rollback_fd, slot)),
             )
         finally:
             os.close(stage_parent_fd)

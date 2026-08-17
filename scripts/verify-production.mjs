@@ -427,9 +427,10 @@ function browserObservationChallenge(nonce, binding) {
   return sha256(Buffer.concat([nonce, Buffer.from(canonicalJson(binding))]));
 }
 
-function completedPerformanceRequestUrls(logs) {
+function completedPerformanceRequests(logs, priorRequestIds = new Set()) {
   if (!Array.isArray(logs)) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
   const requests = new Map();
+  let sequence = 0;
   for (const entry of logs) {
     if (!entry || typeof entry.message !== 'string') throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
     let parsed;
@@ -439,6 +440,9 @@ function completedPerformanceRequestUrls(logs) {
       throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
     }
     const method = parsed?.message?.method;
+    if (typeof method !== 'string' || method.length === 0) {
+      throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+    }
     if (![
       'Network.requestWillBeSent',
       'Network.responseReceived',
@@ -452,25 +456,66 @@ function completedPerformanceRequestUrls(logs) {
     }
     if (method === 'Network.requestWillBeSent') {
       const url = params?.request?.url;
-      if (typeof url !== 'string' || url.length === 0) {
+      const httpMethod = params?.request?.method;
+      const type = params?.type;
+      const frameId = params?.frameId;
+      const loaderId = params?.loaderId;
+      const documentURL = params?.documentURL;
+      if (
+        typeof url !== 'string'
+        || url.length === 0
+        || typeof httpMethod !== 'string'
+        || httpMethod.length === 0
+        || typeof type !== 'string'
+        || type.length === 0
+        || typeof frameId !== 'string'
+        || frameId.length === 0
+        || typeof loaderId !== 'string'
+        || loaderId.length === 0
+        || typeof documentURL !== 'string'
+        || documentURL.length === 0
+      ) {
         throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
       }
       const prior = requests.get(requestId);
       if (prior !== undefined) {
         const redirect = params.redirectResponse;
         if (
-          !redirect
+          prior.finished
+          || prior.failed
+          || prior.responseStatus !== null
+          || !redirect
           || redirect.url !== prior.url
           || !Number.isInteger(redirect.status)
           || redirect.status < 300
           || redirect.status >= 400
         ) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+        prior.redirectResponse = { url: redirect.url, status: redirect.status };
+        prior.redirectTarget = url;
         throw new Error('BROWSER_NETWORK_REDIRECT_FORBIDDEN');
       }
       if (params.redirectResponse !== undefined) {
-        throw new Error('BROWSER_NETWORK_REDIRECT_FORBIDDEN');
+        throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
       }
-      requests.set(requestId, { url, responseStatus: null, terminal: null });
+      if (priorRequestIds.has(requestId)) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+      requests.set(requestId, {
+        requestId,
+        url,
+        method: httpMethod,
+        type,
+        frameId,
+        loaderId,
+        documentURL,
+        redirectResponse: null,
+        redirectTarget: null,
+        responseStatus: null,
+        responseType: null,
+        responseFrameId: null,
+        responseLoaderId: null,
+        finished: false,
+        failed: false,
+        sequence: sequence++,
+      });
       continue;
     }
     const request = requests.get(requestId);
@@ -479,30 +524,104 @@ function completedPerformanceRequestUrls(logs) {
       const status = params?.response?.status;
       if (
         request.responseStatus !== null
-        || request.terminal !== null
+        || request.finished
+        || request.failed
         || params?.response?.url !== request.url
+        || params?.type !== request.type
+        || params?.frameId !== request.frameId
+        || params?.loaderId !== request.loaderId
         || !Number.isInteger(status)
         || status < 100
         || status > 599
       ) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
       if (status < 200 || status >= 300) throw new Error('BROWSER_NETWORK_STATUS_INVALID');
       request.responseStatus = status;
+      request.responseType = params.type;
+      request.responseFrameId = params.frameId;
+      request.responseLoaderId = params.loaderId;
       continue;
     }
-    if (request.terminal !== null) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+    if (request.finished || request.failed) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
     if (method === 'Network.loadingFailed') {
-      request.terminal = 'failed';
+      if (params?.type !== request.type) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+      request.failed = true;
       throw new Error('BROWSER_NETWORK_LOADING_FAILED');
     }
     if (request.responseStatus === null) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
-    request.terminal = 'finished';
+    request.finished = true;
   }
   for (const request of requests.values()) {
-    if (request.responseStatus === null || request.terminal !== 'finished') {
+    if (request.responseStatus === null || !request.finished || request.failed) {
       throw new Error('BROWSER_NETWORK_REQUEST_INCOMPLETE');
     }
+    priorRequestIds.add(request.requestId);
   }
-  return [...requests.values()].map(({ url }) => url);
+  return [...requests.values()];
+}
+
+function validateBrowserRequestGraph(requests, { url, navigationHref, javascript }, sessionState) {
+  if (
+    !Array.isArray(requests)
+    || typeof navigationHref !== 'string'
+    || !LEGAL_URLS.includes(navigationHref)
+    || !sessionState
+    || !(sessionState.documentLoaderIds instanceof Set)
+    || (sessionState.mainFrameId !== null && typeof sessionState.mainFrameId !== 'string')
+  ) {
+    throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
+  }
+  const documents = requests
+    .filter(({ type }) => type === 'Document')
+    .sort((left, right) => left.sequence - right.sequence);
+  if (documents.length !== 2) throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
+  const [originalDocument, navigationDocument] = documents;
+  if (
+    originalDocument.url !== url
+    || originalDocument.method !== 'GET'
+    || originalDocument.documentURL !== url
+    || navigationDocument.url !== navigationHref
+    || navigationDocument.method !== 'GET'
+    || navigationDocument.documentURL !== navigationHref
+    || navigationDocument.frameId !== originalDocument.frameId
+    || navigationDocument.loaderId === originalDocument.loaderId
+    || originalDocument.sequence !== 0
+    || navigationDocument.sequence !== requests.length - 1
+    || (sessionState.mainFrameId !== null && originalDocument.frameId !== sessionState.mainFrameId)
+    || sessionState.documentLoaderIds.has(originalDocument.loaderId)
+    || sessionState.documentLoaderIds.has(navigationDocument.loaderId)
+  ) throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
+
+  const miniapp = new URL(url).pathname.startsWith('/apps/');
+  const expectedResources = miniapp ? [
+    ['https://cabohealth.org/apps/shared/styles.css', 'Stylesheet'],
+    ['https://cabohealth.org/apps/shared/logo.png', 'Image'],
+    ...(javascript === 'enabled' ? [
+      [new URL('app.js', url).href, 'Script'],
+      ['https://cabohealth.org/apps/shared/motion.js', 'Script'],
+      ['https://cabohealth.org/apps/shared/shell.js', 'Script'],
+    ] : []),
+  ] : [];
+  const resources = requests.filter(({ type }) => type !== 'Document');
+  if (resources.length !== expectedResources.length) throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
+  const remaining = [...expectedResources];
+  for (const request of resources) {
+    if (
+      request.method !== 'GET'
+      || request.frameId !== originalDocument.frameId
+      || request.loaderId !== originalDocument.loaderId
+      || request.documentURL !== url
+    ) throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
+    const expectedIndex = remaining.findIndex(([resourceUrl, type]) => (
+      request.url === resourceUrl && request.type === type
+    ));
+    if (expectedIndex < 0) throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
+    remaining.splice(expectedIndex, 1);
+  }
+  if (remaining.length !== 0) throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
+  if (sessionState.mainFrameId === null) sessionState.mainFrameId = originalDocument.frameId;
+  sessionState.documentLoaderIds.add(originalDocument.loaderId);
+  sessionState.documentLoaderIds.add(navigationDocument.loaderId);
+  return true;
 }
 
 async function webdriverKeyAction(webdriver, sessionId, value) {
@@ -581,16 +700,18 @@ export async function measureBrowserEvidence({
           throw new Error('WEBDRIVER_SESSION_INVALID');
         }
         try {
+          const performanceRequestIds = new Set();
+          const browserNetworkSession = { mainFrameId: null, documentLoaderIds: new Set() };
           const logTypes = await webdriverCommand(webdriver, `/session/${sessionId}/log/types`, 'GET');
           if (!Array.isArray(logTypes) || !['browser', 'performance'].every((type) => logTypes.includes(type))) {
             throw new Error('WEBDRIVER_LOG_CAPABILITY_INVALID');
           }
-          completedPerformanceRequestUrls(await webdriverCommand(
+          completedPerformanceRequests(await webdriverCommand(
             webdriver,
             `/session/${sessionId}/log`,
             'POST',
             { type: 'performance' },
-          ));
+          ), performanceRequestIds);
           for (const path of routes) {
             const url = new URL(path, base).href;
             const miniapp = path.startsWith('/apps/');
@@ -746,9 +867,12 @@ export async function measureBrowserEvidence({
             const browserLogs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'browser' });
             if (!Array.isArray(browserLogs)) throw new Error('WEBDRIVER_LOG_INVALID');
             const performanceLogs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'performance' });
-            const requestUrls = completedPerformanceRequestUrls(performanceLogs);
-            const originalRequestCount = requestUrls.filter((requestUrl) => requestUrl === url).length;
-            const navigationRequestCount = requestUrls.filter((requestUrl) => requestUrl === navigationHref).length;
+            const performanceRequests = completedPerformanceRequests(performanceLogs, performanceRequestIds);
+            validateBrowserRequestGraph(
+              performanceRequests,
+              { url, navigationHref, javascript },
+              browserNetworkSession,
+            );
             observations.push({
               path,
               requestedViewport: viewport.id,
@@ -770,10 +894,8 @@ export async function measureBrowserEvidence({
               pauseKeyboardVerified,
               focusVerified: navigationFocus?.focusVerified,
               navigationVerified,
-              documentRequestSeen: originalRequestCount >= 1
-                && navigationRequestCount >= (navigationHref === url ? 2 : 1),
-              unexpectedRequestCount: requestUrls.filter((requestUrl) => !allowedUrls.includes(requestUrl)).length
-                + (measured?.unexpectedResourceCount ?? 0),
+              documentRequestSeen: true,
+              unexpectedRequestCount: measured?.unexpectedResourceCount ?? 0,
               consoleErrorCount: browserLogs.filter(({ level }) => ['SEVERE', 'ERROR'].includes(level)).length,
               miniappReady: measured?.miniappReady,
               noJsControlsDisabled: measured?.noJsControlsDisabled,

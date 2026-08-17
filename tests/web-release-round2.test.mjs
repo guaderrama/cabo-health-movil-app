@@ -371,6 +371,43 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
   let spaceActionCount = 0;
   let enterActionCount = 0;
   let noPreferenceCommandCount = 0;
+  const addRequest = (session, sessionId, record) => {
+    session.requests.push({
+      requestId: `${sessionId}-request-${session.nextRequestId++}`,
+      method: 'GET',
+      ...record,
+    });
+  };
+  const addDocumentLoad = (session, sessionId, url, { includeResources = true } = {}) => {
+    const frameId = session.mainFrameId;
+    const loaderId = `${sessionId}-loader-${session.nextLoaderId++}`;
+    addRequest(session, sessionId, {
+      url,
+      type: 'Document',
+      frameId,
+      loaderId,
+      documentURL: url,
+    });
+    const pathname = new URL(url).pathname;
+    if (!includeResources || !pathname.startsWith('/apps/')) return;
+    for (const [resourceUrl, type] of [
+      ['https://cabohealth.org/apps/shared/styles.css', 'Stylesheet'],
+      ['https://cabohealth.org/apps/shared/logo.png', 'Image'],
+      ...(session.javascriptEnabled ? [
+        [new URL('app.js', url).href, 'Script'],
+        ['https://cabohealth.org/apps/shared/motion.js', 'Script'],
+        ['https://cabohealth.org/apps/shared/shell.js', 'Script'],
+      ] : []),
+    ]) {
+      addRequest(session, sessionId, {
+        url: resourceUrl,
+        type,
+        frameId,
+        loaderId,
+        documentURL: url,
+      });
+    }
+  };
   const server = createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -398,6 +435,10 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         pauseActionCount: 0,
         requests: [],
         nextRequestId: 0,
+        mainFrameId: `${sessionId}-main-frame`,
+        nextLoaderId: 0,
+        completedObservationCount: 0,
+        previousRouteLoaderId: null,
         browserLogReadCount: 0,
       });
       value = {
@@ -416,10 +457,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         session.url = body.url;
         session.activeTarget = null;
         session.pauseActionCount = 0;
-        session.requests.push({
-          requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
-          url: body.url,
-        });
+        addDocumentLoad(session, sessionMatch[1], body.url);
       }
       else if (request.method === 'GET' && command === 'url') value = session.url;
       else if (request.method === 'GET' && command === 'log/types') value = ['browser', 'performance'];
@@ -453,10 +491,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
               enterActionCount += 1;
               if (session.activeTarget === 'legal-link' && driverFault !== 'ignored-navigation') {
                 session.url = 'https://cabohealth.org/app/privacy/';
-                session.requests.push({
-                  requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
-                  url: session.url,
-                });
+                addDocumentLoad(session, sessionMatch[1], session.url, { includeResources: false });
               }
             }
           }
@@ -509,24 +544,140 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
           const requestLog = driverFault === 'missing-navigation-request'
             ? session.requests.slice(0, 1)
             : session.requests;
-          const records = driverFault === 'missing-document-request' ? [] : [...requestLog];
+          const records = requestLog.map((record) => ({ ...record }));
+          const firstDocumentIndex = records.findIndex(({ type }) => type === 'Document');
+          if (driverFault === 'missing-document-request' && firstDocumentIndex >= 0) {
+            records.splice(firstDocumentIndex, 1);
+          }
+          const firstDocument = records.find(({ type }) => type === 'Document') ?? requestLog[0];
           if (driverFault === 'allowed-url-failure' && records.length > 0) records.push({
             requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
             url: 'https://cabohealth.org/apps/shared/styles.css',
+            method: 'GET',
+            type: 'Stylesheet',
+            frameId: firstDocument.frameId,
+            loaderId: firstDocument.loaderId,
+            documentURL: firstDocument.documentURL,
             resourceFailure: true,
           });
           if (driverFault === 'resource-redirect-allowed' && records.length > 0) records.push({
             requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
             url: 'https://cabohealth.org/apps/shared/styles.css',
+            method: 'GET',
+            type: 'Stylesheet',
+            frameId: firstDocument.frameId,
+            loaderId: firstDocument.loaderId,
+            documentURL: firstDocument.documentURL,
             redirectUrl: 'https://cabohealth.org/apps/shared/motion.js',
           });
           if (driverFault === 'navigation-redirect-allowed' && records.length > 1) {
-            records[1] = { ...records[1], redirectUrl: 'https://cabohealth.org/app/terms/' };
+            const navigationIndex = records.findLastIndex(({ type }) => type === 'Document');
+            records[navigationIndex] = {
+              ...records[navigationIndex],
+              redirectUrl: 'https://cabohealth.org/app/terms/',
+            };
           }
-          if (driverFault === 'external-request') records.push({
+          if (driverFault === 'external-request' && firstDocument) records.push({
             requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
             url: 'https://evil.invalid/tracker.js',
+            method: 'GET',
+            type: 'Script',
+            frameId: firstDocument.frameId,
+            loaderId: firstDocument.loaderId,
+            documentURL: firstDocument.documentURL,
           });
+          const miniappDocument = firstDocument
+            && new URL(firstDocument.url).pathname.startsWith('/apps/') ? firstDocument : null;
+          if (miniappDocument && driverFault === 'extra-image') records.push({
+            requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
+            url: 'https://cabohealth.org/apps/shared/logo.png',
+            method: 'GET',
+            type: 'Image',
+            frameId: miniappDocument.frameId,
+            loaderId: miniappDocument.loaderId,
+            documentURL: miniappDocument.documentURL,
+          });
+          for (const [fault, type] of [['extra-fetch', 'Fetch'], ['extra-xhr', 'XHR']]) {
+            if (miniappDocument && driverFault === fault) records.push({
+              requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
+              url: 'https://cabohealth.org/apps/shared/styles.css',
+              method: 'GET',
+              type,
+              frameId: miniappDocument.frameId,
+              loaderId: miniappDocument.loaderId,
+              documentURL: miniappDocument.documentURL,
+            });
+          }
+          if (firstDocument && driverFault === 'extra-subframe-document') records.push({
+            requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
+            url: 'https://cabohealth.org/app/terms/',
+            method: 'GET',
+            type: 'Document',
+            frameId: `${firstDocument.frameId}-subframe`,
+            loaderId: `${sessionMatch[1]}-loader-${session.nextLoaderId++}`,
+            documentURL: 'https://cabohealth.org/app/terms/',
+          });
+          const documentRecord = records.find(({ type }) => type === 'Document');
+          if (documentRecord && driverFault === 'image-as-document') documentRecord.type = 'Image';
+          if (documentRecord && driverFault === 'fetch-as-document') documentRecord.type = 'Fetch';
+          if (documentRecord && driverFault === 'xhr-as-document') documentRecord.type = 'XHR';
+          if (documentRecord && driverFault === 'subframe-document') {
+            documentRecord.frameId = `${documentRecord.frameId}-subframe`;
+          }
+          if (documentRecord && driverFault === 'post-document') documentRecord.method = 'POST';
+          if (documentRecord && driverFault === 'missing-request-type') delete documentRecord.type;
+          if (documentRecord && driverFault === 'missing-request-method') delete documentRecord.method;
+          const resourceRecord = records.find(({ type }) => type !== 'Document');
+          if (resourceRecord && driverFault === 'resource-as-fetch') resourceRecord.type = 'Fetch';
+          if (resourceRecord && driverFault === 'resource-as-xhr') resourceRecord.type = 'XHR';
+          if (resourceRecord && driverFault === 'resource-loader-mismatch') {
+            resourceRecord.loaderId = `${resourceRecord.loaderId}-other`;
+          }
+          if (resourceRecord && driverFault === 'duplicate-resource') {
+            records.push({
+              ...resourceRecord,
+              requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
+            });
+          }
+          if (firstDocument && driverFault === 'route-inappropriate-resource') {
+            records.push({
+              requestId: `${sessionMatch[1]}-request-${session.nextRequestId++}`,
+              url: 'https://cabohealth.org/apps/clinic-guide/app.js',
+              method: 'GET',
+              type: 'Script',
+              frameId: firstDocument.frameId,
+              loaderId: firstDocument.loaderId,
+              documentURL: firstDocument.documentURL,
+            });
+          }
+          if (driverFault === 'navigation-loader-reused') {
+            const documents = records.filter(({ type }) => type === 'Document');
+            if (documents.length > 1) documents.at(-1).loaderId = documents[0].loaderId;
+          }
+          if (firstDocument && driverFault === 'session-document-loader-reuse') {
+            if (session.previousRouteLoaderId !== null) {
+              const currentRouteLoaderId = firstDocument.loaderId;
+              for (const record of records) {
+                if (record.loaderId === currentRouteLoaderId) {
+                  record.loaderId = session.previousRouteLoaderId;
+                }
+              }
+            }
+          }
+          if (firstDocument && driverFault === 'session-main-frame-switch'
+            && session.completedObservationCount > 0) {
+            for (const record of records) record.frameId = `${session.mainFrameId}-replacement`;
+          }
+          if (driverFault === 'reused-request-id' && records.length > 0) {
+            records.push({ ...records[0] });
+          }
+          const movableResourceIndex = records.findIndex(({ type }) => type !== 'Document');
+          if (movableResourceIndex >= 0 && driverFault === 'resource-before-document') {
+            records.unshift(...records.splice(movableResourceIndex, 1));
+          }
+          if (movableResourceIndex >= 0 && driverFault === 'resource-after-navigation') {
+            records.push(...records.splice(movableResourceIndex, 1));
+          }
           const event = (method, params) => ({
             level: 'INFO',
             message: JSON.stringify({ message: { method, params } }),
@@ -534,22 +685,47 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
           value = records.flatMap((record, index) => {
             const requestEvent = event('Network.requestWillBeSent', {
               requestId: record.requestId,
-              request: { url: record.url },
+              type: record.type,
+              frameId: record.frameId,
+              loaderId: record.loaderId,
+              documentURL: record.documentURL,
+              request: { url: record.url, method: record.method },
               ...(driverFault === 'orphan-redirect' && index === 0
                 ? { redirectResponse: { url: 'https://cabohealth.org/app/support/', status: 302 } }
                 : {}),
             });
-            if ((driverFault === 'redirect-disallowed' && index === 0) || record.redirectUrl) {
+            if ((driverFault === 'redirect-disallowed' && index === 0) || record.redirectUrl
+              || (driverFault === 'redirect-chain' && index === 0)) {
               const redirectUrl = record.redirectUrl ?? 'https://evil.invalid/redirected';
+              const redirected = event('Network.requestWillBeSent', {
+                requestId: record.requestId,
+                type: record.type,
+                frameId: record.frameId,
+                loaderId: record.loaderId,
+                documentURL: redirectUrl,
+                request: { url: redirectUrl, method: record.method },
+                redirectResponse: { url: record.url, status: 302 },
+              });
+              const chain = driverFault === 'redirect-chain' && index === 0
+                ? [event('Network.requestWillBeSent', {
+                  requestId: record.requestId,
+                  type: record.type,
+                  frameId: record.frameId,
+                  loaderId: record.loaderId,
+                  documentURL: 'https://cabohealth.org/app/terms/',
+                  request: { url: 'https://cabohealth.org/app/terms/', method: record.method },
+                  redirectResponse: { url: redirectUrl, status: 307 },
+                })]
+                : [];
               return [
                 requestEvent,
-                event('Network.requestWillBeSent', {
-                  requestId: record.requestId,
-                  request: { url: redirectUrl },
-                  redirectResponse: { url: record.url, status: 302 },
-                }),
+                redirected,
+                ...chain,
                 event('Network.responseReceived', {
                   requestId: record.requestId,
+                  type: record.type,
+                  frameId: record.frameId,
+                  loaderId: record.loaderId,
                   response: { url: redirectUrl, status: 200 },
                 }),
                 event('Network.loadingFinished', { requestId: record.requestId }),
@@ -558,18 +734,29 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
             if (driverFault === 'loading-failed' && index === 0) {
               return [requestEvent, event('Network.loadingFailed', {
                 requestId: record.requestId,
+                type: record.type,
                 errorText: 'fixture network failure',
               })];
             }
             const status = driverFault === 'http-404' && index === 0
               ? 404
               : (driverFault === 'http-500' && index === 1) || record.resourceFailure ? 500 : 200;
-            const responseEvent = event('Network.responseReceived', {
+            const responseParams = {
               requestId: record.requestId,
+              type: driverFault === 'missing-response-type' && index === 0
+                ? undefined
+                : (driverFault === 'response-type-mismatch' && index === 0 ? 'Fetch' : record.type),
+              frameId: driverFault === 'response-frame-mismatch' && index === 0
+                ? `${record.frameId}-other`
+                : record.frameId,
+              loaderId: driverFault === 'response-loader-mismatch' && index === 0
+                ? `${record.loaderId}-other`
+                : record.loaderId,
               response: driverFault === 'missing-status' && index === 0
                 ? { url: record.url }
                 : { url: record.url, status },
-            });
+            };
+            const responseEvent = event('Network.responseReceived', responseParams);
             if (driverFault === 'pending-request' && index === 0) return [requestEvent];
             if (driverFault === 'missing-completion' && index === 0) return [requestEvent, responseEvent];
             const finished = event('Network.loadingFinished', { requestId: record.requestId });
@@ -581,6 +768,10 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
             }
             return [requestEvent, responseEvent, finished];
           });
+          if (firstDocument) {
+            session.previousRouteLoaderId = firstDocument.loaderId;
+            session.completedObservationCount += 1;
+          }
           session.requests.length = 0;
         } else {
           session.browserLogReadCount += 1;
@@ -625,6 +816,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
     assert.equal(spaceActionCount, 16);
     assert.equal(enterActionCount, 48);
     assert.equal(noPreferenceCommandCount, 8);
+    assert.equal(nextSession, 8);
     const stale = structuredClone(evidence);
     stale.releaseId = `web-v1-${'0'.repeat(64)}`;
     assert.throws(() => validateBrowserEvidence(stale, artifact, authority, {
@@ -632,6 +824,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
     }), /BROWSER_EVIDENCE/u);
     const handAuthoredClone = structuredClone(evidence);
     assert.throws(() => validateBrowserEvidence(handAuthoredClone, artifact, authority), /BROWSER_RUNNER_RECEIPT_REQUIRED/u);
+    const unexpectedlyAcceptedFaults = [];
     for (const fault of [
       'ignored-capabilities',
       'ignored-viewport',
@@ -657,24 +850,76 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       'allowed-url-failure',
       'duplicate-response',
       'duplicate-terminal',
+      'image-as-document',
+      'fetch-as-document',
+      'xhr-as-document',
+      'extra-image',
+      'extra-fetch',
+      'extra-xhr',
+      'extra-subframe-document',
+      'subframe-document',
+      'post-document',
+      'missing-request-type',
+      'missing-response-type',
+      'missing-request-method',
+      'response-type-mismatch',
+      'response-frame-mismatch',
+      'response-loader-mismatch',
+      'resource-as-fetch',
+      'resource-as-xhr',
+      'resource-loader-mismatch',
+      'duplicate-resource',
+      'route-inappropriate-resource',
+      'navigation-loader-reused',
+      'session-document-loader-reuse',
+      'session-main-frame-switch',
+      'reused-request-id',
+      'resource-before-document',
+      'resource-after-navigation',
       'console-error',
       'late-console-error',
     ]) {
       driverFault = fault;
-      await assert.rejects(measureBrowserEvidence({
+      try {
+        await measureBrowserEvidence({
+          artifact,
+          ...authority,
+          baseUrl: 'https://cabohealth.org/',
+          webdriverUrl: `http://127.0.0.1:${address.port}/`,
+          productionConfirmation: 'cabohealth.org',
+          checkedAt: '2026-08-18T02:03:04.000Z',
+        });
+        unexpectedlyAcceptedFaults.push(fault);
+      } catch (error) {
+        assert.match(String(error), /(?:BROWSER|WEBDRIVER)_/u, fault);
+      }
+    }
+    driverFault = 'orphan-redirect';
+    let orphanRedirectError = '';
+    try {
+      await measureBrowserEvidence({
         artifact,
         ...authority,
         baseUrl: 'https://cabohealth.org/',
         webdriverUrl: `http://127.0.0.1:${address.port}/`,
         productionConfirmation: 'cabohealth.org',
         checkedAt: '2026-08-18T02:03:04.000Z',
-      }), /(?:BROWSER|WEBDRIVER)_/u, fault);
+      });
+    } catch (error) {
+      orphanRedirectError = String(error);
     }
+    assert.deepEqual({
+      unexpectedlyAcceptedFaults,
+      orphanRedirectMalformed: /WEBDRIVER_PERFORMANCE_LOG_INVALID/u.test(orphanRedirectError),
+    }, {
+      unexpectedlyAcceptedFaults: [],
+      orphanRedirectMalformed: true,
+    });
     for (const fault of [
       'redirect-disallowed',
       'navigation-redirect-allowed',
       'resource-redirect-allowed',
-      'orphan-redirect',
+      'redirect-chain',
     ]) {
       driverFault = fault;
       await assert.rejects(measureBrowserEvidence({

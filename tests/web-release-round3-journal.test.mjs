@@ -8,6 +8,7 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -136,6 +137,20 @@ function setup(original = 'absent') {
 
 function newBytes(transport, path = 'apps/.htaccess') {
   return Buffer.from(transport.files.find((entry) => entry.path === path).bytesBase64, 'base64');
+}
+
+function quarantinePaths(root, transport, slot = '00-apps-htaccess') {
+  const rollback = join(root, 'rollback', transport.releaseId);
+  return readdirSync(rollback)
+    .filter((name) => name.startsWith(`${slot}.quarantine-`) && /^[a-f0-9]{32}$/u.test(name.slice(-32)))
+    .map((name) => join(rollback, name));
+}
+
+function assertInodeQuarantined(root, transport, inode, slot = '00-apps-htaccess') {
+  assert.ok(
+    quarantinePaths(root, transport, slot).some((path) => statSync(path).ino === inode),
+    `inode ${inode} was not preserved in a unique private quarantine candidate`,
+  );
 }
 
 test('rollback-next reverses exactly one promoted unit and leaves the earlier prefix live', () => {
@@ -671,6 +686,374 @@ test('directory rollback recovery handles wrong-tree and wrong-mode exchange and
       }
     });
   }
+});
+
+test('present promotion recovery follows a relocated restore inode and uniquely quarantines unknown live bytes', () => {
+  const { root, transport } = setup('present');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const slotPath = join(root, 'rollback', transport.releaseId, '00-apps-htaccess');
+  const reviewedOldInode = statSync(livePath).ino;
+  const reviewedNewInode = statSync(stagePath).ino;
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-exchange-quarantined-source-crash',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownLiveInode = statSync(livePath).ino;
+  assert.notEqual(unknownLiveInode, reviewedOldInode);
+  assert.notEqual(unknownLiveInode, reviewedNewInode);
+
+  const recovered = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promotion-recovery-relocate-restore-to-slot',
+  }, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(statSync(livePath).ino, reviewedOldInode);
+  assert.equal(statSync(stagePath).ino, reviewedNewInode);
+  assert.equal(existsSync(slotPath), false);
+  assertInodeQuarantined(root, transport, unknownLiveInode);
+
+  const quarantineCount = quarantinePaths(root, transport).length;
+  const repeated = runHelper(root, 'rollback-next', transport, {}, ['0']);
+  assert.equal(repeated.status, 1, repeated.stderr || repeated.stdout);
+  assert.match(repeated.stderr, /ROLLBACK_NOTHING_PROMOTED/u);
+  assert.equal(statSync(livePath).ino, reviewedOldInode);
+  assert.equal(statSync(stagePath).ino, reviewedNewInode);
+  assert.equal(quarantinePaths(root, transport).length, quarantineCount);
+});
+
+test('present rollback recovery follows a relocated restore inode and rebuilds the promoted topology', () => {
+  const { root, transport } = setup('present');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const slotPath = join(root, 'rollback', transport.releaseId, '00-apps-htaccess');
+  const reviewedOldInode = statSync(livePath).ino;
+  assert.equal(runHelper(root, 'promote-next', transport).status, 0);
+  const reviewedNewInode = statSync(livePath).ino;
+  const crashed = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'rollback-exchange-quarantined-destination-crash',
+  }, ['0']);
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownLiveInode = statSync(livePath).ino;
+  assert.notEqual(unknownLiveInode, reviewedOldInode);
+  assert.notEqual(unknownLiveInode, reviewedNewInode);
+
+  const recovered = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'rollback-recovery-relocate-restore-to-stage',
+  }, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(statSync(livePath).ino, reviewedNewInode);
+  assert.equal(existsSync(stagePath), false);
+  assert.equal(statSync(slotPath).ino, reviewedOldInode);
+  assertInodeQuarantined(root, transport, unknownLiveInode);
+});
+
+test('absent promotion no-replace recovery re-probes after the live operand moves into the fixed slot', () => {
+  const { root, transport } = setup('absent');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const slotPath = join(root, 'rollback', transport.releaseId, '00-apps-htaccess');
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-noreplace-same-inode-bytes-crash',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownLiveInode = statSync(livePath).ino;
+
+  const recovered = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promotion-noreplace-recovery-relocate-live-to-slot',
+  }, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(existsSync(livePath), false);
+  assert.equal(existsSync(stagePath), false);
+  assert.equal(existsSync(slotPath), false);
+  assertInodeQuarantined(root, transport, unknownLiveInode);
+});
+
+test('absent rollback no-replace recovery re-probes when the fixed slot moves live after the absence check', () => {
+  const { root, transport } = setup('absent');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const slotPath = join(root, 'rollback', transport.releaseId, '00-apps-htaccess');
+  assert.equal(runHelper(root, 'promote-next', transport).status, 0);
+  const crashed = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'rollback-noreplace-same-inode-bytes-crash',
+  }, ['0']);
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownSlotInode = statSync(slotPath).ino;
+
+  const recovered = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'rollback-noreplace-recovery-relocate-slot-to-live',
+  }, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(existsSync(livePath), false);
+  assert.equal(existsSync(stagePath), false);
+  assert.equal(existsSync(slotPath), false);
+  assertInodeQuarantined(root, transport, unknownSlotInode);
+});
+
+test('compound inverse and quarantine durability failures report both causes after restoring safe live bytes', () => {
+  const { root, transport } = setup('present');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const reviewedOldInode = statSync(livePath).ino;
+  const reviewedNewInode = statSync(stagePath).ino;
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-exchange-quarantined-source-crash',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownLiveInode = statSync(livePath).ino;
+
+  const recovered = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promotion-recovery-relocate-restore-compound-fsync',
+  }, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /PRIMARY=.*ATOMIC_RENAME_EXCHANGE_FAILED/u);
+  assert.match(recovered.stderr, /RECOVERY=.*INJECTED_RECOVERY_QUARANTINE_FSYNC_OSERROR/u);
+  assert.equal(statSync(livePath).ino, reviewedOldInode);
+  assert.equal(statSync(stagePath).ino, reviewedNewInode);
+  assertInodeQuarantined(root, transport, unknownLiveInode);
+});
+
+test('recovery resumes after a hard stop immediately after unique private publication', () => {
+  const { root, transport } = setup('present');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const slotPath = join(root, 'rollback', transport.releaseId, '00-apps-htaccess');
+  const reviewedOldInode = statSync(livePath).ino;
+  const reviewedNewInode = statSync(stagePath).ino;
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-exchange-quarantined-source-crash',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownLiveInode = statSync(livePath).ino;
+  const recoveryCrash = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promotion-recovery-relocate-restore-quarantine-crash',
+  }, ['0']);
+  assert.equal(recoveryCrash.status, 86, recoveryCrash.stderr || recoveryCrash.stdout);
+  assert.equal(existsSync(livePath), false);
+
+  const resumed = runHelper(root, 'rollback-next', transport, {}, ['0']);
+  assert.equal(resumed.status, 1, resumed.stderr || resumed.stdout);
+  assert.match(resumed.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(statSync(livePath).ino, reviewedOldInode);
+  assert.equal(statSync(stagePath).ino, reviewedNewInode);
+  assert.equal(existsSync(slotPath), false);
+  assertInodeQuarantined(root, transport, unknownLiveInode);
+});
+
+test('round5 recovery reconciles a promotion restore relocated immediately before its precheck', () => {
+  const { root, transport } = setup('present');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const slotPath = join(root, 'rollback', transport.releaseId, '00-apps-htaccess');
+  const reviewedOldInode = statSync(livePath).ino;
+  const reviewedNewInode = statSync(stagePath).ino;
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-exchange-quarantined-source-crash',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownLiveInode = statSync(livePath).ino;
+
+  const recovered = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promotion-recovery-relocate-restore-before-precheck',
+  }, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /PRIMARY=.*RESTORE_OPERAND_INVALID/u);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(statSync(livePath).ino, reviewedOldInode);
+  assert.equal(statSync(stagePath).ino, reviewedNewInode);
+  assert.equal(existsSync(slotPath), false);
+  assertInodeQuarantined(root, transport, unknownLiveInode);
+});
+
+test('round5 recovery reconciles a rollback restore relocated immediately before its precheck', () => {
+  const { root, transport } = setup('present');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const slotPath = join(root, 'rollback', transport.releaseId, '00-apps-htaccess');
+  const reviewedOldInode = statSync(livePath).ino;
+  assert.equal(runHelper(root, 'promote-next', transport).status, 0);
+  const reviewedNewInode = statSync(livePath).ino;
+  const crashed = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'rollback-exchange-quarantined-destination-crash',
+  }, ['0']);
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownLiveInode = statSync(livePath).ino;
+
+  const recovered = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'rollback-recovery-relocate-restore-before-precheck',
+  }, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /PRIMARY=.*RESTORE_OPERAND_INVALID/u);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(statSync(livePath).ino, reviewedNewInode);
+  assert.equal(existsSync(stagePath), false);
+  assert.equal(statSync(slotPath).ino, reviewedOldInode);
+  assertInodeQuarantined(root, transport, unknownLiveInode);
+});
+
+test('round5 recovery reconciles an unknown slot relocated live immediately before the absence precheck', () => {
+  const { root, transport } = setup('absent');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const slotPath = join(root, 'rollback', transport.releaseId, '00-apps-htaccess');
+  assert.equal(runHelper(root, 'promote-next', transport).status, 0);
+  const crashed = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'rollback-noreplace-same-inode-bytes-crash',
+  }, ['0']);
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownSlotInode = statSync(slotPath).ino;
+
+  const recovered = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'rollback-noreplace-recovery-relocate-slot-before-absence-precheck',
+  }, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /PRIMARY=.*LIVE_ABSENCE_INVALID/u);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(existsSync(livePath), false);
+  assert.equal(existsSync(stagePath), false);
+  assert.equal(existsSync(slotPath), false);
+  assertInodeQuarantined(root, transport, unknownSlotInode);
+});
+
+test('round5 recovery makes a successful promotion inverse with invalid private residue restart-idempotent', () => {
+  const { root, transport } = setup('present');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const reviewedOldInode = statSync(livePath).ino;
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-exchange-same-inode-bytes-crash',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownLiveInode = statSync(livePath).ino;
+
+  const recovered = runHelper(root, 'rollback-next', transport, {}, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(statSync(livePath).ino, reviewedOldInode);
+  assert.equal(existsSync(stagePath), false);
+  assertInodeQuarantined(root, transport, unknownLiveInode);
+
+  const quarantineCount = quarantinePaths(root, transport).length;
+  const repeated = runHelper(root, 'rollback-next', transport, {}, ['0']);
+  assert.equal(repeated.status, 1, repeated.stderr || repeated.stdout);
+  assert.match(repeated.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(statSync(livePath).ino, reviewedOldInode);
+  assert.equal(existsSync(stagePath), false);
+  assert.equal(quarantinePaths(root, transport).length, quarantineCount);
+});
+
+test('round5 recovery makes a successful rollback inverse with invalid private residue restart-idempotent', () => {
+  const { root, transport } = setup('present');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const slotPath = join(root, 'rollback', transport.releaseId, '00-apps-htaccess');
+  assert.equal(runHelper(root, 'promote-next', transport).status, 0);
+  const reviewedNewInode = statSync(livePath).ino;
+  const crashed = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'rollback-exchange-same-inode-bytes-crash',
+  }, ['0']);
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownLiveInode = statSync(livePath).ino;
+
+  const recovered = runHelper(root, 'rollback-next', transport, {}, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(statSync(livePath).ino, reviewedNewInode);
+  assert.equal(existsSync(stagePath), false);
+  assert.equal(existsSync(slotPath), false);
+  assertInodeQuarantined(root, transport, unknownLiveInode);
+
+  const quarantineCount = quarantinePaths(root, transport).length;
+  const repeated = runHelper(root, 'rollback-next', transport, {}, ['0']);
+  assert.equal(repeated.status, 1, repeated.stderr || repeated.stdout);
+  assert.match(repeated.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(statSync(livePath).ino, reviewedNewInode);
+  assert.equal(existsSync(stagePath), false);
+  assert.equal(existsSync(slotPath), false);
+  assert.equal(quarantinePaths(root, transport).length, quarantineCount);
+});
+
+test('round5 recovery never decides safety from a stale snapshot after the final probe fails', () => {
+  const { root, transport } = setup('present');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const reviewedOldInode = statSync(livePath).ino;
+  const reviewedNewInode = statSync(stagePath).ino;
+  const crashed = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promote-exchange-quarantined-source-crash',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr || crashed.stdout);
+  const unknownLiveInode = statSync(livePath).ino;
+
+  const recovered = runHelper(root, 'rollback-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promotion-recovery-final-probe-oserror',
+  }, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERY_FAILED/u);
+  assert.match(recovered.stderr, /INJECTED_RECOVERY_FINAL_PROBE_OSERROR/u);
+  assert.equal(statSync(livePath).ino, reviewedOldInode);
+  assert.equal(statSync(stagePath).ino, reviewedNewInode);
+  assertInodeQuarantined(root, transport, unknownLiveInode);
+});
+
+test('round5 recovery relocates wrong reviewed live bytes when the desired live inode is authorized elsewhere', () => {
+  const { root, transport } = setup('present');
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const rollbackPath = join(root, 'rollback', transport.releaseId);
+  const slotPath = join(rollbackPath, '00-apps-htaccess');
+  assert.equal(runHelper(root, 'promote-next', transport).status, 0);
+  const desiredLiveInode = statSync(livePath).ino;
+  const desiredSlotInode = statSync(slotPath).ino;
+  renameSync(livePath, stagePath);
+  renameSync(slotPath, livePath);
+  writeFileSync(slotPath, 'unknown private bytes\n', { flag: 'wx', mode: 0o644 });
+  const unknownSlotInode = statSync(slotPath).ino;
+  writeFileSync(
+    join(rollbackPath, '00-apps-htaccess.quarantine-11111111111111111111111111111111'),
+    'existing private residue\n',
+    { flag: 'wx', mode: 0o600 },
+  );
+
+  const recovered = runHelper(root, 'rollback-next', transport, {}, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(statSync(livePath).ino, desiredLiveInode);
+  assert.equal(existsSync(stagePath), false);
+  assert.equal(statSync(slotPath).ino, desiredSlotInode);
+  assertInodeQuarantined(root, transport, unknownSlotInode);
+});
+
+test('round5 recovery does not preserve reviewed live bytes when the authorized topology requires absence', () => {
+  const { root, transport } = setup('absent');
+  const prepared = runHelper(root, 'promote-next', transport, {
+    CABOHEALTH_TEST_FAULT: 'promotion-post-noreplace-oserror',
+  });
+  assert.equal(prepared.status, 1, prepared.stderr || prepared.stdout);
+  const livePath = join(root, 'public_html/apps/.htaccess');
+  const stagePath = join(root, 'stage', transport.releaseId, 'public_html/apps/.htaccess');
+  const rollbackPath = join(root, 'rollback', transport.releaseId);
+  const desiredStageInode = statSync(stagePath).ino;
+  mkdirSync(join(root, 'public_html/apps'), { recursive: true, mode: 0o755 });
+  renameSync(stagePath, livePath);
+  writeFileSync(stagePath, 'unknown private bytes\n', { flag: 'wx', mode: 0o644 });
+  const unknownStageInode = statSync(stagePath).ino;
+  writeFileSync(
+    join(rollbackPath, '00-apps-htaccess.quarantine-22222222222222222222222222222222'),
+    'existing private residue\n',
+    { flag: 'wx', mode: 0o600 },
+  );
+
+  const recovered = runHelper(root, 'rollback-next', transport, {}, ['0']);
+  assert.equal(recovered.status, 1, recovered.stderr || recovered.stdout);
+  assert.match(recovered.stderr, /OPERAND_SUBSTITUTION_RECOVERED/u);
+  assert.equal(existsSync(livePath), false);
+  assert.equal(statSync(stagePath).ino, desiredStageInode);
+  assertInodeQuarantined(root, transport, unknownStageInode);
 });
 
 test('substitution during recovery is detected and quarantined without leaving unknown bytes live', () => {
