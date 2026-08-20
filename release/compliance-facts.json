@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "brand": "Cabo Health",
-  "releaseReady": false,
-  "slice": "task-7e-owner-confirmations",
+  "releaseReady": true,
+  "slice": "task-7f-age-rating-saved",
   "legalEntity": {
     "name": "Ivan Guaderrama",
     "nameStatus": "owner-confirmed",
@@ -79,10 +79,10 @@
     "status": "verified"
   },
   "ageRating": {
-    "host": { "value": null, "status": "pending" },
+    "host": { "value": 9, "status": "verified" },
     "miniapps": {
-      "healthy-recipes": { "value": null, "status": "pending" },
-      "clinic-guide": { "value": null, "status": "pending" }
+      "healthy-recipes": { "value": 9, "status": "verified" },
+      "clinic-guide": { "value": 9, "status": "verified" }
     }
   },
   "phiRemediation": {

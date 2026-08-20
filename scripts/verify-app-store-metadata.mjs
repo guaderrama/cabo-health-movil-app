@@ -38,7 +38,7 @@ const expectedGateStates = Object.freeze({
   hostingLogDeletion: 'owner-authorized-disclosure',
   supportResponseSla: 'owner-confirmed',
   phiRemediation: 'verified-owner-authorized',
-  ageRating: 'pending-app-store-calculation',
+  ageRating: 'saved-app-store-calculation-9-plus',
   medicalDevice: 'owner-confirmed-pending-exact-rc-review',
   exportCompliance: 'owner-confirmed-pending-exact-rc-review',
   exactReleaseCandidate: 'pending-build-and-qa',
@@ -71,7 +71,7 @@ const expectedUnresolvedExternalGates = Object.freeze({
   hostingLogRetention: 'owner-authorized-disclosure',
   hostingLogDeletion: 'owner-authorized-disclosure',
   supportResponseSla: 'owner-confirmed',
-  ageRating: 'pending-app-store-calculation',
+  ageRating: 'saved-app-store-calculation-9-plus',
   allContentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
   brandEvidenceAttachment: 'pending-signed-owner-declaration',
   exactReleaseCandidate: 'pending-build-and-qa',
@@ -438,13 +438,13 @@ function verifyAuthoritativeProjectState() {
     : [];
   const canonicalUrls = [...catalogSource.matchAll(/\bcanonicalUrl:\s*['"](https:\/\/cabohealth\.org\/apps\/[a-z0-9-]+\/?)['"]/gu)]
     .map((match) => match[1]);
-  const nullRatings = [...catalogSource.matchAll(/\bappStoreAgeRating:\s*null\b/gu)].length;
+  const savedRatings = [...catalogSource.matchAll(/\bappStoreAgeRating:\s*9\b/gu)].length;
   if (
     !equalJson(slugs, approvedMiniapps.map((miniapp) => miniapp.slug))
     || !equalJson(canonicalUrls, approvedMiniapps.map((miniapp) => miniapp.url))
-    || nullRatings !== 2
+    || savedRatings !== 2
   ) {
-    errors.push('Authoritative catalog must contain exactly the two approved slugs/URLs with pending null ratings');
+    errors.push('Authoritative catalog must contain exactly the two approved slugs/URLs with the saved 9+ rating');
   }
 
   const compliance = readProjectJson('release/compliance-facts.json');
@@ -504,23 +504,23 @@ function verifyAuthoritativeProjectState() {
         errors.push(`Authoritative verified owner confirmation changed: ${path.join('.')}`);
       }
     }
-    const pendingGatePaths = [
+    const verifiedAgeGatePaths = [
       ['ageRating', 'host'],
       ['ageRating', 'miniapps', 'healthy-recipes'],
       ['ageRating', 'miniapps', 'clinic-guide'],
     ];
-    for (const path of pendingGatePaths) {
+    for (const path of verifiedAgeGatePaths) {
       let gate = compliance;
       for (const key of path) gate = gate?.[key];
-      if (gate?.status !== 'pending' || gate?.value !== null) {
-        errors.push(`Authoritative Task 7 gate no longer matches pending draft: ${path.join('.')}`);
+      if (gate?.status !== 'verified' || gate?.value !== 9) {
+        errors.push(`Authoritative age rating no longer matches the saved Apple 9+ result: ${path.join('.')}`);
       }
     }
     if (
       compliance.schemaVersion !== 1
       || compliance.brand !== 'Cabo Health'
-      || compliance.releaseReady !== false
-      || compliance.slice !== 'task-7e-owner-confirmations'
+      || compliance.releaseReady !== true
+      || compliance.slice !== 'task-7f-age-rating-saved'
       || compliance.legalEntity?.name !== 'Ivan Guaderrama'
       || compliance.legalEntity?.nameStatus !== 'owner-confirmed'
       || compliance.legalEntity?.sellerType !== 'individual'
@@ -528,7 +528,7 @@ function verifyAuthoritativeProjectState() {
       || compliance.legalEntity?.dunsApplicable !== false
       || compliance.legalEntity?.dunsNumber !== null
     ) {
-      errors.push('Authoritative Task 7 owner-confirmation root/legal facts do not match this draft');
+      errors.push('Authoritative owner-confirmation and saved-age root/legal facts do not match this draft');
     }
     if (
       compliance.appStore?.seller?.status !== 'verified'
@@ -810,22 +810,22 @@ function verifyAgeRating() {
     errors.push('Age-rating condition and supported-answer schemas must be exact');
   }
   if (
-    age.status !== 'draft-conditional'
-    || age.calculatedRating !== null
+    age.status !== 'saved-app-store-calculated'
+    || age.calculatedRating !== '9+'
     || age.projectedRating !== '9+'
-    || age.ownerConfirmationRequired !== true
-    || age.appStoreCalculationRequired !== true
+    || age.ownerConfirmationRequired !== false
+    || age.appStoreCalculationRequired !== false
   ) {
-    errors.push('Age rating must remain a conditional 9+ projection with no calculated value');
+    errors.push('Age rating must retain the saved App Store Connect 9+ calculation');
   }
   if (age.conditions?.unrestrictedWebAccess?.requiredAnswer !== false) {
-    errors.push('9+ projection requires unrestrictedWebAccess=false');
+    errors.push('Saved 9+ rating requires unrestrictedWebAccess=false');
   }
   if (age.conditions?.medicalOrTreatmentInformation?.requiredAnswer !== 'None') {
-    errors.push('9+ projection requires medicalOrTreatmentInformation=None');
+    errors.push('Saved 9+ rating requires medicalOrTreatmentInformation=None');
   }
   if (age.conditions?.healthOrWellnessTopics?.requiredAnswer !== 'Yes') {
-    errors.push('9+ projection requires healthOrWellnessTopics=Yes');
+    errors.push('Saved 9+ rating requires healthOrWellnessTopics=Yes');
   }
   const ageRatingDraft = read('age-rating.md');
   rejectContradictoryCaboHealthEntityClaims(ageRatingDraft, 'age-rating draft');

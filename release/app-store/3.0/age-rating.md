@@ -1,13 +1,13 @@
-# Age-rating questionnaire draft
+# Age-rating questionnaire record
 
-Status: **PENDING APP STORE CONNECT CALCULATION.** The current production catalog values remain `null`; this document does not freeze a rating.
+Status: **SAVED IN APP STORE CONNECT ON 2026-08-20.** Apple calculated **9+** for the app from the recorded answers below. The authoritative host and both approved miniapp catalog values are frozen at `9`.
 
-The projected result is **9+ only if all three conditions remain true in the exact RC and are answered that way in the current questionnaire**:
+The saved result depends on all three conditions remaining true in the exact RC:
 
 1. Unrestricted Web Access: **No**. The WebView must remain restricted to the selected `cabohealth.org/apps/{approved-slug}/` path, with no arbitrary browser, popup, cross-module path, or remote catalog.
 2. Medical or Treatment Information: **None**. The content must remain general food ideas and visit preparation, with no personalized recommendation, calculation, diagnosis, dosage, or treatment content.
 3. Health or Wellness Topics: **Yes**. This accurately describes the two public resources.
 
-Other supported draft answers from the exact scope are No for parental controls, age assurance, user-generated content, social media, messaging/chat, and advertising.
+Other saved answers from the exact scope are No for parental controls, age assurance, user-generated content, social media, social media-disabled-under-13, messaging/chat, advertising, profanity/crude humor, horror/fear, alcohol/tobacco/drugs, sexuality/nudity, violence/weapons, gambling, contests, and loot boxes.
 
-Do not save the questionnaire or change `constants/publicMiniapps.ts` until the account holder confirms every page, App Store Connect calculates the result, and the exact value is recorded in `release/compliance-facts.json`. If Apple calculates a different rating, use Apple’s result and re-run the release gate; never force 9+ to match this projection.
+Apple displayed the regional equivalents after saving: **9+** in 172 countries or regions, **12+** in Vietnam, **10+** in Brazil, and **All Ages** in Korea. If the app content or navigation policy changes, repeat the questionnaire and use Apple’s new result; never preserve 9+ by overriding a changed scope.

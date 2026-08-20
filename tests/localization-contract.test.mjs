@@ -85,7 +85,7 @@ test('main navigation is exactly Home, Saved, and Settings in both languages', (
   );
 });
 
-test('each catalog card exposes public editorial facts and omits an unverified age label', () => {
+test('each catalog card exposes public editorial facts and the verified Apple age rating', () => {
   for (const miniapp of PUBLIC_MINIAPPS) {
     assert.notEqual(miniapp.summary.en.trim(), '');
     assert.notEqual(miniapp.summary.es.trim(), '');
@@ -100,6 +100,7 @@ test('each catalog card exposes public editorial facts and omits an unverified a
       permissions: [],
       source: miniapp.editorialSource,
       reviewedOn: miniapp.reviewedOn,
+      appStoreAgeRating: 9,
     });
   }
 });

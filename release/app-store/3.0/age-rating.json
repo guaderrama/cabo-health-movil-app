@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "status": "draft-conditional",
-  "calculatedRating": null,
+  "status": "saved-app-store-calculated",
+  "calculatedRating": "9+",
   "projectedRating": "9+",
   "conditions": {
     "unrestrictedWebAccess": {
@@ -26,6 +26,6 @@
     "messagingOrChat": false,
     "advertising": false
   },
-  "ownerConfirmationRequired": true,
-  "appStoreCalculationRequired": true
+  "ownerConfirmationRequired": false,
+  "appStoreCalculationRequired": false
 }

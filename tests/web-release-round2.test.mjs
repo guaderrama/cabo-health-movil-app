@@ -1017,6 +1017,13 @@ test('the real materialize-release boundary rejects caller-fabricated provenance
   const root = mkdtempSync(join(fixtureTmp, 'cabohealth-provenance-fixture-'));
   mkdirSync(join(root, 'release'));
   copyFileSync(join(projectRoot, 'release/compliance-facts.json'), join(root, 'release/compliance-facts.json'));
+  const factsPath = join(root, 'release/compliance-facts.json');
+  const facts = JSON.parse(readFileSync(factsPath, 'utf8'));
+  facts.releaseReady = false;
+  facts.ageRating.host = { value: null, status: 'pending' };
+  facts.ageRating.miniapps['healthy-recipes'] = { value: null, status: 'pending' };
+  facts.ageRating.miniapps['clinic-guide'] = { value: null, status: 'pending' };
+  writeFileSync(factsPath, canonicalJson(facts));
   const result = spawnSync(
     'python3',
     [helperPath, 'materialize-release', root],

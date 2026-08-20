@@ -80,6 +80,7 @@ function extractAasaSlugs(source) {
 }
 
 function isSlugBearingKey(key) {
+  if (/^legal[-_]?slugs?$/i.test(key)) return false;
   return /^miniapps?$/i.test(key)
     || /(?:^|[-_])slugs?$/i.test(key)
     || /(?:Slug|Slugs)$/.test(key);

@@ -42,7 +42,7 @@ function mutateJson(root, relativePath, mutate) {
 
 function recordOwnerConfirmations(root) {
   mutateJson(root, 'release/compliance-facts.json', (facts) => {
-    facts.slice = 'task-7e-owner-confirmations';
+    facts.slice = 'task-7f-age-rating-saved';
     facts.legalEntity.legalSignOffStatus = 'approved';
     facts.hosting.logTypes = {
       value: ['IP address', 'browser or user-agent', 'requested URL', 'technical errors'],
@@ -173,7 +173,7 @@ function addOwnerSellerDraft(manifest) {
       hostingLogRetention: 'owner-authorized-disclosure',
       hostingLogDeletion: 'owner-authorized-disclosure',
       supportResponseSla: 'owner-confirmed',
-      ageRating: 'pending-app-store-calculation',
+      ageRating: 'saved-app-store-calculation-9-plus',
       allContentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
       brandEvidenceAttachment: 'pending-signed-owner-declaration',
       exactReleaseCandidate: 'pending-build-and-qa',
@@ -666,16 +666,35 @@ test('metadata verifier rejects unapproved App Privacy purposes and schema keys'
   }
 });
 
-test('metadata verifier rejects an age projection without all three required conditions', () => {
+test('metadata verifier rejects a saved 9+ rating without all three recorded questionnaire answers', () => {
   withReleaseFixture(
     (root) => mutateJson(root, `${releasePath}/age-rating.json`, (age) => {
       age.conditions.unrestrictedWebAccess.requiredAnswer = true;
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /9\+ projection requires unrestrictedWebAccess=false/i);
+      assert.match(result.stderr, /saved 9\+ rating requires unrestrictedWebAccess=false/i);
     },
   );
+});
+
+test('metadata verifier requires the exact saved App Store calculation', async (t) => {
+  const mutations = [
+    ['calculated rating removed', (age) => { age.calculatedRating = null; }],
+    ['calculated rating changed', (age) => { age.calculatedRating = '12+'; }],
+    ['draft status restored', (age) => { age.status = 'draft-conditional'; }],
+    ['owner confirmation reopened', (age) => { age.ownerConfirmationRequired = true; }],
+    ['App Store calculation reopened', (age) => { age.appStoreCalculationRequired = true; }],
+  ];
+  for (const [name, mutate] of mutations) {
+    await t.test(name, () => withReleaseFixture(
+      (root) => mutateJson(root, `${releasePath}/age-rating.json`, mutate),
+      (result) => {
+        assert.equal(result.status, 1, result.stdout || result.stderr);
+        assert.match(result.stderr, /Age rating must retain the saved App Store Connect 9\+ calculation/i);
+      },
+    ));
+  }
 });
 
 test('metadata verifier rejects extra or contradictory age-rating answers', async (t) => {

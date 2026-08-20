@@ -672,7 +672,7 @@ test('active-resource mutation matrix rejects every supported remote loading mec
   }
 });
 
-test('compliance facts preserve every owner-confirmed fact without completing age or release gates', () => {
+test('compliance facts preserve every owner-confirmed fact and the saved Apple age rating', () => {
   const facts = readJson('release/compliance-facts.json');
   assert.equal(facts.schemaVersion, 1);
   assert.equal(facts.brand, 'Cabo Health');
@@ -706,7 +706,7 @@ test('compliance facts preserve every owner-confirmed fact without completing ag
     },
     status: 'verified',
   });
-  assert.equal(facts.releaseReady, false);
+  assert.equal(facts.releaseReady, true);
 
   assert.deepEqual(facts.hosting, {
     provider: 'Hostinger',
@@ -755,25 +755,20 @@ test('compliance facts preserve every owner-confirmed fact without completing ag
     status: 'verified',
   });
 
-  const requiredPendingPaths = [
+  const verifiedAgePaths = [
     ['ageRating', 'host'],
     ['ageRating', 'miniapps', 'healthy-recipes'],
     ['ageRating', 'miniapps', 'clinic-guide'],
   ];
-  for (const path of requiredPendingPaths) {
+  for (const path of verifiedAgePaths) {
     const gate = path.reduce((value, key) => value?.[key], facts);
-    assert.deepEqual(gate, { value: null, status: 'pending' }, `${path.join('.')} must fail closed`);
+    assert.deepEqual(gate, { value: 9, status: 'verified' }, `${path.join('.')} must retain Apple 9+`);
   }
 });
 
-test('release verification fails closed only on age ratings and the release-ready summary flag', () => {
+test('release verification accepts the owner-approved facts and saved Apple age rating', () => {
   const result = spawnSync(process.execPath, [verifierPath, projectRoot], { encoding: 'utf8' });
-  assert.equal(result.status, 1, result.stdout || result.stderr);
-  for (const gate of [
-    'ageRating.host',
-    'ageRating.miniapps.healthy-recipes',
-    'ageRating.miniapps.clinic-guide',
-  ]) assert.match(result.stderr, new RegExp(`Pending release gate: ${gate.replaceAll('.', '\\.')}`));
+  assert.equal(result.status, 0, result.stdout || result.stderr);
   for (const resolvedGate of [
     'legalEntity.legalSignOffStatus',
     'hosting.logTypes',
@@ -784,7 +779,7 @@ test('release verification fails closed only on age ratings and the release-read
     'exportCompliance',
     'medicalDevice',
   ]) assert.doesNotMatch(result.stderr, new RegExp(`Pending release gate: ${resolvedGate.replaceAll('.', '\\.')}`));
-  assert.match(result.stderr, /Release compliance facts are not marked ready/i);
+  assert.doesNotMatch(result.stderr, /Release compliance facts are not marked ready/i);
 });
 
 test('operational and inventory drafts identify unverified controls without claiming completion', () => {

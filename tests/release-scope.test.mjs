@@ -529,6 +529,24 @@ test('release scope verifier accepts non-slug kebab-case release metadata', () =
   );
 });
 
+test('release scope verifier does not misclassify fixed legal page slugs as miniapps', () => {
+  withFixture(
+    (root) => {
+      writeFixtureFile(
+        root,
+        'release/web-artifacts.json',
+        JSON.stringify({
+          entrySlugs: ['healthy-recipes', 'clinic-guide'],
+          legalSlugs: ['privacy', 'terms', 'support', 'report-content'],
+        }),
+      );
+    },
+    (result) => {
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+    },
+  );
+});
+
 test('release scope verifier accepts descriptive miniapp metadata keys', () => {
   withFixture(
     (root) => {

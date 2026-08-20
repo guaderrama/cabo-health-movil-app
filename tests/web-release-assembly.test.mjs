@@ -140,17 +140,21 @@ function writeFixturePath(root, relativePath, bytes) {
   writeFileSync(join(directory, components.at(-1)), bytes, { flag: 'wx' });
 }
 
-test('the real assembler fails closed on pending compliance before its first output write', () => {
+test('the real assembler validates the saved age and release-ready compliance without writing in check mode', () => {
+  const artifactPath = join(projectRoot, 'release/web-artifacts.json');
+  const bundleRoot = join(projectRoot, 'release/web-bundles');
+  const artifactBefore = existsSync(artifactPath) ? readFileSync(artifactPath) : null;
+  const bundlesBefore = existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null;
   const result = spawnSync(process.execPath, [assemblerPath, '--check'], {
     cwd: projectRoot,
     encoding: 'utf8',
   });
 
-  assert.equal(result.status, 1, result.stdout || result.stderr);
-  assert.match(result.stderr, /COMPLIANCE_FACTS_INCOMPLETE/u);
-  assert.equal(existsSync(join(projectRoot, 'release/web-artifacts.json')), false);
+  assert.equal(result.status, 0, result.stdout || result.stderr);
+  assert.match(result.stdout, /Checked web-v1-/u);
+  assert.deepEqual(existsSync(artifactPath) ? readFileSync(artifactPath) : null, artifactBefore);
+  assert.deepEqual(existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null, bundlesBefore);
   assert.equal(existsSync(join(projectRoot, 'release/production-urls.json')), false);
-  assert.equal(existsSync(join(projectRoot, 'release/web-bundles')), false);
 });
 
 test('descriptor-relative staging creates the exact private 16-file tree', () => {
@@ -314,6 +318,13 @@ test('materialize-release rejects pending and coordinated compliance/legal/AASA/
   const root = mkdtempSync(join(fixtureTmp, 'cabohealth-authoritative-release-fixture-'));
   mkdirSync(join(root, 'release'));
   copyFileSync(join(projectRoot, 'release/compliance-facts.json'), join(root, 'release/compliance-facts.json'));
+  const pendingFactsPath = join(root, 'release/compliance-facts.json');
+  const pendingFacts = JSON.parse(readFileSync(pendingFactsPath, 'utf8'));
+  pendingFacts.releaseReady = false;
+  pendingFacts.ageRating.host = { value: null, status: 'pending' };
+  pendingFacts.ageRating.miniapps['healthy-recipes'] = { value: null, status: 'pending' };
+  pendingFacts.ageRating.miniapps['clinic-guide'] = { value: null, status: 'pending' };
+  writeFileSync(pendingFactsPath, canonicalJson(pendingFacts));
   const inputPaths = [
     'web-hosting/cabohealth.org/app/privacy/index.html',
     'web-hosting/cabohealth.org/app/terms/index.html',
@@ -360,7 +371,7 @@ test('materialize-release rejects pending and coordinated compliance/legal/AASA/
   assert.equal(existsSync(join(root, 'release/web-bundles')), false);
   assert.equal(existsSync(join(root, 'release/web-artifacts.json')), false);
 
-  const factsPath = join(root, 'release/compliance-facts.json');
+  const factsPath = pendingFactsPath;
   const facts = JSON.parse(readFileSync(factsPath, 'utf8'));
   facts.releaseReady = true;
   facts.legalEntity.legalSignOffStatus = 'approved';

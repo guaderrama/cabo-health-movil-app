@@ -1,6 +1,6 @@
 # CaboHealth Hostinger release and rollback runbook
 
-Status: **deployment blocked**. This runbook is an execution contract, not deployment authorization. As of 2026-08-19, the owner-confirmed legal and hosting facts are reconciled locally, but App Store age evidence, `releaseReady: true`, an exact release candidate, action-time Hostinger checks, and production verification remain incomplete. Do not connect to Hostinger, assemble a real bundle, create production evidence, or promote a file while those gates remain incomplete.
+Status: **local release assembled; live promotion still requires the exact release-ID authorization and private rehearsal below.** As of 2026-08-20, App Store Connect has saved the calculated 9+ rating, the exact host and two miniapp ratings are verified at 9, `releaseReady` is true, SSH/key access is active, and the local assembler can produce the reviewed 16-file payload. Production verification, private rehearsal, backups, atomic-capability proof, promotion, and real-iPhone QA remain incomplete. This runbook is an execution contract, not blanket deployment authorization.
 
 ## Fixed scope
 
@@ -28,7 +28,7 @@ node scripts/assemble-web-release.mjs --assemble
 node scripts/verify-production.mjs --check --reviewed-release-id=<reviewed-release-id> --reviewed-artifact-sha256=<reviewed-artifact-sha256> --reviewed-browser-measurement-sha256=<independently-reviewed-browser-evidence-sha256>
 ```
 
-While age evidence remains pending and `releaseReady` is false, the first command must report `COMPLIANCE_FACTS_INCOMPLETE` and must not create `release/web-artifacts.json`, `release/production-urls.json`, or `release/web-bundles/`. Final legal pins may be populated only after independent review of the exact bytes; pinning them does not bypass any remaining compliance gate. After every gate is independently verified, the assembler snapshots the verified Task 6B capsule through `readVerifiedMiniappArtifact`, captures fixed public inputs through no-follow directory descriptors, materializes the content-addressed bundle, re-verifies it, and exclusively publishes provenance.
+Whenever age evidence, legal pins, catalog ratings, or `releaseReady` are incomplete, the first command must report `COMPLIANCE_FACTS_INCOMPLETE` and must not create `release/web-artifacts.json`, `release/production-urls.json`, or `release/web-bundles/`. Final legal pins may be populated only after independent review of the exact bytes; pinning them does not bypass any remaining compliance gate. After every gate is independently verified, the assembler snapshots the verified Task 6B capsule through `readVerifiedMiniappArtifact`, captures fixed public inputs through no-follow directory descriptors, materializes the content-addressed bundle, re-verifies it, and exclusively publishes provenance.
 
 The immutable upload object will be:
 

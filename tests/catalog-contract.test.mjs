@@ -40,7 +40,7 @@ test('each public miniapp has the approved privacy and content boundary', () => 
   for (const miniapp of PUBLIC_MINIAPPS) {
     assert.equal(miniapp.access, 'public');
     assert.deepEqual(miniapp.contentDescriptors, ['health-and-wellness-information']);
-    assert.equal(miniapp.appStoreAgeRating, null);
+    assert.equal(miniapp.appStoreAgeRating, 9);
     assert.deepEqual(miniapp.dataUse, ['technical-request-logs']);
     assert.deepEqual(miniapp.permissions, []);
     assert.equal(miniapp.hasUserGeneratedContent, false);
