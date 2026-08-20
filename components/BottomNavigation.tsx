@@ -19,9 +19,9 @@ export function BottomNavigation() {
       style={[
         styles.container,
         {
-          backgroundColor: colors.cardBackground,
-          borderTopColor: colors.border,
-          paddingBottom: Math.max(insets.bottom, 8),
+          backgroundColor: `${colors.cardBackground}F2`,
+          borderColor: colors.border,
+          marginBottom: Math.max(insets.bottom, 8),
         },
       ]}
     >
@@ -52,8 +52,21 @@ export function BottomNavigation() {
 }
 
 const styles = StyleSheet.create({
-  container: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 5 },
-  item: { flex: 1, minHeight: 49, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  label: { fontSize: 11, lineHeight: 14, fontWeight: '600' },
+  container: {
+    flexDirection: 'row',
+    marginHorizontal: 12,
+    marginTop: 6,
+    borderWidth: 1,
+    borderRadius: 17,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    shadowColor: '#082A3C',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.13,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  item: { flex: 1, minHeight: 49, alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: 13 },
+  label: { fontSize: 10, lineHeight: 14, fontWeight: '600' },
   pressed: { opacity: 0.65 },
 });

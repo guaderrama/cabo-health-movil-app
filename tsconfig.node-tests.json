@@ -14,6 +14,7 @@
     "constants/publicContacts.ts",
     "features/catalog/publicCatalogState.ts",
     "features/catalog/catalogPresentation.ts",
+    "features/home/premiumHomePresentation.ts",
     "features/motion/moleculeMotionPolicy.ts",
     "features/launch/navigationPolicy.ts",
     "features/launch/restrictedWebViewBehavior.ts",

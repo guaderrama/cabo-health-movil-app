@@ -1,7 +1,7 @@
 export type AppLanguage = 'en' | 'es-MX';
 
 const englishMessages = {
-  'nav.apps': 'Apps',
+  'nav.apps': 'Home',
   'nav.saved': 'Saved',
   'nav.settings': 'Settings',
   'common.back': 'Back',
@@ -30,6 +30,14 @@ const englishMessages = {
   'catalog.age': 'Age rating',
   'home.offlineTools': 'Available offline',
   'home.offlineToolsDescription': 'Browse bundled content without opening a hosted module.',
+  'home.welcome': 'Welcome',
+  'home.quickAccess': 'Quick access',
+  'home.availableNow': 'Available now',
+  'home.planVisit': 'Plan your visit',
+  'home.contactClinic': 'Contact clinic',
+  'home.clinicMap': 'Clinic map',
+  'home.openGuide': 'Open guide',
+  'home.localTools': 'Available offline',
   'home.browseRecipes': 'Browse recipes',
   'home.browseRecipesHint': 'Opens the bundled recipe browser.',
   'home.prepareVisit': 'Prepare for your visit',
@@ -97,7 +105,7 @@ const englishMessages = {
 export type MessageKey = keyof typeof englishMessages;
 
 const spanishMessages: Record<MessageKey, string> = {
-  'nav.apps': 'Apps',
+  'nav.apps': 'Inicio',
   'nav.saved': 'Guardado',
   'nav.settings': 'Ajustes',
   'common.back': 'Atrás',
@@ -126,6 +134,14 @@ const spanishMessages: Record<MessageKey, string> = {
   'catalog.age': 'Clasificación por edad',
   'home.offlineTools': 'Disponible sin conexión',
   'home.offlineToolsDescription': 'Consulta contenido incluido sin abrir un módulo alojado.',
+  'home.welcome': 'Bienvenido',
+  'home.quickAccess': 'Acceso rápido',
+  'home.availableNow': 'Disponible ahora',
+  'home.planVisit': 'Planea tu visita',
+  'home.contactClinic': 'Contacta la clínica',
+  'home.clinicMap': 'Mapa de la clínica',
+  'home.openGuide': 'Abrir guía',
+  'home.localTools': 'Disponible sin conexión',
   'home.browseRecipes': 'Explorar recetas',
   'home.browseRecipesHint': 'Abre el explorador de recetas incluido.',
   'home.prepareVisit': 'Prepara tu visita',

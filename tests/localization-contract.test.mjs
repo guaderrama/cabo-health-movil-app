@@ -36,7 +36,37 @@ test('English and Mexican Spanish expose the same non-empty public message contr
   assert.equal(MESSAGES['es-MX']['recipes.beverage'], 'Bebida');
 });
 
-test('main navigation is exactly Apps, Saved, and Settings in both languages', () => {
+test('approved premium home journey has matching English and Spanish copy', () => {
+  const keys = [
+    'home.welcome',
+    'home.quickAccess',
+    'home.availableNow',
+    'home.planVisit',
+    'home.contactClinic',
+    'home.clinicMap',
+  ];
+  assert.deepEqual(
+    keys.map((key) => translateMessage('en', key)),
+    ['Welcome', 'Quick access', 'Available now', 'Plan your visit', 'Contact clinic', 'Clinic map'],
+  );
+  assert.deepEqual(
+    keys.map((key) => translateMessage('es-MX', key)),
+    ['Bienvenido', 'Acceso rápido', 'Disponible ahora', 'Planea tu visita', 'Contacta la clínica', 'Mapa de la clínica'],
+  );
+});
+
+test('featured guide and offline tools use concise localized calls to action', () => {
+  assert.deepEqual(
+    ['home.openGuide', 'home.localTools'].map((key) => translateMessage('en', key)),
+    ['Open guide', 'Available offline'],
+  );
+  assert.deepEqual(
+    ['home.openGuide', 'home.localTools'].map((key) => translateMessage('es-MX', key)),
+    ['Abrir guía', 'Disponible sin conexión'],
+  );
+});
+
+test('main navigation is exactly Home, Saved, and Settings in both languages', () => {
   assert.deepEqual(
     MAIN_NAV_ITEMS.map(({ id, route }) => ({ id, route })),
     [
@@ -47,11 +77,11 @@ test('main navigation is exactly Apps, Saved, and Settings in both languages', (
   );
   assert.deepEqual(
     MAIN_NAV_ITEMS.map(({ labelKey }) => translateMessage('en', labelKey)),
-    ['Apps', 'Saved', 'Settings'],
+    ['Home', 'Saved', 'Settings'],
   );
   assert.deepEqual(
     MAIN_NAV_ITEMS.map(({ labelKey }) => translateMessage('es-MX', labelKey)),
-    ['Apps', 'Guardado', 'Ajustes'],
+    ['Inicio', 'Guardado', 'Ajustes'],
   );
 });
 
