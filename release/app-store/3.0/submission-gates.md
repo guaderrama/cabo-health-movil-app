@@ -15,7 +15,7 @@ The legacy Medical category must be visibly replaced, not hidden or relabeled to
 - [ ] Ivan signs and dates the ownership declaration; his scoped ownership/authorization confirmation is recorded, but domain-control and brand/logo/content schedules still require private attachment and review.
 - [ ] Final third-party rights inventory is approved; the owner-confirmed Content Rights answer remains **Yes — uses third-party material** against the exact release.
 - [ ] Hostinger linkage/access behavior and the final Apple Privacy category mapping are approved; the owner-authorized log/retention/deletion disclosure is already recorded.
-- **RECORDED:** Owner approved support responses within 2 business days, Monday–Friday, 10:00 AM–4:00 PM; the final public Support copy must match before deployment.
+- **COMPLETED LOCALLY:** Owner approved support responses within 2 business days, Monday–Friday, 10:00 AM–4:00 PM, and the final bilingual Support and Report Content copy matches. Production deployment and live-route verification remain pending below.
 - [ ] `/app/report-content/`, Privacy, Terms, Support, both public resources, AASA origin, and Apple CDN are deployed and pass the production verifier.
 - [ ] The current age questionnaire is completed truthfully and Apple’s calculated value is frozen in compliance facts and both catalog entries.
 - [ ] Reconcile the exact RC with the owner-confirmed non-medical-device and standard-iOS/HTTPS-only encryption determinations before answering in App Store Connect.
@@ -28,7 +28,7 @@ The legacy Medical category must be visibly replaced, not hidden or relabeled to
 - [ ] Accessibility Nutrition Label selections have exact-RC evidence.
 - [ ] 6.9-inch en-US/es-MX screenshots are captured from the exact RC, hashed, OCR-reviewed, and visually approved.
 - [ ] Old App Store description, subtitle, screenshots, selected build 2, rejected Review Notes, and legacy Medical category are replaced by this two-resource package.
-- [ ] Review Notes placeholder is replaced with verified hosting facts; every URL and support channel remains available during review.
+- **COMPLETED LOCALLY:** Review Notes contain the owner-authorized Hostinger log, purpose, hPanel visibility, retention/deletion, and current manual-entry behavior; every URL and support channel must still be verified live during review.
 - [ ] Copyright `2026 Ivan Guaderrama`, category, territories, DSA, platform availability, rights, declarations, build, and Review Notes are verified in App Store Connect and remain `pending-save` until then.
 
 Only after every item is evidenced should Ivan authorize App Store Connect edits, select build 4, add it for review, inspect the submission summary, and separately authorize Submit for Review.

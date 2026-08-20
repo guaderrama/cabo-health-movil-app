@@ -9,9 +9,9 @@ Status: **OWNER-AUTHORIZED DISCLOSURE; FINAL ANSWER PENDING.** This is not an Ap
 - The WebView sends none of that local state through a native message bridge.
 - Opening either public resource creates normal HTTPS requests to CaboHealth hosting.
 
-## Owner-authorized hosting disclosure and unresolved facts
+## Observed hosting behavior, owner-authorized disclosure, and unresolved facts
 
-Hostinger access logging has been observed with IP address, time, method, requested resource, device/user-agent details, country, response size, and latency. On 2026-08-17, Ivan Guaderrama authorized disclosure that Hostinger logs IP address, browser/user-agent, requested URL, and technical errors; hPanel visibility is up to 7 days, and any additional retention and deletion are controlled by Hostinger. Access controls and whether those records are linked to an identity remain unresolved release facts.
+Prior technical verification observed Hostinger access-log fields for IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency. Separately, on 2026-08-17, Ivan Guaderrama authorized disclosure that Hostinger logs IP address, browser/user-agent, requested URL, and technical errors; hPanel visibility is up to 7 days, and any additional retention and deletion are controlled by Hostinger. Current production configuration, access controls, and whether those records are linked to an identity remain unresolved release facts.
 
 ## Recommendation decision
 

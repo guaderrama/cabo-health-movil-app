@@ -496,6 +496,25 @@ test('legal approval pins reject pending and known draft hashes before accepting
   }), true);
 });
 
+test('reviewed legal pins match the exact final bytes in both release authorities', async () => {
+  const { FINAL_LEGAL_SHA256 } = await import('../scripts/assemble-web-release.mjs');
+  const expected = Object.fromEntries([
+    'privacy',
+    'report-content',
+    'support',
+    'terms',
+  ].map((slug) => [
+    slug,
+    sha256(readFileSync(join(projectRoot, `web-hosting/cabohealth.org/app/${slug}/index.html`))),
+  ]));
+
+  assert.deepEqual(FINAL_LEGAL_SHA256, expected);
+  const helper = readFileSync(helperPath, 'utf8');
+  for (const [slug, hash] of Object.entries(expected)) {
+    assert.match(helper, new RegExp(`^    "${slug}": "${hash}",$`, 'mu'));
+  }
+});
+
 test('stage policy, modes, root identity, and partial journal fail closed without changing unrelated sentinels', async (context) => {
   await context.test('stage mode tamper', () => {
     const transport = fixtureTransport();

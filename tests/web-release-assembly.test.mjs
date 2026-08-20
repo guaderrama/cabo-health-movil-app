@@ -389,7 +389,7 @@ test('materialize-release rejects pending and coordinated compliance/legal/AASA/
   writeFileSync(aasaPath, canonicalJson(coordinatedAasa));
   const coordinated = publish(envelope());
   assert.equal(coordinated.status, 1, coordinated.stderr || coordinated.stdout);
-  assert.match(coordinated.stderr, /FINAL_LEGAL_PINS_INCOMPLETE/u);
+  assert.match(coordinated.stderr, /WEB_RELEASE_AASA_INVALID/u);
   assert.equal(existsSync(join(root, 'release/web-bundles')), false);
   assert.equal(existsSync(join(root, 'release/web-artifacts.json')), false);
 

@@ -80,13 +80,13 @@ DRAFT_LEGAL_SHA256 = {
     "support": "4580d6de3db45af3830428497715d903cad557c143a5312d95b6c73f7f575a1a",
     "terms": "0dfc0b40144db111e78e2a2e6a1de1c0e978c9a31bb9dceb819599d7b5e70d44",
 }
-# Deliberately unset until owner/legal sign-off and independent byte review.
-# The mutation boundary below treats any unset or draft-equal value as fatal.
+# Pinned after owner-authorized fact reconciliation and independent byte review.
+# Any later legal-copy edit must fail closed until both authorities are repinned.
 FINAL_LEGAL_SHA256: dict[str, str | None] = {
-    "privacy": None,
-    "report-content": None,
-    "support": None,
-    "terms": None,
+    "privacy": "dd1caa532ca16a610a54c360ef4c911e6927043d2cfe2ba133808b17cf49ea86",
+    "report-content": "0c54770920813168eba4480ded96a396c2858dfbedc73590082ee55185dd4dde",
+    "support": "e1fd847e6f8495f7dd4391989046845d5fa7c4bd3a8900ed3295ef956d9a875c",
+    "terms": "2de6286af27e9f4547c58b1204f29bada4ceb7ff7b9597fbb5894279baee06d8",
 }
 MINIAPP_FILE_PINS = (
     ("apps/.htaccess", 568, "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"),

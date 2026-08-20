@@ -205,6 +205,103 @@ test('versioned App Store metadata is a valid blocked 3.0 build 4 candidate', ()
   assert.match(result.stdout, /draft verified; submission remains blocked/i);
 });
 
+test('Review Notes use the owner-authorized hosting disclosure and current manual-entry behavior', () => {
+  const notes = readFileSync(join(projectRoot, releasePath, 'review-notes.md'), 'utf8');
+
+  assert.doesNotMatch(notes, /\[INSERT VERIFIED HOSTINGER REQUEST-LOG FIELDS/i);
+  assert.doesNotMatch(notes, /continues automatically|about 1\.6 seconds/i);
+  assert.doesNotMatch(notes, /\bOn Apps\b|\bReturn to Apps\b/i);
+  assert.match(notes, /remains on the introduction until the reviewer taps “Enter CaboHealth”/i);
+  assert.match(notes, /On Home, confirm both/i);
+  assert.match(notes, /IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency/i);
+  assert.match(notes, /IP address, browser or user-agent, requested URL, and technical errors/i);
+  assert.match(notes, /visible in hPanel for up to 7 days/i);
+  assert.match(notes, /additional retention and deletion are controlled by Hostinger/i);
+});
+
+test('metadata verifier rejects Review Notes regressions in hosting facts or entry behavior', async (t) => {
+  const mutations = [
+    [
+      'hosting placeholder restored',
+      (source) => source.replace(
+        /Opening either resource causes Hostinger[\s\S]*?They are not used for tracking\./u,
+        '[INSERT VERIFIED HOSTINGER REQUEST-LOG FIELDS, PURPOSE, RETENTION, DELETION, AND FINAL APP PRIVACY MAPPING.]',
+      ),
+      /obsolete hosting blocker placeholder/i,
+    ],
+    [
+      'observed log fields omitted',
+      (source) => source.replace(
+        /Prior technical verification observed Hostinger access-log fields for IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency\. /u,
+        '',
+      ),
+      /missing observed Hostinger log fields/i,
+    ],
+    [
+      'log fields generalized',
+      (source) => source.replace(
+        'IP address, browser or user-agent, requested URL, and technical errors',
+        'ordinary request data',
+      ),
+      /missing owner-authorized Hostinger log fields/i,
+    ],
+    [
+      'hPanel duration changed',
+      (source) => source.replace('visible in hPanel for up to 7 days', 'visible in hPanel for 30 days'),
+      /missing owner-authorized hPanel visibility/i,
+    ],
+    [
+      'automatic entry restored',
+      (source) => source.replace(
+        'The app remains on the introduction until the reviewer taps “Enter CaboHealth”.',
+        'The app continues automatically after about 1.6 seconds.',
+      ),
+      /obsolete automatic introduction timing/i,
+    ],
+  ];
+
+  for (const [name, mutate, expectedError] of mutations) {
+    await t.test(name, () => {
+      withReleaseFixture(
+        (root) => {
+          const path = join(root, releasePath, 'review-notes.md');
+          writeFileSync(path, mutate(readFileSync(path, 'utf8')));
+        },
+        (result) => {
+          assert.equal(result.status, 1, result.stdout || result.stderr);
+          assert.match(result.stderr, expectedError);
+        },
+      );
+    });
+  }
+});
+
+test('App Privacy preserves observed logs separately from the owner-authorized disclosure record', () => {
+  const privacy = JSON.parse(readFileSync(join(projectRoot, releasePath, 'app-privacy.json'), 'utf8'));
+  const compliance = JSON.parse(readFileSync(join(projectRoot, 'release/compliance-facts.json'), 'utf8'));
+
+  assert.deepEqual(
+    privacy.hostedTechnicalRequestLogs.ownerAuthorizedFields,
+    compliance.hosting.logTypes.value,
+  );
+  assert.deepEqual(privacy.hostedTechnicalRequestLogs.observedFields, [
+    'IP address',
+    'timestamp',
+    'HTTP method',
+    'requested resource',
+    'device and user-agent details',
+    'country',
+    'response bytes',
+    'latency',
+  ]);
+  assert.deepEqual(privacy.nativeBehavior.localOnlyState, [
+    'saved public-module slugs and order',
+    'language, appearance, haptics, and effects preferences',
+    'recipe favorite keys',
+    'visit-checklist completion state',
+  ]);
+});
+
 test('metadata verifier accepts the five owner confirmations without releasing unverified gates', () => {
   withReleaseFixture(
     recordOwnerConfirmations,
@@ -525,6 +622,48 @@ test('metadata verifier rejects an unconditional Data Not Collected recommendati
       assert.match(result.stderr, /App Privacy recommendation must remain conditional/i);
     },
   );
+});
+
+test('metadata verifier rejects App Privacy fields outside the observed log record', () => {
+  withReleaseFixture(
+    (root) => mutateJson(root, `${releasePath}/app-privacy.json`, (privacy) => {
+      privacy.hostedTechnicalRequestLogs.observedFields.push('request header');
+    }),
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /Hosting request-log facts must retain the owner-authorized/i);
+    },
+  );
+});
+
+test('metadata verifier rejects unapproved App Privacy purposes and schema keys', async (t) => {
+  const mutations = [
+    ['marketing purpose', (privacy) => {
+      privacy.hostedTechnicalRequestLogs.purpose = ['page delivery', 'Targeted Advertising'];
+    }],
+    ['extra hosted-log key', (privacy) => {
+      privacy.hostedTechnicalRequestLogs.unexpected = true;
+    }],
+    ['extra native-behavior key', (privacy) => {
+      privacy.nativeBehavior.unexpected = true;
+    }],
+    ['extra conditional-recommendation key', (privacy) => {
+      privacy.conditionalRecommendation.unexpected = true;
+    }],
+    ['extra root key', (privacy) => {
+      privacy.unexpected = true;
+    }],
+  ];
+
+  for (const [name, mutate] of mutations) {
+    await t.test(name, () => withReleaseFixture(
+      (root) => mutateJson(root, `${releasePath}/app-privacy.json`, mutate),
+      (result) => {
+        assert.equal(result.status, 1, `${name} bypassed verifier:\n${result.stdout}${result.stderr}`);
+        assert.match(result.stderr, /App Privacy schemas and hosting purposes must be exact/i);
+      },
+    ));
+  }
 });
 
 test('metadata verifier rejects an age projection without all three required conditions', () => {

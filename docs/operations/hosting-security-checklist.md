@@ -2,7 +2,7 @@
 
 Status: Draft — not release-approved
 
-Task 7A did not access Hostinger, deploy content, inspect public uploads, or change any remote system. Every checkbox below is **PENDING** Task 7B evidence. Do not mark the release ready from this draft.
+This checklist contains no remote Hostinger evidence and authorizes no deployment. The owner-authorized hosting disclosure is recorded below; every remote control, linkage/access fact, backup, and production check remains **PENDING** action-time evidence. Do not mark the release ready from this draft.
 
 ## Backup and authority
 
@@ -22,8 +22,11 @@ If removal authority or retention duties are unclear, stop and obtain owner/lega
 
 ## Hosting controls and disclosures
 
-- [ ] **PENDING:** Confirm actual Hostinger technical log types, purpose, retention, access, and deletion process.
+- **RECORDED:** The owner-authorized disclosure covers IP address, browser/user-agent, requested URL, and technical errors used for delivery, security, and troubleshooting. hPanel visibility is up to 7 days; any additional retention and deletion are controlled by Hostinger.
+- **OBSERVED PREVIOUSLY:** Technical verification recorded IP address, timestamp, HTTP method, requested resource, device/user-agent details, country, response bytes, and latency. This observation remains part of the disclosure record and does not establish the current production configuration.
+- [ ] **PENDING:** Verify authenticated Hostinger linkage and access controls without copying raw logs or sensitive account details into this repository.
 - [ ] **PENDING:** Verify HTTPS, canonical routes, CSP/security headers, directory-index controls, and error behavior at origin.
 - [ ] **PENDING:** Verify current WAF/rate-limit settings; configure only with owner authorization and record the sanitized result.
 - [ ] **PENDING:** Verify cache invalidation and rollback from the pre-change backup.
-- [ ] **PENDING:** Reconcile the confirmed facts with Privacy, the data inventory, and final owner/legal sign-off.
+- **COMPLETED LOCALLY:** Public Privacy and the data inventory match the owner-authorized log, hPanel visibility, and provider-controlled additional retention/deletion facts.
+- [ ] **PENDING:** Reconcile linkage/access behavior, Apple’s current category definitions, and the exact signed release-candidate privacy report before the App Privacy answer is saved.

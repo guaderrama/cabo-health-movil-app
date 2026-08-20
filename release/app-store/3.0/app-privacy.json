@@ -12,7 +12,7 @@
     "sensitivePermissions": [],
     "localOnlyState": [
       "saved public-module slugs and order",
-      "language, appearance, haptics, effects, and onboarding preferences",
+      "language, appearance, haptics, and effects preferences",
       "recipe favorite keys",
       "visit-checklist completion state"
     ]
@@ -28,6 +28,12 @@
       "country",
       "response bytes",
       "latency"
+    ],
+    "ownerAuthorizedFields": [
+      "IP address",
+      "browser or user-agent",
+      "requested URL",
+      "technical errors"
     ],
     "purpose": [
       "page delivery",

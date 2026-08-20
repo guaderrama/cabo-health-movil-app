@@ -60,13 +60,13 @@ const DRAFT_LEGAL_SHA256 = Object.freeze({
   terms: '0dfc0b40144db111e78e2a2e6a1de1c0e978c9a31bb9dceb819599d7b5e70d44',
 });
 
-// These remain deliberately unset until owner/legal sign-off and independent
-// review of the final bytes.  Current draft hashes are rejected below.
+// Pinned after owner-authorized fact reconciliation and independent byte review.
+// Any later legal-copy edit must fail closed until a new review updates both authorities.
 export const FINAL_LEGAL_SHA256 = Object.freeze({
-  privacy: null,
-  'report-content': null,
-  support: null,
-  terms: null,
+  privacy: 'dd1caa532ca16a610a54c360ef4c911e6927043d2cfe2ba133808b17cf49ea86',
+  'report-content': '0c54770920813168eba4480ded96a396c2858dfbedc73590082ee55185dd4dde',
+  support: 'e1fd847e6f8495f7dd4391989046845d5fa7c4bd3a8900ed3295ef956d9a875c',
+  terms: '2de6286af27e9f4547c58b1204f29bada4ceb7ff7b9597fbb5894279baee06d8',
 });
 export const WEB_RELEASE_PATHS = Object.freeze([
   '.well-known/apple-app-site-association',

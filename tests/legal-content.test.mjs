@@ -102,7 +102,17 @@ function sectionForLocale(html, locale, key) {
 }
 
 function assertNoUnverifiedClaims(html) {
-  for (const forbidden of forbiddenReleaseClaims) assert.doesNotMatch(html, forbidden);
+  const approvedFactStatements = [
+    'Cabo Health responds within 2 business days.',
+    'Cabo Health responde dentro de 2 días hábiles.',
+    'Cabo Health responds to content reports within 2 business days.',
+    'Cabo Health responde a los reportes de contenido dentro de 2 días hábiles.',
+  ];
+  const unapprovedClaims = approvedFactStatements.reduce(
+    (value, statement) => value.replaceAll(statement, '[OWNER-APPROVED FACT]'),
+    html,
+  );
+  for (const forbidden of forbiddenReleaseClaims) assert.doesNotMatch(unapprovedClaims, forbidden);
 }
 
 function exactExplicitActionUrls() {
@@ -378,36 +388,37 @@ test('each bilingual section preserves its locale-specific substantive obligatio
   const obligations = {
     privacy: {
       scope: [/two public modules/i, /dos módulos públicos/i],
+      operator: [/trade brand owned and operated by Ivan Guaderrama/i, /marca comercial propiedad de Ivan Guaderrama y operada por él/i],
       'data-boundary': [/do not request or collect health information/i, /no solicitan ni recopilan información de salud/i],
       'local-state': [/remain on your device/i, /permanecen en tu dispositivo/i],
-      'hosting-logs': [/retention and deletion details are pending/i, /detalles de retención y eliminación están pendientes/i],
-      children: [/final children and age position remains pending/i, /postura final sobre niñez y edad sigue pendiente/i],
+      'hosting-logs': [/visible in hPanel for up to 7 days/i, /visibles en hPanel hasta por 7 días/i],
+      children: [/no way to submit a child's personal or health information/i, /ni una manera de enviar información personal o de salud de un menor/i],
       contact: [/Do not include health or other sensitive information/i, /No incluyas información de salud ni otra información sensible/i],
       changes: [/Material changes will be published/i, /cambios materiales se publicarán/i],
     },
     terms: {
-      scope: [/do not diagnose, treat, prescribe/i, /No diagnostican, tratan, prescriben/i],
+      scope: [/do not diagnose, treat, or prescribe/i, /No diagnostican, tratan ni prescriben/i],
       emergency: [/Call local emergency services/i, /Llama a los servicios locales de emergencia/i],
       'acceptable-use': [/no user-generated content area/i, /no tienen un área de contenido generado por usuarios/i],
-      rights: [/rights review for this release remains? pending/i, /revisión de derechos de contenido para este lanzamiento sigue pendiente/i],
+      rights: [/owns or is authorized to use the Cabo Health logo/i, /es propietario o cuenta con autorización para usar el logotipo/i],
       'external-services': [/separate services governed by their providers/i, /servicios separados regidos por sus proveedores/i],
-      availability: [/does not promise uninterrupted access/i, /no promete acceso ininterrumpido/i],
-      'approval-contact': [/subject to owner and legal approval/i, /sujetos a aprobación del propietario y legal/i],
+      availability: [/initial App Store release is intended only for Mexico and the United States/i, /lanzamiento inicial en App Store está previsto únicamente para México y Estados Unidos/i],
+      'approval-contact': [/Do not include health or other sensitive information/i, /No incluyas información de salud ni otra información sensible/i],
     },
     support: {
-      contact: [/no response deadline is promised/i, /no se promete un plazo de respuesta/i],
+      contact: [/responds within 2 business days/i, /responde dentro de 2 días hábiles/i],
       recipes: [/Favorites are local to the device/i, /Los favoritos son locales al dispositivo/i],
       clinic: [/module is not an emergency channel/i, /módulo no es un canal de emergencia/i],
       privacy: [/do not request or collect health information/i, /no solicitan ni recopilan información de salud/i],
       'report-content': [/without including sensitive information/i, /sin incluir información sensible/i],
-      scope: [/facts that are still pending are not stated here/i, /hechos de plataforma o lanzamiento que siguen pendientes/i],
+      scope: [/does not provide medical advice/i, /No ofrece orientación médica/i],
     },
     reportContent: {
       scope: [/Healthy Recipes and CaboHealth Clinic Guide/i, /Recetas Saludables y la Guía de la Clínica CaboHealth/i],
       contact: [/prefix the subject with “Report Content”/i, /comienza el asunto con “Reportar contenido”/i],
       details: [/module, public page, and concern/i, /módulo, la página pública y el problema/i],
       privacy: [/Do not include health or other sensitive information/i, /No incluyas información de salud ni otra información sensible/i],
-      review: [/no response deadline is promised/i, /no se promete un plazo de respuesta/i],
+      review: [/responds to content reports within 2 business days/i, /responde a los reportes de contenido dentro de 2 días hábiles/i],
       support: [/Support page/i, /página de Soporte/i],
     },
   };
@@ -437,8 +448,10 @@ test('privacy states the exact v1 data boundary in both languages', () => {
     /favorites and preferences remain on your device/i,
     /WebKit/i,
     /two public modules/i,
-    /normal technical HTTP request logs/i,
-    /retention and deletion details are pending/i,
+    /IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency/i,
+    /IP address, browser or user-agent, requested URL, and technical errors/i,
+    /visible in hPanel for up to 7 days/i,
+    /additional retention and deletion are controlled by Hostinger/i,
     /no solicitan ni recopilan información de salud/i,
     /sin cuenta/i,
     /sin identificadores generados por la app/i,
@@ -447,9 +460,52 @@ test('privacy states the exact v1 data boundary in both languages', () => {
     /sin permisos sensibles/i,
     /favoritos y preferencias permanecen en tu dispositivo/i,
     /dos módulos públicos/i,
-    /registros técnicos normales de solicitudes HTTP/i,
-    /detalles de retención y eliminación están pendientes/i,
+    /dirección IP, marca de tiempo, método HTTP, recurso solicitado, detalles del dispositivo y agente de usuario, país, bytes de respuesta y latencia/i,
+    /dirección IP, navegador o agente de usuario, URL solicitada y errores técnicos/i,
+    /visibles en hPanel hasta por 7 días/i,
+    /retención adicional y la eliminación están bajo el control de Hostinger/i,
   ]) assert.match(html, pattern);
+});
+
+test('privacy publishes the owner-authorized operator and Hostinger facts in both languages', () => {
+  const html = readArtifact(pagePaths.privacy);
+
+  assert.doesNotMatch(html, /\b(?:draft|pending)\b|\b(?:borrador|pendiente)\b/i);
+  for (const pattern of [
+    /Cabo Health is a trade brand owned and operated by Ivan Guaderrama/i,
+    /Cabo Health es una marca comercial propiedad de Ivan Guaderrama y operada por él/i,
+    /IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency/i,
+    /dirección IP, marca de tiempo, método HTTP, recurso solicitado, detalles del dispositivo y agente de usuario, país, bytes de respuesta y latencia/i,
+    /IP address, browser or user-agent, requested URL, and technical errors/i,
+    /dirección IP, navegador o agente de usuario, URL solicitada y errores técnicos/i,
+    /visible in hPanel for up to 7 days/i,
+    /visibles en hPanel hasta por 7 días/i,
+    /additional retention and deletion are controlled by Hostinger/i,
+    /cualquier retención adicional y la eliminación están bajo el control de Hostinger/i,
+  ]) assert.match(html, pattern);
+
+  assert.doesNotMatch(html, /deleted automatically after (?:7|seven) days/i);
+  assert.doesNotMatch(html, /se eliminan automáticamente después de (?:7|siete) días/i);
+});
+
+test('terms publish the confirmed educational, rights, and initial-territory scope bilingually', () => {
+  const html = readArtifact(pagePaths.terms);
+
+  assert.doesNotMatch(html, /\b(?:draft|pending)\b|\b(?:borrador|pendiente)\b/i);
+  for (const pattern of [
+    /general educational information and are not medical devices/i,
+    /información educativa general y no son dispositivos médicos/i,
+    /do not diagnose, treat, or prescribe/i,
+    /no diagnostican, tratan ni prescriben/i,
+    /Cabo Health is a trade brand owned and operated by Ivan Guaderrama/i,
+    /Cabo Health es una marca comercial propiedad de Ivan Guaderrama y operada por él/i,
+    /owns or is authorized to use the Cabo Health logo, domain, texts, recipes, and images included in public v1/i,
+    /es propietario o cuenta con autorización para usar el logotipo, el dominio, los textos, las recetas y las imágenes de Cabo Health incluidos en la v1 pública/i,
+    /initial App Store release is intended only for Mexico and the United States/i,
+    /lanzamiento inicial en App Store está previsto únicamente para México y Estados Unidos/i,
+  ]) assert.match(html, pattern);
+
+  assert.doesNotMatch(html, /registered (?:company|organization)|empresa u organización registrada/i);
 });
 
 test('support renders only the frozen contact record and explicit same-window actions', () => {
@@ -471,12 +527,23 @@ test('support renders only the frozen contact record and explicit same-window ac
   for (const action of expectedActions) {
     assert.equal(hrefs.filter((href) => href === action).length, 2, `${action} must render once per locale`);
   }
-  assert.match(html, /messages are reviewed during published business hours; no response deadline is promised/i);
-  assert.match(html, /los mensajes se revisan durante el horario publicado; no se promete un plazo de respuesta/i);
+  assert.match(html, /Cabo Health responds within 2 business days/i);
+  assert.match(html, /Cabo Health responde dentro de 2 días hábiles/i);
   assert.match(html, /Healthy Recipes/);
   assert.match(html, /Recetas Saludables/);
   assert.match(html, /Clinic Guide/);
   assert.match(html, /Guía de la Clínica/);
+});
+
+test('support publishes the confirmed bilingual hours and two-business-day response policy', () => {
+  const html = readArtifact(pagePaths.support);
+
+  assert.match(html, /Cabo Health responds within 2 business days/i);
+  assert.match(html, /Cabo Health responde dentro de 2 días hábiles/i);
+  assert.match(html, /Monday–Friday, 10:00 AM–4:00 PM/);
+  assert.match(html, /lunes a viernes, de 10:00 a\. m\. a 4:00 p\. m\./i);
+  assert.doesNotMatch(html, /no response deadline is promised|no se promete un plazo de respuesta/i);
+  assert.doesNotMatch(html, /response service level remains pending|nivel de servicio de respuesta sigue pendiente/i);
 });
 
 test('Report Content is visible in both languages with an explicit contact path', () => {
@@ -501,6 +568,16 @@ test('Report Content route uses only the frozen email contact and an explicit su
   assert.equal(hrefs.includes(contactRecord.facts.appleMapsDestination.value), false);
   assert.equal(hrefs.includes(legalUrls.support), true, 'support fallback must be explicit');
   assert.match(html, /data-contact-record=["']release\/public-contact-facts\.json["']/i);
+});
+
+test('Report Content publishes the confirmed review window and response policy bilingually', () => {
+  const html = readArtifact(pagePaths.reportContent);
+
+  assert.match(html, /Cabo Health responds to content reports within 2 business days/i);
+  assert.match(html, /Cabo Health responde a los reportes de contenido dentro de 2 días hábiles/i);
+  assert.match(html, /Reports are reviewed Monday–Friday, 10:00 AM–4:00 PM/i);
+  assert.match(html, /Los reportes se revisan de lunes a viernes, de 10:00 a\. m\. a 4:00 p\. m\./i);
+  assert.doesNotMatch(html, /no response deadline is promised|no se promete un plazo de respuesta/i);
 });
 
 test('Report Content reuses the exact legal-page visual and CSP contract', () => {
@@ -595,7 +672,7 @@ test('active-resource mutation matrix rejects every supported remote loading mec
   }
 });
 
-test('draft compliance facts preserve confirmed owner facts and every unresolved gate', () => {
+test('compliance facts preserve every owner-confirmed fact without completing age or release gates', () => {
   const facts = readJson('release/compliance-facts.json');
   assert.equal(facts.schemaVersion, 1);
   assert.equal(facts.brand, 'Cabo Health');
@@ -606,7 +683,7 @@ test('draft compliance facts preserve confirmed owner facts and every unresolved
     registeredOrganization: false,
     dunsApplicable: false,
     dunsNumber: null,
-    legalSignOffStatus: 'pending',
+    legalSignOffStatus: 'approved',
   });
   assert.deepEqual(facts.appStore, {
     seller: {
@@ -631,14 +708,54 @@ test('draft compliance facts preserve confirmed owner facts and every unresolved
   });
   assert.equal(facts.releaseReady, false);
 
+  assert.deepEqual(facts.hosting, {
+    provider: 'Hostinger',
+    logTypes: {
+      value: ['IP address', 'browser or user-agent', 'requested URL', 'technical errors'],
+      status: 'verified',
+    },
+    retention: {
+      value: {
+        description: 'Owner authorized 2026-08-17: hPanel visibility is up to 7 days; any additional retention is controlled by Hostinger.',
+      },
+      status: 'verified',
+    },
+    deletionProcess: {
+      value: {
+        description: 'Owner authorized 2026-08-17: deletion beyond hPanel visibility is controlled by Hostinger.',
+      },
+      status: 'verified',
+    },
+  });
+  assert.deepEqual(facts.support.responseSla, {
+    value: {
+      description: 'Owner confirmed 2026-08-17: respond within 2 business days, Monday-Friday, 10:00 AM-4:00 PM.',
+    },
+    status: 'verified',
+  });
+  assert.deepEqual(facts.contentRights, {
+    value: {
+      approved: true,
+      scope: 'Owner confirmed 2026-08-17: ownership or authorization for the Cabo Health logo, domain, texts, recipes, and images used by public v1.',
+    },
+    status: 'verified',
+  });
+  assert.deepEqual(facts.exportCompliance, {
+    value: {
+      approved: true,
+      determination: 'Owner confirmed 2026-08-17: standard iOS platform encryption and HTTPS only; no proprietary or custom cryptography.',
+    },
+    status: 'verified',
+  });
+  assert.deepEqual(facts.medicalDevice, {
+    value: {
+      isMedicalDevice: false,
+      basis: 'Owner confirmed 2026-08-17: educational only; no diagnosis, treatment, or medical-device function.',
+    },
+    status: 'verified',
+  });
+
   const requiredPendingPaths = [
-    ['hosting', 'logTypes'],
-    ['hosting', 'retention'],
-    ['hosting', 'deletionProcess'],
-    ['support', 'responseSla'],
-    ['contentRights'],
-    ['exportCompliance'],
-    ['medicalDevice'],
     ['ageRating', 'host'],
     ['ageRating', 'miniapps', 'healthy-recipes'],
     ['ageRating', 'miniapps', 'clinic-guide'],
@@ -649,10 +766,15 @@ test('draft compliance facts preserve confirmed owner facts and every unresolved
   }
 });
 
-test('release verification fails closed and names every still-unresolved gate', () => {
+test('release verification fails closed only on age ratings and the release-ready summary flag', () => {
   const result = spawnSync(process.execPath, [verifierPath, projectRoot], { encoding: 'utf8' });
   assert.equal(result.status, 1, result.stdout || result.stderr);
   for (const gate of [
+    'ageRating.host',
+    'ageRating.miniapps.healthy-recipes',
+    'ageRating.miniapps.clinic-guide',
+  ]) assert.match(result.stderr, new RegExp(`Pending release gate: ${gate.replaceAll('.', '\\.')}`));
+  for (const resolvedGate of [
     'legalEntity.legalSignOffStatus',
     'hosting.logTypes',
     'hosting.retention',
@@ -661,10 +783,8 @@ test('release verification fails closed and names every still-unresolved gate', 
     'contentRights',
     'exportCompliance',
     'medicalDevice',
-    'ageRating.host',
-    'ageRating.miniapps.healthy-recipes',
-    'ageRating.miniapps.clinic-guide',
-  ]) assert.match(result.stderr, new RegExp(`Pending release gate: ${gate.replaceAll('.', '\\.')}`));
+  ]) assert.doesNotMatch(result.stderr, new RegExp(`Pending release gate: ${resolvedGate.replaceAll('.', '\\.')}`));
+  assert.match(result.stderr, /Release compliance facts are not marked ready/i);
 });
 
 test('operational and inventory drafts identify unverified controls without claiming completion', () => {
@@ -680,4 +800,16 @@ test('operational and inventory drafts identify unverified controls without clai
     assert.doesNotMatch(document, /Status: Complete|verified control|release approved/i);
   }
   assert.match(readArtifact('docs/operations/content-review-and-takedown.md'), /No user-generated content \(UGC\)/i);
+});
+
+test('operational drafts retain only current Hostinger and release blockers', () => {
+  const runbook = readArtifact('docs/operations/hostinger-deploy-runbook.md');
+  const hostingChecklist = readArtifact('docs/operations/hosting-security-checklist.md');
+
+  assert.doesNotMatch(runbook, /11 external compliance facts|final legal copy\/sign-off/i);
+  assert.doesNotMatch(hostingChecklist, /Confirm actual Hostinger technical log types, purpose, retention, access, and deletion process/i);
+  assert.match(hostingChecklist, /IP address, browser\/user-agent, requested URL, and technical errors/i);
+  assert.match(hostingChecklist, /hPanel visibility is up to 7 days/i);
+  assert.match(hostingChecklist, /additional retention and deletion are controlled by Hostinger/i);
+  assert.match(hostingChecklist, /linkage and access controls/i);
 });

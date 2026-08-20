@@ -642,6 +642,12 @@ function verifyReviewNotes() {
   if (/(?:password|passcode|secret|api[-_ ]?key|token|contrase[ñn]a|clave|access code|demo code|reviewer code)\s*[:=]\s*\S+/iu.test(body)) {
     errors.push('Review Notes appear to contain a credential');
   }
+  if (/\[INSERT VERIFIED HOSTINGER REQUEST-LOG FIELDS/iu.test(body)) {
+    errors.push('Review Notes still contain the obsolete hosting blocker placeholder');
+  }
+  if (/continues automatically|about 1\.6 seconds/iu.test(body)) {
+    errors.push('Review Notes describe obsolete automatic introduction timing');
+  }
   for (const miniapp of approvedMiniapps) {
     requireText(body, new RegExp(miniapp.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'), `Review Notes missing ${miniapp.title}`);
     if (body.split(miniapp.url).length - 1 < 2) {
@@ -664,7 +670,13 @@ function verifyReviewNotes() {
     [/native message bridge/iu, 'Review Notes missing native-bridge disclosure'],
     [/no server setting can add another resource/iu, 'Review Notes missing immutable-catalog disclosure'],
     [/sensitive permission/iu, 'Review Notes missing permission disclosure'],
-    [/\[INSERT VERIFIED HOSTINGER REQUEST-LOG FIELDS/iu, 'Review Notes must retain the hosting blocker placeholder in this draft'],
+    [/remains on the introduction until the reviewer taps “Enter CaboHealth”/iu, 'Review Notes missing current manual-entry behavior'],
+    [/Prior technical verification observed Hostinger access-log fields for IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency/iu, 'Review Notes missing observed Hostinger log fields'],
+    [/IP address, browser or user-agent, requested URL, and technical errors/iu, 'Review Notes missing owner-authorized Hostinger log fields'],
+    [/to deliver, secure, and troubleshoot the public pages/iu, 'Review Notes missing Hostinger log purpose'],
+    [/visible in hPanel for up to 7 days/iu, 'Review Notes missing owner-authorized hPanel visibility'],
+    [/additional retention and deletion are controlled by Hostinger/iu, 'Review Notes missing owner-authorized retention/deletion disclosure'],
+    [/not used for tracking/iu, 'Review Notes missing non-tracking disclosure'],
   ];
   for (const [pattern, message] of requiredPatterns) requireText(body, pattern, message);
 }
@@ -672,29 +684,91 @@ function verifyReviewNotes() {
 function verifyPrivacy() {
   const privacy = readJson('app-privacy.json');
   if (!privacy) return;
+  const nativeBehavior = privacy.nativeBehavior;
+  const logs = privacy.hostedTechnicalRequestLogs;
+  const conditionalRecommendation = privacy.conditionalRecommendation;
+  const schemaAndPurposesAreExact = (
+    hasExactKeys(privacy, [
+      'schemaVersion',
+      'status',
+      'recommendedAppPrivacyAnswer',
+      'nativeBehavior',
+      'hostedTechnicalRequestLogs',
+      'conditionalRecommendation',
+    ])
+    && hasExactKeys(nativeBehavior, [
+      'account',
+      'healthInformationRequested',
+      'appGeneratedIdentifier',
+      'analytics',
+      'advertising',
+      'tracking',
+      'sensitivePermissions',
+      'localOnlyState',
+    ])
+    && hasExactKeys(logs, [
+      'provider',
+      'observedFields',
+      'ownerAuthorizedFields',
+      'purpose',
+      'retention',
+      'deletionProcess',
+      'linkedToIdentity',
+      'tracking',
+    ])
+    && hasExactKeys(conditionalRecommendation, [
+      'dataNotCollectedPath',
+      'dataCollectedPath',
+      'provisionalPurpose',
+      'provisionalCategoryMapping',
+    ])
+    && equalJson(logs?.purpose, ['page delivery', 'security and troubleshooting'])
+  );
+  if (!schemaAndPurposesAreExact) {
+    errors.push('App Privacy schemas and hosting purposes must be exact');
+  }
   if (
-    privacy.status !== 'owner-authorized-pending-linkage-and-exact-rc-review'
+    privacy.schemaVersion !== 1
+    || privacy.status !== 'owner-authorized-pending-linkage-and-exact-rc-review'
     || privacy.recommendedAppPrivacyAnswer !== null
   ) {
     errors.push('App Privacy recommendation must remain conditional with owner authorization while linkage and exact-RC review remain pending');
   }
   if (
-    privacy.nativeBehavior?.account !== false
-    || privacy.nativeBehavior?.healthInformationRequested !== false
-    || privacy.nativeBehavior?.appGeneratedIdentifier !== false
-    || privacy.nativeBehavior?.analytics !== false
-    || privacy.nativeBehavior?.advertising !== false
-    || privacy.nativeBehavior?.tracking !== false
-    || !Array.isArray(privacy.nativeBehavior?.sensitivePermissions)
-    || privacy.nativeBehavior.sensitivePermissions.length !== 0
+    nativeBehavior?.account !== false
+    || nativeBehavior?.healthInformationRequested !== false
+    || nativeBehavior?.appGeneratedIdentifier !== false
+    || nativeBehavior?.analytics !== false
+    || nativeBehavior?.advertising !== false
+    || nativeBehavior?.tracking !== false
+    || !equalJson(nativeBehavior?.sensitivePermissions, [])
+    || !equalJson(nativeBehavior?.localOnlyState, [
+      'saved public-module slugs and order',
+      'language, appearance, haptics, and effects preferences',
+      'recipe favorite keys',
+      'visit-checklist completion state',
+    ])
   ) {
     errors.push('App Privacy native behavior does not match the exact MVP');
   }
-  const logs = privacy.hostedTechnicalRequestLogs;
   if (
     logs?.provider !== 'Hostinger'
-    || !Array.isArray(logs.observedFields)
-    || logs.observedFields.length === 0
+    || !equalJson(logs.observedFields, [
+      'IP address',
+      'timestamp',
+      'HTTP method',
+      'requested resource',
+      'device and user-agent details',
+      'country',
+      'response bytes',
+      'latency',
+    ])
+    || !equalJson(logs.ownerAuthorizedFields, [
+      'IP address',
+      'browser or user-agent',
+      'requested URL',
+      'technical errors',
+    ])
     || logs.retention !== 'hPanel visibility up to 7 days; any additional retention is controlled by Hostinger.'
     || logs.deletionProcess !== 'Deletion beyond hPanel visibility is controlled by Hostinger.'
     || logs.linkedToIdentity !== null
@@ -703,8 +777,8 @@ function verifyPrivacy() {
     errors.push('Hosting request-log facts must retain the owner-authorized retention/deletion disclosure, unresolved linkage, and non-tracking status');
   }
   if (
-    typeof privacy.conditionalRecommendation?.dataNotCollectedPath !== 'string'
-    || typeof privacy.conditionalRecommendation?.dataCollectedPath !== 'string'
+    typeof conditionalRecommendation?.dataNotCollectedPath !== 'string'
+    || typeof conditionalRecommendation?.dataCollectedPath !== 'string'
   ) {
     errors.push('App Privacy draft must retain both conditional recommendation paths');
   }
