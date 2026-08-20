@@ -126,6 +126,7 @@ function fixtureBrowserEvidence(artifact, authority) {
       for (const javascript of ['enabled', 'disabled']) {
         for (const path of routes) {
           const url = new URL(path, 'https://cabohealth.org/').href;
+          const miniapp = path.startsWith('/apps/');
           observations.push({
             path,
             requestedViewport: viewport.id,
@@ -136,11 +137,15 @@ function fixtureBrowserEvidence(artifact, authority) {
             visualWidth: viewport.width,
             visualHeight: viewport.height,
             effectiveLocale: locale,
+            documentLanguage: miniapp && javascript === 'enabled'
+              ? (locale === 'es-MX' ? 'es-MX' : 'en')
+              : 'en',
+            localeVisibilityVerified: true,
             documentUrl: url,
             readyState: 'complete',
             bodyTextLength: 120,
             canonicalHref: url,
-            javascriptSentinel: path.startsWith('/apps/')
+            javascriptSentinel: miniapp
               ? (javascript === 'enabled' ? 'enhanced' : 'static')
               : 'not-applicable',
             reducedMotionMatches: true,
@@ -151,7 +156,7 @@ function fixtureBrowserEvidence(artifact, authority) {
             documentRequestSeen: true,
             unexpectedRequestCount: 0,
             consoleErrorCount: 0,
-            miniappReady: javascript === 'enabled' && path.startsWith('/apps/'),
+            miniappReady: javascript === 'enabled' && miniapp,
             noJsControlsDisabled: true,
             bilingualStaticVisible: true,
             challengeSha256: 'e'.repeat(64),

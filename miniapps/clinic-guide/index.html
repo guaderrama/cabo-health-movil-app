@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Bilingual CaboHealth clinic location, contact information, hours, accessibility guidance, and visit checklist.">
   <meta name="theme-color" content="#eaf5f7">
   <meta http-equiv="Content-Security-Policy" content="{{CSP}}">
@@ -11,15 +11,15 @@
   <title>Clinic Guide | CaboHealth</title>
 </head>
 <body data-premium-miniapp="clinic-guide">
-  <a class="skip-link" href="#main-content">Skip to guide / Ir a la guía</a>
+  <a class="skip-link" href="#main-content"><span lang="en" data-locale="en">Skip to guide</span><span lang="es-MX" data-locale="es-MX">Ir a la guía</span></a>
   <div class="page-shell">
     <header class="premium-topbar" data-network-region>
       <canvas class="network-canvas" data-network-canvas aria-hidden="true"></canvas>
       <div class="header-bar">
-        <a class="brand-link" href="https://cabohealth.org/apps/clinic-guide/" aria-label="CaboHealth Clinic Guide">
+        <a class="brand-link" data-aria-label-en="CaboHealth Clinic Guide" data-aria-label-es="Guía de la clínica CaboHealth" href="https://cabohealth.org/apps/clinic-guide/" aria-label="CaboHealth Clinic Guide / Guía de la clínica CaboHealth">
           <img class="brand-logo" src="../shared/logo-wordmark.png" width="452" height="236" alt="CaboHealth">
         </a>
-        <nav class="language-control" aria-label="Language / Idioma">
+        <nav class="language-control" data-aria-label-en="Language" data-aria-label-es="Idioma" aria-label="Language / Idioma">
           <button type="button" data-language="en" aria-pressed="true" disabled>English</button>
           <button type="button" data-language="es-MX" aria-pressed="false" disabled>Español</button>
         </nav>
@@ -45,35 +45,35 @@
     </header>
 
     <main id="main-content" class="miniapp-main">
-      <section class="clinic-panel" data-clinic-panel="explore" data-active="true" aria-labelledby="clinic-explore-title">
+      <section class="clinic-panel" data-clinic-panel="explore" data-active="true" data-labelledby-en="clinic-explore-title-en" data-labelledby-es="clinic-explore-title-es" aria-labelledby="clinic-explore-title-en clinic-explore-title-es">
         <div class="section-heading">
           <section lang="en" data-locale="en">
             <p class="eyebrow">Explore</p>
-            <h2 id="clinic-explore-title">Clinic information</h2>
+            <h2 id="clinic-explore-title-en">Clinic information</h2>
             <p>Review visit preparation, confirmed contact details, and privacy guidance.</p>
           </section>
           <section lang="es-MX" data-locale="es-MX">
             <p class="eyebrow">Explora</p>
-            <h2>Información de la clínica</h2>
+            <h2 id="clinic-explore-title-es">Información de la clínica</h2>
             <p>Consulta la preparación para tu visita, los datos de contacto confirmados y la información de privacidad.</p>
           </section>
         </div>
         <div class="premium-row-list">
-          <button type="button" class="premium-row" data-open-clinic-panel="visit">
+          <button type="button" class="premium-row" data-open-clinic-panel="visit" disabled>
             <span class="premium-row-mark" aria-hidden="true">01</span>
             <span>
               <span lang="en" data-locale="en"><strong>Visit preparation</strong><small>Private local checklist</small></span>
               <span lang="es-MX" data-locale="es-MX"><strong>Preparación de visita</strong><small>Lista local privada</small></span>
             </span>
           </button>
-          <button type="button" class="premium-row" data-open-clinic-panel="contact">
+          <button type="button" class="premium-row" data-open-clinic-panel="contact" disabled>
             <span class="premium-row-mark" aria-hidden="true">02</span>
             <span>
-              <span lang="en" data-locale="en"><strong>Contact and location</strong><small>Owner-confirmed public facts</small></span>
-              <span lang="es-MX" data-locale="es-MX"><strong>Contacto y ubicación</strong><small>Datos públicos confirmados</small></span>
+              <span lang="en" data-locale="en"><strong>Contact and location</strong><small>Clinic contact and location details</small></span>
+              <span lang="es-MX" data-locale="es-MX"><strong>Contacto y ubicación</strong><small>Datos de contacto y ubicación</small></span>
             </span>
           </button>
-          <button type="button" class="premium-row" data-open-clinic-panel="contact">
+          <button type="button" class="premium-row" data-open-clinic-panel="contact" disabled>
             <span class="premium-row-mark" aria-hidden="true">03</span>
             <span>
               <span lang="en" data-locale="en"><strong>Privacy and safety</strong><small>No free-text fields or uploads</small></span>
@@ -83,7 +83,7 @@
         </div>
       </section>
 
-      <section class="clinic-panel" data-clinic-panel="visit" data-active="false" aria-labelledby="clinic-visit-title">
+      <section class="clinic-panel" data-clinic-panel="visit" data-active="false" data-labelledby-en="clinic-visit-title-en" data-labelledby-es="clinic-visit-title-es" aria-labelledby="clinic-visit-title-en clinic-visit-title-es">
         <div class="location-visual" aria-hidden="true">
           <img class="location-art" src="../shared/clinic-map-texture.png" width="768" height="384" alt="">
         </div>
@@ -92,12 +92,12 @@
         <div class="section-heading checklist-heading">
           <section lang="en" data-locale="en">
             <p class="eyebrow">Prepare for your visit</p>
-            <h2 id="clinic-visit-title">Local visit checklist</h2>
+            <h2 id="clinic-visit-title-en">Local visit checklist</h2>
             <p>Selections stay in this browser. This checklist has no free-text fields or uploads.</p>
           </section>
           <section lang="es-MX" data-locale="es-MX">
             <p class="eyebrow">Prepárate para tu visita</p>
-            <h2>Lista local para la visita</h2>
+            <h2 id="clinic-visit-title-es">Lista local para la visita</h2>
             <p>Las selecciones permanecen en este navegador. Esta lista no tiene campos de texto libre ni cargas de archivos.</p>
           </section>
         </div>
@@ -105,50 +105,69 @@
         <div class="checklist-grid">
 {{CLINIC_GUIDE_SECTIONS}}
         </div>
+        <div class="checklist-reset-panel">
+          <button type="button" class="checklist-reset-action" data-reset-checklist disabled>
+            <span lang="en" data-locale="en">Reset checklist</span>
+            <span lang="es-MX" data-locale="es-MX">Restablecer lista</span>
+          </button>
+          <p class="checklist-reset-status" data-checklist-status role="status" aria-live="polite"></p>
+        </div>
       </section>
 
-      <section class="clinic-panel" data-clinic-panel="contact" data-active="false" aria-labelledby="clinic-contact-title">
+      <section class="clinic-panel" data-clinic-panel="contact" data-active="false" data-labelledby-en="clinic-contact-title-en" data-labelledby-es="clinic-contact-title-es" aria-labelledby="clinic-contact-title-en clinic-contact-title-es">
       <div class="section-heading">
         <section lang="en" data-locale="en">
           <p class="eyebrow">Confirmed public information</p>
-          <h2 id="clinic-contact-title">Contact and location</h2>
+          <h2 id="clinic-contact-title-en">Contact and location</h2>
           <p>Use these ordinary links only when you choose to contact the clinic or open the address destination.</p>
         </section>
         <section lang="es-MX" data-locale="es-MX">
           <p class="eyebrow">Información pública confirmada</p>
-          <h2>Contacto y ubicación</h2>
+          <h2 id="clinic-contact-title-es">Contacto y ubicación</h2>
           <p>Usa estos enlaces comunes sólo cuando elijas contactar a la clínica o abrir el destino de la dirección.</p>
         </section>
       </div>
 
-      <section class="contact-panel" aria-label="Clinic contact and location / Contacto y ubicación de la clínica">
+      <section class="contact-panel" data-aria-label-en="Clinic contact and location" data-aria-label-es="Contacto y ubicación de la clínica" aria-label="Clinic contact and location / Contacto y ubicación de la clínica">
 {{CONFIRMED_PUBLIC_FACTS}}
       </section>
 
       <div class="information-grid">
 {{EMERGENCY_GUIDANCE}}
 {{PRIVACY_GUIDANCE}}
-        <section class="information-panel" aria-labelledby="clinic-sources-title">
-          <p class="eyebrow">Editorial record</p>
-          <h2 id="clinic-sources-title">Sources / Fuentes</h2>
-          <p>Reviewed / Revisado: <time datetime="{{REVIEWED_ON_ISO}}">{{REVIEWED_ON}}</time></p>
+        <section class="information-panel" data-labelledby-en="clinic-sources-title-en" data-labelledby-es="clinic-sources-title-es" aria-labelledby="clinic-sources-title-en clinic-sources-title-es">
+          <div lang="en" data-locale="en">
+            <p class="eyebrow">Editorial record</p>
+            <h2 id="clinic-sources-title-en">Sources</h2>
+            <p>Reviewed: <time datetime="{{REVIEWED_ON_ISO}}">{{REVIEWED_ON}}</time></p>
+          </div>
+          <div lang="es-MX" data-locale="es-MX">
+            <p class="eyebrow">Registro editorial</p>
+            <h2 id="clinic-sources-title-es">Fuentes</h2>
+            <p>Revisado: <time datetime="2026-08-16">2026-08-16</time></p>
+          </div>
           <ul>
 {{SOURCE_ITEMS}}
           </ul>
-          <p>Contact facts are owner-confirmed. The support source is a required future release dependency; its live byte consistency is verified separately before deployment.</p>
+          <div lang="en" data-locale="en">
+            <p>Contact and location details are listed above. Source names are displayed for reference and are not links. For questions about this information, use the Support link in the footer.</p>
+          </div>
+          <div lang="es-MX" data-locale="es-MX">
+            <p>Los datos de contacto y ubicación aparecen arriba. Los nombres de las fuentes se muestran como referencia y no son enlaces. Si tienes preguntas sobre esta información, usa el enlace Soporte del pie de página.</p>
+          </div>
         </section>
       </div>
       </section>
 
-      <nav class="miniapp-tabbar" aria-label="Clinic Guide sections / Secciones de la guía">
-        <button type="button" data-clinic-tab="explore" aria-pressed="true"><span lang="en" data-locale="en">Explore</span><span lang="es-MX" data-locale="es-MX">Explora</span></button>
-        <button type="button" data-clinic-tab="visit" aria-pressed="false"><span lang="en" data-locale="en">Visit</span><span lang="es-MX" data-locale="es-MX">Visita</span></button>
-        <button type="button" data-clinic-tab="contact" aria-pressed="false"><span lang="en" data-locale="en">Contact</span><span lang="es-MX" data-locale="es-MX">Contacto</span></button>
+      <nav class="miniapp-tabbar" data-aria-label-en="Clinic Guide sections" data-aria-label-es="Secciones de la guía" aria-label="Clinic Guide sections / Secciones de la guía">
+        <button type="button" data-clinic-tab="explore" aria-pressed="true" disabled><span lang="en" data-locale="en">Explore</span><span lang="es-MX" data-locale="es-MX">Explora</span></button>
+        <button type="button" data-clinic-tab="visit" aria-pressed="false" disabled><span lang="en" data-locale="en">Visit</span><span lang="es-MX" data-locale="es-MX">Visita</span></button>
+        <button type="button" data-clinic-tab="contact" aria-pressed="false" disabled><span lang="en" data-locale="en">Contact</span><span lang="es-MX" data-locale="es-MX">Contacto</span></button>
       </nav>
     </main>
 
     <footer class="site-footer">
-      <nav class="footer-nav" aria-label="CaboHealth policies and support">
+      <nav class="footer-nav" data-aria-label-en="Policies and support" data-aria-label-es="Políticas y soporte" aria-label="Policies and support / Políticas y soporte">
         <ul>
           <li><a href="https://cabohealth.org/app/privacy/" data-external-action data-label-en="Privacy" data-label-es="Privacidad"><span data-external-label>Privacy / Privacidad</span> <span class="external-marker" aria-hidden="true">↗</span></a></li>
           <li><a href="https://cabohealth.org/app/terms/" data-external-action data-label-en="Terms" data-label-es="Términos"><span data-external-label>Terms / Términos</span> <span class="external-marker" aria-hidden="true">↗</span></a></li>
@@ -156,7 +175,7 @@
           <li><a href="https://cabohealth.org/app/report-content/" data-external-action data-label-en="Report Content" data-label-es="Reportar contenido"><span data-external-label>Report Content / Reportar contenido</span> <span class="external-marker" aria-hidden="true">↗</span></a></li>
         </ul>
       </nav>
-      <p class="footer-note">Public visit-planning information only; no emergency or medical service is provided through this app. / Información pública para planear una visita; esta app no presta servicios médicos ni de emergencia.</p>
+      <p class="footer-note"><span lang="en" data-locale="en">Public visit-planning information only; no emergency or medical service is provided through this app.</span><span lang="es-MX" data-locale="es-MX">Información pública para planear una visita; esta app no presta servicios médicos ni de emergencia.</span></p>
     </footer>
   </div>
   <script type="module" src="./app.js"></script>

@@ -1,6 +1,7 @@
 import type { PublicMiniapp, PublicMiniappSlug } from '../../constants/publicMiniapps';
 import {
   classifyMiniappNavigation,
+  EMBEDDED_PRESENTATION_FRAGMENTS,
   type NavigationDecision,
 } from './navigationPolicy';
 
@@ -69,8 +70,16 @@ export function handleRestrictedWebViewBack(router: {
   }
 }
 
-export function getRestrictedWebViewSource(miniapp: Readonly<PublicMiniapp>) {
-  return { uri: miniapp.canonicalUrl };
+export function getRestrictedWebViewSource(
+  miniapp: Readonly<PublicMiniapp>,
+  {
+    language = 'en',
+    reduceMotion = false,
+  }: Readonly<{ language?: 'en' | 'es-MX'; reduceMotion?: boolean }> = {},
+) {
+  const fragment = EMBEDDED_PRESENTATION_FRAGMENTS[`${language}:${reduceMotion ? 'reduced' : 'standard'}`];
+  if (!fragment) throw new Error('Unsupported embedded miniapp presentation');
+  return { uri: `${miniapp.canonicalUrl}${fragment}` };
 }
 
 export function getRestrictedWebViewPolicyProps<ShouldStart, OpenWindow>(
@@ -79,9 +88,10 @@ export function getRestrictedWebViewPolicyProps<ShouldStart, OpenWindow>(
     onShouldStartLoadWithRequest: ShouldStart;
     onOpenWindow: OpenWindow;
   }>,
+  presentation: Readonly<{ language?: 'en' | 'es-MX'; reduceMotion?: boolean }> = {},
 ) {
   return {
-    source: getRestrictedWebViewSource(miniapp),
+    source: getRestrictedWebViewSource(miniapp, presentation),
     onShouldStartLoadWithRequest: callbacks.onShouldStartLoadWithRequest,
     onOpenWindow: callbacks.onOpenWindow,
     ...RESTRICTED_WEBVIEW_SECURITY_PROPS,

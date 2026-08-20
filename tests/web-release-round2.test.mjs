@@ -434,6 +434,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         url: null,
         metrics,
         locale,
+        selectedLanguage: 'en',
         javascriptEnabled,
         reducedMotion: false,
         activeTarget: null,
@@ -504,7 +505,11 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         value = null;
       }
       else if (request.method === 'POST' && command === 'execute/sync') {
-        const miniapp = new URL(session.url).pathname.startsWith('/apps/');
+        const pathname = new URL(session.url).pathname;
+        const miniapp = pathname.startsWith('/apps/');
+        const clinicGuide = pathname === '/apps/clinic-guide/';
+        const observesClinicControls = body.script.includes('[data-clinic-tab]')
+          && body.script.includes('[data-open-clinic-panel]');
         const observesLegalArticles = body.script.includes('article[lang="en"]')
           && body.script.includes('article[lang="es-MX"]');
         const reducedMotionBlocksCanvas = session.reducedMotion
@@ -512,6 +517,13 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         const controlsDisabled = driverFault === 'enabled-disabled-js-controls'
           ? false
           : !session.javascriptEnabled;
+        const requestedUiLanguage = session.locale === 'es-MX' ? 'es-MX' : 'en';
+        const attemptsLocaleSelection = body.script.includes('[data-language=')
+          && body.script.includes('.click()');
+        if (miniapp && session.javascriptEnabled && attemptsLocaleSelection
+          && driverFault !== 'ignored-language-selection') {
+          session.selectedLanguage = requestedUiLanguage;
+        }
         value = {
           documentUrl: session.url,
           readyState: 'complete',
@@ -522,6 +534,12 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
           visualWidth: session.metrics.width,
           visualHeight: session.metrics.height,
           effectiveLocale: session.locale,
+          documentLanguage: driverFault === 'wrong-document-language'
+            ? 'en'
+            : (miniapp && session.javascriptEnabled ? session.selectedLanguage : 'en'),
+          localeVisibilityVerified: driverFault === 'mixed-locale-visibility'
+            ? false
+            : (!miniapp || !session.javascriptEnabled || session.selectedLanguage === requestedUiLanguage),
           javascriptSentinel: miniapp
             ? (session.javascriptEnabled ? 'enhanced' : 'static')
             : 'not-applicable',
@@ -538,7 +556,8 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
           navigationHref: session.activeTarget === 'legal-link'
             ? 'https://cabohealth.org/app/privacy/'
             : null,
-          noJsControlsDisabled: !miniapp || session.javascriptEnabled || controlsDisabled,
+          noJsControlsDisabled: !miniapp || session.javascriptEnabled
+            || (controlsDisabled && (!clinicGuide || observesClinicControls)),
           bilingualStaticVisible: miniapp || observesLegalArticles,
           challengeEcho: driverFault === 'stale-challenge' ? 'stale' : body.args?.[1],
           unexpectedRequestCount: 0,
@@ -811,6 +830,12 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
     ]);
     assert.equal(evidence.observations.every(({ effectiveLocale }) => ['en-US', 'es-MX'].includes(effectiveLocale)), true);
     assert.equal(evidence.observations
+      .filter(({ javascript, path, requestedLocale }) => javascript === 'enabled' && path.startsWith('/apps/') && requestedLocale === 'es-MX')
+      .every(({ documentLanguage, localeVisibilityVerified }) => documentLanguage === 'es-MX' && localeVisibilityVerified), true);
+    assert.equal(evidence.observations
+      .filter(({ javascript, path, requestedLocale }) => javascript === 'enabled' && path.startsWith('/apps/') && requestedLocale === 'en-US')
+      .every(({ documentLanguage, localeVisibilityVerified }) => documentLanguage === 'en' && localeVisibilityVerified), true);
+    assert.equal(evidence.observations
       .filter(({ javascript, path }) => javascript === 'disabled' && path.startsWith('/apps/'))
       .every(({ miniappReady, javascriptSentinel }) => !miniappReady && javascriptSentinel === 'static'), true);
     assert.equal(evidence.observations
@@ -834,6 +859,9 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       'ignored-capabilities',
       'ignored-viewport',
       'ignored-locale',
+      'ignored-language-selection',
+      'wrong-document-language',
+      'mixed-locale-visibility',
       'force-js-disabled',
       'force-js-enabled',
       'enabled-disabled-js-controls',

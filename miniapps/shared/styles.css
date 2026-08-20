@@ -4,7 +4,10 @@
   --sea: #0e5876;
   --paper: #fbfaf7;
   --bronze: #b8956a;
+  --bronze-text: #7a562f;
   --soft: #4f7785;
+  --readable-muted: #486875;
+  --inactive-control-text: #486875;
   --mist: #e8f4f8;
   --line: rgba(8, 42, 60, 0.11);
   --line-strong: rgba(8, 42, 60, 0.2);
@@ -82,6 +85,52 @@ a:hover {
 
 html[data-enhanced="true"] [data-clinic-panel][data-active="false"] {
   display: none;
+}
+
+html[data-presentation="embedded"] .header-bar {
+  display: none;
+}
+
+html[data-presentation="embedded"] .premium-topbar {
+  min-height: 190px;
+}
+
+html[data-presentation="embedded"] body[data-premium-miniapp="clinic-guide"] .premium-topbar {
+  min-height: 142px;
+}
+
+html[data-presentation="embedded"] .hero {
+  padding-top: 1.15rem;
+}
+
+html[data-presentation="embedded"] body[data-premium-miniapp="clinic-guide"] .hero {
+  padding-top: 0.75rem;
+}
+
+html[data-presentation="embedded"] main {
+  padding-top: 0.8rem;
+  padding-bottom: calc(6.8rem + env(safe-area-inset-bottom, 0px));
+}
+
+html[data-presentation="embedded"] .miniapp-tabbar {
+  bottom: calc(0.7rem + env(safe-area-inset-bottom, 0px));
+}
+
+html[data-presentation="embedded"] .site-footer {
+  padding-bottom: calc(2.4rem + env(safe-area-inset-bottom, 0px));
+}
+
+html[data-reduced-effects="true"] {
+  scroll-behavior: auto;
+}
+
+html[data-reduced-effects="true"] *,
+html[data-reduced-effects="true"] *::before,
+html[data-reduced-effects="true"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.001ms !important;
 }
 
 .skip-link {
@@ -208,7 +257,7 @@ input:disabled {
 
 .eyebrow {
   margin: 0 0 0.55rem;
-  color: var(--bronze);
+  color: var(--bronze-text);
   font-size: 0.69rem;
   font-weight: 850;
   letter-spacing: 0.18em;
@@ -247,7 +296,7 @@ h3 {
 .hero-copy {
   max-width: 38rem;
   margin: 0.65rem auto 0;
-  color: var(--soft);
+  color: var(--readable-muted);
   font-size: 0.9rem;
   line-height: 1.45;
 }
@@ -552,6 +601,39 @@ body[data-premium-miniapp="clinic-guide"] .clinic-panel {
   accent-color: var(--sea);
 }
 
+.checklist-reset-panel {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: center;
+  margin-top: 0.85rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.checklist-reset-action {
+  padding: 0.62rem 0.9rem;
+  color: var(--sea);
+  background: var(--mist);
+  border: 1px solid rgba(14, 88, 118, 0.22);
+  border-radius: 12px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.checklist-reset-status {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: end;
+}
+
 .miniapp-tabbar {
   position: sticky;
   z-index: 20;
@@ -573,7 +655,7 @@ body[data-premium-miniapp="clinic-guide"] .clinic-panel {
   place-items: center;
   min-width: 0;
   padding: 0.55rem 0.35rem;
-  color: #617f89;
+  color: var(--inactive-control-text);
   background: transparent;
   border: 0;
   border-radius: 12px;
@@ -667,7 +749,7 @@ body[data-premium-miniapp="clinic-guide"] .clinic-panel {
 
 .recipe-meta li {
   padding: 0.28rem 0.52rem;
-  color: var(--soft);
+  color: var(--readable-muted);
   background: var(--mist);
   border-radius: 999px;
   font-size: 0.72rem;
@@ -874,6 +956,14 @@ body[data-premium-miniapp="clinic-guide"] .clinic-panel {
   .location-actions,
   .footer-nav ul {
     grid-template-columns: 1fr;
+  }
+
+  .checklist-reset-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .checklist-reset-status {
+    text-align: start;
   }
 }
 

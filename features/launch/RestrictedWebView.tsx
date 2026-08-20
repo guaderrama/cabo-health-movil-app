@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -13,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { WebView, type WebViewNavigation } from 'react-native-webview';
+import { WebView } from 'react-native-webview';
 import type {
   ShouldStartLoadRequest,
   WebViewErrorEvent,
@@ -21,7 +21,7 @@ import type {
   WebViewOpenWindowEvent,
 } from 'react-native-webview/lib/WebViewTypes';
 import type { PublicMiniapp } from '../../constants/publicMiniapps';
-import { useFavorites, useTheme, useTranslations } from '../../hooks';
+import { useFavorites, usePreferences, useTheme, useTranslations } from '../../hooks';
 import { classifyMiniappNavigation } from './navigationPolicy';
 import {
   applyNavigationDecision,
@@ -38,14 +38,12 @@ export function RestrictedWebView({
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const webViewRef = useRef<WebView>(null);
   const { colors } = useTheme();
+  const { reduceMotion } = usePreferences();
   const { language, t } = useTranslations();
   const { isFavorite, toggleFavorite } = useFavorites();
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [canGoForward, setCanGoForward] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const title = language === 'es-MX' ? miniapp.title.es : miniapp.title.en;
@@ -95,8 +93,6 @@ export function RestrictedWebView({
     setErrorMessage(null);
     setLoading(true);
     setProgress(0);
-    setCanGoBack(false);
-    setCanGoForward(false);
     setReloadKey((current) => current + 1);
   }, []);
 
@@ -112,11 +108,6 @@ export function RestrictedWebView({
     handleRestrictedWebViewBack(router);
   }, [router]);
 
-  const handleNavigationStateChange = useCallback((navigation: WebViewNavigation) => {
-    setCanGoBack(navigation.canGoBack);
-    setCanGoForward(navigation.canGoForward);
-  }, []);
-
   const handleLoadError = useCallback((_event: WebViewErrorEvent) => {
     showGenericError();
   }, [showGenericError]);
@@ -128,7 +119,7 @@ export function RestrictedWebView({
   const restrictedWebViewPolicyProps = getRestrictedWebViewPolicyProps(miniapp, {
     onShouldStartLoadWithRequest: handleNavigationRequest,
     onOpenWindow: handleOpenWindow,
-  });
+  }, { language, reduceMotion });
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -188,8 +179,7 @@ export function RestrictedWebView({
         )}
 
         <WebView
-          key={`${miniapp.slug}:${reloadKey}`}
-          ref={webViewRef}
+          key={`${miniapp.slug}:${language}:${reduceMotion ? 'reduced' : 'standard'}:${reloadKey}`}
           style={styles.webview}
           onLoadStart={() => {
             setLoading(true);
@@ -200,7 +190,6 @@ export function RestrictedWebView({
             setLoading(false);
             setProgress(1);
           }}
-          onNavigationStateChange={handleNavigationStateChange}
           onError={handleLoadError}
           onHttpError={handleHttpError}
           allowsBackForwardNavigationGestures
@@ -239,59 +228,7 @@ export function RestrictedWebView({
         )}
       </View>
 
-      <View
-        style={[
-          styles.toolbar,
-          {
-            paddingBottom: Math.max(insets.bottom, 8),
-            backgroundColor: colors.cardBackground,
-            borderTopColor: colors.border,
-          },
-        ]}
-      >
-        <ToolbarButton
-          disabled={!canGoBack}
-          icon="chevron-back"
-          label={t('common.back')}
-          onPress={() => webViewRef.current?.goBack()}
-        />
-        <ToolbarButton
-          disabled={!canGoForward}
-          icon="chevron-forward"
-          label={t('common.forward')}
-          onPress={() => webViewRef.current?.goForward()}
-        />
-        <ToolbarButton icon="refresh" label={t('common.retry')} onPress={handleRetry} />
-        <ToolbarButton icon="share-outline" label={t('common.share')} onPress={handleShare} />
-      </View>
     </View>
-  );
-}
-
-function ToolbarButton({
-  disabled = false,
-  icon,
-  label,
-  onPress,
-}: {
-  disabled?: boolean;
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-}) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      hitSlop={4}
-      onPress={onPress}
-      style={styles.toolbarButton}
-    >
-      <Ionicons name={icon} size={25} color={disabled ? colors.disabled : colors.primary} />
-    </Pressable>
   );
 }
 
@@ -312,6 +249,4 @@ const styles = StyleSheet.create({
   errorBody: { marginTop: 7, maxWidth: 320, fontSize: 14, lineHeight: 21, textAlign: 'center' },
   retryButton: { minHeight: 44, marginTop: 22, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 20 },
   retryText: { fontSize: 16, lineHeight: 21, fontWeight: '700' },
-  toolbar: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', borderTopWidth: 1, paddingTop: 4 },
-  toolbarButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
 });

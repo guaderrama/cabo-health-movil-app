@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Twelve original bilingual recipes with ingredients, steps, allergens, and food-safety notes from CaboHealth.">
   <meta name="theme-color" content="#eaf5f7">
   <meta http-equiv="Content-Security-Policy" content="{{CSP}}">
@@ -11,15 +11,15 @@
   <title>Healthy Recipes | CaboHealth</title>
 </head>
 <body data-premium-miniapp="healthy-recipes">
-  <a class="skip-link" href="#main-content">Skip to recipes / Ir a las recetas</a>
+  <a class="skip-link" href="#main-content"><span lang="en" data-locale="en">Skip to recipes</span><span lang="es-MX" data-locale="es-MX">Ir a las recetas</span></a>
   <div class="page-shell">
     <header class="premium-topbar" data-network-region>
       <canvas class="network-canvas" data-network-canvas aria-hidden="true"></canvas>
       <div class="header-bar">
-        <a class="brand-link" href="https://cabohealth.org/apps/healthy-recipes/" aria-label="CaboHealth Healthy Recipes">
+        <a class="brand-link" data-aria-label-en="CaboHealth Healthy Recipes" data-aria-label-es="Recetas saludables CaboHealth" href="https://cabohealth.org/apps/healthy-recipes/" aria-label="CaboHealth Healthy Recipes / Recetas saludables CaboHealth">
           <img class="brand-logo" src="../shared/logo-wordmark.png" width="452" height="236" alt="CaboHealth">
         </a>
-        <nav class="language-control" aria-label="Language / Idioma">
+        <nav class="language-control" data-aria-label-en="Language" data-aria-label-es="Idioma" aria-label="Language / Idioma">
           <button type="button" data-language="en" aria-pressed="true" disabled>English</button>
           <button type="button" data-language="es-MX" aria-pressed="false" disabled>Español</button>
         </nav>
@@ -58,13 +58,13 @@
         </section>
       </div>
 
-      <section class="tool-panel" aria-label="Recipe tools / Herramientas de recetas">
+      <section class="tool-panel" data-aria-label-en="Recipe tools" data-aria-label-es="Herramientas de recetas" aria-label="Recipe tools / Herramientas de recetas">
         <label class="search-field" for="recipe-search">
           <span lang="en" data-locale="en">Search recipes</span>
           <span lang="es-MX" data-locale="es-MX">Buscar recetas</span>
           <input id="recipe-search" type="search" inputmode="search" autocomplete="off" data-recipe-search disabled>
         </label>
-        <ul class="filter-list" aria-label="Meal filters / Filtros">
+        <ul class="filter-list" data-aria-label-en="Meal filters" data-aria-label-es="Filtros de comidas" aria-label="Meal filters / Filtros de comidas">
           <li><button type="button" data-recipe-filter="all" aria-pressed="true" disabled><span lang="en" data-locale="en">All</span><span lang="es-MX" data-locale="es-MX">Todas</span></button></li>
           <li><button type="button" data-recipe-filter="breakfast" aria-pressed="false" disabled><span lang="en" data-locale="en">Breakfast</span><span lang="es-MX" data-locale="es-MX">Desayuno</span></button></li>
           <li><button type="button" data-recipe-filter="lunch" aria-pressed="false" disabled><span lang="en" data-locale="en">Lunch</span><span lang="es-MX" data-locale="es-MX">Comida</span></button></li>
@@ -92,20 +92,32 @@
           <p>{{FOOD_SAFETY_ES}}</p>
           <p>{{DISCLAIMER_ES}}</p>
         </section>
-        <section class="information-panel" aria-labelledby="sources-title">
-          <p class="eyebrow">Editorial record</p>
-          <h2 id="sources-title">Sources / Fuentes</h2>
-          <p>Reviewed / Revisado: <time datetime="{{REVIEWED_ON_ISO}}">{{REVIEWED_ON}}</time></p>
+        <section class="information-panel" data-labelledby-en="sources-title-en" data-labelledby-es="sources-title-es" aria-labelledby="sources-title-en sources-title-es">
+          <div lang="en" data-locale="en">
+            <p class="eyebrow">Editorial record</p>
+            <h2 id="sources-title-en">Sources</h2>
+            <p>Reviewed: <time datetime="{{REVIEWED_ON_ISO}}">{{REVIEWED_ON}}</time></p>
+          </div>
+          <div lang="es-MX" data-locale="es-MX">
+            <p class="eyebrow">Registro editorial</p>
+            <h2 id="sources-title-es">Fuentes</h2>
+            <p>Revisado: <time datetime="2026-08-16">2026-08-16</time></p>
+          </div>
           <ul>
 {{SOURCE_ITEMS}}
           </ul>
-          <p>Source names are shown as text so the app never sends you to an unapproved third-party destination.</p>
+          <div lang="en" data-locale="en">
+            <p>Source names are displayed for reference and are not links.</p>
+          </div>
+          <div lang="es-MX" data-locale="es-MX">
+            <p>Los nombres de las fuentes se muestran como referencia y no son enlaces.</p>
+          </div>
         </section>
       </div>
     </main>
 
     <footer class="site-footer">
-      <nav class="footer-nav" aria-label="CaboHealth policies and support">
+      <nav class="footer-nav" data-aria-label-en="Policies and support" data-aria-label-es="Políticas y soporte" aria-label="Policies and support / Políticas y soporte">
         <ul>
           <li><a href="https://cabohealth.org/app/privacy/" data-external-action data-label-en="Privacy" data-label-es="Privacidad"><span data-external-label>Privacy / Privacidad</span> <span class="external-marker" aria-hidden="true">↗</span></a></li>
           <li><a href="https://cabohealth.org/app/terms/" data-external-action data-label-en="Terms" data-label-es="Términos"><span data-external-label>Terms / Términos</span> <span class="external-marker" aria-hidden="true">↗</span></a></li>
@@ -113,7 +125,7 @@
           <li><a href="https://cabohealth.org/app/report-content/" data-external-action data-label-en="Report Content" data-label-es="Reportar contenido"><span data-external-label>Report Content / Reportar contenido</span> <span class="external-marker" aria-hidden="true">↗</span></a></li>
         </ul>
       </nav>
-      <p class="footer-note">Educational food inspiration only; not medical or individualized dietary advice. / Ideas educativas de alimentación; no son consejo médico ni dietético personalizado.</p>
+      <p class="footer-note"><span lang="en" data-locale="en">Educational food inspiration only; not medical or individualized dietary advice.</span><span lang="es-MX" data-locale="es-MX">Ideas educativas de alimentación; no son consejo médico ni dietético personalizado.</span></p>
     </footer>
   </div>
   <script type="module" src="./app.js"></script>

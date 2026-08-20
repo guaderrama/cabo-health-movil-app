@@ -17,6 +17,13 @@ export function activateClinicPanel(page, name) {
   return true;
 }
 
+export function selectClinicPanel({ page, view, motion, name }) {
+  if (!activateClinicPanel(page, name)) return false;
+  const behavior = motion?.allowsAnimatedTransitions?.() === true ? 'smooth' : 'auto';
+  view.scrollTo?.({ top: 0, behavior });
+  return true;
+}
+
 function readCheckedItems(storage) {
   try {
     const stored = JSON.parse(storage.getItem(CHECKLIST_KEY) ?? '[]');
@@ -26,10 +33,24 @@ function readCheckedItems(storage) {
   }
 }
 
+export function resetClinicChecklist({ checklistItems, checkedItems, storage, status, language }) {
+  for (const item of checklistItems) item.checked = false;
+  checkedItems.clear();
+  try {
+    storage.removeItem(CHECKLIST_KEY);
+  } catch {
+    // The visible checklist is still reset when persistence is unavailable.
+  }
+  status.textContent = language === 'es-MX' ? 'Lista restablecida.' : 'Checklist reset.';
+  return true;
+}
+
 export function mountClinicGuide({ page, view, storage }) {
   const shell = mountShell({ document: page, storage });
   const motion = mountNetworkMotion({ document: page, language: shell.getLanguage });
   const checklistItems = [...page.querySelectorAll('[data-checklist-item]')];
+  const resetControl = page.querySelector('[data-reset-checklist]');
+  const resetStatus = page.querySelector('[data-checklist-status]');
   const panelControls = [...page.querySelectorAll('[data-clinic-tab], [data-open-clinic-panel]')];
   const listeners = new AbortController();
   const checkedItems = readCheckedItems(storage);
@@ -38,6 +59,7 @@ export function mountClinicGuide({ page, view, storage }) {
     item.checked = checkedItems.has(item.dataset.checklistItem);
     item.disabled = false;
     item.addEventListener('change', () => {
+      if (resetStatus) resetStatus.textContent = '';
       if (item.checked) checkedItems.add(item.dataset.checklistItem);
       else checkedItems.delete(item.dataset.checklistItem);
       try {
@@ -48,11 +70,24 @@ export function mountClinicGuide({ page, view, storage }) {
     }, { signal: listeners.signal });
   }
 
+  if (resetControl && resetStatus) {
+    resetControl.disabled = false;
+    resetControl.addEventListener('click', () => {
+      resetClinicChecklist({
+        checklistItems,
+        checkedItems,
+        storage,
+        status: resetStatus,
+        language: shell.getLanguage(),
+      });
+    }, { signal: listeners.signal });
+  }
+
   for (const control of panelControls) {
+    control.disabled = false;
     control.addEventListener('click', () => {
       const name = control.dataset.clinicTab ?? control.dataset.openClinicPanel;
-      if (!activateClinicPanel(page, name)) return;
-      view.scrollTo?.({ top: 0, behavior: 'smooth' });
+      selectClinicPanel({ page, view, motion, name });
     }, { signal: listeners.signal });
   }
   activateClinicPanel(page, 'explore');

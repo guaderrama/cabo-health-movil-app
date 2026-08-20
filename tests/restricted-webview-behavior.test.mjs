@@ -195,8 +195,8 @@ test('effective policy props bind canonical source and callbacks to the exact se
   assert.deepEqual(getRestrictedWebViewPolicyProps(miniapp, {
     onShouldStartLoadWithRequest,
     onOpenWindow,
-  }), {
-    source: { uri: 'https://cabohealth.org/apps/healthy-recipes/' },
+  }, { language: 'es-MX', reduceMotion: true }), {
+    source: { uri: 'https://cabohealth.org/apps/healthy-recipes/#embedded-es-MX-reduced' },
     onShouldStartLoadWithRequest,
     onOpenWindow,
     originWhitelist: ['*'],
@@ -218,13 +218,32 @@ test('effective policy props bind canonical source and callbacks to the exact se
 
 test('source and share payload always use frozen canonical catalog values', () => {
   assert.deepEqual(getRestrictedWebViewSource(miniapp), {
-    uri: 'https://cabohealth.org/apps/healthy-recipes/',
+    uri: 'https://cabohealth.org/apps/healthy-recipes/#embedded-en',
   });
+  assert.deepEqual([
+    getRestrictedWebViewSource(miniapp, { language: 'en', reduceMotion: false }).uri,
+    getRestrictedWebViewSource(miniapp, { language: 'en', reduceMotion: true }).uri,
+    getRestrictedWebViewSource(miniapp, { language: 'es-MX', reduceMotion: false }).uri,
+    getRestrictedWebViewSource(miniapp, { language: 'es-MX', reduceMotion: true }).uri,
+  ], [
+    'https://cabohealth.org/apps/healthy-recipes/#embedded-en',
+    'https://cabohealth.org/apps/healthy-recipes/#embedded-en-reduced',
+    'https://cabohealth.org/apps/healthy-recipes/#embedded-es-MX',
+    'https://cabohealth.org/apps/healthy-recipes/#embedded-es-MX-reduced',
+  ]);
   assert.deepEqual(getRestrictedSharePayload(miniapp, 'Healthy Recipes'), {
     title: 'Healthy Recipes',
     message: 'Healthy Recipes: https://cabohealth.org/apps/healthy-recipes/',
     url: 'https://cabohealth.org/apps/healthy-recipes/',
   });
+  assert.throws(
+    () => getRestrictedWebViewSource(miniapp, { language: 'fr', reduceMotion: false }),
+    /Unsupported embedded miniapp presentation/u,
+  );
+  assert.throws(
+    () => getRestrictedWebViewSource(miniapp, { language: '__proto__', reduceMotion: true }),
+    /Unsupported embedded miniapp presentation/u,
+  );
 });
 
 test('native WebView makes one final policy spread authoritative over effective props', () => {
@@ -252,4 +271,14 @@ test('native component retains canonical sharing and flex-bounded scrollable err
   assert.match(source, /<ScrollView/u);
   assert.match(source, /errorOverlay: \{ position: 'absolute', inset: 0 \}/u);
   assert.doesNotMatch(source, /errorOverlay:[^\n]*(?:top|bottom):/u);
+});
+
+test('embedded premium wrapper propagates reduced effects and keeps one native topbar without a bottom toolbar', () => {
+  const source = readFileSync('features/launch/RestrictedWebView.tsx', 'utf8');
+
+  assert.match(source, /const \{ reduceMotion \} = usePreferences\(\)/u);
+  assert.match(source, /getRestrictedWebViewPolicyProps\(miniapp,[\s\S]*?\{ language, reduceMotion \}\)/u);
+  assert.match(source, /key=\{`\$\{miniapp\.slug\}:\$\{language\}:\$\{reduceMotion \? 'reduced' : 'standard'\}:\$\{reloadKey\}`\}/u);
+  assert.equal((source.match(/style=\{\[\s*styles\.header,/gu) ?? []).length, 1);
+  assert.doesNotMatch(source, /styles\.toolbar|function ToolbarButton|goForward\(\)|goBack\(\)/u);
 });

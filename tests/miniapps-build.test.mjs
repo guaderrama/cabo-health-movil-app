@@ -101,6 +101,23 @@ function parseCsp(value) {
   }));
 }
 
+function contrastRatio(firstHex, secondHex) {
+  const luminance = (hex) => {
+    const channels = hex.match(/[a-f\d]{2}/giu).map((channel) => Number.parseInt(channel, 16) / 255);
+    const linear = channels.map((channel) => channel <= 0.04045
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  };
+  const first = luminance(firstHex);
+  const second = luminance(secondHex);
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+}
+
+function cssHexToken(css, name) {
+  return css.match(new RegExp(`--${name}:\\s*(#[a-f\\d]{6})`, 'iu'))?.[1];
+}
+
 function exactConfirmedFacts() {
   return {
     status: 'owner-confirmed',
@@ -307,6 +324,29 @@ test('premium miniapp stylesheet carries the approved palette, enhanced states, 
   assert.match(css, /button,\s*a,\s*input,\s*summary\s*\{[^}]*min-height:\s*44px/su);
   assert.match(css, /\.motion-control button\s*\{[^}]*min-height:\s*44px/su);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/u);
+});
+
+test('small eyebrow and inactive tab text meet WCAG AA while bronze stays decorative', () => {
+  const css = read('miniapps/shared/styles.css');
+  const paper = cssHexToken(css, 'paper');
+  const eyebrow = cssHexToken(css, 'bronze-text');
+  const inactiveTab = cssHexToken(css, 'inactive-control-text');
+
+  assert.ok(contrastRatio(eyebrow, paper) >= 4.5, 'small eyebrow text must meet 4.5:1 against paper');
+  assert.ok(contrastRatio(inactiveTab, paper) >= 4.5, 'inactive tab text must meet 4.5:1 against paper');
+  assert.match(css, /\.eyebrow\s*\{[^}]*color:\s*var\(--bronze-text\)/su);
+  assert.match(css, /\.miniapp-tabbar button\s*\{[^}]*color:\s*var\(--inactive-control-text\)/su);
+  assert.match(css, /border-inline-start:\s*3px solid var\(--bronze\)/u);
+});
+
+test('small hero and recipe metadata text meet WCAG AA on their actual tinted surfaces', () => {
+  const css = read('miniapps/shared/styles.css');
+  const readableMuted = cssHexToken(css, 'readable-muted');
+
+  assert.ok(contrastRatio(readableMuted, '#e2f1f5') >= 4.5, 'hero copy must meet 4.5:1 on the gradient start');
+  assert.ok(contrastRatio(readableMuted, cssHexToken(css, 'mist')) >= 4.5, 'recipe metadata must meet 4.5:1 on mist');
+  assert.match(css, /\.hero-copy\s*\{[^}]*color:\s*var\(--readable-muted\)/su);
+  assert.match(css, /\.recipe-meta li\s*\{[^}]*color:\s*var\(--readable-muted\)/su);
 });
 
 test('recipe cards keep complete bilingual details collapsed until the reader opens one', async () => {
@@ -675,6 +715,70 @@ test('Clinic Guide navigation and overview rows show only the selected language'
   }
 });
 
+test('bilingual panels expose locale-specific accessible names and editorial copy parity', async () => {
+  const { renderClinicGuideDocument, renderHealthyRecipesDocument } = await import(buildModuleUrl.href);
+  const clinic = renderClinicGuideDocument(
+    read('miniapps/clinic-guide/index.html'),
+    readJson('content/clinic-guide.json'),
+    readJson('release/public-contact-facts.json'),
+  );
+  const recipes = renderHealthyRecipesDocument(
+    read('miniapps/healthy-recipes/index.html'),
+    readJson('content/recipes.json'),
+  );
+
+  for (const panel of ['explore', 'visit', 'contact']) {
+    assert.match(clinic, new RegExp(`data-clinic-panel="${panel}"[^>]+data-labelledby-en="clinic-${panel}-title-en"[^>]+data-labelledby-es="clinic-${panel}-title-es"`, 'u'));
+    assert.match(clinic, new RegExp(`id="clinic-${panel}-title-en"`, 'u'));
+    assert.match(clinic, new RegExp(`id="clinic-${panel}-title-es"`, 'u'));
+  }
+  assert.match(clinic, /data-labelledby-en="clinic-sources-title-en"[^>]+data-labelledby-es="clinic-sources-title-es"/u);
+  assert.match(clinic, /<div lang="en" data-locale="en">[\s\S]*?Contact and location details are listed above\.[\s\S]*?Source names are displayed for reference and are not links\.[\s\S]*?<\/div>/u);
+  assert.match(clinic, /<div lang="es-MX" data-locale="es-MX">[\s\S]*?Los datos de contacto y ubicación aparecen arriba\.[\s\S]*?Los nombres de las fuentes se muestran como referencia y no son enlaces\.[\s\S]*?<\/div>/u);
+  assert.doesNotMatch(clinic, /future release dependency|live byte consistency|dependencia obligatoria para una versión futura|consistencia de sus bytes|before deployment|owner-confirmed|confirmed by the owner|unapproved third-party|no aprobado/iu);
+  assert.match(recipes, /data-labelledby-en="sources-title-en"[^>]+data-labelledby-es="sources-title-es"/u);
+  assert.match(recipes, /<div lang="en" data-locale="en">[\s\S]*?Source names are displayed for reference and are not links\.[\s\S]*?<\/div>/u);
+  assert.match(recipes, /<div lang="es-MX" data-locale="es-MX">[\s\S]*?Los nombres de las fuentes se muestran como referencia y no son enlaces\.[\s\S]*?<\/div>/u);
+  assert.doesNotMatch(recipes, /owner-confirmed|confirmed by the owner|unapproved third-party|no aprobado/iu);
+});
+
+test('selected locale also owns skip links, footer notes, and critical accessible labels', async () => {
+  const { renderClinicGuideDocument, renderHealthyRecipesDocument } = await import(buildModuleUrl.href);
+  const documents = [
+    renderClinicGuideDocument(
+      read('miniapps/clinic-guide/index.html'),
+      readJson('content/clinic-guide.json'),
+      readJson('release/public-contact-facts.json'),
+    ),
+    renderHealthyRecipesDocument(
+      read('miniapps/healthy-recipes/index.html'),
+      readJson('content/recipes.json'),
+    ),
+  ];
+
+  for (const html of documents) {
+    assert.match(html, /class="skip-link"[^>]*>[\s\S]*?lang="en" data-locale="en"[\s\S]*?lang="es-MX" data-locale="es-MX"[\s\S]*?<\/a>/u);
+    assert.match(html, /class="footer-note">\s*<span lang="en" data-locale="en">[^<]+<\/span>\s*<span lang="es-MX" data-locale="es-MX">[^<]+<\/span>\s*<\/p>/u);
+    assert.match(html, /class="brand-link"[^>]+data-aria-label-en="[^"]+"[^>]+data-aria-label-es="[^"]+"/u);
+    assert.match(html, /class="footer-nav"[^>]+data-aria-label-en="Policies and support"[^>]+data-aria-label-es="Políticas y soporte"/u);
+  }
+});
+
+test('Clinic Guide no-JavaScript mode disables inert panel controls while keeping all content visible', async () => {
+  const { renderClinicGuideDocument } = await import(buildModuleUrl.href);
+  const clinic = renderClinicGuideDocument(
+    read('miniapps/clinic-guide/index.html'),
+    readJson('content/clinic-guide.json'),
+    readJson('release/public-contact-facts.json'),
+  );
+  const controls = clinic.match(/<button[^>]+data-(?:clinic-tab|open-clinic-panel)="[^"]+"[^>]*>/gu) ?? [];
+
+  assert.equal(controls.length, 6);
+  for (const control of controls) assert.match(control, /\sdisabled(?:\s|>)/u);
+  assert.equal((clinic.match(/data-clinic-panel="(?:explore|visit|contact)"/gu) ?? []).length, 3);
+  assert.doesNotMatch(clinic, /data-clinic-panel="[^"]+"[^>]+\shidden(?:\s|=|>)/u);
+});
+
 test('Clinic Guide translates owner-confirmed display facts without changing their exact links', async () => {
   const { renderClinicGuideDocument } = await import(buildModuleUrl.href);
   const html = renderClinicGuideDocument(
@@ -714,6 +818,34 @@ test('Clinic Guide tab selection changes the visible in-page state without navig
   assert.deepEqual(panels.map(({ dataset }) => dataset.active), ['false', 'true', 'false']);
 });
 
+test('Clinic Guide panel transitions never smooth-scroll while motion is paused or reduced', async () => {
+  const { selectClinicPanel } = await import(new URL('../miniapps/clinic-guide/app.js', import.meta.url));
+  const panels = ['explore', 'visit', 'contact'].map((name) => ({
+    dataset: { clinicPanel: name, active: String(name === 'explore') },
+    setAttribute(name, value) { this[name] = value; },
+  }));
+  const tabs = ['explore', 'visit', 'contact'].map((name) => ({
+    dataset: { clinicTab: name },
+    setAttribute(name, value) { this[name] = value; },
+  }));
+  const page = {
+    querySelectorAll(selector) {
+      if (selector === '[data-clinic-panel]') return panels;
+      if (selector === '[data-clinic-tab]') return tabs;
+      return [];
+    },
+  };
+  const scrolls = [];
+  const view = { scrollTo: (options) => scrolls.push(options) };
+
+  assert.equal(selectClinicPanel({ page, view, motion: { allowsAnimatedTransitions: () => true }, name: 'visit' }), true);
+  assert.equal(selectClinicPanel({ page, view, motion: { allowsAnimatedTransitions: () => false }, name: 'contact' }), true);
+  assert.deepEqual(scrolls, [
+    { top: 0, behavior: 'smooth' },
+    { top: 0, behavior: 'auto' },
+  ]);
+});
+
 test('Visit state uses the local map artwork and the exact confirmed Apple Maps and WhatsApp actions', async () => {
   const { renderClinicGuideDocument } = await import(buildModuleUrl.href);
   const html = renderClinicGuideDocument(
@@ -732,6 +864,47 @@ test('Visit state uses the local map artwork and the exact confirmed Apple Maps 
   assert.ok(visit.includes('href="https://wa.me/526241224865"'));
   assert.equal((html.match(/href="https:\/\/maps\.apple\.com\/place\?/gu) ?? []).length, 1);
   assert.equal((html.match(/href="https:\/\/wa\.me\/526241224865"/gu) ?? []).length, 1);
+});
+
+test('Visit exposes one visible bilingual checklist reset with an accessible live confirmation', async () => {
+  const { renderClinicGuideDocument } = await import(buildModuleUrl.href);
+  const html = renderClinicGuideDocument(
+    read('miniapps/clinic-guide/index.html'),
+    readJson('content/clinic-guide.json'),
+    readJson('release/public-contact-facts.json'),
+  );
+  const visit = html.slice(
+    html.indexOf('data-clinic-panel="visit"'),
+    html.indexOf('data-clinic-panel="contact"'),
+  );
+
+  assert.equal((visit.match(/<button[^>]+data-reset-checklist/gu) ?? []).length, 1);
+  assert.match(visit, /<span lang="en" data-locale="en">Reset checklist<\/span>/u);
+  assert.match(visit, /<span lang="es-MX" data-locale="es-MX">Restablecer lista<\/span>/u);
+  assert.match(visit, /data-checklist-status[^>]+role="status"[^>]+aria-live="polite"/u);
+});
+
+test('checklist reset is idempotent, confirms the active locale, and removes only its own storage key', async () => {
+  const { resetClinicChecklist } = await import(new URL('../miniapps/clinic-guide/app.js', import.meta.url));
+  const checklistItems = [{ checked: true }, { checked: false }, { checked: true }];
+  const checkedItems = new Set(['documents-id', 'comfort-water']);
+  const removed = [];
+  const storage = {
+    removeItem(key) { removed.push(key); },
+    clear() { throw new Error('reset must never clear unrelated local storage'); },
+  };
+  const status = { textContent: '' };
+
+  assert.equal(resetClinicChecklist({ checklistItems, checkedItems, storage, status, language: 'en' }), true);
+  assert.deepEqual(checklistItems.map(({ checked }) => checked), [false, false, false]);
+  assert.deepEqual([...checkedItems], []);
+  assert.equal(status.textContent, 'Checklist reset.');
+  assert.equal(resetClinicChecklist({ checklistItems, checkedItems, storage, status, language: 'es-MX' }), true);
+  assert.equal(status.textContent, 'Lista restablecida.');
+  assert.deepEqual(removed, [
+    'cabohealth.web.clinic-checklist.v1',
+    'cabohealth.web.clinic-checklist.v1',
+  ]);
 });
 
 test('Clinic Guide actions exactly match the native allowlist and remain literal same-window anchors', async () => {
@@ -1152,6 +1325,10 @@ test('network motion mounts one canvas owner and releases every runtime resource
       this.listeners.get(type)?.delete(listener);
     }
 
+    dispatch(type, event = {}) {
+      for (const listener of this.listeners.get(type) ?? []) listener(event);
+    }
+
     listenerCount() {
       return [...this.listeners.values()].reduce((total, listeners) => total + listeners.size, 0);
     }
@@ -1214,13 +1391,21 @@ test('network motion mounts one canvas owner and releases every runtime resource
 
   const controller = mountNetworkMotion({ document: page, language: () => 'en' });
   assert.equal(mountNetworkMotion({ document: page, language: () => 'en' }), controller);
+  assert.equal(controller.allowsAnimatedTransitions(), true);
   observerCallback([{ target: canvas, isIntersecting: true, intersectionRatio: 1 }]);
   assert.equal(frames.size, 1);
+  toggle.dispatch('click');
+  assert.equal(controller.allowsAnimatedTransitions(), false, 'pausing motion must also pause animated page transitions');
+  toggle.dispatch('click');
+  media.matches = true;
+  media.dispatch('change');
+  assert.equal(controller.allowsAnimatedTransitions(), false, 'Reduce Motion must disable animated page transitions');
+  assert.equal(frames.size, 0);
   assert.deepEqual({ width: canvas.width, height: canvas.height }, { width: 600, height: 300 });
 
   controller.destroy();
   assert.equal(frames.size, 0);
-  assert.equal(canceled.length, 1);
+  assert.equal(canceled.length, 2);
   assert.equal(disconnects, 1);
   assert.equal(toggle.listenerCount(), 0);
   assert.equal(page.listenerCount(), 0);
@@ -1304,6 +1489,14 @@ test('enhanced English and Spanish modes keep a visible h1 and localize exact le
     labelEs: 'Privacidad',
   });
   privacy.label = { textContent: 'Privacy / Privacidad' };
+  const localizedRegion = new FakeElement({
+    labelledbyEn: 'clinic-explore-title-en',
+    labelledbyEs: 'clinic-explore-title-es',
+  });
+  const localizedAriaLabel = new FakeElement({
+    ariaLabelEn: 'Recipe tools',
+    ariaLabelEs: 'Herramientas de recetas',
+  });
   const documentElement = { dataset: {}, lang: 'en' };
   const page = {
     contains: () => true,
@@ -1316,6 +1509,8 @@ test('enhanced English and Spanish modes keep a visible h1 and localize exact le
         '[data-external-action]': [privacy],
         '[data-language]': [englishButton, spanishButton],
         '[data-locale]': [englishTitle, spanishTitle],
+        '[data-labelledby-en][data-labelledby-es]': [localizedRegion],
+        '[data-aria-label-en][data-aria-label-es]': [localizedAriaLabel],
       }[selector] ?? [];
     },
   };
@@ -1327,6 +1522,8 @@ test('enhanced English and Spanish modes keep a visible h1 and localize exact le
   assert.equal(spanishTitle.hidden, true);
   assert.equal(privacy.label.textContent, 'Privacy');
   assert.equal(privacy.getAttribute('aria-label'), 'Privacy. Opens outside CaboHealth');
+  assert.equal(localizedRegion.getAttribute('aria-labelledby'), 'clinic-explore-title-en');
+  assert.equal(localizedAriaLabel.getAttribute('aria-label'), 'Recipe tools');
 
   shell.setLanguage('es-MX', { announce: false });
   assert.equal(heading.hidden, false);
@@ -1334,7 +1531,184 @@ test('enhanced English and Spanish modes keep a visible h1 and localize exact le
   assert.equal(spanishTitle.hidden, false);
   assert.equal(privacy.label.textContent, 'Privacidad');
   assert.equal(privacy.getAttribute('aria-label'), 'Privacidad. Se abre fuera de CaboHealth');
+  assert.equal(localizedRegion.getAttribute('aria-labelledby'), 'clinic-explore-title-es');
+  assert.equal(localizedAriaLabel.getAttribute('aria-label'), 'Herramientas de recetas');
   shell.destroy();
+});
+
+test('first visit follows the browser Spanish locale without a native bridge', async () => {
+  class FakeElement {
+    constructor(dataset = {}) {
+      this.dataset = dataset;
+      this.hidden = false;
+      this.disabled = true;
+      this.attributes = new Map();
+    }
+
+    addEventListener() {}
+    setAttribute(name, value) { this.attributes.set(name, value); }
+  }
+
+  const shellSource = read('miniapps/shared/shell.js');
+  const { mountShell } = await import(`data:text/javascript;base64,${Buffer.from(shellSource).toString('base64')}`);
+  const english = new FakeElement({ locale: 'en' });
+  const spanish = new FakeElement({ locale: 'es-MX' });
+  const englishButton = new FakeElement({ language: 'en' });
+  const spanishButton = new FakeElement({ language: 'es-MX' });
+  const documentElement = { dataset: {}, lang: 'en' };
+  const page = {
+    defaultView: { navigator: { language: 'es-MX' } },
+    documentElement,
+    dispatchEvent() {},
+    querySelectorAll(selector) {
+      return {
+        '[data-external-action]': [],
+        '[data-language]': [englishButton, spanishButton],
+        '[data-locale]': [english, spanish],
+        '[data-labelledby-en][data-labelledby-es]': [],
+      }[selector] ?? [];
+    },
+  };
+  const storage = { getItem: () => null, setItem() {} };
+
+  const shell = mountShell({ document: page, storage });
+  assert.equal(documentElement.lang, 'es-MX');
+  assert.equal(english.hidden, true);
+  assert.equal(spanish.hidden, false);
+  shell.destroy();
+});
+
+test('all four exact embedded fragments own native language, chrome, and reduced-effects presentation without a bridge', async () => {
+  class FakeElement {
+    constructor(dataset = {}) {
+      this.dataset = dataset;
+      this.hidden = false;
+      this.disabled = true;
+    }
+
+    addEventListener() {}
+    setAttribute() {}
+  }
+
+  const shellSource = read('miniapps/shared/shell.js');
+  const { mountShell } = await import(`data:text/javascript;base64,${Buffer.from(shellSource).toString('base64')}`);
+  for (const [fragment, expectedLanguage, expectedReduced] of [
+    ['#embedded-en', 'en', 'false'],
+    ['#embedded-en-reduced', 'en', 'true'],
+    ['#embedded-es-MX', 'es-MX', 'false'],
+    ['#embedded-es-MX-reduced', 'es-MX', 'true'],
+  ]) {
+    const english = new FakeElement({ locale: 'en' });
+    const spanish = new FakeElement({ locale: 'es-MX' });
+    const page = {
+      defaultView: {
+        location: { hash: fragment },
+        navigator: { language: expectedLanguage === 'en' ? 'es-MX' : 'en-US' },
+      },
+      documentElement: { dataset: {}, lang: 'en' },
+      dispatchEvent() {},
+      querySelectorAll(selector) {
+        return {
+          '[data-external-action]': [],
+          '[data-language]': [],
+          '[data-locale]': [english, spanish],
+          '[data-labelledby-en][data-labelledby-es]': [],
+          '[data-aria-label-en][data-aria-label-es]': [],
+        }[selector] ?? [];
+      },
+    };
+    let writes = 0;
+    const shell = mountShell({
+      document: page,
+      storage: {
+        getItem: () => (expectedLanguage === 'en' ? 'es-MX' : 'en'),
+        setItem: () => { writes += 1; },
+      },
+    });
+    assert.equal(page.documentElement.lang, expectedLanguage, fragment);
+    assert.equal(page.documentElement.dataset.presentation, 'embedded', fragment);
+    assert.equal(page.documentElement.dataset.reducedEffects, expectedReduced, fragment);
+    assert.equal(english.hidden, expectedLanguage !== 'en', fragment);
+    assert.equal(spanish.hidden, expectedLanguage !== 'es-MX', fragment);
+    assert.equal(writes, 0, fragment);
+    shell.destroy();
+  }
+  const css = read('miniapps/shared/styles.css');
+  assert.match(css, /html\[data-presentation="embedded"\] \.header-bar\s*\{[^}]*display:\s*none/su);
+  assert.doesNotMatch(css, /html\[data-presentation="embedded"\] \.premium-topbar\s*\{[^}]*display:\s*none/su);
+  assert.match(css, /html\[data-reduced-effects="true"\]\s*\{[^}]*scroll-behavior:\s*auto/su);
+});
+
+test('unknown and prototype-shaped fragments remain standalone and cannot override locale or motion', async () => {
+  class FakeElement {
+    constructor(dataset = {}) {
+      this.dataset = dataset;
+      this.hidden = false;
+      this.disabled = true;
+    }
+
+    addEventListener() {}
+    setAttribute() {}
+  }
+
+  const shellSource = read('miniapps/shared/shell.js');
+  const { mountShell } = await import(`data:text/javascript;base64,${Buffer.from(shellSource).toString('base64')}`);
+  for (const fragment of [
+    '#__proto__',
+    '#constructor',
+    '#toString',
+    '#embedded',
+    '#embedded-EN',
+    '#embedded-en-suffix',
+    '#%65mbedded-en',
+    '#embedded-en?mode=reduced',
+  ]) {
+    const documentElement = { dataset: {}, lang: 'en' };
+    const page = {
+      defaultView: {
+        location: { hash: fragment },
+        navigator: { language: 'en-US' },
+      },
+      documentElement,
+      dispatchEvent() {},
+      querySelectorAll(selector) {
+        return {
+          '[data-external-action]': [],
+          '[data-language]': [],
+          '[data-locale]': [new FakeElement({ locale: 'en' }), new FakeElement({ locale: 'es-MX' })],
+          '[data-labelledby-en][data-labelledby-es]': [],
+          '[data-aria-label-en][data-aria-label-es]': [],
+        }[selector] ?? [];
+      },
+    };
+    let writes = 0;
+    const shell = mountShell({
+      document: page,
+      storage: { getItem: () => 'es-MX', setItem: () => { writes += 1; } },
+    });
+    assert.equal(documentElement.lang, 'es-MX', fragment);
+    assert.equal(Object.hasOwn(documentElement.dataset, 'presentation'), false, fragment);
+    assert.equal(Object.hasOwn(documentElement.dataset, 'reducedEffects'), false, fragment);
+    assert.equal(writes, 0, fragment);
+    shell.destroy();
+  }
+});
+
+test('embedded presentation reserves the iPhone bottom safe area after the native toolbar is removed', () => {
+  for (const path of [
+    'miniapps/healthy-recipes/index.html',
+    'miniapps/clinic-guide/index.html',
+  ]) {
+    assert.match(
+      read(path),
+      /<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">/u,
+      path,
+    );
+  }
+  const css = read('miniapps/shared/styles.css');
+  assert.match(css, /html\[data-presentation="embedded"\] main\s*\{[^}]*safe-area-inset-bottom/su);
+  assert.match(css, /html\[data-presentation="embedded"\] \.miniapp-tabbar\s*\{[^}]*safe-area-inset-bottom/su);
+  assert.match(css, /html\[data-presentation="embedded"\] \.site-footer\s*\{[^}]*safe-area-inset-bottom/su);
 });
 
 test('static request resolver serves only built local files and rejects traversal or absent routes', async () => {

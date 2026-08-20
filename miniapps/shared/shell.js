@@ -1,5 +1,11 @@
 const LANGUAGE_STORAGE_KEY = 'cabohealth.web.language.v1';
 const SUPPORTED_LANGUAGES = new Set(['en', 'es-MX']);
+const EMBEDDED_PRESENTATIONS = new Map([
+  ['#embedded-en', Object.freeze({ language: 'en', reducedEffects: false })],
+  ['#embedded-en-reduced', Object.freeze({ language: 'en', reducedEffects: true })],
+  ['#embedded-es-MX', Object.freeze({ language: 'es-MX', reducedEffects: false })],
+  ['#embedded-es-MX-reduced', Object.freeze({ language: 'es-MX', reducedEffects: true })],
+]);
 
 function safeStorage(storage) {
   return storage && typeof storage.getItem === 'function' && typeof storage.setItem === 'function'
@@ -7,12 +13,16 @@ function safeStorage(storage) {
     : null;
 }
 
-function readStoredLanguage(storage) {
+function browserLanguage(value) {
+  return typeof value === 'string' && value.toLowerCase().split('-')[0] === 'es' ? 'es-MX' : 'en';
+}
+
+function readStoredLanguage(storage, navigatorLanguage) {
   try {
     const value = safeStorage(storage)?.getItem(LANGUAGE_STORAGE_KEY);
-    return SUPPORTED_LANGUAGES.has(value) ? value : 'en';
+    return SUPPORTED_LANGUAGES.has(value) ? value : browserLanguage(navigatorLanguage);
   } catch {
-    return 'en';
+    return browserLanguage(navigatorLanguage);
   }
 }
 
@@ -58,7 +68,15 @@ export function mountShell({ document: page, storage } = {}) {
   const listeners = new AbortController();
   const languageButtons = [...page.querySelectorAll('[data-language]')];
   const localizedNodes = [...page.querySelectorAll('[data-locale]')];
-  let language = readStoredLanguage(storage);
+  const localizedLabelledRegions = [...page.querySelectorAll('[data-labelledby-en][data-labelledby-es]')];
+  const localizedAriaLabels = [...page.querySelectorAll('[data-aria-label-en][data-aria-label-es]')];
+  const embeddedPresentation = EMBEDDED_PRESENTATIONS.get(page.defaultView?.location?.hash);
+  let language = embeddedPresentation?.language
+    ?? readStoredLanguage(storage, page.defaultView?.navigator?.language);
+  if (embeddedPresentation) {
+    page.documentElement.dataset.presentation = 'embedded';
+    page.documentElement.dataset.reducedEffects = String(embeddedPresentation.reducedEffects);
+  }
 
   function announceLanguageChange() {
     const EventConstructor = page.defaultView?.CustomEvent;
@@ -77,6 +95,14 @@ export function mountShell({ document: page, storage } = {}) {
 
     for (const node of localizedNodes) {
       node.hidden = node.dataset.locale !== language;
+    }
+    for (const region of localizedLabelledRegions) {
+      const labelledBy = language === 'es-MX' ? region.dataset.labelledbyEs : region.dataset.labelledbyEn;
+      if (labelledBy) region.setAttribute('aria-labelledby', labelledBy);
+    }
+    for (const element of localizedAriaLabels) {
+      const label = language === 'es-MX' ? element.dataset.ariaLabelEs : element.dataset.ariaLabelEn;
+      if (label) element.setAttribute('aria-label', label);
     }
     for (const button of languageButtons) {
       const selected = button.dataset.language === language;
@@ -115,6 +141,8 @@ export function mountShell({ document: page, storage } = {}) {
     destroy() {
       listeners.abort();
       delete page.documentElement.dataset.enhanced;
+      delete page.documentElement.dataset.presentation;
+      delete page.documentElement.dataset.reducedEffects;
     },
   };
 }

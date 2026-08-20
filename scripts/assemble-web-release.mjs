@@ -22,20 +22,20 @@ const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const APP_ID = 'DQ8PH2DZ3R.com.cabohealth.app';
 const helperPath = resolve(projectRoot, 'scripts/secure_web_release.py');
 const helperSource = readFileSync(helperPath, 'utf8');
-const CAPSULE_SHA256 = 'ea4810cd75114020b24f966d825a376378464932eac66b4aefe21f006997d6e9';
-const CAPSULE_SIZE = 707215;
+const CAPSULE_SHA256 = '2c839893cca416fdd471fef037bdfb8fc099960d9855e9d7b47981b13892602b';
+const CAPSULE_SIZE = 719595;
 export const REVIEWED_MINIAPP_FILE_PINS = Object.freeze([
   Object.freeze({ path: 'apps/.htaccess', size: 568, sha256: '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da' }),
-  Object.freeze({ path: 'apps/clinic-guide/app.js', size: 2666, sha256: '9b3c054a96b59adb160e46ce8b59b95bfc9ab3cf5bd67f4fa3237449c17e97a1' }),
-  Object.freeze({ path: 'apps/clinic-guide/index.html', size: 25655, sha256: 'aa203edcdb01dbafbb01510ad2746250b3e8bb775e810568f7c55660ae15fd3d' }),
+  Object.freeze({ path: 'apps/clinic-guide/app.js', size: 3868, sha256: 'f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7' }),
+  Object.freeze({ path: 'apps/clinic-guide/index.html', size: 28285, sha256: '0a18f4f307e2c58189cf9471b71accd779adbfa0415142ac5be584a9a4ff2c8e' }),
   Object.freeze({ path: 'apps/healthy-recipes/app.js', size: 4049, sha256: '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090' }),
-  Object.freeze({ path: 'apps/healthy-recipes/index.html', size: 56386, sha256: '50758bd40379fab4ab11af082dd8bbfa8c0f26350fc9aedb7b9aadfceaec8775' }),
+  Object.freeze({ path: 'apps/healthy-recipes/index.html', size: 57591, sha256: 'd756583df4e13221bb24dd8bf44d5712b5c1bc6a409af2f6c33d6051f630114b' }),
   Object.freeze({ path: 'apps/shared/clinic-map-texture.png', size: 382740, sha256: '4b569f0da0cffb9a54dedd93ce672cf7592ae4516dd12663e3b34d731df237c4' }),
   Object.freeze({ path: 'apps/shared/logo-wordmark.png', size: 12584, sha256: '42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d' }),
   Object.freeze({ path: 'apps/shared/logo.png', size: 13598, sha256: 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117' }),
-  Object.freeze({ path: 'apps/shared/motion.js', size: 8996, sha256: '9ac97593f7339f6b7f1b9f4da6dafed4084185440022604b75754377291e56b7' }),
-  Object.freeze({ path: 'apps/shared/shell.js', size: 3769, sha256: 'd53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103' }),
-  Object.freeze({ path: 'apps/shared/styles.css', size: 16185, sha256: '73d83248fdb0d083425a76e9ae0b083b5eaafd4b2b3fe5070f7a8f395122c33b' }),
+  Object.freeze({ path: 'apps/shared/motion.js', size: 9370, sha256: 'f6a613929e08e49ee4dea7513f00fdc9fd5e7b1c791ffa512cca1f26a4863d24' }),
+  Object.freeze({ path: 'apps/shared/shell.js', size: 5506, sha256: 'edbb90593477cb68de24df0115854d9aeb243c94ff219b211944b2fa3cf93ea9' }),
+  Object.freeze({ path: 'apps/shared/styles.css', size: 18319, sha256: 'e98ad07424d4210208542468b25e1841aa3ade7dc505aee2aebd37064c466523' }),
 ]);
 const LEGAL_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const LEGAL_SOURCES = Object.freeze([

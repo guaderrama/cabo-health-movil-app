@@ -4,7 +4,7 @@ Status: **deployment blocked**. This runbook is an execution contract, not deplo
 
 ## Fixed scope
 
-The public payload is exactly 14 files: canonical AASA; Privacy, Terms, Support, and Report Content HTML; `apps/.htaccess`; the two approved module roots; and four shared assets. The promotion units, in required order, are:
+The public payload is exactly 16 files: canonical AASA; Privacy, Terms, Support, and Report Content HTML; `apps/.htaccess`; the two approved module roots; and six shared assets. The promotion units, in required order, are:
 
 1. `public_html/apps/.htaccess`
 2. `public_html/apps/shared/`
@@ -61,7 +61,7 @@ python3 secure_web_release.py root-identity <owned-private-root>
 CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py materialize-stage <owned-private-root> <reviewed-release-id> < immutable-transport-object.json
 ```
 
-The helper accepts only its fixed schema and 14-path allowlist, requires the caller's reviewed release ID, and creates no public path. A collision or partial stage is quarantined in place for manual review; it is never cleaned recursively.
+The helper accepts only its fixed schema and 16-path allowlist, requires the caller's reviewed release ID, and creates no public path. A collision or partial stage is quarantined in place for manual review; it is never cleaned recursively.
 
 Compare the private stage's exact paths, modes, sizes, and hashes to `release/web-artifacts.json`. Serve it on loopback only and inspect it through the authenticated tunnel. Test 390×844 and 320×568, English and es-MX, JavaScript enabled and disabled, Reduce Motion and pause behavior, keyboard/focus, canonical/legal navigation, and zero unexpected console or network activity. Do not create a public staging hostname.
 

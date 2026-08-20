@@ -806,6 +806,10 @@ test('operational drafts retain only current Hostinger and release blockers', ()
   const runbook = readArtifact('docs/operations/hostinger-deploy-runbook.md');
   const hostingChecklist = readArtifact('docs/operations/hosting-security-checklist.md');
 
+  assert.match(runbook, /public payload is exactly 16 files/i);
+  assert.match(runbook, /two approved module roots; and six shared assets/i);
+  assert.match(runbook, /fixed schema and 16-path allowlist/i);
+  assert.doesNotMatch(runbook, /exactly 14 files|14-path allowlist|four shared assets/i);
   assert.doesNotMatch(runbook, /11 external compliance facts|final legal copy\/sign-off/i);
   assert.doesNotMatch(hostingChecklist, /Confirm actual Hostinger technical log types, purpose, retention, access, and deletion process/i);
   assert.match(hostingChecklist, /IP address, browser\/user-agent, requested URL, and technical errors/i);

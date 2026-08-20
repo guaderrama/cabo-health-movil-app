@@ -105,17 +105,17 @@ const TASK6A_REVIEWED_SOURCE_SHA256 = Object.freeze({
   'assets/logo-wordmark.png': '42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d',
   'content/clinic-guide.json': 'ee17b5427fb755385c1b0588b541808923db2e0831a68df5d58e6e0bb7faced6',
   'content/recipes.json': 'fbc9c338341653e87a744ae11906a1995ea642aa094ef4aaaf418f6bc819b9cf',
-  'miniapps/clinic-guide/app.js': '9b3c054a96b59adb160e46ce8b59b95bfc9ab3cf5bd67f4fa3237449c17e97a1',
-  'miniapps/clinic-guide/index.html': '5e972a9f4efb5174e169c298ee5295fe27c583b6e28d2b9b8af01449c1857147',
+  'miniapps/clinic-guide/app.js': 'f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7',
+  'miniapps/clinic-guide/index.html': 'c2c6d60fd3ed0cad7fd2aa01c5e236f639b6f7561d4e533d086973688b9759d8',
   'miniapps/healthy-recipes/app.js': '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090',
-  'miniapps/healthy-recipes/index.html': 'f10aea5c30e5c03fc86c912e958b3c100c447191f50e2cbc595be5d4634da158',
+  'miniapps/healthy-recipes/index.html': '7dcbab26b854952eddc59ac5f95d0d6a1e6110d5a8426ed0ab0b96dc874507d0',
   'miniapps/shared/clinic-map-texture.png': '4b569f0da0cffb9a54dedd93ce672cf7592ae4516dd12663e3b34d731df237c4',
   'miniapps/shared/logo-wordmark.png': '42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d',
   'miniapps/shared/logo.png': 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117',
-  'miniapps/shared/motion.js': '9ac97593f7339f6b7f1b9f4da6dafed4084185440022604b75754377291e56b7',
+  'miniapps/shared/motion.js': 'f6a613929e08e49ee4dea7513f00fdc9fd5e7b1c791ffa512cca1f26a4863d24',
   'miniapps/shared/security-headers.conf': '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da',
-  'miniapps/shared/shell.js': 'd53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103',
-  'miniapps/shared/styles.css': '73d83248fdb0d083425a76e9ae0b083b5eaafd4b2b3fe5070f7a8f395122c33b',
+  'miniapps/shared/shell.js': 'edbb90593477cb68de24df0115854d9aeb243c94ff219b211944b2fa3cf93ea9',
+  'miniapps/shared/styles.css': 'e98ad07424d4210208542468b25e1841aa3ade7dc505aee2aebd37064c466523',
   'release/public-contact-facts.json': '99a351ac98d91dab160746e473492224471891ca72a4c70624cb88da02b930a1',
   'web-hosting/cabohealth.org/apps/.htaccess': '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da',
 });
@@ -564,7 +564,7 @@ function renderConfirmedPublicFacts(facts) {
 function renderVisitLocationCard(facts) {
   const { address, hours, appleMapsDestination, whatsApp, serviceLanguages } = facts.facts;
   return [
-    '        <section class="location-card" aria-labelledby="visit-location-en visit-location-es">',
+    '        <section class="location-card" data-labelledby-en="visit-location-en" data-labelledby-es="visit-location-es" aria-labelledby="visit-location-en visit-location-es">',
     '          <div lang="en" data-locale="en">',
     '            <p class="eyebrow">Confirmed location</p>',
     '            <h3 id="visit-location-en">Cabo San Lucas</h3>',
@@ -605,7 +605,7 @@ function renderClinicGroup(group) {
 
 function renderBilingualInformationPanel({ id, eyebrowEn, eyebrowEs, titleEn, titleEs, text }) {
   return [
-    `        <section class="information-panel" aria-labelledby="${id}-en ${id}-es">`,
+    `        <section class="information-panel" data-labelledby-en="${id}-en" data-labelledby-es="${id}-es" aria-labelledby="${id}-en ${id}-es">`,
     '          <div lang="en" data-locale="en">',
     `            <p class="eyebrow">${escapeHtml(eyebrowEn)}</p>`,
     `            <h2 id="${id}-en">${escapeHtml(titleEn)}</h2>`,
@@ -666,8 +666,8 @@ const TASK6A_REVIEWED_ARTIFACTS = Object.freeze({
     sha256: '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090',
   }),
   'apps/healthy-recipes/index.html': Object.freeze({
-    size: 56386,
-    sha256: '50758bd40379fab4ab11af082dd8bbfa8c0f26350fc9aedb7b9aadfceaec8775',
+    size: 57591,
+    sha256: 'd756583df4e13221bb24dd8bf44d5712b5c1bc6a409af2f6c33d6051f630114b',
   }),
   'apps/shared/logo-wordmark.png': Object.freeze({
     size: 12584,
@@ -678,16 +678,16 @@ const TASK6A_REVIEWED_ARTIFACTS = Object.freeze({
     sha256: 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117',
   }),
   'apps/shared/motion.js': Object.freeze({
-    size: 8996,
-    sha256: '9ac97593f7339f6b7f1b9f4da6dafed4084185440022604b75754377291e56b7',
+    size: 9370,
+    sha256: 'f6a613929e08e49ee4dea7513f00fdc9fd5e7b1c791ffa512cca1f26a4863d24',
   }),
   'apps/shared/shell.js': Object.freeze({
-    size: 3769,
-    sha256: 'd53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103',
+    size: 5506,
+    sha256: 'edbb90593477cb68de24df0115854d9aeb243c94ff219b211944b2fa3cf93ea9',
   }),
   'apps/shared/styles.css': Object.freeze({
-    size: 16185,
-    sha256: '73d83248fdb0d083425a76e9ae0b083b5eaafd4b2b3fe5070f7a8f395122c33b',
+    size: 18319,
+    sha256: 'e98ad07424d4210208542468b25e1841aa3ade7dc505aee2aebd37064c466523',
   }),
 });
 const TASK6A_ARTIFACT_PATHS = Object.freeze(Object.keys(TASK6A_REVIEWED_ARTIFACTS));
@@ -697,20 +697,20 @@ const TASK6B_REVIEWED_ARTIFACTS = Object.freeze({
     sha256: '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da',
   }),
   'apps/clinic-guide/app.js': Object.freeze({
-    size: 2666,
-    sha256: '9b3c054a96b59adb160e46ce8b59b95bfc9ab3cf5bd67f4fa3237449c17e97a1',
+    size: 3868,
+    sha256: 'f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7',
   }),
   'apps/clinic-guide/index.html': Object.freeze({
-    size: 25655,
-    sha256: 'aa203edcdb01dbafbb01510ad2746250b3e8bb775e810568f7c55660ae15fd3d',
+    size: 28285,
+    sha256: '0a18f4f307e2c58189cf9471b71accd779adbfa0415142ac5be584a9a4ff2c8e',
   }),
   'apps/healthy-recipes/app.js': Object.freeze({
     size: 4049,
     sha256: '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090',
   }),
   'apps/healthy-recipes/index.html': Object.freeze({
-    size: 56386,
-    sha256: '50758bd40379fab4ab11af082dd8bbfa8c0f26350fc9aedb7b9aadfceaec8775',
+    size: 57591,
+    sha256: 'd756583df4e13221bb24dd8bf44d5712b5c1bc6a409af2f6c33d6051f630114b',
   }),
   'apps/shared/clinic-map-texture.png': Object.freeze({
     size: 382740,
@@ -725,16 +725,16 @@ const TASK6B_REVIEWED_ARTIFACTS = Object.freeze({
     sha256: 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117',
   }),
   'apps/shared/motion.js': Object.freeze({
-    size: 8996,
-    sha256: '9ac97593f7339f6b7f1b9f4da6dafed4084185440022604b75754377291e56b7',
+    size: 9370,
+    sha256: 'f6a613929e08e49ee4dea7513f00fdc9fd5e7b1c791ffa512cca1f26a4863d24',
   }),
   'apps/shared/shell.js': Object.freeze({
-    size: 3769,
-    sha256: 'd53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103',
+    size: 5506,
+    sha256: 'edbb90593477cb68de24df0115854d9aeb243c94ff219b211944b2fa3cf93ea9',
   }),
   'apps/shared/styles.css': Object.freeze({
-    size: 16185,
-    sha256: '73d83248fdb0d083425a76e9ae0b083b5eaafd4b2b3fe5070f7a8f395122c33b',
+    size: 18319,
+    sha256: 'e98ad07424d4210208542468b25e1841aa3ade7dc505aee2aebd37064c466523',
   }),
 });
 const TASK6B_ARTIFACT_PATHS = Object.freeze([

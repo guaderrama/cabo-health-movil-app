@@ -5,6 +5,18 @@ import {
   type PublicMiniappSlug,
 } from '../../constants/publicMiniapps';
 
+export const EMBEDDED_PRESENTATION_FRAGMENTS = Object.freeze({
+  'en:standard': '#embedded-en',
+  'en:reduced': '#embedded-en-reduced',
+  'es-MX:standard': '#embedded-es-MX',
+  'es-MX:reduced': '#embedded-es-MX-reduced',
+} as const);
+
+const ALLOWED_ROOT_FRAGMENTS: readonly string[] = Object.freeze([
+  '#main-content',
+  ...Object.values(EMBEDDED_PRESENTATION_FRAGMENTS),
+]);
+
 export type NavigationReason =
   | 'selected-miniapp-path'
   | 'approved-legal-click'
@@ -20,6 +32,8 @@ export type NavigationReason =
   | 'host-not-allowed'
   | 'cross-miniapp-path'
   | 'unapproved-path'
+  | 'query-not-allowed'
+  | 'unapproved-fragment'
   | 'unsafe-path-encoding'
   | 'path-traversal'
   | 'external-not-user-initiated'
@@ -108,6 +122,20 @@ export function classifyMiniappNavigation(
   const rawPath = getRawPath(url, authority);
   const unsafePathReason = classifyUnsafePath(rawPath);
   if (unsafePathReason) return block(unsafePathReason);
+
+  const suffix = url.slice('https://'.length + authority.length);
+  const hashIndex = suffix.indexOf('#');
+  const queryIndex = suffix.indexOf('?');
+  if (queryIndex !== -1 && (hashIndex === -1 || queryIndex < hashIndex)) {
+    return block('query-not-allowed');
+  }
+
+  const rawFragment = hashIndex === -1 ? '' : suffix.slice(hashIndex);
+  if (rawFragment !== '') {
+    if (rawPath !== miniapp.allowedPathPrefix || !ALLOWED_ROOT_FRAGMENTS.includes(rawFragment)) {
+      return block('unapproved-fragment');
+    }
+  }
 
   if (rawPath.startsWith(miniapp.allowedPathPrefix)) {
     return { decision: 'allow-webview', reason: 'selected-miniapp-path' };

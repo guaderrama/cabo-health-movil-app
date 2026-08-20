@@ -114,7 +114,7 @@ function labelsFor(language, state, pausedByUser) {
 
 export function mountNetworkMotion({ document: page, language = () => 'en' } = {}) {
   const canvas = page?.querySelector?.('[data-network-canvas]');
-  if (!canvas) return { destroy() {} };
+  if (!canvas) return { allowsAnimatedTransitions: () => false, destroy() {} };
   const previous = mountedCanvases.get(canvas);
   if (previous) return previous;
 
@@ -122,9 +122,12 @@ export function mountNetworkMotion({ document: page, language = () => 'en' } = {
   const context = canvas.getContext?.('2d');
   const toggle = page.querySelector('[data-motion-toggle]');
   const status = page.querySelector('[data-motion-status]');
-  if (!view || !context || !toggle || !status) return { destroy() {} };
+  if (!view || !context || !toggle || !status) {
+    return { allowsAnimatedTransitions: () => false, destroy() {} };
+  }
 
   const reduceMotion = view.matchMedia('(prefers-reduced-motion: reduce)');
+  const embeddedReducedEffects = page.documentElement?.dataset.reducedEffects === 'true';
   const connection = view.navigator?.connection;
   const nodes = createNodes(28);
   let ready = false;
@@ -212,7 +215,7 @@ export function mountNetworkMotion({ document: page, language = () => 'en' } = {
       pageVisible,
       effectVisible,
       pausedByUser,
-      reducedMotion: reduceMotion.matches,
+      reducedMotion: reduceMotion.matches || embeddedReducedEffects,
       saveData: Boolean(connection?.saveData),
     });
     if (currentState === 'playing') scheduler.start();
@@ -265,6 +268,10 @@ export function mountNetworkMotion({ document: page, language = () => 'en' } = {
   resizeCanvas();
 
   const controller = {
+    allowsAnimatedTransitions() {
+      return !destroyed && !pausedByUser && !reduceMotion.matches
+        && !embeddedReducedEffects && !connection?.saveData;
+    },
     destroy() {
       if (destroyed) return;
       destroyed = true;

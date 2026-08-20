@@ -333,6 +333,8 @@ export function validateBrowserEvidence(value, artifact, authority, reviewedMeas
             'visualWidth',
             'visualHeight',
             'effectiveLocale',
+            'documentLanguage',
+            'localeVisibilityVerified',
             'documentUrl',
             'readyState',
             'bodyTextLength',
@@ -356,6 +358,9 @@ export function validateBrowserEvidence(value, artifact, authority, reviewedMeas
           const expectedSentinel = miniapp
             ? (javascript === 'enabled' ? 'enhanced' : 'static')
             : 'not-applicable';
+          const expectedDocumentLanguage = miniapp && javascript === 'enabled'
+            ? (locale === 'es-MX' ? 'es-MX' : 'en')
+            : 'en';
           if (
             observation.path !== path
             || observation.requestedViewport !== viewport.id
@@ -366,6 +371,8 @@ export function validateBrowserEvidence(value, artifact, authority, reviewedMeas
             || observation.visualWidth !== viewport.width
             || observation.visualHeight !== viewport.height
             || observation.effectiveLocale !== locale
+            || observation.documentLanguage !== expectedDocumentLanguage
+            || observation.localeVisibilityVerified !== true
             || observation.documentUrl !== expectedUrl
             || observation.readyState !== 'complete'
             || !Number.isSafeInteger(observation.bodyTextLength)
@@ -754,13 +761,39 @@ export async function measureBrowserEvidence({
                 const allowed = arguments[0];
                 const challenge = arguments[1];
                 const javascriptMode = arguments[2];
+                const requestedLocale = arguments[3];
                 const miniapp = location.pathname.startsWith('/apps/');
-                const controls = [...document.querySelectorAll('[data-language], [data-motion-toggle], [data-recipe-search], [data-recipe-filter], [data-favorite-recipe], [data-checklist-item]')];
+                const requestedLanguage = requestedLocale === 'es-MX' ? 'es-MX' : 'en';
+                if (miniapp && javascriptMode === 'enabled') {
+                  const languageControl = document.querySelector('[data-language="' + requestedLanguage + '"]');
+                  if (languageControl && !languageControl.disabled
+                    && document.documentElement.lang !== requestedLanguage) languageControl.click();
+                }
+                const controls = [...document.querySelectorAll('[data-language], [data-motion-toggle], [data-recipe-search], [data-recipe-filter], [data-favorite-recipe], [data-checklist-item], [data-reset-checklist], [data-clinic-tab], [data-open-clinic-panel]')];
                 const englishBlocks = [...document.querySelectorAll('[data-locale="en"], article[lang="en"]')];
                 const spanishBlocks = [...document.querySelectorAll('[data-locale="es-MX"], article[lang="es-MX"]')];
-                const visible = (node) => !node.hidden
-                  && getComputedStyle(node).display !== 'none'
-                  && getComputedStyle(node).visibility !== 'hidden';
+                const visible = (node) => {
+                  for (let current = node; current; current = current.parentElement) {
+                    if (current.hidden) return false;
+                    const style = getComputedStyle(current);
+                    if (style.display === 'none' || style.visibility === 'hidden') return false;
+                  }
+                  return true;
+                };
+                const englishVisible = englishBlocks.some(visible);
+                const spanishVisible = spanishBlocks.some(visible);
+                const englishHidden = englishBlocks.every((node) => !visible(node));
+                const spanishHidden = spanishBlocks.every((node) => !visible(node));
+                const localeVisibilityVerified = !miniapp || javascriptMode === 'disabled'
+                  ? englishVisible && spanishVisible
+                  : (requestedLanguage === 'es-MX'
+                    ? spanishVisible && englishHidden
+                    : englishVisible && spanishHidden);
+                const inertWithoutJavaScript = (control) => control.disabled
+                  || !visible(control)
+                  || (!control.matches('button, input, select, textarea, a[href]')
+                    && !control.hasAttribute('tabindex')
+                    && !['button', 'link', 'checkbox', 'radio', 'switch', 'tab'].includes(control.getAttribute('role')));
                 const active = document.activeElement;
                 const activeStyle = active && active !== document.body ? getComputedStyle(active) : null;
                 const activeHref = active?.tagName === 'A' ? active.href : null;
@@ -788,6 +821,8 @@ export async function measureBrowserEvidence({
                   visualWidth: visualViewport?.width ?? innerWidth,
                   visualHeight: visualViewport?.height ?? innerHeight,
                   effectiveLocale: navigator.language,
+                  documentLanguage: document.documentElement.lang,
+                  localeVisibilityVerified,
                   javascriptSentinel: miniapp ? (document.documentElement.dataset.enhanced === 'true' ? 'enhanced' : 'static') : 'not-applicable',
                   reducedMotionMatches: matchMedia('(prefers-reduced-motion: reduce)').matches,
                   animationSuppressed: document.getAnimations().every((animation) => animation.playState !== 'running'),
@@ -801,16 +836,16 @@ export async function measureBrowserEvidence({
                   navigationHref,
                   unexpectedResourceCount: resources.filter((resource) => !allowed.includes(resource)).length,
                   miniappReady: miniapp && document.documentElement.dataset.enhanced === 'true',
-                  noJsControlsDisabled: !miniapp || (javascriptMode === 'disabled' ? controls.length > 0 && controls.every((control) => control.disabled) : controls.some((control) => !control.disabled)),
+                  noJsControlsDisabled: !miniapp || (javascriptMode === 'disabled'
+                    ? controls.length > 0 && controls.every(inertWithoutJavaScript)
+                    : controls.some((control) => !control.disabled && visible(control))),
                   bilingualStaticVisible: englishBlocks.length > 0
                     && spanishBlocks.length > 0
-                    && (miniapp && javascriptMode === 'enabled'
-                      ? true
-                      : englishBlocks.some(visible) && spanishBlocks.some(visible)),
+                    && localeVisibilityVerified,
                   challengeEcho: challenge,
                 };
               })();`,
-                args: [allowedUrls, challenge, javascript],
+                args: [allowedUrls, challenge, javascript, locale],
               });
               if (measured?.challengeEcho !== challenge) throw new Error('BROWSER_RUNNER_CHALLENGE_INVALID');
               return measured;
@@ -889,6 +924,8 @@ export async function measureBrowserEvidence({
               visualWidth: measured?.visualWidth,
               visualHeight: measured?.visualHeight,
               effectiveLocale: measured?.effectiveLocale,
+              documentLanguage: measured?.documentLanguage,
+              localeVisibilityVerified: measured?.localeVisibilityVerified,
               documentUrl: measured?.documentUrl,
               readyState: measured?.readyState,
               bodyTextLength: measured?.bodyTextLength,

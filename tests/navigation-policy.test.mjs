@@ -35,12 +35,37 @@ test('allows only the selected miniapp exact path prefix in the WebView', () => 
   for (const url of [
     selectedUrl,
     'https://cabohealth.org/apps/healthy-recipes/details/tomato-soup',
-    'https://cabohealth.org/apps/healthy-recipes/?lang=es#ingredients',
+    'https://cabohealth.org/apps/healthy-recipes/#main-content',
+    'https://cabohealth.org/apps/healthy-recipes/#embedded-en',
+    'https://cabohealth.org/apps/healthy-recipes/#embedded-en-reduced',
+    'https://cabohealth.org/apps/healthy-recipes/#embedded-es-MX',
+    'https://cabohealth.org/apps/healthy-recipes/#embedded-es-MX-reduced',
   ]) {
     assert.deepEqual(classify(url), {
       decision: 'allow-webview',
       reason: 'selected-miniapp-path',
     });
+  }
+});
+
+test('rejects queries and every fragment outside the frozen root presentation matrix', () => {
+  const cases = [
+    ['https://cabohealth.org/apps/healthy-recipes/?lang=es', 'query-not-allowed'],
+    ['https://cabohealth.org/apps/healthy-recipes/?lang=es#embedded-es-MX', 'query-not-allowed'],
+    ['https://cabohealth.org/apps/healthy-recipes/#ingredients', 'unapproved-fragment'],
+    ['https://cabohealth.org/apps/healthy-recipes/#embedded', 'unapproved-fragment'],
+    ['https://cabohealth.org/apps/healthy-recipes/#embedded-EN', 'unapproved-fragment'],
+    ['https://cabohealth.org/apps/healthy-recipes/#embedded-en-suffix', 'unapproved-fragment'],
+    ['https://cabohealth.org/apps/healthy-recipes/#%65mbedded-en', 'unapproved-fragment'],
+    ['https://cabohealth.org/apps/healthy-recipes/#__proto__', 'unapproved-fragment'],
+    ['https://cabohealth.org/apps/healthy-recipes/#constructor', 'unapproved-fragment'],
+    ['https://cabohealth.org/apps/healthy-recipes/#toString', 'unapproved-fragment'],
+    ['https://cabohealth.org/apps/healthy-recipes/details/tomato-soup#embedded-en', 'unapproved-fragment'],
+    ['https://cabohealth.org/apps/healthy-recipes/details/tomato-soup#main-content', 'unapproved-fragment'],
+  ];
+
+  for (const [url, reason] of cases) {
+    assert.deepEqual(classify(url), { decision: 'block', reason }, url);
   }
 });
 
@@ -119,7 +144,7 @@ test('rejects traversal, encoded separators, and double-encoded path attacks', (
   });
 });
 
-test('rejects encoded whitespace and control bytes in paths without interpreting a query as path', () => {
+test('rejects encoded whitespace and control bytes in paths and rejects every query', () => {
   for (const url of [
     'https://cabohealth.org/apps/healthy-recipes/%00hidden',
     'https://cabohealth.org/apps/healthy-recipes/%0Ahidden',
@@ -134,7 +159,7 @@ test('rejects encoded whitespace and control bytes in paths without interpreting
 
   assert.deepEqual(
     classify('https://cabohealth.org/apps/healthy-recipes/?q=warm%20soup'),
-    { decision: 'allow-webview', reason: 'selected-miniapp-path' },
+    { decision: 'block', reason: 'query-not-allowed' },
   );
 });
 
