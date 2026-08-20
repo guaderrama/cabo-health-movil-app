@@ -16,11 +16,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AnimatedMolecules } from '../../components';
 import { introColors, layout } from '../../constants';
 import { useReducedMotion, useTheme } from '../../hooks';
-import {
-  createIntroContinuation,
-  type IntroContinuation,
-} from './introTiming';
 import { calculateIntroLayout } from './introLayout';
+import { createIntroContinuation, type IntroContinuation } from './introTiming';
 
 interface IntroScreenProps {
   onComplete: () => void | Promise<void>;
@@ -33,10 +30,16 @@ export function IntroScreen({ onComplete }: IntroScreenProps) {
   const reduceMotion = useReducedMotion();
   const isFocused = useIsFocused();
   const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
+  const onCompleteRef = useRef(onComplete);
   const continuationRef = useRef<IntroContinuation | null>(null);
-  const completionRef = useRef<Promise<void> | null>(null);
   const logoProgress = useRef(new Animated.Value(1)).current;
   const logoEntranceStarted = useRef(false);
+  onCompleteRef.current = onComplete;
+  if (!continuationRef.current) {
+    continuationRef.current = createIntroContinuation({
+      onComplete: () => onCompleteRef.current(),
+    });
+  }
   const sceneActive = isFocused && appIsActive;
   const introLayout = useMemo(
     () => calculateIntroLayout({ width, height, fontScale, insets }),
@@ -49,30 +52,6 @@ export function IntroScreen({ onComplete }: IntroScreenProps) {
     });
     return () => subscription.remove();
   }, []);
-
-  const completeOnce = useCallback(() => {
-    if (!completionRef.current) {
-      completionRef.current = Promise.resolve().then(onComplete);
-    }
-    return completionRef.current;
-  }, [onComplete]);
-
-  useEffect(() => {
-    const continuation = createIntroContinuation({
-      reduceMotion: reduceMotion === true,
-      schedule: (callback, delayMs) => setTimeout(callback, delayMs),
-      cancel: (handle) => clearTimeout(handle),
-      onComplete: completeOnce,
-    });
-    continuationRef.current = continuation;
-
-    if (sceneActive && reduceMotion !== null) continuation.start();
-
-    return () => {
-      continuation.cancelPending();
-      if (continuationRef.current === continuation) continuationRef.current = null;
-    };
-  }, [completeOnce, reduceMotion, sceneActive]);
 
   useEffect(() => {
     if (!sceneActive || reduceMotion !== false || logoEntranceStarted.current) {
@@ -97,9 +76,8 @@ export function IntroScreen({ onComplete }: IntroScreenProps) {
   }, [logoProgress, reduceMotion, sceneActive]);
 
   const handleEnter = useCallback(() => {
-    const continuation = continuationRef.current;
-    void (continuation ? continuation.complete() : completeOnce());
-  }, [completeOnce]);
+    void continuationRef.current?.complete();
+  }, []);
 
   return (
     <LinearGradient

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -16,10 +17,7 @@ assert.equal(compile.status, 0, compile.stderr || compile.stdout);
 
 const require = createRequire(import.meta.url);
 const {
-  INTRO_AUTO_CONTINUE_MS,
   createIntroContinuation,
-  getIntroAutoContinueDelay,
-  shouldShowIntro,
 } = require(join(projectRoot, '.test-build/features/onboarding/introTiming.js'));
 const {
   ONBOARDING_COMPLETION_KEY,
@@ -27,93 +25,49 @@ const {
   writeOnboardingCompletion,
 } = require(join(projectRoot, '.test-build/features/onboarding/onboardingStore.js'));
 
-test('normal intro continuation waits exactly 1600 ms and stays below the launch limit', () => {
-  assert.equal(INTRO_AUTO_CONTINUE_MS, 1600);
-  assert.equal(getIntroAutoContinueDelay(false), 1600);
-  assert.ok(getIntroAutoContinueDelay(false) < 1800);
-});
-
-test('first use shows the intro while later launches skip unless replay is requested', () => {
-  assert.equal(shouldShowIntro({ completed: false }), true);
-  assert.equal(shouldShowIntro({ completed: true }), false);
-  assert.equal(shouldShowIntro({ completed: true, replay: '1' }), true);
-  assert.equal(shouldShowIntro({ completed: true, replay: ['1', 'ignored'] }), true);
-  assert.equal(shouldShowIntro({ completed: true, replay: '0' }), false);
-});
-
-test('reduced motion completes without scheduling a forced delay', async () => {
-  const scheduledDelays = [];
+test('normal launch waits for explicit ENTER without scheduling a delay', async () => {
   let completionCount = 0;
   const continuation = createIntroContinuation({
-    reduceMotion: true,
-    schedule(callback, delayMs) {
-      scheduledDelays.push(delayMs);
-      return { callback };
-    },
-    cancel() {},
     async onComplete() {
       completionCount += 1;
     },
   });
 
-  continuation.start();
-  await continuation.completion;
-
-  assert.equal(getIntroAutoContinueDelay(true), 0);
-  assert.deepEqual(scheduledDelays, []);
-  assert.equal(completionCount, 1);
-});
-
-test('CTA completion is idempotent and cancels the pending automatic path', async () => {
-  let scheduledCallback;
-  const cancelledHandles = [];
-  let completionCount = 0;
-  const timerHandle = { id: 'intro-timer' };
-  const continuation = createIntroContinuation({
-    reduceMotion: false,
-    schedule(callback, delayMs) {
-      assert.equal(delayMs, 1600);
-      scheduledCallback = callback;
-      return timerHandle;
-    },
-    cancel(handle) {
-      cancelledHandles.push(handle);
-    },
-    async onComplete() {
-      completionCount += 1;
-    },
-  });
-
-  continuation.start();
-  await Promise.all([continuation.complete(), continuation.complete()]);
-  scheduledCallback();
-  await continuation.completion;
-
-  assert.equal(completionCount, 1);
-  assert.deepEqual(cancelledHandles, [timerHandle]);
-});
-
-test('blur cancellation invalidates an already dequeued automatic callback', async () => {
-  let scheduledCallback;
-  let completionCount = 0;
-  const continuation = createIntroContinuation({
-    reduceMotion: false,
-    schedule(callback) {
-      scheduledCallback = callback;
-      return { id: 'focus-owned-timer' };
-    },
-    cancel() {},
-    async onComplete() {
-      completionCount += 1;
-    },
-  });
-
-  continuation.start();
-  continuation.cancelPending();
-  scheduledCallback();
   await Promise.resolve();
 
   assert.equal(completionCount, 0);
+
+  await continuation.complete();
+  assert.equal(completionCount, 1);
+});
+
+test('the launch route gates the app behind ENTER without persisted onboarding or timers', () => {
+  const entrySource = readFileSync(join(projectRoot, 'app/index.tsx'), 'utf8');
+  const introSource = readFileSync(
+    join(projectRoot, 'features/onboarding/IntroScreen.tsx'),
+    'utf8',
+  );
+
+  assert.match(entrySource, /return <IntroScreen onComplete=\{completeIntro\} \/>/u);
+  assert.match(entrySource, /router\.replace\('\/\(main\)'\)/u);
+  assert.doesNotMatch(entrySource, /OnboardingCompleted|has_seen_onboarding|services\/storage/u);
+  assert.doesNotMatch(entrySource, /removeItem|\.clear\(/u);
+
+  assert.match(introSource, /onPress=\{handleEnter\}/u);
+  assert.doesNotMatch(introSource, /setTimeout|INTRO_AUTO_CONTINUE_MS/u);
+});
+
+test('ENTER completion is idempotent', async () => {
+  let completionCount = 0;
+  const continuation = createIntroContinuation({
+    async onComplete() {
+      completionCount += 1;
+    },
+  });
+
+  await Promise.all([continuation.complete(), continuation.complete()]);
+
+  assert.equal(completionCount, 1);
 });
 
 test('onboarding completion persists one boolean under the single onboarding key', async () => {
