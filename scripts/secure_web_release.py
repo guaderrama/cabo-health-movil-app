@@ -74,6 +74,38 @@ APP_ID = "DQ8PH2DZ3R.com.cabohealth.app"
 CAPSULE_SIZE = 719595
 CAPSULE_SHA256 = "2c839893cca416fdd471fef037bdfb8fc099960d9855e9d7b47981b13892602b"
 APACHE_SECURITY_SHA256 = "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"
+HOSTING_OVERLAYS = (
+    (
+        "app/.htaccess",
+        "app-htaccess",
+        b"Options -Indexes\n"
+        b"<IfModule mod_headers.c>\n"
+        b"  Header always set Content-Type \"text/html; charset=utf-8\"\n"
+        b"  Header always set Content-Security-Policy \"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\"\n"
+        b"  Header always set X-Content-Type-Options \"nosniff\"\n"
+        b"  Header always set X-Frame-Options \"DENY\"\n"
+        b"  Header always set Referrer-Policy \"no-referrer\"\n"
+        b"  Header always set Permissions-Policy \"camera=(), microphone=(), geolocation=(), payment=(), usb=()\"\n"
+        b"  Header always unset Set-Cookie\n"
+        b"</IfModule>\n"
+        b"<IfModule mod_mime.c>\n"
+        b"  AddDefaultCharset UTF-8\n"
+        b"</IfModule>\n",
+    ),
+    (
+        ".well-known/.htaccess",
+        "well-known-htaccess",
+        b"Options -Indexes\n"
+        b"<Files \"apple-app-site-association\">\n"
+        b"  ForceType application/json\n"
+        b"  <IfModule mod_headers.c>\n"
+        b"    Header always set Content-Type \"application/json\"\n"
+        b"    Header always set X-Content-Type-Options \"nosniff\"\n"
+        b"    Header always unset Set-Cookie\n"
+        b"  </IfModule>\n"
+        b"</Files>\n",
+    ),
+)
 DRAFT_LEGAL_SHA256 = {
     "privacy": "48a9d5974d234434c200ff272c6dfeecc2d6b05baeae30dc25a37df06fb46b91",
     "report-content": "35d304f3ee82364616ab9b0f96013319857d4acc347b6764579a7604392bffb5",
@@ -1602,6 +1634,292 @@ def create_file(parent_fd: int, name: str, contents: bytes, path: str, final_mod
     os.fsync(parent_fd)
 
 
+def verify_overlay_file(
+    parent_fd: int,
+    name: str,
+    contents: bytes,
+    label: str,
+    expected_links: int,
+) -> os.stat_result:
+    try:
+        fd = os.open(name, OPEN_FILE_READ, dir_fd=parent_fd)
+    except OSError as error:
+        raise ReleaseError(f"HOSTING_OVERLAY_INVALID: {label}") from error
+    try:
+        before = os.fstat(fd)
+        captured = read_all(fd)
+        after = os.fstat(fd)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.geteuid()
+            or stat.S_IMODE(before.st_mode) != 0o644
+            or before.st_nlink != expected_links
+            or captured != contents
+            or (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mode,
+                before.st_uid,
+                before.st_nlink,
+            ) != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mode,
+                after.st_uid,
+                after.st_nlink,
+            )
+        ):
+            fail(f"HOSTING_OVERLAY_INVALID: {label}")
+        return before
+    finally:
+        os.close(fd)
+
+
+def open_hosting_overlay_state(root_path: str) -> tuple[int, int, int]:
+    root_fd = open_root(root_path)
+    overlays_fd: int | None = None
+    try:
+        private_fd = ensure_directory(".cabohealth-private", root_fd, ".cabohealth-private", 0o700)
+        try:
+            overlays_fd = ensure_directory(
+                "hosting-overlays-v1",
+                private_fd,
+                ".cabohealth-private/hosting-overlays-v1",
+                0o700,
+            )
+        finally:
+            os.close(private_fd)
+        public_fd = open_directory("public_html", root_fd, "public_html", mode=0o755)
+        return root_fd, public_fd, overlays_fd
+    except Exception:
+        if overlays_fd is not None:
+            os.close(overlays_fd)
+        os.close(root_fd)
+        raise
+
+
+def publish_hosting_overlays(root_path: str) -> dict[str, Any]:
+    root_fd, public_fd, overlays_fd = open_hosting_overlay_state(root_path)
+    plans: list[tuple[str, str, bytes, int, str, bool]] = []
+    try:
+        for target, candidate, contents in HOSTING_OVERLAYS:
+            candidate_info = stat_if_present(overlays_fd, candidate)
+            if candidate_info is None:
+                create_file(
+                    overlays_fd,
+                    candidate,
+                    contents,
+                    f".cabohealth-private/hosting-overlays-v1/{candidate}",
+                    final_mode=0o644,
+                )
+                candidate_info = verify_overlay_file(
+                    overlays_fd, candidate, contents, candidate, 1
+                )
+            elif candidate_info.st_nlink not in (1, 2):
+                fail(f"HOSTING_OVERLAY_INVALID: {candidate}")
+            else:
+                candidate_info = verify_overlay_file(
+                    overlays_fd,
+                    candidate,
+                    contents,
+                    candidate,
+                    candidate_info.st_nlink,
+                )
+
+            parent_fd, leaf = open_parent_for_target(public_fd, target)
+            plans.append((target, candidate, contents, parent_fd, leaf, False))
+            live_info = stat_if_present(parent_fd, leaf)
+            if live_info is None:
+                if candidate_info.st_nlink != 1:
+                    fail(f"HOSTING_OVERLAY_IDENTITY_INVALID: {target}")
+                plans[-1] = (target, candidate, contents, parent_fd, leaf, True)
+            else:
+                if candidate_info.st_nlink != 2:
+                    fail(f"HOSTING_OVERLAY_IDENTITY_INVALID: {target}")
+                live_info = verify_overlay_file(parent_fd, leaf, contents, target, 2)
+                candidate_info = verify_overlay_file(
+                    overlays_fd, candidate, contents, candidate, 2
+                )
+                if (live_info.st_dev, live_info.st_ino) != (
+                    candidate_info.st_dev,
+                    candidate_info.st_ino,
+                ):
+                    fail(f"HOSTING_OVERLAY_IDENTITY_INVALID: {target}")
+
+        linked: list[tuple[str, str, bytes, int, str]] = []
+        try:
+            for target, candidate, contents, parent_fd, leaf, needs_publish in plans:
+                if not needs_publish:
+                    continue
+                try:
+                    os.link(
+                        candidate,
+                        leaf,
+                        src_dir_fd=overlays_fd,
+                        dst_dir_fd=parent_fd,
+                        follow_symlinks=False,
+                    )
+                    os.fsync(parent_fd)
+                    linked.append((target, candidate, contents, parent_fd, leaf))
+                    live_info = verify_overlay_file(parent_fd, leaf, contents, target, 2)
+                    candidate_info = verify_overlay_file(
+                        overlays_fd, candidate, contents, candidate, 2
+                    )
+                    if (live_info.st_dev, live_info.st_ino) != (
+                        candidate_info.st_dev,
+                        candidate_info.st_ino,
+                    ):
+                        fail(f"HOSTING_OVERLAY_IDENTITY_INVALID: {target}")
+                except Exception as error:
+                    cleanup_failed = False
+                    for (
+                        linked_target,
+                        linked_candidate,
+                        linked_contents,
+                        linked_parent_fd,
+                        linked_leaf,
+                    ) in reversed(linked):
+                        try:
+                            linked_live = verify_overlay_file(
+                                linked_parent_fd,
+                                linked_leaf,
+                                linked_contents,
+                                linked_target,
+                                2,
+                            )
+                            linked_private = verify_overlay_file(
+                                overlays_fd,
+                                linked_candidate,
+                                linked_contents,
+                                linked_candidate,
+                                2,
+                            )
+                            if (linked_live.st_dev, linked_live.st_ino) != (
+                                linked_private.st_dev,
+                                linked_private.st_ino,
+                            ):
+                                fail(
+                                    f"HOSTING_OVERLAY_IDENTITY_INVALID: {linked_target}"
+                                )
+                            os.unlink(linked_leaf, dir_fd=linked_parent_fd)
+                            os.fsync(linked_parent_fd)
+                            verify_overlay_file(
+                                overlays_fd,
+                                linked_candidate,
+                                linked_contents,
+                                linked_candidate,
+                                1,
+                            )
+                        except Exception:
+                            cleanup_failed = True
+                    if cleanup_failed:
+                        raise ReleaseError(
+                            "HOSTING_OVERLAY_PUBLISH_ROLLBACK_FAILED"
+                        ) from error
+                    raise ReleaseError(
+                        f"HOSTING_OVERLAY_PUBLISH_FAILED: {target}"
+                    ) from error
+
+            return {
+                "schemaVersion": 1,
+                "status": "published" if linked else "verified-existing",
+                "overlayCount": len(HOSTING_OVERLAYS),
+            }
+        finally:
+            linked.clear()
+    finally:
+        for _target, _candidate, _contents, parent_fd, _leaf, _needs_publish in plans:
+            os.close(parent_fd)
+        os.close(overlays_fd)
+        os.close(public_fd)
+        os.close(root_fd)
+
+
+def rollback_hosting_overlays(root_path: str) -> dict[str, Any]:
+    root_fd, public_fd, overlays_fd = open_hosting_overlay_state(root_path)
+    try:
+        for target, candidate, contents in reversed(HOSTING_OVERLAYS):
+            parent_fd, leaf = open_parent_for_target(public_fd, target)
+            try:
+                live_info = stat_if_present(parent_fd, leaf)
+                candidate_info = stat_if_present(overlays_fd, candidate)
+                if live_info is None:
+                    if candidate_info is None:
+                        fail(f"HOSTING_OVERLAY_ROLLBACK_INVALID: {target}")
+                    verify_overlay_file(overlays_fd, candidate, contents, candidate, 1)
+                    continue
+                live_info = verify_overlay_file(parent_fd, leaf, contents, target, 2)
+                candidate_info = verify_overlay_file(
+                    overlays_fd, candidate, contents, candidate, 2
+                )
+                if (live_info.st_dev, live_info.st_ino) != (
+                    candidate_info.st_dev,
+                    candidate_info.st_ino,
+                ):
+                    fail(f"HOSTING_OVERLAY_IDENTITY_INVALID: {target}")
+                os.unlink(leaf, dir_fd=parent_fd)
+                os.fsync(parent_fd)
+                verify_overlay_file(overlays_fd, candidate, contents, candidate, 1)
+            finally:
+                os.close(parent_fd)
+        return {
+            "schemaVersion": 1,
+            "status": "rolled-back",
+            "overlayCount": len(HOSTING_OVERLAYS),
+        }
+    finally:
+        os.close(overlays_fd)
+        os.close(public_fd)
+        os.close(root_fd)
+
+
+def verify_hosting_overlays(root_fd: int, public_fd: int) -> None:
+    try:
+        private_fd = open_directory(
+            ".cabohealth-private",
+            root_fd,
+            ".cabohealth-private",
+            mode=0o700,
+        )
+    except (OSError, ReleaseError) as error:
+        raise ReleaseError("HOSTING_OVERLAY_INVALID: private authority") from error
+    try:
+        try:
+            overlays_fd = open_directory(
+                "hosting-overlays-v1",
+                private_fd,
+                ".cabohealth-private/hosting-overlays-v1",
+                mode=0o700,
+            )
+        except (OSError, ReleaseError) as error:
+            raise ReleaseError("HOSTING_OVERLAY_INVALID: private authority") from error
+    finally:
+        os.close(private_fd)
+    try:
+        for target, candidate, contents in HOSTING_OVERLAYS:
+            parent_fd, leaf = open_parent_for_target(public_fd, target)
+            try:
+                live_info = verify_overlay_file(parent_fd, leaf, contents, target, 2)
+                candidate_info = verify_overlay_file(
+                    overlays_fd,
+                    candidate,
+                    contents,
+                    candidate,
+                    2,
+                )
+                if (live_info.st_dev, live_info.st_ino) != (
+                    candidate_info.st_dev,
+                    candidate_info.st_ino,
+                ):
+                    fail(f"HOSTING_OVERLAY_IDENTITY_INVALID: {target}")
+            finally:
+                os.close(parent_fd)
+    finally:
+        os.close(overlays_fd)
+
+
 def verify_tree(
     root_fd: int,
     buffers: dict[str, bytes],
@@ -1825,10 +2143,11 @@ def inventory_live(root_path: str, release_argument: str, raw: bytes) -> dict[st
     try:
         public_fd = open_directory("public_html", root_fd, "public_html", mode=0o755)
         try:
+            verify_hosting_overlays(root_fd, public_fd)
             expected_children = {
                 "apps": (".htaccess", "clinic-guide", "healthy-recipes", "shared"),
-                "app": ("privacy", "report-content", "support", "terms"),
-                ".well-known": ("apple-app-site-association",),
+                "app": (".htaccess", "privacy", "report-content", "support", "terms"),
+                ".well-known": (".htaccess", "apple-app-site-association"),
             }
             for parent, children in expected_children.items():
                 parent_fd = open_directory(parent, public_fd, f"public_html/{parent}", mode=0o755)
@@ -4027,6 +4346,12 @@ def main(argv: list[str]) -> int:
     if len(argv) == 3 and argv[1] == "capture-assembly-snapshot":
         sys.stdout.buffer.write(capture_assembly_snapshot(argv[2]))
         return 0
+    if len(argv) == 3 and argv[1] == "publish-hosting-overlays":
+        sys.stdout.buffer.write(canonical_json(publish_hosting_overlays(argv[2])))
+        return 0
+    if len(argv) == 3 and argv[1] == "rollback-hosting-overlays":
+        sys.stdout.buffer.write(canonical_json(rollback_hosting_overlays(argv[2])))
+        return 0
     if len(argv) == 4 and argv[1] == "materialize-stage":
         result = materialize_stage(argv[2], argv[3], sys.stdin.buffer.read())
         print(result)
@@ -4042,7 +4367,7 @@ def main(argv: list[str]) -> int:
     if len(argv) == 4 and argv[1] == "inventory-live":
         sys.stdout.buffer.write(canonical_json(inventory_live(argv[2], argv[3], sys.stdin.buffer.read())))
         return 0
-    fail("Usage: secure_web_release.py <root-identity|capture-assembly-snapshot|materialize-release|materialize-stage|capture-reviewed-inputs|promote-next|inventory-live> <owned-root> [release-id]; secure_web_release.py rollback-next <owned-root> <release-id> <expected-index>")
+    fail("Usage: secure_web_release.py <root-identity|capture-assembly-snapshot|publish-hosting-overlays|rollback-hosting-overlays|materialize-release|materialize-stage|capture-reviewed-inputs|promote-next|inventory-live> <owned-root> [release-id]; secure_web_release.py rollback-next <owned-root> <release-id> <expected-index>")
 
 
 if __name__ == "__main__":

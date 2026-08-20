@@ -1,10 +1,10 @@
 # CaboHealth Hostinger release and rollback runbook
 
-Status: **local release assembled; live promotion still requires the exact release-ID authorization and private rehearsal below.** As of 2026-08-20, App Store Connect has saved the calculated 9+ rating, the exact host and two miniapp ratings are verified at 9, `releaseReady` is true, SSH/key access is active, and the local assembler can produce the reviewed 16-file payload. Production verification, private rehearsal, backups, atomic-capability proof, promotion, and real-iPhone QA remain incomplete. This runbook is an execution contract, not blanket deployment authorization.
+Status: **the reviewed 16-file release is live; final production verification remains gated.** As of 2026-08-20, the private backup and rollback rehearsal passed, all nine promotion units passed their WordPress control probes, and the descriptor-side 16-file content inventory matched the reviewed release. The first live-origin check found two Hostinger response-policy requirements: an exact legal-page header overlay and an exact AASA MIME overlay. Those separately attested overlays, origin/CDN/browser checks, and real-iPhone QA must be green before this release is called complete. This runbook is an execution contract, not blanket authorization for a future release.
 
 ## Fixed scope
 
-The public payload is exactly 16 files: canonical AASA; Privacy, Terms, Support, and Report Content HTML; `apps/.htaccess`; the two approved module roots; and six shared assets. The promotion units, in required order, are:
+The immutable content payload remains exactly 16 files: canonical AASA; Privacy, Terms, Support, and Report Content HTML; `apps/.htaccess`; the two approved module roots; and six shared assets. The promotion units, in required order, are:
 
 1. `public_html/apps/.htaccess`
 2. `public_html/apps/shared/`
@@ -15,6 +15,8 @@ The public payload is exactly 16 files: canonical AASA; Privacy, Terms, Support,
 7. `public_html/apps/healthy-recipes/`
 8. `public_html/apps/clinic-guide/`
 9. `public_html/.well-known/apple-app-site-association`
+
+Hostinger additionally requires exactly two server-environment overlays: `public_html/app/.htaccess` and `public_html/.well-known/.htaccess`. They are checked-in exact policies but are not content-payload files, do not change the 16-file release inventory or release ID, and may be published only by the reviewed helper's hard-link/no-replace overlay operation. The server inventory attests both overlays independently before accepting the 16 content files.
 
 Never change the WordPress root, theme, Media Library/uploads, database content, root `.htaccess`, unrelated assets, or the protected PHI-remediation rule. Never use recursive removal, `mv -f`, `cp -r`, broad `rsync`, tar extraction, manifest-selected paths, or an unreviewed remote script.
 
@@ -85,7 +87,19 @@ Each `rollback-next` invocation reverses exactly one unit and requires the expec
 
 ## Production verification
 
-After each promoted unit, re-open and hash the live leaf, probe the WordPress root, and append only the sanitized journal state. After all nine units, run the descriptor-side inventory and validate the separately captured browser evidence before purging only exact promoted URLs:
+After each promoted unit, re-open and hash the live leaf, probe the WordPress root, and append only the sanitized journal state. After all nine units, publish the exact Hostinger overlays with the separately reviewed helper:
+
+```text
+CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py publish-hosting-overlays <owned-deployment-root>
+```
+
+The command creates immutable private candidates and atomically hard-links each public name without replacement. It rejects any pre-existing different file, link, altered candidate, or identity mismatch. If the subsequent WordPress/origin checks fail, remove only those two verified public links while retaining their private candidates:
+
+```text
+CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py rollback-hosting-overlays <owned-deployment-root>
+```
+
+Then run the descriptor-side inventory and validate the separately captured browser evidence before purging only exact promoted URLs:
 
 ```text
 CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py inventory-live <owned-deployment-root> <reviewed-release-id> < immutable-transport-object.json

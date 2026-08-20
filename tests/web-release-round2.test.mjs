@@ -326,6 +326,8 @@ test('descriptor server inventory rejects an extra apps sibling and binds its ex
     const result = runHelper(root, 'promote-next', transport, [transport.releaseId]);
     assert.equal(result.status, 0, result.stderr || result.stdout);
   }
+  const overlays = runHelper(root, 'publish-hosting-overlays', transport);
+  assert.equal(overlays.status, 0, overlays.stderr || overlays.stdout);
   mkdirSync(join(root, 'public_html/apps/unreviewed-third-sibling'), { mode: 0o755 });
   const inventory = runHelper(root, 'inventory-live', transport, [transport.releaseId]);
   assert.equal(inventory.status, 1, inventory.stderr || inventory.stdout);

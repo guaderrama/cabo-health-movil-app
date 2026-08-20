@@ -13,6 +13,18 @@ const SHA256 = /^[a-f0-9]{64}$/u;
 const COMMIT = /^[a-f0-9]{40}$/u;
 const ROLLBACK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 const LEGAL_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const LEGAL_SECURITY_HEADERS = Object.freeze({
+  'content-security-policy': LEGAL_CSP,
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'no-referrer',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+});
+const HIDDEN_HOSTING_CONFIG_PATHS = Object.freeze([
+  '/apps/.htaccess',
+  '/app/.htaccess',
+  '/.well-known/.htaccess',
+]);
 const ORIGIN_PAYLOAD_PATHS = Object.freeze([
   '.well-known/apple-app-site-association',
   'app/privacy/index.html',
@@ -1146,11 +1158,16 @@ export async function verifyOrigin({
         if (response.headers.get(name) !== expected) throw new Error(`ORIGIN_SECURITY_HEADER_INVALID: ${urlPath}`);
       }
     } else if (entry.path.startsWith('app/')) {
-      const responseCsp = response.headers.get('content-security-policy') ?? '';
-      if (
-        response.headers.get('x-frame-options') !== 'DENY'
-        && !/(?:^|;)\s*frame-ancestors\s+'none'\s*(?:;|$)/u.test(responseCsp)
-      ) throw new Error(`ORIGIN_LEGAL_FRAMING_UNPROTECTED: ${urlPath}`);
+      for (const [name, expected] of Object.entries(LEGAL_SECURITY_HEADERS)) {
+        if (response.headers.get(name) !== expected) {
+          throw new Error(`ORIGIN_LEGAL_SECURITY_HEADER_INVALID: ${urlPath}`);
+        }
+      }
+    } else if (
+      entry.path === '.well-known/apple-app-site-association'
+      && response.headers.get('x-content-type-options') !== 'nosniff'
+    ) {
+      throw new Error('ORIGIN_AASA_SECURITY_HEADER_INVALID');
     }
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.byteLength !== entry.size || sha256(bytes) !== entry.sha256) {
@@ -1178,9 +1195,11 @@ export async function verifyOrigin({
   const directoryResponse = await exactFetch(base, '/apps/');
   if (![403, 404].includes(directoryResponse.status)) throw new Error('ORIGIN_DIRECTORY_LISTING_EXPOSED');
   await directoryResponse.arrayBuffer();
-  const htaccessResponse = await exactFetch(base, '/apps/.htaccess');
-  if (![403, 404].includes(htaccessResponse.status)) throw new Error('ORIGIN_HTACCESS_EXPOSED');
-  await htaccessResponse.arrayBuffer();
+  for (const hiddenPath of HIDDEN_HOSTING_CONFIG_PATHS) {
+    const htaccessResponse = await exactFetch(base, hiddenPath);
+    if (![403, 404].includes(htaccessResponse.status)) throw new Error('ORIGIN_HTACCESS_EXPOSED');
+    await htaccessResponse.arrayBuffer();
+  }
   const unknownSlug = createUnknownSlug();
   const unknownPath = `/apps/${unknownSlug}/`;
   const unknownResponse = await exactFetch(base, unknownPath);

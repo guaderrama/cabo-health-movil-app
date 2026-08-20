@@ -193,7 +193,10 @@ async function runMutatedOrigin(verifyOrigin, mutate) {
       ? artifact.files.find((item) => item.path === path).mediaType
       : 'text/plain; charset=utf-8' };
     if (request.url === '/apps/') status = 403;
-    else if (request.url === '/apps/.htaccess' || request.url?.startsWith('/apps/task-8-unknown-')) status = 404;
+    else if (
+      ['/apps/.htaccess', '/app/.htaccess', '/.well-known/.htaccess'].includes(request.url ?? '')
+      || request.url?.startsWith('/apps/task-8-unknown-')
+    ) status = 404;
     else if (request.url === '/unrelated-control.pdf') status = 200;
     else if (request.url === '/remediated-terminal-route') status = 410;
     else if (request.url !== '/' && !path) status = 404;
@@ -204,7 +207,16 @@ async function runMutatedOrigin(verifyOrigin, mutate) {
       'Referrer-Policy': 'no-referrer',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
     });
-    if (path?.startsWith('app/')) headers['X-Frame-Options'] = 'DENY';
+    if (path?.startsWith('app/')) Object.assign(headers, {
+      'Content-Security-Policy': legalCsp,
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    });
+    if (path === '.well-known/apple-app-site-association') {
+      headers['X-Content-Type-Options'] = 'nosniff';
+    }
     const changed = mutate({ body, headers, path, requestUrl: request.url ?? '', status }) ?? {};
     status = changed.status ?? status;
     body = changed.body ?? body;
@@ -354,7 +366,7 @@ test('origin verification accepts exact local HTTP responses and emits only sani
       response.end('gone');
       return;
     }
-    if (request.url === '/apps/' || request.url === '/apps/.htaccess') {
+    if (request.url === '/apps/' || ['/apps/.htaccess', '/app/.htaccess', '/.well-known/.htaccess'].includes(request.url ?? '')) {
       response.writeHead(request.url === '/apps/' ? 403 : 404, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('blocked');
       return;
@@ -381,8 +393,15 @@ test('origin verification accepts exact local HTTP responses and emits only sani
         'Referrer-Policy': 'no-referrer',
         'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
       });
-    } else if (path.startsWith('app/')) {
-      headers['X-Frame-Options'] = 'DENY';
+    } else if (path.startsWith('app/')) Object.assign(headers, {
+      'Content-Security-Policy': legalCsp,
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    });
+    if (path === '.well-known/apple-app-site-association') {
+      headers['X-Content-Type-Options'] = 'nosniff';
     }
     response.writeHead(200, headers);
     response.end(body);
@@ -418,12 +437,17 @@ test('origin verifier rejects response, header, body, content, and negative-rout
     ['body tamper', ({ path, body }) => path === 'apps/shared/shell.js' ? { body: Buffer.concat([body, Buffer.from('tamper')]) } : null, /BODY_HASH_INVALID/u],
     ['missing CSP', ({ path }) => path === 'apps/clinic-guide/index.html' ? { removeHeaders: ['Content-Security-Policy'] } : null, /SECURITY_HEADER_INVALID/u],
     ['cookie', ({ path }) => path === 'apps/healthy-recipes/app.js' ? { headers: { 'Set-Cookie': 'secret=value' } } : null, /SET_COOKIE_FORBIDDEN/u],
-    ['legal framing weakened', ({ path }) => path === 'app/privacy/index.html' ? { removeHeaders: ['X-Frame-Options'] } : null, /LEGAL_FRAMING_UNPROTECTED/u],
+    ['legal CSP weakened', ({ path }) => path === 'app/privacy/index.html' ? { headers: { 'Content-Security-Policy': "default-src 'self'" } } : null, /LEGAL_SECURITY_HEADER_INVALID/u],
+    ['legal framing weakened', ({ path }) => path === 'app/privacy/index.html' ? { removeHeaders: ['X-Frame-Options'] } : null, /LEGAL_SECURITY_HEADER_INVALID/u],
+    ['legal nosniff missing', ({ path }) => path === 'app/privacy/index.html' ? { removeHeaders: ['X-Content-Type-Options'] } : null, /LEGAL_SECURITY_HEADER_INVALID/u],
     ['canonical changed', ({ path, body }) => path === 'app/terms/index.html' ? { body: Buffer.from(body.toString().replace('/app/terms/', '/app/privacy/')) } : null, /BODY_HASH_INVALID|CANONICAL_INVALID/u],
     ['directory listing exposed', ({ requestUrl }) => requestUrl === '/apps/' ? { status: 200 } : null, /DIRECTORY_LISTING_EXPOSED/u],
     ['htaccess exposed', ({ requestUrl }) => requestUrl === '/apps/.htaccess' ? { status: 200 } : null, /HTACCESS_EXPOSED/u],
+    ['legal htaccess exposed', ({ requestUrl }) => requestUrl === '/app/.htaccess' ? { status: 200 } : null, /HTACCESS_EXPOSED/u],
+    ['AASA htaccess exposed', ({ requestUrl }) => requestUrl === '/.well-known/.htaccess' ? { status: 200 } : null, /HTACCESS_EXPOSED/u],
     ['unknown slug fallback', ({ requestUrl }) => requestUrl.startsWith('/apps/task-8-unknown-') ? { status: 200 } : null, /UNKNOWN_SLUG_NOT_MISSING/u],
     ['AASA tamper', ({ path, body }) => path === '.well-known/apple-app-site-association' ? { body: Buffer.concat([body, Buffer.from(' ')]) } : null, /BODY_HASH_INVALID|AASA_INVALID/u],
+    ['AASA nosniff missing', ({ path }) => path === '.well-known/apple-app-site-association' ? { removeHeaders: ['X-Content-Type-Options'] } : null, /AASA_SECURITY_HEADER_INVALID/u],
   ];
   for (const [name, mutate, expected] of cases) {
     await context.test(name, async () => {

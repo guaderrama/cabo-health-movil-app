@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -39,6 +39,14 @@ const promoteTargets = Object.freeze([
   'public_html/apps/healthy-recipes',
   'public_html/apps/clinic-guide',
   'public_html/.well-known/apple-app-site-association',
+]);
+const hostingOverlayBytes = new Map([
+  ['app/.htaccess', Buffer.from(
+    "Options -Indexes\n<IfModule mod_headers.c>\n  Header always set Content-Type \"text/html; charset=utf-8\"\n  Header always set Content-Security-Policy \"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\"\n  Header always set X-Content-Type-Options \"nosniff\"\n  Header always set X-Frame-Options \"DENY\"\n  Header always set Referrer-Policy \"no-referrer\"\n  Header always set Permissions-Policy \"camera=(), microphone=(), geolocation=(), payment=(), usb=()\"\n  Header always unset Set-Cookie\n</IfModule>\n<IfModule mod_mime.c>\n  AddDefaultCharset UTF-8\n</IfModule>\n",
+  )],
+  ['.well-known/.htaccess', Buffer.from(
+    'Options -Indexes\n<Files "apple-app-site-association">\n  ForceType application/json\n  <IfModule mod_headers.c>\n    Header always set Content-Type "application/json"\n    Header always set X-Content-Type-Options "nosniff"\n    Header always unset Set-Cookie\n  </IfModule>\n</Files>\n',
+  )],
 ]);
 
 function sha256(bytes) {
@@ -139,6 +147,191 @@ function writeFixturePath(root, relativePath, bytes) {
   }
   writeFileSync(join(directory, components.at(-1)), bytes, { flag: 'wx' });
 }
+
+function hostingOverlayFixture() {
+  const root = mkdtempSync(join(fixtureTmp, 'cabohealth-hosting-overlay-fixture-'));
+  mkdirSync(join(root, 'public_html'), { mode: 0o755 });
+  mkdirSync(join(root, 'public_html/app'), { mode: 0o755 });
+  mkdirSync(join(root, 'public_html/.well-known'), { mode: 0o755 });
+  writeFileSync(join(root, 'public_html/index.php'), 'wordpress-control\n', { flag: 'wx', mode: 0o644 });
+  const rootInfo = statSync(root);
+  return {
+    root,
+    env: {
+      ...process.env,
+      CABOHEALTH_EXPECTED_ROOT_ID: `${rootInfo.dev}:${rootInfo.ino}`,
+    },
+  };
+}
+
+test('hosting header overlays publish exact recoverable policies without replacing public files', () => {
+  const { root, env } = hostingOverlayFixture();
+  const controlBefore = readFileSync(join(root, 'public_html/index.php'));
+
+  const publish = spawnSync('python3', [helperPath, 'publish-hosting-overlays', root], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env,
+  });
+  assert.equal(publish.status, 0, publish.stderr || publish.stdout);
+  assert.deepEqual(JSON.parse(publish.stdout), {
+    schemaVersion: 1,
+    status: 'published',
+    overlayCount: 2,
+  });
+  for (const [path, bytes] of hostingOverlayBytes) {
+    assert.deepEqual(
+      readFileSync(join(projectRoot, 'web-hosting/cabohealth.org', path)),
+      bytes,
+    );
+    const publicPath = join(root, 'public_html', path);
+    assert.deepEqual(readFileSync(publicPath), bytes);
+    assert.equal(statSync(publicPath).mode & 0o777, 0o644);
+    assert.equal(statSync(publicPath).nlink, 2);
+  }
+  assert.deepEqual(readFileSync(join(root, 'public_html/index.php')), controlBefore);
+
+  const idempotent = spawnSync('python3', [helperPath, 'publish-hosting-overlays', root], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env,
+  });
+  assert.equal(idempotent.status, 0, idempotent.stderr || idempotent.stdout);
+  assert.equal(JSON.parse(idempotent.stdout).status, 'verified-existing');
+
+  const rollback = spawnSync('python3', [helperPath, 'rollback-hosting-overlays', root], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env,
+  });
+  assert.equal(rollback.status, 0, rollback.stderr || rollback.stdout);
+  assert.deepEqual(JSON.parse(rollback.stdout), {
+    schemaVersion: 1,
+    status: 'rolled-back',
+    overlayCount: 2,
+  });
+  for (const path of hostingOverlayBytes.keys()) {
+    assert.equal(existsSync(join(root, 'public_html', path)), false);
+  }
+  assert.deepEqual(readFileSync(join(root, 'public_html/index.php')), controlBefore);
+
+  const repeatedRollback = spawnSync('python3', [helperPath, 'rollback-hosting-overlays', root], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env,
+  });
+  assert.equal(repeatedRollback.status, 0, repeatedRollback.stderr || repeatedRollback.stdout);
+  assert.equal(JSON.parse(repeatedRollback.stdout).status, 'rolled-back');
+});
+
+test('hosting header overlays fail closed on existing, tampered, symlinked, or identity-mismatched files', async (context) => {
+  await context.test('different existing public file is preserved', () => {
+    const { root, env } = hostingOverlayFixture();
+    const publicPath = join(root, 'public_html/app/.htaccess');
+    writeFileSync(publicPath, 'existing-policy\n', { flag: 'wx', mode: 0o644 });
+    const result = spawnSync('python3', [helperPath, 'publish-hosting-overlays', root], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      env,
+    });
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.equal(readFileSync(publicPath, 'utf8'), 'existing-policy\n');
+  });
+
+  await context.test('a conflicting second overlay prevents every public write', () => {
+    const { root, env } = hostingOverlayFixture();
+    const conflict = join(root, 'public_html/.well-known/.htaccess');
+    writeFileSync(conflict, 'existing-policy\n', { flag: 'wx', mode: 0o644 });
+    const result = spawnSync('python3', [helperPath, 'publish-hosting-overlays', root], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      env,
+    });
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.equal(existsSync(join(root, 'public_html/app/.htaccess')), false);
+    assert.equal(readFileSync(conflict, 'utf8'), 'existing-policy\n');
+  });
+
+  await context.test('tampered private candidate is rejected before publication', () => {
+    const { root, env } = hostingOverlayFixture();
+    const privateRoot = join(root, '.cabohealth-private/hosting-overlays-v1');
+    mkdirSync(privateRoot, { recursive: true, mode: 0o700 });
+    writeFileSync(join(privateRoot, 'app-htaccess'), 'tampered\n', { flag: 'wx', mode: 0o644 });
+    const result = spawnSync('python3', [helperPath, 'publish-hosting-overlays', root], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      env,
+    });
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.equal(existsSync(join(root, 'public_html/app/.htaccess')), false);
+  });
+
+  await context.test('public symlink is rejected without following it', () => {
+    const { root, env } = hostingOverlayFixture();
+    const control = join(root, 'public_html/index.php');
+    symlinkSync('../index.php', join(root, 'public_html/app/.htaccess'));
+    const result = spawnSync('python3', [helperPath, 'publish-hosting-overlays', root], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      env,
+    });
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.equal(readFileSync(control, 'utf8'), 'wordpress-control\n');
+  });
+
+  await context.test('rollback preserves an exact-looking file with the wrong identity', () => {
+    const { root, env } = hostingOverlayFixture();
+    const publish = spawnSync('python3', [helperPath, 'publish-hosting-overlays', root], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      env,
+    });
+    assert.equal(publish.status, 0, publish.stderr || publish.stdout);
+    const publicPath = join(root, 'public_html/app/.htaccess');
+    unlinkSync(publicPath);
+    writeFileSync(publicPath, hostingOverlayBytes.get('app/.htaccess'), { flag: 'wx', mode: 0o644 });
+    const result = spawnSync('python3', [helperPath, 'rollback-hosting-overlays', root], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      env,
+    });
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.deepEqual(readFileSync(publicPath), hostingOverlayBytes.get('app/.htaccess'));
+  });
+});
+
+test('server inventory requires exact independently attested hosting overlays', () => {
+  const transport = fixtureTransport();
+  const root = mkdtempSync(join(fixtureTmp, 'cabohealth-hosting-overlay-inventory-'));
+  const invoke = (command, args = [], input = '') => spawnSync(
+    'python3',
+    [helperPath, command, root, ...args],
+    { cwd: projectRoot, encoding: 'utf8', input },
+  );
+  const encodedTransport = canonicalJson(transport);
+  const materialize = invoke('materialize-stage', [transport.releaseId], encodedTransport);
+  assert.equal(materialize.status, 0, materialize.stderr || materialize.stdout);
+  mkdirSync(join(root, 'public_html'), { mode: 0o755 });
+  for (let index = 0; index < promoteTargets.length; index += 1) {
+    const promoted = invoke('promote-next', [transport.releaseId], encodedTransport);
+    assert.equal(promoted.status, 0, promoted.stderr || promoted.stdout);
+  }
+
+  const missing = invoke('inventory-live', [transport.releaseId], encodedTransport);
+  assert.equal(missing.status, 1, missing.stderr || missing.stdout);
+  assert.match(missing.stderr, /HOSTING_OVERLAY/u);
+
+  const published = invoke('publish-hosting-overlays');
+  assert.equal(published.status, 0, published.stderr || published.stdout);
+  const verified = invoke('inventory-live', [transport.releaseId], encodedTransport);
+  assert.equal(verified.status, 0, verified.stderr || verified.stdout);
+  assert.equal(JSON.parse(verified.stdout).fileCount, payloadPaths.length);
+
+  writeFileSync(join(root, 'public_html/app/.htaccess'), 'tampered\n');
+  const tampered = invoke('inventory-live', [transport.releaseId], encodedTransport);
+  assert.equal(tampered.status, 1, tampered.stderr || tampered.stdout);
+  assert.match(tampered.stderr, /HOSTING_OVERLAY/u);
+});
 
 test('the real assembler validates the saved age and release-ready compliance without writing in check mode', () => {
   const artifactPath = join(projectRoot, 'release/web-artifacts.json');

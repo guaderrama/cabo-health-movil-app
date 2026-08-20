@@ -377,6 +377,8 @@ test('promote-next stops after one unit and rollback restores a root-probe failu
         assert.equal(outcome.complete, index === targets.length - 1);
       }
       if (stopIndex === targets.length - 1) {
+        const overlays = runHelper(root, 'publish-hosting-overlays', transport);
+        assert.equal(overlays.status, 0, overlays.stderr || overlays.stdout);
         const inventory = runHelper(root, 'inventory-live', transport, [transport.releaseId]);
         assert.equal(inventory.status, 0, inventory.stderr || inventory.stdout);
         assert.deepEqual(JSON.parse(inventory.stdout), {

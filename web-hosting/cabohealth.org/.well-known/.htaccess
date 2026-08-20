@@ -1,0 +1,9 @@
+Options -Indexes
+<Files "apple-app-site-association">
+  ForceType application/json
+  <IfModule mod_headers.c>
+    Header always set Content-Type "application/json"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always unset Set-Cookie
+  </IfModule>
+</Files>
