@@ -33,6 +33,8 @@ const paths = Object.freeze([
   'apps/clinic-guide/index.html',
   'apps/healthy-recipes/app.js',
   'apps/healthy-recipes/index.html',
+  'apps/shared/clinic-map-texture.png',
+  'apps/shared/logo-wordmark.png',
   'apps/shared/logo.png',
   'apps/shared/motion.js',
   'apps/shared/shell.js',
@@ -196,14 +198,14 @@ test('reviewed artifact authority recomputes exact policy and requires independe
   assert.throws(() => validateArtifactAuthority(coordinated, authority));
 });
 
-test('capsule consumer rejects a deterministic secondary-snapshot swap against nine reviewed pins', async () => {
+test('capsule consumer rejects a deterministic secondary-snapshot swap against eleven reviewed pins', async () => {
   const {
     captureReviewedCapsule,
     REVIEWED_MINIAPP_FILE_PINS,
   } = await import('../scripts/assemble-web-release.mjs');
   const { readVerifiedMiniappArtifact } = await import('../scripts/build-miniapps.mjs');
   assert.equal(typeof captureReviewedCapsule, 'function');
-  assert.equal(REVIEWED_MINIAPP_FILE_PINS?.length, 9);
+  assert.equal(REVIEWED_MINIAPP_FILE_PINS?.length, 11);
   const independentlyVerified = readVerifiedMiniappArtifact({
     projectRoot,
     outputRoot: join(projectRoot, 'miniapps/dist'),
@@ -358,6 +360,8 @@ test('promote-next stops after one unit and rollback restores a root-probe failu
       const root = mkdtempSync(join(fixtureTmp, 'cabohealth-promote-next-fixture-'));
       assert.equal(runHelper(root, 'materialize-stage', transport, [transport.releaseId]).status, 0);
       writePath(root, 'public_html/apps/.htaccess', 'old htaccess\n');
+      writePath(root, 'public_html/apps/shared/clinic-map-texture.png', 'old map texture\n');
+      writePath(root, 'public_html/apps/shared/logo-wordmark.png', 'old wordmark\n');
       writePath(root, 'public_html/apps/shared/logo.png', 'old logo\n');
       writePath(root, 'public_html/apps/shared/motion.js', 'old motion\n');
       writePath(root, 'public_html/apps/shared/shell.js', 'old shell\n');
@@ -381,7 +385,7 @@ test('promote-next stops after one unit and rollback restores a root-probe failu
           status: 'verified',
           releaseId: transport.releaseId,
           rootCount: 3,
-          fileCount: 14,
+          fileCount: 16,
           paths: [...paths],
           inventorySha256: transport.inventorySha256,
         });
@@ -462,7 +466,7 @@ test('production action contracts use nonce slugs and sanitize controls, invento
     status: 'verified',
     releaseId: artifact.releaseId,
     rootCount: 3,
-    fileCount: 14,
+    fileCount: 16,
     paths: [...paths],
     inventorySha256: artifact.inventorySha256,
   }, artifact, authority), true);

@@ -36,6 +36,8 @@ PAYLOAD_PATHS = (
     "apps/clinic-guide/index.html",
     "apps/healthy-recipes/app.js",
     "apps/healthy-recipes/index.html",
+    "apps/shared/clinic-map-texture.png",
+    "apps/shared/logo-wordmark.png",
     "apps/shared/logo.png",
     "apps/shared/motion.js",
     "apps/shared/shell.js",
@@ -69,8 +71,8 @@ PROMOTE_TARGETS = (
 ENTRY_SLUGS = ("healthy-recipes", "clinic-guide")
 LEGAL_SLUGS = ("privacy", "terms", "support", "report-content")
 APP_ID = "DQ8PH2DZ3R.com.cabohealth.app"
-CAPSULE_SIZE = 161867
-CAPSULE_SHA256 = "b5f4f2a39a46df12f12c017e6ef31fbff0aeb71045b3af5a7456be852fea9334"
+CAPSULE_SIZE = 707215
+CAPSULE_SHA256 = "ea4810cd75114020b24f966d825a376378464932eac66b4aefe21f006997d6e9"
 APACHE_SECURITY_SHA256 = "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"
 DRAFT_LEGAL_SHA256 = {
     "privacy": "48a9d5974d234434c200ff272c6dfeecc2d6b05baeae30dc25a37df06fb46b91",
@@ -88,14 +90,16 @@ FINAL_LEGAL_SHA256: dict[str, str | None] = {
 }
 MINIAPP_FILE_PINS = (
     ("apps/.htaccess", 568, "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"),
-    ("apps/clinic-guide/app.js", 1436, "1565868ae2bc74769e5d036bc697a4e1d81f91740345ba67edf0628af5813243"),
-    ("apps/clinic-guide/index.html", 20481, "a0246074ba7734df7e28354a6ecfff39ac08d7ddd1da4e295f66f11ec77a18ee"),
+    ("apps/clinic-guide/app.js", 2666, "9b3c054a96b59adb160e46ce8b59b95bfc9ab3cf5bd67f4fa3237449c17e97a1"),
+    ("apps/clinic-guide/index.html", 25655, "aa203edcdb01dbafbb01510ad2746250b3e8bb775e810568f7c55660ae15fd3d"),
     ("apps/healthy-recipes/app.js", 4049, "70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090"),
-    ("apps/healthy-recipes/index.html", 55957, "5f22027afcd1600fa36cd77974d48b6d2ddc4fe26e27fcf57f206a8520413829"),
+    ("apps/healthy-recipes/index.html", 56386, "50758bd40379fab4ab11af082dd8bbfa8c0f26350fc9aedb7b9aadfceaec8775"),
+    ("apps/shared/clinic-map-texture.png", 382740, "4b569f0da0cffb9a54dedd93ce672cf7592ae4516dd12663e3b34d731df237c4"),
+    ("apps/shared/logo-wordmark.png", 12584, "42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d"),
     ("apps/shared/logo.png", 13598, "e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117"),
     ("apps/shared/motion.js", 8996, "9ac97593f7339f6b7f1b9f4da6dafed4084185440022604b75754377291e56b7"),
     ("apps/shared/shell.js", 3769, "d53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103"),
-    ("apps/shared/styles.css", 9887, "db0f0c531c453455d63aadba1dd4a99008337e555a746a7cbfee19e5a3d8f3ef"),
+    ("apps/shared/styles.css", 16185, "73d83248fdb0d083425a76e9ae0b083b5eaafd4b2b3fe5070f7a8f395122c33b"),
 )
 RELEASE_ID = re.compile(r"^web-v1-[a-f0-9]{64}$")
 SHA256 = re.compile(r"^[a-f0-9]{64}$")
@@ -147,6 +151,8 @@ TREE_DIRECTORIES = (
 UNITS = (
     ("apps/.htaccess", "00-apps-htaccess", ("apps/.htaccess",)),
     ("apps/shared", "01-apps-shared", (
+        "apps/shared/clinic-map-texture.png",
+        "apps/shared/logo-wordmark.png",
         "apps/shared/logo.png",
         "apps/shared/motion.js",
         "apps/shared/shell.js",

@@ -40,12 +40,15 @@ const requiredCsp = {
 };
 const task6ASourceFixturePaths = [
   'assets/logo.png',
+  'assets/logo-wordmark.png',
   'content/clinic-guide.json',
   'content/recipes.json',
   'miniapps/clinic-guide/app.js',
   'miniapps/clinic-guide/index.html',
   'miniapps/healthy-recipes/app.js',
   'miniapps/healthy-recipes/index.html',
+  'miniapps/shared/clinic-map-texture.png',
+  'miniapps/shared/logo-wordmark.png',
   'miniapps/shared/logo.png',
   'miniapps/shared/motion.js',
   'miniapps/shared/security-headers.conf',
@@ -186,6 +189,8 @@ test('source registry contains only the two approved miniapps and the required l
     'miniapps/healthy-recipes/app.js',
     'miniapps/clinic-guide/index.html',
     'miniapps/clinic-guide/app.js',
+    'miniapps/shared/clinic-map-texture.png',
+    'miniapps/shared/logo-wordmark.png',
     'web-hosting/cabohealth.org/apps/.htaccess',
   ]) {
     assert.ok(existsSync(join(projectRoot, relativePath)), `missing ${relativePath}`);
@@ -270,6 +275,67 @@ test('generated Healthy Recipes document is complete without JavaScript and has 
   });
 });
 
+test('both approved miniapps render the shared premium CaboHealth visual shell', async () => {
+  const {
+    renderClinicGuideDocument,
+    renderHealthyRecipesDocument,
+  } = await import(buildModuleUrl.href);
+  const recipesHtml = renderHealthyRecipesDocument(
+    read('miniapps/healthy-recipes/index.html'),
+    readJson('content/recipes.json'),
+  );
+  const clinicHtml = renderClinicGuideDocument(
+    read('miniapps/clinic-guide/index.html'),
+    readJson('content/clinic-guide.json'),
+    readJson('release/public-contact-facts.json'),
+  );
+
+  for (const html of [recipesHtml, clinicHtml]) {
+    assert.match(html, /data-premium-miniapp/u);
+    assert.match(html, /class="premium-topbar"/u);
+    assert.match(html, /src="\.\.\/shared\/logo-wordmark\.png"/u);
+    assert.doesNotMatch(html, /src="https?:\/\//iu);
+  }
+});
+
+test('premium miniapp stylesheet carries the approved palette, enhanced states, and accessible controls', () => {
+  const css = read('miniapps/shared/styles.css');
+  for (const token of ['#082a3c', '#0e5876', '#fbfaf7', '#b8956a', '#4f7785', '#e8f4f8']) {
+    assert.ok(css.toLowerCase().includes(token), `missing approved color ${token}`);
+  }
+  assert.match(css, /html\[data-enhanced="true"\] \[data-clinic-panel\]\[data-active="false"\]\s*\{\s*display:\s*none/u);
+  assert.match(css, /button,\s*a,\s*input,\s*summary\s*\{[^}]*min-height:\s*44px/su);
+  assert.match(css, /\.motion-control button\s*\{[^}]*min-height:\s*44px/su);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/u);
+});
+
+test('recipe cards keep complete bilingual details collapsed until the reader opens one', async () => {
+  const { renderHealthyRecipesDocument } = await import(buildModuleUrl.href);
+  const html = renderHealthyRecipesDocument(
+    read('miniapps/healthy-recipes/index.html'),
+    readJson('content/recipes.json'),
+  );
+
+  assert.equal((html.match(/<details>/gu) ?? []).length, 24);
+  assert.equal((html.match(/<details\s+open>/gu) ?? []).length, 0);
+});
+
+test('recipe meal filters expose one localized label at a time', async () => {
+  const { renderHealthyRecipesDocument } = await import(buildModuleUrl.href);
+  const html = renderHealthyRecipesDocument(
+    read('miniapps/healthy-recipes/index.html'),
+    readJson('content/recipes.json'),
+  );
+
+  const filterButtons = html.match(/<button type="button" data-recipe-filter="[^"]+"[^>]*>.*?<\/button>/gu) ?? [];
+  assert.equal(filterButtons.length, 6);
+  for (const button of filterButtons) {
+    assert.match(button, /<span lang="en" data-locale="en">[^<]+<\/span>/u);
+    assert.match(button, /<span lang="es-MX" data-locale="es-MX">[^<]+<\/span>/u);
+  }
+  assert.doesNotMatch(html, /All \/ Todas|Breakfast \/ Desayuno|Lunch \/ Comida|Dinner \/ Cena|Snack \/ Botana|Beverage \/ Bebida/u);
+});
+
 test('generated HTML and Apache configuration carry equivalent strict CSP', async () => {
   await withHealthyBuild(async (outputRoot) => {
     const html = readFileSync(join(outputRoot, 'apps/healthy-recipes/index.html'), 'utf8');
@@ -306,8 +372,8 @@ test('artifact verifier rejects remote resources, active exfiltration, forms, po
     ['css url', 'styles.css', '', '\n.x{background:url(https://evil.example/x.png)}'],
     ['css import', 'styles.css', '', '\n@import "https://evil.example/x.css";'],
     ['weakened CSP', 'index.html', "connect-src 'none'", "connect-src 'self'"],
-    ['numeric entity URL', 'index.html', 'src="../shared/logo.png"', 'src="&#x68;ttps://evil.example/logo.png"'],
-    ['named entity URL', 'index.html', 'src="../shared/logo.png"', 'src="https&colon;//evil.example/logo.png"'],
+    ['numeric entity URL', 'index.html', 'src="../shared/logo-wordmark.png"', 'src="&#x68;ttps://evil.example/logo.png"'],
+    ['named entity URL', 'index.html', 'src="../shared/logo-wordmark.png"', 'src="https&colon;//evil.example/logo.png"'],
     ['duplicate href', 'index.html', 'href="https://cabohealth.org/app/privacy/"', 'href="https://evil.example/" href="https://cabohealth.org/app/privacy/"'],
     ['quoted tag delimiter', 'index.html', '</body>', '<a title=">" href="https://evil.example/">evil</a></body>'],
     ['SVG xlink navigation', 'index.html', '</body>', '<svg><a xlink:href="https://evil.example/"><text>evil</text></a></svg></body>'],
@@ -574,6 +640,98 @@ test('release renderer preserves the complete bilingual Clinic Guide without Jav
     assert.match(html, /Monday–Friday, 10:00 AM–4:00 PM/u);
     assert.doesNotMatch(html, /verified Apple listing|Apple place-card/iu);
   });
+});
+
+test('Clinic Guide is one premium miniapp with Explore, Visit, and Contact states', async () => {
+  const { renderClinicGuideDocument } = await import(buildModuleUrl.href);
+  const html = renderClinicGuideDocument(
+    read('miniapps/clinic-guide/index.html'),
+    readJson('content/clinic-guide.json'),
+    readJson('release/public-contact-facts.json'),
+  );
+
+  assert.equal((html.match(/data-clinic-panel="(?:explore|visit|contact)"/gu) ?? []).length, 3);
+  assert.equal((html.match(/data-clinic-tab="(?:explore|visit|contact)"/gu) ?? []).length, 3);
+  assert.match(html, /data-clinic-panel="explore"/u);
+  assert.match(html, /data-clinic-panel="visit"/u);
+  assert.match(html, /data-clinic-panel="contact"/u);
+  assert.doesNotMatch(html, /IV Therapy|Longevity Programs|Sleep &amp; Recovery|Clinic Diagnostics|free parking|minutes from the marina/iu);
+});
+
+test('Clinic Guide navigation and overview rows show only the selected language', async () => {
+  const { renderClinicGuideDocument } = await import(buildModuleUrl.href);
+  const html = renderClinicGuideDocument(
+    read('miniapps/clinic-guide/index.html'),
+    readJson('content/clinic-guide.json'),
+    readJson('release/public-contact-facts.json'),
+  );
+
+  assert.equal((html.match(/data-clinic-tab=/gu) ?? []).length, 3);
+  assert.equal((html.match(/data-open-clinic-panel=/gu) ?? []).length, 3);
+  assert.doesNotMatch(html, /Explore \/ Explora|Visit \/ Visita|Contact \/ Contacto|Visit preparation \/ Preparación/iu);
+  for (const control of html.match(/<(?:button)[^>]+data-(?:clinic-tab|open-clinic-panel)=[\s\S]*?<\/button>/gu) ?? []) {
+    assert.match(control, /lang="en" data-locale="en"/u);
+    assert.match(control, /lang="es-MX" data-locale="es-MX"/u);
+  }
+});
+
+test('Clinic Guide translates owner-confirmed display facts without changing their exact links', async () => {
+  const { renderClinicGuideDocument } = await import(buildModuleUrl.href);
+  const html = renderClinicGuideDocument(
+    read('miniapps/clinic-guide/index.html'),
+    readJson('content/clinic-guide.json'),
+    readJson('release/public-contact-facts.json'),
+  );
+
+  assert.match(html, /<span lang="es-MX" data-locale="es-MX">Frente a Plaza Amelia Wilkes, Hidalgo, Calle Cabo San Lucas 10, Centro, 23410 Cabo San Lucas, B\.C\.S\., México<\/span>/u);
+  assert.match(html, /<span lang="es-MX" data-locale="es-MX">Lunes–viernes, 10:00 a\. m\.–4:00 p\. m\.<\/span>/u);
+  assert.match(html, /<span lang="es-MX" data-locale="es-MX">Inglés, español<\/span>/u);
+  assert.ok(html.includes('href="https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes'));
+});
+
+test('Clinic Guide tab selection changes the visible in-page state without navigation', async () => {
+  const { activateClinicPanel } = await import(new URL('../miniapps/clinic-guide/app.js', import.meta.url));
+  const panels = ['explore', 'visit', 'contact'].map((name) => ({
+    dataset: { clinicPanel: name, active: String(name === 'explore') },
+    setAttribute(name, value) { this[name] = value; },
+  }));
+  const tabs = ['explore', 'visit', 'contact'].map((name) => ({
+    dataset: { clinicTab: name },
+    setAttribute(name, value) { this[name] = value; },
+  }));
+  const page = {
+    querySelectorAll(selector) {
+      if (selector === '[data-clinic-panel]') return panels;
+      if (selector === '[data-clinic-tab]') return tabs;
+      return [];
+    },
+  };
+
+  assert.equal(activateClinicPanel(page, 'visit'), true);
+  assert.deepEqual(panels.map(({ dataset }) => dataset.active), ['false', 'true', 'false']);
+  assert.deepEqual(tabs.map((tab) => tab['aria-pressed']), ['false', 'true', 'false']);
+  assert.equal(activateClinicPanel(page, 'unknown'), false);
+  assert.deepEqual(panels.map(({ dataset }) => dataset.active), ['false', 'true', 'false']);
+});
+
+test('Visit state uses the local map artwork and the exact confirmed Apple Maps and WhatsApp actions', async () => {
+  const { renderClinicGuideDocument } = await import(buildModuleUrl.href);
+  const html = renderClinicGuideDocument(
+    read('miniapps/clinic-guide/index.html'),
+    readJson('content/clinic-guide.json'),
+    readJson('release/public-contact-facts.json'),
+  );
+  const visit = html.slice(
+    html.indexOf('data-clinic-panel="visit"'),
+    html.indexOf('data-clinic-panel="contact"'),
+  );
+  const expectedMap = 'https://maps.apple.com/place?address=In%20front%20of%20Plaza%20Amelia%20Wilkes%2C%20Hidalgo%2C%20Calle%20Cabo%20San%20Lucas%2010%2C%20Centro%2C%2023410%20Cabo%20San%20Lucas%2C%20B.C.S.%2C%20Mexico&amp;name=Cabo%20Health';
+
+  assert.match(visit, /<img class="location-art" src="\.\.\/shared\/clinic-map-texture\.png"/u);
+  assert.ok(visit.includes(`href="${expectedMap}"`));
+  assert.ok(visit.includes('href="https://wa.me/526241224865"'));
+  assert.equal((html.match(/href="https:\/\/maps\.apple\.com\/place\?/gu) ?? []).length, 1);
+  assert.equal((html.match(/href="https:\/\/wa\.me\/526241224865"/gu) ?? []).length, 1);
 });
 
 test('Clinic Guide actions exactly match the native allowlist and remain literal same-window anchors', async () => {

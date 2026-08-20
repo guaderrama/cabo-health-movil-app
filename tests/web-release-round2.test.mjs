@@ -32,6 +32,8 @@ const paths = Object.freeze([
   'apps/clinic-guide/index.html',
   'apps/healthy-recipes/app.js',
   'apps/healthy-recipes/index.html',
+  'apps/shared/clinic-map-texture.png',
+  'apps/shared/logo-wordmark.png',
   'apps/shared/logo.png',
   'apps/shared/motion.js',
   'apps/shared/shell.js',
@@ -392,7 +394,10 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
     if (!includeResources || !pathname.startsWith('/apps/')) return;
     for (const [resourceUrl, type] of [
       ['https://cabohealth.org/apps/shared/styles.css', 'Stylesheet'],
-      ['https://cabohealth.org/apps/shared/logo.png', 'Image'],
+      ['https://cabohealth.org/apps/shared/logo-wordmark.png', 'Image'],
+      ...(pathname === '/apps/clinic-guide/' ? [
+        ['https://cabohealth.org/apps/shared/clinic-map-texture.png', 'Image'],
+      ] : []),
       ...(session.javascriptEnabled ? [
         [new URL('app.js', url).href, 'Script'],
         ['https://cabohealth.org/apps/shared/motion.js', 'Script'],

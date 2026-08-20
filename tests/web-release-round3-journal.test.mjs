@@ -31,6 +31,8 @@ const paths = Object.freeze([
   'apps/clinic-guide/index.html',
   'apps/healthy-recipes/app.js',
   'apps/healthy-recipes/index.html',
+  'apps/shared/clinic-map-texture.png',
+  'apps/shared/logo-wordmark.png',
   'apps/shared/logo.png',
   'apps/shared/motion.js',
   'apps/shared/shell.js',
@@ -558,13 +560,13 @@ test('directory identity recovery reverses wrong-mode and wrong-tree operands af
     await context.test(`${original}-${fault}`, () => {
       const { root, transport } = setup('absent');
       if (original === 'present') {
-        for (const name of ['logo.png', 'motion.js', 'shell.js', 'styles.css']) {
+        for (const name of ['clinic-map-texture.png', 'logo-wordmark.png', 'logo.png', 'motion.js', 'shell.js', 'styles.css']) {
           writePath(root, `public_html/apps/shared/${name}`, `reviewed old ${name}\n`);
         }
       }
       assert.equal(runHelper(root, 'promote-next', transport).status, 0);
       const reviewedOld = original === 'present'
-        ? new Map(['logo.png', 'motion.js', 'shell.js', 'styles.css'].map((name) => [
+        ? new Map(['clinic-map-texture.png', 'logo-wordmark.png', 'logo.png', 'motion.js', 'shell.js', 'styles.css'].map((name) => [
           name,
           readFileSync(join(root, `public_html/apps/shared/${name}`)),
         ]))
@@ -652,14 +654,14 @@ test('directory rollback recovery handles wrong-tree and wrong-mode exchange and
     await context.test(`${original}-${fault}`, () => {
       const { root, transport } = setup('absent');
       if (original === 'present') {
-        for (const name of ['logo.png', 'motion.js', 'shell.js', 'styles.css']) {
+        for (const name of ['clinic-map-texture.png', 'logo-wordmark.png', 'logo.png', 'motion.js', 'shell.js', 'styles.css']) {
           writePath(root, `public_html/apps/shared/${name}`, `reviewed old ${name}\n`);
         }
       }
       assert.equal(runHelper(root, 'promote-next', transport).status, 0);
       assert.equal(runHelper(root, 'promote-next', transport).status, 0);
       const reviewedNew = original === 'present'
-        ? new Map(['logo.png', 'motion.js', 'shell.js', 'styles.css'].map((name) => [
+        ? new Map(['clinic-map-texture.png', 'logo-wordmark.png', 'logo.png', 'motion.js', 'shell.js', 'styles.css'].map((name) => [
           name,
           readFileSync(join(root, `public_html/apps/shared/${name}`)),
         ]))

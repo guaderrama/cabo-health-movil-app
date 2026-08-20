@@ -22,6 +22,8 @@ const payloadPaths = Object.freeze([
   'apps/clinic-guide/index.html',
   'apps/healthy-recipes/app.js',
   'apps/healthy-recipes/index.html',
+  'apps/shared/clinic-map-texture.png',
+  'apps/shared/logo-wordmark.png',
   'apps/shared/logo.png',
   'apps/shared/motion.js',
   'apps/shared/shell.js',
@@ -151,7 +153,7 @@ test('the real assembler fails closed on pending compliance before its first out
   assert.equal(existsSync(join(projectRoot, 'release/web-bundles')), false);
 });
 
-test('descriptor-relative staging creates the exact private 14-file tree', () => {
+test('descriptor-relative staging creates the exact private 16-file tree', () => {
   const { result, root, transport } = materializeFixture();
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
@@ -249,6 +251,8 @@ test('atomic local promotion and rollback change only the nine leaves and restor
 
   const oldFiles = new Map([
     ['public_html/apps/.htaccess', Buffer.from('old apache policy\n')],
+    ['public_html/apps/shared/clinic-map-texture.png', Buffer.from('old map texture\n')],
+    ['public_html/apps/shared/logo-wordmark.png', Buffer.from('old wordmark\n')],
     ['public_html/apps/shared/logo.png', Buffer.from('old logo\n')],
     ['public_html/apps/shared/motion.js', Buffer.from('old motion\n')],
     ['public_html/apps/shared/shell.js', Buffer.from('old shell\n')],

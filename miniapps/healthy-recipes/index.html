@@ -10,14 +10,14 @@
   <link rel="stylesheet" href="../shared/styles.css">
   <title>Healthy Recipes | CaboHealth</title>
 </head>
-<body>
+<body data-premium-miniapp="healthy-recipes">
   <a class="skip-link" href="#main-content">Skip to recipes / Ir a las recetas</a>
   <div class="page-shell">
-    <header class="site-header" data-network-region>
+    <header class="premium-topbar" data-network-region>
       <canvas class="network-canvas" data-network-canvas aria-hidden="true"></canvas>
       <div class="header-bar">
         <a class="brand-link" href="https://cabohealth.org/apps/healthy-recipes/" aria-label="CaboHealth Healthy Recipes">
-          <img class="brand-logo" src="../shared/logo.png" width="500" height="500" alt="CaboHealth">
+          <img class="brand-logo" src="../shared/logo-wordmark.png" width="452" height="236" alt="CaboHealth">
         </a>
         <nav class="language-control" aria-label="Language / Idioma">
           <button type="button" data-language="en" aria-pressed="true" disabled>English</button>
@@ -65,12 +65,12 @@
           <input id="recipe-search" type="search" inputmode="search" autocomplete="off" data-recipe-search disabled>
         </label>
         <ul class="filter-list" aria-label="Meal filters / Filtros">
-          <li><button type="button" data-recipe-filter="all" aria-pressed="true" disabled>All / Todas</button></li>
-          <li><button type="button" data-recipe-filter="breakfast" aria-pressed="false" disabled>Breakfast / Desayuno</button></li>
-          <li><button type="button" data-recipe-filter="lunch" aria-pressed="false" disabled>Lunch / Comida</button></li>
-          <li><button type="button" data-recipe-filter="dinner" aria-pressed="false" disabled>Dinner / Cena</button></li>
-          <li><button type="button" data-recipe-filter="snack" aria-pressed="false" disabled>Snack / Botana</button></li>
-          <li><button type="button" data-recipe-filter="beverage" aria-pressed="false" disabled>Beverage / Bebida</button></li>
+          <li><button type="button" data-recipe-filter="all" aria-pressed="true" disabled><span lang="en" data-locale="en">All</span><span lang="es-MX" data-locale="es-MX">Todas</span></button></li>
+          <li><button type="button" data-recipe-filter="breakfast" aria-pressed="false" disabled><span lang="en" data-locale="en">Breakfast</span><span lang="es-MX" data-locale="es-MX">Desayuno</span></button></li>
+          <li><button type="button" data-recipe-filter="lunch" aria-pressed="false" disabled><span lang="en" data-locale="en">Lunch</span><span lang="es-MX" data-locale="es-MX">Comida</span></button></li>
+          <li><button type="button" data-recipe-filter="dinner" aria-pressed="false" disabled><span lang="en" data-locale="en">Dinner</span><span lang="es-MX" data-locale="es-MX">Cena</span></button></li>
+          <li><button type="button" data-recipe-filter="snack" aria-pressed="false" disabled><span lang="en" data-locale="en">Snack</span><span lang="es-MX" data-locale="es-MX">Botana</span></button></li>
+          <li><button type="button" data-recipe-filter="beverage" aria-pressed="false" disabled><span lang="en" data-locale="en">Beverage</span><span lang="es-MX" data-locale="es-MX">Bebida</span></button></li>
         </ul>
         <p class="result-count" data-result-count aria-live="polite">12 recipes / 12 recetas</p>
       </section>

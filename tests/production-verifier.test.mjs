@@ -42,6 +42,8 @@ function localOriginArtifact() {
     ['apps/clinic-guide/index.html', moduleHtml('clinic-guide')],
     ['apps/healthy-recipes/app.js', Buffer.from("document.documentElement.dataset.ready = 'true';\n")],
     ['apps/healthy-recipes/index.html', moduleHtml('healthy-recipes')],
+    ['apps/shared/clinic-map-texture.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01])],
+    ['apps/shared/logo-wordmark.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x02])],
     ['apps/shared/logo.png', Buffer.from([0x89, 0x50, 0x4e, 0x47])],
     ['apps/shared/motion.js', Buffer.from('export const motion = false;\n')],
     ['apps/shared/shell.js', Buffer.from('export const shell = true;\n')],
@@ -273,7 +275,7 @@ test('sanitized production evidence reconciles the exact artifact URL set withou
       status: 'verified',
       releaseId: artifact.releaseId,
       rootCount: 3,
-      fileCount: 14,
+      fileCount: 16,
       paths: artifact.files.map(({ path }) => path),
       inventorySha256: artifact.inventorySha256,
     },
@@ -393,7 +395,7 @@ test('origin verification accepts exact local HTTP responses and emits only sani
       },
     });
     assert.equal(result.rootStatus, 200);
-    assert.equal(result.urls.length, 13);
+    assert.equal(result.urls.length, 15);
     assert.equal(JSON.stringify(result).includes('headers'), false);
     assert.equal(JSON.stringify(result).includes('set-cookie'), false);
     assert.equal(result.urls.every(({ cookieFree }) => cookieFree === true), true);

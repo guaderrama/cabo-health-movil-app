@@ -24,6 +24,8 @@ const ORIGIN_PAYLOAD_PATHS = Object.freeze([
   'apps/clinic-guide/index.html',
   'apps/healthy-recipes/app.js',
   'apps/healthy-recipes/index.html',
+  'apps/shared/clinic-map-texture.png',
+  'apps/shared/logo-wordmark.png',
   'apps/shared/logo.png',
   'apps/shared/motion.js',
   'apps/shared/shell.js',
@@ -592,9 +594,13 @@ function validateBrowserRequestGraph(requests, { url, navigationHref, javascript
   ) throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
 
   const miniapp = new URL(url).pathname.startsWith('/apps/');
+  const clinicGuide = new URL(url).pathname === '/apps/clinic-guide/';
   const expectedResources = miniapp ? [
     ['https://cabohealth.org/apps/shared/styles.css', 'Stylesheet'],
-    ['https://cabohealth.org/apps/shared/logo.png', 'Image'],
+    ['https://cabohealth.org/apps/shared/logo-wordmark.png', 'Image'],
+    ...(clinicGuide ? [
+      ['https://cabohealth.org/apps/shared/clinic-map-texture.png', 'Image'],
+    ] : []),
     ...(javascript === 'enabled' ? [
       [new URL('app.js', url).href, 'Script'],
       ['https://cabohealth.org/apps/shared/motion.js', 'Script'],

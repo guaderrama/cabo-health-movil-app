@@ -92,6 +92,8 @@ const SOURCE_FILES = Object.freeze([
   'clinic-guide/index.html',
   'healthy-recipes/app.js',
   'healthy-recipes/index.html',
+  'shared/clinic-map-texture.png',
+  'shared/logo-wordmark.png',
   'shared/logo.png',
   'shared/motion.js',
   'shared/security-headers.conf',
@@ -100,17 +102,20 @@ const SOURCE_FILES = Object.freeze([
 ]);
 const TASK6A_REVIEWED_SOURCE_SHA256 = Object.freeze({
   'assets/logo.png': 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117',
+  'assets/logo-wordmark.png': '42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d',
   'content/clinic-guide.json': 'ee17b5427fb755385c1b0588b541808923db2e0831a68df5d58e6e0bb7faced6',
   'content/recipes.json': 'fbc9c338341653e87a744ae11906a1995ea642aa094ef4aaaf418f6bc819b9cf',
-  'miniapps/clinic-guide/app.js': '1565868ae2bc74769e5d036bc697a4e1d81f91740345ba67edf0628af5813243',
-  'miniapps/clinic-guide/index.html': '9d4ede54f319269b7fae631e6002c53b1722247c40293d8b4f671c9ab574d860',
+  'miniapps/clinic-guide/app.js': '9b3c054a96b59adb160e46ce8b59b95bfc9ab3cf5bd67f4fa3237449c17e97a1',
+  'miniapps/clinic-guide/index.html': '5e972a9f4efb5174e169c298ee5295fe27c583b6e28d2b9b8af01449c1857147',
   'miniapps/healthy-recipes/app.js': '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090',
-  'miniapps/healthy-recipes/index.html': 'b957146425693d892808044faed006cb991eeb8695ddb522baa625ffb319a481',
+  'miniapps/healthy-recipes/index.html': 'f10aea5c30e5c03fc86c912e958b3c100c447191f50e2cbc595be5d4634da158',
+  'miniapps/shared/clinic-map-texture.png': '4b569f0da0cffb9a54dedd93ce672cf7592ae4516dd12663e3b34d731df237c4',
+  'miniapps/shared/logo-wordmark.png': '42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d',
   'miniapps/shared/logo.png': 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117',
   'miniapps/shared/motion.js': '9ac97593f7339f6b7f1b9f4da6dafed4084185440022604b75754377291e56b7',
   'miniapps/shared/security-headers.conf': '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da',
   'miniapps/shared/shell.js': 'd53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103',
-  'miniapps/shared/styles.css': 'db0f0c531c453455d63aadba1dd4a99008337e555a746a7cbfee19e5a3d8f3ef',
+  'miniapps/shared/styles.css': '73d83248fdb0d083425a76e9ae0b083b5eaafd4b2b3fe5070f7a8f395122c33b',
   'release/public-contact-facts.json': '99a351ac98d91dab160746e473492224471891ca72a4c70624cb88da02b930a1',
   'web-hosting/cabohealth.org/apps/.htaccess': '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da',
 });
@@ -465,7 +470,7 @@ function renderRecipeLocale(recipe, locale) {
     ...recipe.categories.map((category) => `            <li>${CATEGORY_LABELS[category][locale]}</li>`),
     '          </ul>',
     `          <button class="favorite-button" type="button" data-favorite-recipe="${recipe.slug}" aria-pressed="false" disabled>${favoriteLabel}</button>`,
-    '          <details open>',
+    '          <details>',
     `            <summary>${detailLabel}</summary>`,
     `            <h4>${ingredientsLabel}</h4>`,
     renderList(recipe.ingredients[locale]),
@@ -523,26 +528,60 @@ function externalAction(href, labelEn, labelEs) {
   return `<a href="${escapeHtml(href)}" data-external-action data-label-en="${escapeHtml(labelEn)}" data-label-es="${escapeHtml(labelEs)}"><span data-external-label>${escapeHtml(labelEn)} / ${escapeHtml(labelEs)}</span> <span class="external-marker" aria-hidden="true">↗</span></a>`;
 }
 
+const CONFIRMED_DISPLAY_FACTS_ES = Object.freeze({
+  address: 'Frente a Plaza Amelia Wilkes, Hidalgo, Calle Cabo San Lucas 10, Centro, 23410 Cabo San Lucas, B.C.S., México',
+  hours: 'Lunes–viernes, 10:00 a. m.–4:00 p. m.',
+  serviceLanguages: 'Inglés, español',
+});
+
+function localizedFactValue(valueEn, valueEs = valueEn) {
+  return `<span lang="en" data-locale="en">${escapeHtml(valueEn)}</span><span lang="es-MX" data-locale="es-MX">${escapeHtml(valueEs)}</span>`;
+}
+
 function renderConfirmedPublicFacts(facts) {
   const { publicEmail, phone, whatsApp, address, hours, appleMapsDestination, serviceLanguages } = facts.facts;
   const rows = [
-    ['Email', 'Correo', publicEmail.value, externalAction(`mailto:${publicEmail.value}`, 'Email clinic', 'Enviar correo a la clínica')],
-    ['Phone', 'Teléfono', phone.value, externalAction(`tel:${phone.value}`, 'Call clinic', 'Llamar a la clínica')],
-    ['WhatsApp', 'WhatsApp', phone.value, externalAction(whatsApp.value, 'Open WhatsApp', 'Abrir WhatsApp')],
-    ['Address', 'Dirección', address.value, externalAction(appleMapsDestination.value, 'Open address destination', 'Abrir destino de la dirección')],
-    ['Hours', 'Horario', hours.value, ''],
-    ['Service languages', 'Idiomas de atención', serviceLanguages.value.join(', '), ''],
+    ['Email', 'Correo', publicEmail.value, publicEmail.value, externalAction(`mailto:${publicEmail.value}`, 'Email clinic', 'Enviar correo a la clínica')],
+    ['Phone', 'Teléfono', phone.value, phone.value, externalAction(`tel:${phone.value}`, 'Call clinic', 'Llamar a la clínica')],
+    ['WhatsApp', 'WhatsApp', phone.value, phone.value, ''],
+    ['Address', 'Dirección', address.value, CONFIRMED_DISPLAY_FACTS_ES.address, ''],
+    ['Hours', 'Horario', hours.value, CONFIRMED_DISPLAY_FACTS_ES.hours, ''],
+    ['Service languages', 'Idiomas de atención', serviceLanguages.value.join(', '), CONFIRMED_DISPLAY_FACTS_ES.serviceLanguages, ''],
   ];
   return [
     '        <ul class="contact-list">',
-    ...rows.map(([labelEn, labelEs, value, action]) => [
+    ...rows.map(([labelEn, labelEs, valueEn, valueEs, action]) => [
       '          <li>',
       `            <strong><span lang="en" data-locale="en">${escapeHtml(labelEn)}</span><span lang="es-MX" data-locale="es-MX">${escapeHtml(labelEs)}</span></strong>`,
-      `            <span>${escapeHtml(value)}</span>`,
+      `            <span>${localizedFactValue(valueEn, valueEs)}</span>`,
       action ? `            ${action}` : '',
       '          </li>',
     ].filter(Boolean).join('\n')),
     '        </ul>',
+  ].join('\n');
+}
+
+function renderVisitLocationCard(facts) {
+  const { address, hours, appleMapsDestination, whatsApp, serviceLanguages } = facts.facts;
+  return [
+    '        <section class="location-card" aria-labelledby="visit-location-en visit-location-es">',
+    '          <div lang="en" data-locale="en">',
+    '            <p class="eyebrow">Confirmed location</p>',
+    '            <h3 id="visit-location-en">Cabo San Lucas</h3>',
+    `            <p>${escapeHtml(address.value)}</p>`,
+    `            <p>${escapeHtml(hours.value)} · ${escapeHtml(serviceLanguages.value.join(', '))}</p>`,
+    '          </div>',
+    '          <div lang="es-MX" data-locale="es-MX">',
+    '            <p class="eyebrow">Ubicación confirmada</p>',
+    '            <h3 id="visit-location-es">Cabo San Lucas</h3>',
+    `            <p>${escapeHtml(CONFIRMED_DISPLAY_FACTS_ES.address)}</p>`,
+    `            <p>${escapeHtml(CONFIRMED_DISPLAY_FACTS_ES.hours)} · ${escapeHtml(CONFIRMED_DISPLAY_FACTS_ES.serviceLanguages)}</p>`,
+    '          </div>',
+    '          <div class="location-actions">',
+    `            ${externalAction(appleMapsDestination.value, 'Open Apple Maps', 'Abrir Apple Maps')}`,
+    `            ${externalAction(whatsApp.value, 'Open WhatsApp', 'Abrir WhatsApp')}`,
+    '          </div>',
+    '        </section>',
   ].join('\n');
 }
 
@@ -585,6 +624,7 @@ export function renderClinicGuideDocument(template, content, facts) {
   const replacements = {
     CSP: CONTENT_SECURITY_POLICY,
     CONFIRMED_PUBLIC_FACTS: renderConfirmedPublicFacts(facts),
+    VISIT_LOCATION_CARD: renderVisitLocationCard(facts),
     CLINIC_GUIDE_SECTIONS: content.groups.map(renderClinicGroup).join('\n'),
     EMERGENCY_GUIDANCE: renderBilingualInformationPanel({
       id: 'emergency-guidance',
@@ -626,8 +666,12 @@ const TASK6A_REVIEWED_ARTIFACTS = Object.freeze({
     sha256: '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090',
   }),
   'apps/healthy-recipes/index.html': Object.freeze({
-    size: 55957,
-    sha256: '5f22027afcd1600fa36cd77974d48b6d2ddc4fe26e27fcf57f206a8520413829',
+    size: 56386,
+    sha256: '50758bd40379fab4ab11af082dd8bbfa8c0f26350fc9aedb7b9aadfceaec8775',
+  }),
+  'apps/shared/logo-wordmark.png': Object.freeze({
+    size: 12584,
+    sha256: '42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d',
   }),
   'apps/shared/logo.png': Object.freeze({
     size: 13598,
@@ -642,8 +686,8 @@ const TASK6A_REVIEWED_ARTIFACTS = Object.freeze({
     sha256: 'd53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103',
   }),
   'apps/shared/styles.css': Object.freeze({
-    size: 9887,
-    sha256: 'db0f0c531c453455d63aadba1dd4a99008337e555a746a7cbfee19e5a3d8f3ef',
+    size: 16185,
+    sha256: '73d83248fdb0d083425a76e9ae0b083b5eaafd4b2b3fe5070f7a8f395122c33b',
   }),
 });
 const TASK6A_ARTIFACT_PATHS = Object.freeze(Object.keys(TASK6A_REVIEWED_ARTIFACTS));
@@ -653,20 +697,28 @@ const TASK6B_REVIEWED_ARTIFACTS = Object.freeze({
     sha256: '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da',
   }),
   'apps/clinic-guide/app.js': Object.freeze({
-    size: 1436,
-    sha256: '1565868ae2bc74769e5d036bc697a4e1d81f91740345ba67edf0628af5813243',
+    size: 2666,
+    sha256: '9b3c054a96b59adb160e46ce8b59b95bfc9ab3cf5bd67f4fa3237449c17e97a1',
   }),
   'apps/clinic-guide/index.html': Object.freeze({
-    size: 20481,
-    sha256: 'a0246074ba7734df7e28354a6ecfff39ac08d7ddd1da4e295f66f11ec77a18ee',
+    size: 25655,
+    sha256: 'aa203edcdb01dbafbb01510ad2746250b3e8bb775e810568f7c55660ae15fd3d',
   }),
   'apps/healthy-recipes/app.js': Object.freeze({
     size: 4049,
     sha256: '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090',
   }),
   'apps/healthy-recipes/index.html': Object.freeze({
-    size: 55957,
-    sha256: '5f22027afcd1600fa36cd77974d48b6d2ddc4fe26e27fcf57f206a8520413829',
+    size: 56386,
+    sha256: '50758bd40379fab4ab11af082dd8bbfa8c0f26350fc9aedb7b9aadfceaec8775',
+  }),
+  'apps/shared/clinic-map-texture.png': Object.freeze({
+    size: 382740,
+    sha256: '4b569f0da0cffb9a54dedd93ce672cf7592ae4516dd12663e3b34d731df237c4',
+  }),
+  'apps/shared/logo-wordmark.png': Object.freeze({
+    size: 12584,
+    sha256: '42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d',
   }),
   'apps/shared/logo.png': Object.freeze({
     size: 13598,
@@ -681,8 +733,8 @@ const TASK6B_REVIEWED_ARTIFACTS = Object.freeze({
     sha256: 'd53f7caab7fbcaee1739b5aada9773b443289022f8e9c3b11578b84ab98a3103',
   }),
   'apps/shared/styles.css': Object.freeze({
-    size: 9887,
-    sha256: 'db0f0c531c453455d63aadba1dd4a99008337e555a746a7cbfee19e5a3d8f3ef',
+    size: 16185,
+    sha256: '73d83248fdb0d083425a76e9ae0b083b5eaafd4b2b3fe5070f7a8f395122c33b',
   }),
 });
 const TASK6B_ARTIFACT_PATHS = Object.freeze([
@@ -691,6 +743,8 @@ const TASK6B_ARTIFACT_PATHS = Object.freeze([
   'apps/clinic-guide/index.html',
   'apps/healthy-recipes/app.js',
   'apps/healthy-recipes/index.html',
+  'apps/shared/clinic-map-texture.png',
+  'apps/shared/logo-wordmark.png',
   'apps/shared/logo.png',
   'apps/shared/motion.js',
   'apps/shared/shell.js',
@@ -718,6 +772,7 @@ function expectedHealthyArtifactFiles(projectRoot, recipes) {
         recipes,
       )), 'utf8'),
     ],
+    ['apps/shared/logo-wordmark.png', readFileSync(join(projectRoot, 'miniapps/shared/logo-wordmark.png'))],
     ['apps/shared/logo.png', readFileSync(join(projectRoot, 'miniapps/shared/logo.png'))],
     ['apps/shared/motion.js', readFileSync(join(projectRoot, 'miniapps/shared/motion.js'))],
     ['apps/shared/shell.js', readFileSync(join(projectRoot, 'miniapps/shared/shell.js'))],
@@ -728,6 +783,7 @@ function expectedHealthyArtifactFiles(projectRoot, recipes) {
 
 function expectedReleaseArtifactFiles(projectRoot, recipes, clinicGuide, contactFacts) {
   const values = new Map(expectedHealthyArtifactFiles(projectRoot, recipes));
+  values.set('apps/shared/clinic-map-texture.png', readFileSync(join(projectRoot, 'miniapps/shared/clinic-map-texture.png')));
   values.set('apps/clinic-guide/app.js', readFileSync(join(projectRoot, 'miniapps/clinic-guide/app.js')));
   values.set(
     'apps/clinic-guide/index.html',
