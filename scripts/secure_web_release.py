@@ -74,6 +74,29 @@ APP_ID = "DQ8PH2DZ3R.com.cabohealth.app"
 CAPSULE_SIZE = 719595
 CAPSULE_SHA256 = "2c839893cca416fdd471fef037bdfb8fc099960d9855e9d7b47981b13892602b"
 APACHE_SECURITY_SHA256 = "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"
+MINIAPP_MIME_OVERLAY = (
+    b"Options -Indexes\n"
+    b"<FilesMatch \"\\.html$\">\n"
+    b"  <IfModule mod_headers.c>\n"
+    b"    Header always set Content-Type \"text/html; charset=utf-8\"\n"
+    b"  </IfModule>\n"
+    b"</FilesMatch>\n"
+    b"<FilesMatch \"\\.js$\">\n"
+    b"  <IfModule mod_headers.c>\n"
+    b"    Header always set Content-Type \"text/javascript; charset=utf-8\"\n"
+    b"  </IfModule>\n"
+    b"</FilesMatch>\n"
+    b"<FilesMatch \"\\.css$\">\n"
+    b"  <IfModule mod_headers.c>\n"
+    b"    Header always set Content-Type \"text/css; charset=utf-8\"\n"
+    b"  </IfModule>\n"
+    b"</FilesMatch>\n"
+    b"<FilesMatch \"\\.png$\">\n"
+    b"  <IfModule mod_headers.c>\n"
+    b"    Header always set Content-Type \"image/png\"\n"
+    b"  </IfModule>\n"
+    b"</FilesMatch>\n"
+)
 HOSTING_OVERLAYS = (
     (
         "app/.htaccess",
@@ -105,6 +128,9 @@ HOSTING_OVERLAYS = (
         b"  </IfModule>\n"
         b"</Files>\n",
     ),
+    ("apps/clinic-guide/.htaccess", "clinic-guide-htaccess", MINIAPP_MIME_OVERLAY),
+    ("apps/healthy-recipes/.htaccess", "healthy-recipes-htaccess", MINIAPP_MIME_OVERLAY),
+    ("apps/shared/.htaccess", "shared-htaccess", MINIAPP_MIME_OVERLAY),
 )
 DRAFT_LEGAL_SHA256 = {
     "privacy": "48a9d5974d234434c200ff272c6dfeecc2d6b05baeae30dc25a37df06fb46b91",
@@ -803,6 +829,7 @@ def inventory_leaf(
     target: str,
     *,
     with_identity: bool = False,
+    allowed_extra_names: tuple[str, ...] = (),
 ) -> Any:
     try:
         fd = os.open(name, OPEN_FILE_READ, dir_fd=parent_fd)
@@ -836,7 +863,12 @@ def inventory_leaf(
                 fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
             prefix = f"{target}/"
             relative_expected = tuple(path.removeprefix(prefix) for path in expected_paths)
-            found = tuple(sorted(os.listdir(fd), key=lambda item: item.encode("ascii")))
+            found_all = tuple(sorted(os.listdir(fd), key=lambda item: item.encode("ascii")))
+            if tuple(item for item in found_all if item in allowed_extra_names) != tuple(
+                sorted(allowed_extra_names, key=lambda item: item.encode("ascii"))
+            ):
+                fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
+            found = tuple(item for item in found_all if item not in allowed_extra_names)
             if found != relative_expected:
                 fail(f"UNEXPECTED_LIVE_TARGET_INVENTORY: {target}")
             for relative_path, full_path in zip(found, expected_paths, strict=True):
@@ -2162,7 +2194,22 @@ def inventory_live(root_path: str, release_argument: str, raw: bytes) -> dict[st
                 target, _slot, payload_paths = UNITS[index]
                 parent_fd, leaf = open_parent_for_target(public_fd, target)
                 try:
-                    actual = inventory_leaf(parent_fd, leaf, payload_paths, target)
+                    allowed_extra_names = (
+                        (".htaccess",)
+                        if target in (
+                            "apps/clinic-guide",
+                            "apps/healthy-recipes",
+                            "apps/shared",
+                        )
+                        else ()
+                    )
+                    actual = inventory_leaf(
+                        parent_fd,
+                        leaf,
+                        payload_paths,
+                        target,
+                        allowed_extra_names=allowed_extra_names,
+                    )
                 finally:
                     os.close(parent_fd)
                 expected = expected_unit_hash(payload_paths, buffers)

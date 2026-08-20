@@ -391,6 +391,12 @@ test('promote-next stops after one unit and rollback restores a root-probe failu
           paths: [...paths],
           inventorySha256: transport.inventorySha256,
         });
+        const overlaysRollback = runHelper(root, 'rollback-hosting-overlays', transport);
+        assert.equal(
+          overlaysRollback.status,
+          0,
+          overlaysRollback.stderr || overlaysRollback.stdout,
+        );
       }
       for (let index = stopIndex + 1; index < targets.length; index += 1) {
         const stageTarget = targets[index].replace(/^public_html\//u, '');

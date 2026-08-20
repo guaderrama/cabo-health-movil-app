@@ -24,6 +24,9 @@ const HIDDEN_HOSTING_CONFIG_PATHS = Object.freeze([
   '/apps/.htaccess',
   '/app/.htaccess',
   '/.well-known/.htaccess',
+  '/apps/clinic-guide/.htaccess',
+  '/apps/healthy-recipes/.htaccess',
+  '/apps/shared/.htaccess',
 ]);
 const ORIGIN_PAYLOAD_PATHS = Object.freeze([
   '.well-known/apple-app-site-association',

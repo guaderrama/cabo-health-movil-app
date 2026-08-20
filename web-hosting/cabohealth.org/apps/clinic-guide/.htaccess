@@ -1,0 +1,21 @@
+Options -Indexes
+<FilesMatch "\.html$">
+  <IfModule mod_headers.c>
+    Header always set Content-Type "text/html; charset=utf-8"
+  </IfModule>
+</FilesMatch>
+<FilesMatch "\.js$">
+  <IfModule mod_headers.c>
+    Header always set Content-Type "text/javascript; charset=utf-8"
+  </IfModule>
+</FilesMatch>
+<FilesMatch "\.css$">
+  <IfModule mod_headers.c>
+    Header always set Content-Type "text/css; charset=utf-8"
+  </IfModule>
+</FilesMatch>
+<FilesMatch "\.png$">
+  <IfModule mod_headers.c>
+    Header always set Content-Type "image/png"
+  </IfModule>
+</FilesMatch>

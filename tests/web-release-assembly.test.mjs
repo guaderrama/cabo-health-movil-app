@@ -47,6 +47,12 @@ const hostingOverlayBytes = new Map([
   ['.well-known/.htaccess', Buffer.from(
     'Options -Indexes\n<Files "apple-app-site-association">\n  ForceType application/json\n  <IfModule mod_headers.c>\n    Header always set Content-Type "application/json"\n    Header always set X-Content-Type-Options "nosniff"\n    Header always unset Set-Cookie\n  </IfModule>\n</Files>\n',
   )],
+  ...['apps/clinic-guide/.htaccess', 'apps/healthy-recipes/.htaccess', 'apps/shared/.htaccess'].map((path) => [
+    path,
+    Buffer.from(
+      'Options -Indexes\n<FilesMatch "\\.html$">\n  <IfModule mod_headers.c>\n    Header always set Content-Type "text/html; charset=utf-8"\n  </IfModule>\n</FilesMatch>\n<FilesMatch "\\.js$">\n  <IfModule mod_headers.c>\n    Header always set Content-Type "text/javascript; charset=utf-8"\n  </IfModule>\n</FilesMatch>\n<FilesMatch "\\.css$">\n  <IfModule mod_headers.c>\n    Header always set Content-Type "text/css; charset=utf-8"\n  </IfModule>\n</FilesMatch>\n<FilesMatch "\\.png$">\n  <IfModule mod_headers.c>\n    Header always set Content-Type "image/png"\n  </IfModule>\n</FilesMatch>\n',
+    ),
+  ]),
 ]);
 
 function sha256(bytes) {
@@ -153,6 +159,9 @@ function hostingOverlayFixture() {
   mkdirSync(join(root, 'public_html'), { mode: 0o755 });
   mkdirSync(join(root, 'public_html/app'), { mode: 0o755 });
   mkdirSync(join(root, 'public_html/.well-known'), { mode: 0o755 });
+  mkdirSync(join(root, 'public_html/apps/clinic-guide'), { recursive: true, mode: 0o755 });
+  mkdirSync(join(root, 'public_html/apps/healthy-recipes'), { mode: 0o755 });
+  mkdirSync(join(root, 'public_html/apps/shared'), { mode: 0o755 });
   writeFileSync(join(root, 'public_html/index.php'), 'wordpress-control\n', { flag: 'wx', mode: 0o644 });
   const rootInfo = statSync(root);
   return {
@@ -177,7 +186,7 @@ test('hosting header overlays publish exact recoverable policies without replaci
   assert.deepEqual(JSON.parse(publish.stdout), {
     schemaVersion: 1,
     status: 'published',
-    overlayCount: 2,
+    overlayCount: hostingOverlayBytes.size,
   });
   for (const [path, bytes] of hostingOverlayBytes) {
     assert.deepEqual(
@@ -208,7 +217,7 @@ test('hosting header overlays publish exact recoverable policies without replaci
   assert.deepEqual(JSON.parse(rollback.stdout), {
     schemaVersion: 1,
     status: 'rolled-back',
-    overlayCount: 2,
+    overlayCount: hostingOverlayBytes.size,
   });
   for (const path of hostingOverlayBytes.keys()) {
     assert.equal(existsSync(join(root, 'public_html', path)), false);

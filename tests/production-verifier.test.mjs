@@ -194,7 +194,14 @@ async function runMutatedOrigin(verifyOrigin, mutate) {
       : 'text/plain; charset=utf-8' };
     if (request.url === '/apps/') status = 403;
     else if (
-      ['/apps/.htaccess', '/app/.htaccess', '/.well-known/.htaccess'].includes(request.url ?? '')
+      [
+        '/apps/.htaccess',
+        '/app/.htaccess',
+        '/.well-known/.htaccess',
+        '/apps/clinic-guide/.htaccess',
+        '/apps/healthy-recipes/.htaccess',
+        '/apps/shared/.htaccess',
+      ].includes(request.url ?? '')
       || request.url?.startsWith('/apps/task-8-unknown-')
     ) status = 404;
     else if (request.url === '/unrelated-control.pdf') status = 200;
@@ -366,7 +373,14 @@ test('origin verification accepts exact local HTTP responses and emits only sani
       response.end('gone');
       return;
     }
-    if (request.url === '/apps/' || ['/apps/.htaccess', '/app/.htaccess', '/.well-known/.htaccess'].includes(request.url ?? '')) {
+    if (request.url === '/apps/' || [
+      '/apps/.htaccess',
+      '/app/.htaccess',
+      '/.well-known/.htaccess',
+      '/apps/clinic-guide/.htaccess',
+      '/apps/healthy-recipes/.htaccess',
+      '/apps/shared/.htaccess',
+    ].includes(request.url ?? '')) {
       response.writeHead(request.url === '/apps/' ? 403 : 404, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('blocked');
       return;
@@ -445,6 +459,7 @@ test('origin verifier rejects response, header, body, content, and negative-rout
     ['htaccess exposed', ({ requestUrl }) => requestUrl === '/apps/.htaccess' ? { status: 200 } : null, /HTACCESS_EXPOSED/u],
     ['legal htaccess exposed', ({ requestUrl }) => requestUrl === '/app/.htaccess' ? { status: 200 } : null, /HTACCESS_EXPOSED/u],
     ['AASA htaccess exposed', ({ requestUrl }) => requestUrl === '/.well-known/.htaccess' ? { status: 200 } : null, /HTACCESS_EXPOSED/u],
+    ['nested MIME htaccess exposed', ({ requestUrl }) => requestUrl === '/apps/shared/.htaccess' ? { status: 200 } : null, /HTACCESS_EXPOSED/u],
     ['unknown slug fallback', ({ requestUrl }) => requestUrl.startsWith('/apps/task-8-unknown-') ? { status: 200 } : null, /UNKNOWN_SLUG_NOT_MISSING/u],
     ['AASA tamper', ({ path, body }) => path === '.well-known/apple-app-site-association' ? { body: Buffer.concat([body, Buffer.from(' ')]) } : null, /BODY_HASH_INVALID|AASA_INVALID/u],
     ['AASA nosniff missing', ({ path }) => path === '.well-known/apple-app-site-association' ? { removeHeaders: ['X-Content-Type-Options'] } : null, /AASA_SECURITY_HEADER_INVALID/u],

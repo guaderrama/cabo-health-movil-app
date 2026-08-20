@@ -1,6 +1,6 @@
 # CaboHealth Hostinger release and rollback runbook
 
-Status: **the reviewed 16-file release is live; final production verification remains gated.** As of 2026-08-20, the private backup and rollback rehearsal passed, all nine promotion units passed their WordPress control probes, and the descriptor-side 16-file content inventory matched the reviewed release. The first live-origin check found two Hostinger response-policy requirements: an exact legal-page header overlay and an exact AASA MIME overlay. Those separately attested overlays, origin/CDN/browser checks, and real-iPhone QA must be green before this release is called complete. This runbook is an execution contract, not blanket authorization for a future release.
+Status: **the reviewed 16-file release is live; final production verification remains gated.** As of 2026-08-20, the private backup and rollback rehearsal passed, all nine promotion units passed their WordPress control probes, and the descriptor-side 16-file content inventory matched the reviewed release. Live-origin checks found Hostinger-specific response-policy requirements for legal-page headers, AASA MIME, and exact miniapp HTML/JavaScript/CSS/image MIME. Those separately attested overlays, origin/CDN/browser checks, and real-iPhone QA must be green before this release is called complete. This runbook is an execution contract, not blanket authorization for a future release.
 
 ## Fixed scope
 
@@ -16,7 +16,7 @@ The immutable content payload remains exactly 16 files: canonical AASA; Privacy,
 8. `public_html/apps/clinic-guide/`
 9. `public_html/.well-known/apple-app-site-association`
 
-Hostinger additionally requires exactly two server-environment overlays: `public_html/app/.htaccess` and `public_html/.well-known/.htaccess`. They are checked-in exact policies but are not content-payload files, do not change the 16-file release inventory or release ID, and may be published only by the reviewed helper's hard-link/no-replace overlay operation. The server inventory attests both overlays independently before accepting the 16 content files.
+Hostinger additionally requires exactly five server-environment overlays: `public_html/app/.htaccess`, `public_html/.well-known/.htaccess`, and one exact MIME policy in each of `public_html/apps/clinic-guide/`, `public_html/apps/healthy-recipes/`, and `public_html/apps/shared/`. They are checked-in exact policies but are not content-payload files, do not change the 16-file release inventory or release ID, and may be published only by the reviewed helper's hard-link/no-replace overlay operation. The server inventory attests all five independently before accepting the 16 content files. Before a future content promotion, roll back these overlays, promote the new reviewed release, then republish the overlays; this prevents an environment file from moving inside a content rollback slot.
 
 Never change the WordPress root, theme, Media Library/uploads, database content, root `.htaccess`, unrelated assets, or the protected PHI-remediation rule. Never use recursive removal, `mv -f`, `cp -r`, broad `rsync`, tar extraction, manifest-selected paths, or an unreviewed remote script.
 
@@ -93,7 +93,7 @@ After each promoted unit, re-open and hash the live leaf, probe the WordPress ro
 CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py publish-hosting-overlays <owned-deployment-root>
 ```
 
-The command creates immutable private candidates and atomically hard-links each public name without replacement. It rejects any pre-existing different file, link, altered candidate, or identity mismatch. If the subsequent WordPress/origin checks fail, remove only those two verified public links while retaining their private candidates:
+The command creates immutable private candidates and atomically hard-links each public name without replacement. It rejects any pre-existing different file, link, altered candidate, or identity mismatch. If the subsequent WordPress/origin checks fail, remove only those five verified public links while retaining their private candidates:
 
 ```text
 CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py rollback-hosting-overlays <owned-deployment-root>
