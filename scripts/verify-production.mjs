@@ -452,6 +452,9 @@ function completedPerformanceRequests(logs, priorRequestIds = new Set()) {
     if (typeof method !== 'string' || method.length === 0) {
       throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
     }
+    if (/^Network\.(?:webSocket|webTransport|direct(?:TCP|UDP)Socket)/u.test(method)) {
+      throw new Error('BROWSER_NETWORK_NON_HTTP_FORBIDDEN');
+    }
     if (![
       'Network.requestWillBeSent',
       'Network.responseReceived',
@@ -568,7 +571,33 @@ function completedPerformanceRequests(logs, priorRequestIds = new Set()) {
   return [...requests.values()];
 }
 
-function validateBrowserRequestGraph(requests, { url, navigationHref, javascript }, sessionState) {
+function validateTopFrameAuthority(value, expectedUrl) {
+  const frameTree = value?.frameTree;
+  const frame = frameTree?.frame;
+  if (
+    !frameTree
+    || typeof frameTree !== 'object'
+    || Array.isArray(frameTree)
+    || !frame
+    || typeof frame !== 'object'
+    || Array.isArray(frame)
+    || typeof frame.id !== 'string'
+    || frame.id.length === 0
+    || typeof frame.loaderId !== 'string'
+    || frame.loaderId.length === 0
+    || frame.url !== expectedUrl
+    || Object.hasOwn(frame, 'parentId')
+    || (Object.hasOwn(frameTree, 'childFrames')
+      && (!Array.isArray(frameTree.childFrames) || frameTree.childFrames.length !== 0))
+  ) throw new Error('BROWSER_MAIN_FRAME_AUTHORITY_INVALID');
+  return Object.freeze({ frameId: frame.id, loaderId: frame.loaderId, url: frame.url });
+}
+
+function validateBrowserRequestGraph(
+  requests,
+  { url, navigationHref, javascript, initialFrame, navigationFrame },
+  sessionState,
+) {
   if (
     !Array.isArray(requests)
     || typeof navigationHref !== 'string'
@@ -576,6 +605,8 @@ function validateBrowserRequestGraph(requests, { url, navigationHref, javascript
     || !sessionState
     || !(sessionState.documentLoaderIds instanceof Set)
     || (sessionState.mainFrameId !== null && typeof sessionState.mainFrameId !== 'string')
+    || !initialFrame
+    || !navigationFrame
   ) {
     throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
   }
@@ -593,6 +624,13 @@ function validateBrowserRequestGraph(requests, { url, navigationHref, javascript
     || navigationDocument.documentURL !== navigationHref
     || navigationDocument.frameId !== originalDocument.frameId
     || navigationDocument.loaderId === originalDocument.loaderId
+    || originalDocument.frameId !== initialFrame.frameId
+    || originalDocument.loaderId !== initialFrame.loaderId
+    || originalDocument.url !== initialFrame.url
+    || navigationDocument.frameId !== navigationFrame.frameId
+    || navigationDocument.loaderId !== navigationFrame.loaderId
+    || navigationDocument.url !== navigationFrame.url
+    || navigationFrame.frameId !== initialFrame.frameId
     || originalDocument.sequence !== 0
     || navigationDocument.sequence !== requests.length - 1
     || (sessionState.mainFrameId !== null && originalDocument.frameId !== sessionState.mainFrameId)
@@ -719,6 +757,10 @@ export async function measureBrowserEvidence({
           if (!Array.isArray(logTypes) || !['browser', 'performance'].every((type) => logTypes.includes(type))) {
             throw new Error('WEBDRIVER_LOG_CAPABILITY_INVALID');
           }
+          await webdriverCommand(webdriver, `/session/${sessionId}/goog/cdp/execute`, 'POST', {
+            cmd: 'Network.enable',
+            params: { reportDirectSocketTraffic: true },
+          });
           completedPerformanceRequests(await webdriverCommand(
             webdriver,
             `/session/${sessionId}/log`,
@@ -755,6 +797,12 @@ export async function measureBrowserEvidence({
               },
             });
             await webdriverCommand(webdriver, `/session/${sessionId}/url`, 'POST', { url });
+            const initialFrame = validateTopFrameAuthority(await webdriverCommand(
+              webdriver,
+              `/session/${sessionId}/goog/cdp/execute`,
+              'POST',
+              { cmd: 'Page.getFrameTree', params: {} },
+            ), url);
             const probe = async () => {
               const measured = await webdriverCommand(webdriver, `/session/${sessionId}/execute/sync`, 'POST', {
                 script: `return (() => {
@@ -905,13 +953,19 @@ export async function measureBrowserEvidence({
               `/session/${sessionId}/url`,
               'GET',
             ) === navigationHref;
+            const navigationFrame = validateTopFrameAuthority(await webdriverCommand(
+              webdriver,
+              `/session/${sessionId}/goog/cdp/execute`,
+              'POST',
+              { cmd: 'Page.getFrameTree', params: {} },
+            ), navigationHref);
             const browserLogs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'browser' });
             if (!Array.isArray(browserLogs)) throw new Error('WEBDRIVER_LOG_INVALID');
             const performanceLogs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'performance' });
             const performanceRequests = completedPerformanceRequests(performanceLogs, performanceRequestIds);
             validateBrowserRequestGraph(
               performanceRequests,
-              { url, navigationHref, javascript },
+              { url, navigationHref, javascript, initialFrame, navigationFrame },
               browserNetworkSession,
             );
             observations.push({

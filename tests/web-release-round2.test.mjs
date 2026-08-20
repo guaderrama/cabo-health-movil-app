@@ -373,6 +373,8 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
   let spaceActionCount = 0;
   let enterActionCount = 0;
   let noPreferenceCommandCount = 0;
+  let frameTreeCommandCount = 0;
+  let networkEnableCommandCount = 0;
   const addRequest = (session, sessionId, record) => {
     session.requests.push({
       requestId: `${sessionId}-request-${session.nextRequestId++}`,
@@ -390,6 +392,8 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       loaderId,
       documentURL: url,
     });
+    session.currentFrameUrl = url;
+    session.currentFrameLoaderId = loaderId;
     const pathname = new URL(url).pathname;
     if (!includeResources || !pathname.startsWith('/apps/')) return;
     for (const [resourceUrl, type] of [
@@ -468,11 +472,31 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       else if (request.method === 'GET' && command === 'url') value = session.url;
       else if (request.method === 'GET' && command === 'log/types') value = ['browser', 'performance'];
       else if (request.method === 'POST' && command === 'goog/cdp/execute') {
-        if (body.params.features[0].value === 'no-preference') noPreferenceCommandCount += 1;
-        session.reducedMotion = driverFault === 'ignored-reduced-motion'
-          ? false
-          : body.params.features[0].value === 'reduce';
-        value = {};
+        if (body.cmd === 'Page.getFrameTree') {
+          frameTreeCommandCount += 1;
+          value = {
+            frameTree: {
+              frame: {
+                id: session.mainFrameId,
+                loaderId: session.currentFrameLoaderId,
+                url: session.currentFrameUrl,
+                ...(driverFault === 'main-frame-has-parent'
+                  ? { parentId: `${session.mainFrameId}-parent` }
+                  : {}),
+              },
+            },
+          };
+        } else if (body.cmd === 'Network.enable') {
+          networkEnableCommandCount += 1;
+          assert.deepEqual(body.params, { reportDirectSocketTraffic: true });
+          value = {};
+        } else {
+          if (body.params.features[0].value === 'no-preference') noPreferenceCommandCount += 1;
+          session.reducedMotion = driverFault === 'ignored-reduced-motion'
+            ? false
+            : body.params.features[0].value === 'reduce';
+          value = {};
+        }
       }
       else if (request.method === 'POST' && command === 'actions') {
         for (const source of body.actions ?? []) {
@@ -792,6 +816,28 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
             }
             return [requestEvent, responseEvent, finished];
           });
+          if (driverFault === 'websocket-created') {
+            value.push(event('Network.webSocketCreated', {
+              requestId: `${sessionMatch[1]}-websocket-0`,
+              url: 'wss://cabohealth.org/socket',
+            }));
+          }
+          if (driverFault === 'webtransport-created') {
+            value.push(event('Network.webTransportCreated', {
+              transportId: `${sessionMatch[1]}-webtransport-0`,
+              url: 'https://cabohealth.org/transport',
+            }));
+          }
+          if (driverFault === 'direct-tcp-created') {
+            value.push(event('Network.directTCPSocketCreated', {
+              identifier: `${sessionMatch[1]}-direct-tcp-0`,
+            }));
+          }
+          if (driverFault === 'direct-udp-created') {
+            value.push(event('Network.directUDPSocketCreated', {
+              identifier: `${sessionMatch[1]}-direct-udp-0`,
+            }));
+          }
           if (firstDocument) {
             session.previousRouteLoaderId = firstDocument.loaderId;
             session.completedObservationCount += 1;
@@ -846,6 +892,8 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
     assert.equal(spaceActionCount, 16);
     assert.equal(enterActionCount, 48);
     assert.equal(noPreferenceCommandCount, 8);
+    assert.equal(frameTreeCommandCount, 96);
+    assert.equal(networkEnableCommandCount, 8);
     assert.equal(nextSession, 8);
     const stale = structuredClone(evidence);
     stale.releaseId = `web-v1-${'0'.repeat(64)}`;
@@ -909,6 +957,11 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       'reused-request-id',
       'resource-before-document',
       'resource-after-navigation',
+      'websocket-created',
+      'webtransport-created',
+      'direct-tcp-created',
+      'direct-udp-created',
+      'main-frame-has-parent',
       'console-error',
       'late-console-error',
     ]) {
