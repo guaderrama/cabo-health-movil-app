@@ -27,7 +27,7 @@ function moduleHtml(slug) {
   const links = ['privacy', 'terms', 'support', 'report-content']
     .map((item) => `<a href="https://cabohealth.org/app/${item}/">${item}</a>`)
     .join('');
-  return Buffer.from(`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${miniappCsp}"><link rel="canonical" href="https://cabohealth.org/apps/${slug}/"></head><body>${links}<script src="/apps/${slug}/app.js"></script></body></html>`);
+  return Buffer.from(`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${miniappCsp}"><link rel="canonical" href="https://cabohealth.org/apps/${slug}/"></head><body>${links}<label for="local-search">Search</label><input id="local-search" type="search" disabled><script src="/apps/${slug}/app.js"></script></body></html>`);
 }
 
 function localOriginArtifact() {

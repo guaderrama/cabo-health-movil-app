@@ -377,6 +377,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
   let noPreferenceCommandCount = 0;
   let frameTreeCommandCount = 0;
   let networkEnableCommandCount = 0;
+  let performanceWaitCount = 0;
   const addRequest = (session, sessionId, record) => {
     session.requests.push({
       requestId: `${sessionId}-request-${session.nextRequestId++}`,
@@ -397,7 +398,17 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
     session.currentFrameUrl = url;
     session.currentFrameLoaderId = loaderId;
     const pathname = new URL(url).pathname;
-    if (!includeResources || !pathname.startsWith('/apps/')) return;
+    if (!includeResources) return;
+    addRequest(session, sessionId, {
+      url: driverFault === 'favicon-external'
+        ? 'https://evil.invalid/favicon.ico'
+        : 'https://cabohealth.org/favicon.ico',
+      type: driverFault === 'favicon-as-script' ? 'Script' : 'Other',
+      frameId,
+      loaderId,
+      documentURL: url,
+    });
+    if (!pathname.startsWith('/apps/')) return;
     for (const [resourceUrl, type] of [
       ['https://cabohealth.org/apps/shared/styles.css', 'Stylesheet'],
       ['https://cabohealth.org/apps/shared/logo-wordmark.png', 'Image'],
@@ -429,6 +440,12 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       const sessionId = `session-${nextSession++}`;
       const requested = body.capabilities.alwaysMatch;
       const options = requested['goog:chromeOptions'];
+      assert.deepEqual(options?.args, [
+        '--headless=new',
+        '--disable-background-networking',
+        '--no-default-browser-check',
+        '--no-first-run',
+      ]);
       const requestedMetrics = options?.mobileEmulation?.deviceMetrics ?? { width: 1024, height: 768 };
       const metrics = driverFault === 'ignored-viewport' ? { width: 1024, height: 768 } : requestedMetrics;
       const requestedLocale = options?.prefs?.['intl.accept_languages'] ?? 'en-US';
@@ -452,6 +469,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         completedObservationCount: 0,
         previousRouteLoaderId: null,
         browserLogReadCount: 0,
+        deferredPerformanceLogs: [],
       });
       value = {
         sessionId,
@@ -472,7 +490,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         addDocumentLoad(session, sessionMatch[1], body.url);
       }
       else if (request.method === 'GET' && command === 'url') value = session.url;
-      else if (request.method === 'GET' && command === 'log/types') value = ['browser', 'performance'];
+      else if (request.method === 'GET' && command === 'se/log/types') value = ['browser', 'performance'];
       else if (request.method === 'POST' && command === 'goog/cdp/execute') {
         if (body.cmd === 'Page.getFrameTree') {
           frameTreeCommandCount += 1;
@@ -530,6 +548,14 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         }
         value = null;
       }
+      else if (request.method === 'POST' && command === 'execute/async') {
+        assert.deepEqual(body, {
+          script: 'setTimeout(arguments[arguments.length - 1], 25);',
+          args: [],
+        });
+        performanceWaitCount += 1;
+        value = null;
+      }
       else if (request.method === 'POST' && command === 'execute/sync') {
         const pathname = new URL(session.url).pathname;
         const miniapp = pathname.startsWith('/apps/');
@@ -546,6 +572,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         const requestedUiLanguage = session.locale === 'es-MX' ? 'es-MX' : 'en';
         const attemptsLocaleSelection = body.script.includes('[data-language=')
           && body.script.includes('.click()');
+        const ignoresImplicitFavicon = body.script.includes("new URL('/favicon.ico', location.href).href");
         if (miniapp && session.javascriptEnabled && attemptsLocaleSelection
           && driverFault !== 'ignored-language-selection') {
           session.selectedLanguage = requestedUiLanguage;
@@ -586,11 +613,14 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
             || (controlsDisabled && (!clinicGuide || observesClinicControls)),
           bilingualStaticVisible: miniapp || observesLegalArticles,
           challengeEcho: driverFault === 'stale-challenge' ? 'stale' : body.args?.[1],
-          unexpectedRequestCount: 0,
+          unexpectedResourceCount: driverFault === 'unexpected-performance-resource'
+            ? 1
+            : (ignoresImplicitFavicon ? 0 : 1),
           miniappReady: miniapp && session.javascriptEnabled,
         };
-      } else if (request.method === 'POST' && command === 'log') {
+      } else if (request.method === 'POST' && command === 'se/log') {
         if (body.type === 'performance') {
+          const deferredPerformanceLogs = session.deferredPerformanceLogs.splice(0);
           const requestLog = driverFault === 'missing-navigation-request'
             ? session.requests.slice(0, 1)
             : session.requests;
@@ -732,7 +762,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
             level: 'INFO',
             message: JSON.stringify({ message: { method, params } }),
           });
-          value = records.flatMap((record, index) => {
+          value = [...deferredPerformanceLogs, ...records.flatMap((record, index) => {
             const requestEvent = event('Network.requestWillBeSent', {
               requestId: record.requestId,
               type: record.type,
@@ -810,6 +840,17 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
             if (driverFault === 'pending-request' && index === 0) return [requestEvent];
             if (driverFault === 'missing-completion' && index === 0) return [requestEvent, responseEvent];
             const finished = event('Network.loadingFinished', { requestId: record.requestId });
+            if (driverFault === null && record.url === 'https://cabohealth.org/favicon.ico') {
+              return [requestEvent];
+            }
+            if (
+              driverFault === null
+              && record.url === 'https://cabohealth.org/apps/shared/styles.css'
+              && record.type === 'Stylesheet'
+            ) {
+              session.deferredPerformanceLogs.push(responseEvent, finished);
+              return [requestEvent];
+            }
             if (driverFault === 'duplicate-response' && index === 0) {
               return [requestEvent, responseEvent, responseEvent, finished];
             }
@@ -817,7 +858,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
               return [requestEvent, responseEvent, finished, finished];
             }
             return [requestEvent, responseEvent, finished];
-          });
+          })];
           if (driverFault === 'websocket-created') {
             value.push(event('Network.webSocketCreated', {
               requestId: `${sessionMatch[1]}-websocket-0`,
@@ -849,8 +890,14 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
           session.browserLogReadCount += 1;
           value = driverFault === 'console-error'
             || (driverFault === 'late-console-error' && session.browserLogReadCount === 1)
-            ? [{ level: 'SEVERE', message: 'fixture error' }]
-            : [];
+            ? [{ level: 'SEVERE', source: 'javascript', message: 'fixture error' }]
+            : (driverFault === null && session.browserLogReadCount % 2 === 0
+              ? [{
+                level: 'SEVERE',
+                source: 'security',
+                message: `${session.url} 5 The Content Security Policy directive 'frame-ancestors' is ignored when delivered via a <meta> element.`,
+              }]
+              : []);
         }
       }
       else if (request.method === 'DELETE' && command === '') sessions.delete(sessionMatch[1]);
@@ -896,6 +943,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
     assert.equal(noPreferenceCommandCount, 8);
     assert.equal(frameTreeCommandCount, 96);
     assert.equal(networkEnableCommandCount, 8);
+    assert.equal(performanceWaitCount > 0, true);
     assert.equal(nextSession, 8);
     const stale = structuredClone(evidence);
     stale.releaseId = `web-v1-${'0'.repeat(64)}`;
@@ -964,6 +1012,9 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       'direct-tcp-created',
       'direct-udp-created',
       'main-frame-has-parent',
+      'favicon-as-script',
+      'favicon-external',
+      'unexpected-performance-resource',
       'console-error',
       'late-console-error',
     ]) {

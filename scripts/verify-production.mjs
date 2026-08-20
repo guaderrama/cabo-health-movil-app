@@ -578,12 +578,70 @@ function completedPerformanceRequests(logs, priorRequestIds = new Set()) {
     request.finished = true;
   }
   for (const request of requests.values()) {
-    if (request.responseStatus === null || !request.finished || request.failed) {
+    const incompleteImplicitFavicon = request.url === 'https://cabohealth.org/favicon.ico'
+      && request.method === 'GET'
+      && request.type === 'Other'
+      && request.responseStatus === null
+      && !request.finished
+      && !request.failed;
+    if (
+      (request.responseStatus === null || !request.finished || request.failed)
+      && !incompleteImplicitFavicon
+    ) {
       throw new Error('BROWSER_NETWORK_REQUEST_INCOMPLETE');
     }
-    priorRequestIds.add(request.requestId);
   }
+  for (const request of requests.values()) priorRequestIds.add(request.requestId);
   return [...requests.values()];
+}
+
+async function webdriverPerformanceRequests(webdriver, sessionId, priorRequestIds) {
+  const logs = [];
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const batch = await webdriverCommand(
+      webdriver,
+      `/session/${sessionId}/se/log`,
+      'POST',
+      { type: 'performance' },
+    );
+    if (!Array.isArray(batch)) throw new Error('WEBDRIVER_LOG_INVALID');
+    logs.push(...batch);
+    try {
+      return completedPerformanceRequests(logs, priorRequestIds);
+    } catch (error) {
+      if (
+        !(error instanceof Error)
+        || error.message !== 'BROWSER_NETWORK_REQUEST_INCOMPLETE'
+        || attempt === 19
+      ) throw error;
+      await webdriverCommand(webdriver, `/session/${sessionId}/execute/async`, 'POST', {
+        script: 'setTimeout(arguments[arguments.length - 1], 25);',
+        args: [],
+      });
+    }
+  }
+  throw new Error('BROWSER_NETWORK_REQUEST_INCOMPLETE');
+}
+
+function unexpectedBrowserConsoleErrors(logs, allowedUrls) {
+  if (!Array.isArray(logs)) throw new Error('WEBDRIVER_LOG_INVALID');
+  const warningSuffix = " The Content Security Policy directive 'frame-ancestors' is ignored when delivered via a <meta> element.";
+  return logs.filter((entry) => {
+    if (
+      !entry
+      || typeof entry !== 'object'
+      || Array.isArray(entry)
+      || typeof entry.level !== 'string'
+      || typeof entry.source !== 'string'
+      || typeof entry.message !== 'string'
+    ) throw new Error('WEBDRIVER_LOG_INVALID');
+    if (!['SEVERE', 'ERROR'].includes(entry.level)) return false;
+    if (entry.source !== 'security' || !entry.message.endsWith(warningSuffix)) return true;
+    const prefix = entry.message.slice(0, -warningSuffix.length);
+    const separator = prefix.lastIndexOf(' ');
+    if (separator <= 0 || !/^[1-9]\d*$/u.test(prefix.slice(separator + 1))) return true;
+    return !allowedUrls.includes(prefix.slice(0, separator));
+  });
 }
 
 function validateTopFrameAuthority(value, expectedUrl) {
@@ -667,7 +725,22 @@ function validateBrowserRequestGraph(
       ['https://cabohealth.org/apps/shared/shell.js', 'Script'],
     ] : []),
   ] : [];
-  const resources = requests.filter(({ type }) => type !== 'Document');
+  const nonDocumentRequests = requests.filter(({ type }) => type !== 'Document');
+  const faviconUrl = new URL('/favicon.ico', url).href;
+  const implicitFavicons = nonDocumentRequests.filter((request) => request.url === faviconUrl);
+  if (implicitFavicons.length > 1) throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
+  for (const request of implicitFavicons) {
+    if (
+      request.method !== 'GET'
+      || request.type !== 'Other'
+      || request.frameId !== originalDocument.frameId
+      || request.loaderId !== originalDocument.loaderId
+      || request.documentURL !== url
+      || request.sequence <= originalDocument.sequence
+      || request.sequence >= navigationDocument.sequence
+    ) throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
+  }
+  const resources = nonDocumentRequests.filter((request) => request.url !== faviconUrl);
   if (resources.length !== expectedResources.length) throw new Error('BROWSER_NETWORK_GRAPH_INVALID');
   const remaining = [...expectedResources];
   for (const request of resources) {
@@ -740,6 +813,12 @@ export async function measureBrowserEvidence({
               acceptInsecureCerts: false,
               pageLoadStrategy: 'normal',
               'goog:chromeOptions': {
+                args: [
+                  '--headless=new',
+                  '--disable-background-networking',
+                  '--no-default-browser-check',
+                  '--no-first-run',
+                ],
                 prefs: chromePreferences,
                 mobileEmulation: {
                   deviceMetrics: {
@@ -768,7 +847,7 @@ export async function measureBrowserEvidence({
         try {
           const performanceRequestIds = new Set();
           const browserNetworkSession = { mainFrameId: null, documentLoaderIds: new Set() };
-          const logTypes = await webdriverCommand(webdriver, `/session/${sessionId}/log/types`, 'GET');
+          const logTypes = await webdriverCommand(webdriver, `/session/${sessionId}/se/log/types`, 'GET');
           if (!Array.isArray(logTypes) || !['browser', 'performance'].every((type) => logTypes.includes(type))) {
             throw new Error('WEBDRIVER_LOG_CAPABILITY_INVALID');
           }
@@ -778,7 +857,7 @@ export async function measureBrowserEvidence({
           });
           completedPerformanceRequests(await webdriverCommand(
             webdriver,
-            `/session/${sessionId}/log`,
+            `/session/${sessionId}/se/log`,
             'POST',
             { type: 'performance' },
           ), performanceRequestIds);
@@ -796,12 +875,11 @@ export async function measureBrowserEvidence({
             });
             const discardedBrowserLogs = await webdriverCommand(
               webdriver,
-              `/session/${sessionId}/log`,
+              `/session/${sessionId}/se/log`,
               'POST',
               { type: 'browser' },
             );
-            if (!Array.isArray(discardedBrowserLogs)) throw new Error('WEBDRIVER_LOG_INVALID');
-            if (discardedBrowserLogs.some(({ level } = {}) => ['SEVERE', 'ERROR'].includes(level))) {
+            if (unexpectedBrowserConsoleErrors(discardedBrowserLogs, allowedUrls).length !== 0) {
               throw new Error('BROWSER_CONSOLE_ERROR');
             }
             await webdriverCommand(webdriver, `/session/${sessionId}/goog/cdp/execute`, 'POST', {
@@ -874,6 +952,7 @@ export async function measureBrowserEvidence({
                   'Static composition / Composición estática',
                 ]);
                 const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+                const implicitFavicon = new URL('/favicon.ico', location.href).href;
                 return {
                   documentUrl: location.href,
                   readyState: document.readyState,
@@ -897,7 +976,9 @@ export async function measureBrowserEvidence({
                     && activeStyle.outlineStyle !== 'none'
                     && Number.parseFloat(activeStyle.outlineWidth) > 0,
                   navigationHref,
-                  unexpectedResourceCount: resources.filter((resource) => !allowed.includes(resource)).length,
+                  unexpectedResourceCount: resources.filter((resource) => (
+                    resource !== implicitFavicon && !allowed.includes(resource)
+                  )).length,
                   miniappReady: miniapp && document.documentElement.dataset.enhanced === 'true',
                   noJsControlsDisabled: !miniapp || (javascriptMode === 'disabled'
                     ? controls.length > 0 && controls.every(inertWithoutJavaScript)
@@ -974,10 +1055,13 @@ export async function measureBrowserEvidence({
               'POST',
               { cmd: 'Page.getFrameTree', params: {} },
             ), navigationHref);
-            const browserLogs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'browser' });
-            if (!Array.isArray(browserLogs)) throw new Error('WEBDRIVER_LOG_INVALID');
-            const performanceLogs = await webdriverCommand(webdriver, `/session/${sessionId}/log`, 'POST', { type: 'performance' });
-            const performanceRequests = completedPerformanceRequests(performanceLogs, performanceRequestIds);
+            const browserLogs = await webdriverCommand(webdriver, `/session/${sessionId}/se/log`, 'POST', { type: 'browser' });
+            const consoleErrors = unexpectedBrowserConsoleErrors(browserLogs, allowedUrls);
+            const performanceRequests = await webdriverPerformanceRequests(
+              webdriver,
+              sessionId,
+              performanceRequestIds,
+            );
             validateBrowserRequestGraph(
               performanceRequests,
               { url, navigationHref, javascript, initialFrame, navigationFrame },
@@ -1008,7 +1092,7 @@ export async function measureBrowserEvidence({
               navigationVerified,
               documentRequestSeen: true,
               unexpectedRequestCount: measured?.unexpectedResourceCount ?? 0,
-              consoleErrorCount: browserLogs.filter(({ level }) => ['SEVERE', 'ERROR'].includes(level)).length,
+              consoleErrorCount: consoleErrors.length,
               miniappReady: measured?.miniappReady,
               noJsControlsDisabled: measured?.noJsControlsDisabled,
               bilingualStaticVisible: measured?.bilingualStaticVisible,
@@ -1077,6 +1161,14 @@ function attribute(tag, name) {
 function assertPublicHtml(path, bytes) {
   assertStaticWebPolicy(path, bytes);
   const text = bytes.toString('utf8');
+  const isMiniapp = path.startsWith('apps/');
+  const forbiddenElements = isMiniapp
+    ? /<(?:form|textarea|iframe|object|embed)\b/iu
+    : /<(?:form|input|textarea|iframe|object|embed)\b/iu;
+  const forbiddenMiniappInput = isMiniapp && tags(text, 'input').some((tag) => (
+    attribute(tag, 'type')?.toLowerCase() === 'file'
+    || attribute(tag, 'formaction') !== null
+  ));
   const expectedCanonical = `https://cabohealth.org/${path.replace(/index\.html$/u, '')}`;
   const canonicals = tags(text, 'link').filter((tag) => attribute(tag, 'rel')?.toLowerCase() === 'canonical');
   if (canonicals.length !== 1 || attribute(canonicals[0], 'href') !== expectedCanonical) {
@@ -1093,7 +1185,8 @@ function assertPublicHtml(path, bytes) {
     }
   }
   if (
-    /<(?:form|input|textarea|iframe|object|embed)\b/iu.test(text)
+    forbiddenElements.test(text)
+    || forbiddenMiniappInput
     || /\btarget\s*=\s*["']?_blank/iu.test(text)
     || /<meta\b[^>]*http-equiv\s*=\s*["']?refresh/iu.test(text)
     || /<(?:script|img|iframe|source|video|audio)\b[^>]*\bsrc\s*=\s*["']?https?:/iu.test(text)
