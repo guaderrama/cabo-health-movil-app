@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   AppState,
+  Easing,
   StyleSheet,
   StyleProp,
   View,
@@ -12,6 +13,7 @@ import Svg, { Circle, Line, Defs, LinearGradient, Stop, G } from 'react-native-s
 import {
   allowsMoleculeMotion,
   createMoleculeLoopController,
+  MOLECULE_DRIFT_PLAN,
   type MoleculeLoopController,
 } from '../features/motion/moleculeMotionPolicy';
 
@@ -34,16 +36,16 @@ export interface AnimatedMoleculesProps {
 // Color palette matching header gradient
 const COLORS = {
   light: {
-    dark: '#0D9488',      // Teal profundo
-    medium: '#0891B2',    // Cyan medio
-    light: '#22D3EE',     // Cyan claro
-    accent: '#0EA5E9',    // Azul cielo
+    dark: '#0E5876',
+    medium: '#2A9FB3',
+    light: '#72D7DF',
+    accent: '#19BECC',
   },
   dark: {
-    dark: '#0284C7',      // Azul profundo
-    medium: '#0891B2',    // Cyan medio
-    light: '#22D3EE',     // Cyan claro
-    accent: '#38BDF8',    // Azul claro
+    dark: '#8BC7D2',
+    medium: '#5AA5B7',
+    light: '#B8DDE3',
+    accent: '#DEC9AA',
   }
 };
 
@@ -199,28 +201,50 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
     [density, height, width],
   );
   const connections = useMemo(() => generateConnections(particles), [particles]);
+  const moleculeLayers = useMemo(() => {
+    const groupedParticles = MOLECULE_DRIFT_PLAN.map(() => [] as Particle[]);
+    particles.forEach((particle) => {
+      groupedParticles[(particle.id - 1) % groupedParticles.length].push(particle);
+    });
+    return groupedParticles.map((layerParticles, layerIndex) => ({
+      particles: layerParticles,
+      connections: connections.filter(
+        ({ from }) => (from.id - 1) % groupedParticles.length === layerIndex,
+      ),
+    }));
+  }, [connections, particles]);
   const colors = isDark ? COLORS.dark : COLORS.light;
   const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
 
-  const floatAnim = useRef(new Animated.Value(0)).current;
+  const driftOne = useRef(new Animated.Value(0)).current;
+  const driftTwo = useRef(new Animated.Value(0)).current;
+  const driftThree = useRef(new Animated.Value(0)).current;
+  const driftValues = useMemo(
+    () => [driftOne, driftTwo, driftThree],
+    [driftOne, driftTwo, driftThree],
+  );
   const loopControllerRef = useRef<MoleculeLoopController | null>(null);
 
   if (!loopControllerRef.current) {
     loopControllerRef.current = createMoleculeLoopController({
       start() {
-        const loop = Animated.loop(
-          Animated.sequence([
-            Animated.timing(floatAnim, {
-              toValue: 1,
-              duration: 5000,
-              useNativeDriver: true,
-            }),
-            Animated.timing(floatAnim, {
-              toValue: 0,
-              duration: 5000,
-              useNativeDriver: true,
-            }),
-          ]),
+        const loop = Animated.parallel(
+          MOLECULE_DRIFT_PLAN.map((plan, index) => Animated.loop(
+            Animated.sequence([
+              Animated.timing(driftValues[index], {
+                toValue: 1,
+                duration: plan.durationMs,
+                easing: Easing.inOut(Easing.sin),
+                useNativeDriver: true,
+              }),
+              Animated.timing(driftValues[index], {
+                toValue: 0,
+                duration: plan.durationMs,
+                easing: Easing.inOut(Easing.sin),
+                useNativeDriver: true,
+              }),
+            ]),
+          )),
         );
         loop.start();
         return loop;
@@ -229,8 +253,10 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
         loop.stop();
       },
       showStatic() {
-        floatAnim.stopAnimation();
-        floatAnim.setValue(0);
+        driftValues.forEach((value) => {
+          value.stopAnimation();
+          value.setValue(0);
+        });
       },
     });
   }
@@ -254,20 +280,26 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
     return () => controller?.destroy();
   }, []);
 
-  const animatedStyle = {
+  const animatedLayerStyles = MOLECULE_DRIFT_PLAN.map((plan, index) => ({
     transform: [
       {
-        translateY: floatAnim.interpolate({
+        translateX: driftValues[index].interpolate({
           inputRange: [0, 1],
-          outputRange: [0, 8], // Subtle movement
+          outputRange: [0, plan.translateX],
+        }),
+      },
+      {
+        translateY: driftValues[index].interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, plan.translateY],
         }),
       },
     ],
-  };
+  }));
 
   const getOpacity = (colorType: string): number => {
     // Dark mode: more visible particles for elegance
-    const baseOpacity = isDark ? 0.35 : 0.18;
+    const baseOpacity = isDark ? 0.35 : 0.24;
     switch (colorType) {
       case 'dark': return baseOpacity + 0.12;
       case 'medium': return baseOpacity + 0.08;
@@ -284,56 +316,68 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
-      <Animated.View style={[styles.svgContainer, animatedStyle]}>
-        <Svg width={width} height={height} style={styles.svg}>
-          <Defs>
-            {/* Gradient definitions for different color intensities */}
-            <LinearGradient id="gradientDark" x1="0%" y1="0%" x2="100%" y2="100%">
-              <Stop offset="0%" stopColor={colors.dark} />
-              <Stop offset="100%" stopColor={colors.medium} />
-            </LinearGradient>
-            <LinearGradient id="gradientMedium" x1="0%" y1="0%" x2="100%" y2="100%">
-              <Stop offset="0%" stopColor={colors.medium} />
-              <Stop offset="100%" stopColor={colors.light} />
-            </LinearGradient>
-            <LinearGradient id="gradientLight" x1="0%" y1="0%" x2="100%" y2="100%">
-              <Stop offset="0%" stopColor={colors.light} />
-              <Stop offset="100%" stopColor={colors.accent} />
-            </LinearGradient>
-            <LinearGradient id="gradientAccent" x1="0%" y1="0%" x2="100%" y2="100%">
-              <Stop offset="0%" stopColor={colors.accent} />
-              <Stop offset="100%" stopColor={colors.light} />
-            </LinearGradient>
-          </Defs>
+      {moleculeLayers.map((layer, layerIndex) => (
+        <Animated.View
+          key={`network-layer-${layerIndex}`}
+          style={[styles.svgContainer, animatedLayerStyles[layerIndex]]}
+        >
+          <Svg width={width} height={height} style={styles.svg}>
+            <Defs>
+              <LinearGradient id="gradientDark" x1="0%" y1="0%" x2="100%" y2="100%">
+                <Stop offset="0%" stopColor={colors.dark} />
+                <Stop offset="100%" stopColor={colors.medium} />
+              </LinearGradient>
+              <LinearGradient id="gradientMedium" x1="0%" y1="0%" x2="100%" y2="100%">
+                <Stop offset="0%" stopColor={colors.medium} />
+                <Stop offset="100%" stopColor={colors.light} />
+              </LinearGradient>
+              <LinearGradient id="gradientLight" x1="0%" y1="0%" x2="100%" y2="100%">
+                <Stop offset="0%" stopColor={colors.light} />
+                <Stop offset="100%" stopColor={colors.accent} />
+              </LinearGradient>
+              <LinearGradient id="gradientAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+                <Stop offset="0%" stopColor={colors.accent} />
+                <Stop offset="100%" stopColor={colors.light} />
+              </LinearGradient>
+            </Defs>
 
-          {/* Connection lines (DNA rungs style) */}
-          <G opacity={isDark ? 0.2 : density === 'rich' ? 0.1 : 0.06}>
-            {connections.map((conn, index) => (
-              <Line
-                key={`line-${index}`}
-                x1={conn.from.x}
-                y1={conn.from.y}
-                x2={conn.to.x}
-                y2={conn.to.y}
-                stroke={colors.medium}
-                strokeWidth={0.8}
-              />
+            <G opacity={isDark ? 0.22 : density === 'rich' ? 0.16 : 0.09}>
+              {layer.connections.map((connection, index) => (
+                <Line
+                  key={`line-${layerIndex}-${index}`}
+                  x1={connection.from.x}
+                  y1={connection.from.y}
+                  x2={connection.to.x}
+                  y2={connection.to.y}
+                  stroke={colors.medium}
+                  strokeWidth={0.8}
+                />
+              ))}
+            </G>
+
+            {layer.particles.map((particle) => (
+              <G key={`particle-${particle.id}`}>
+                {particle.size >= 6 && (
+                  <Circle
+                    cx={particle.x}
+                    cy={particle.y}
+                    r={particle.size * 2.3}
+                    fill={colors.light}
+                    opacity={isDark ? 0.08 : 0.11}
+                  />
+                )}
+                <Circle
+                  cx={particle.x}
+                  cy={particle.y}
+                  r={particle.size}
+                  fill={`url(#gradient${particle.colorType.charAt(0).toUpperCase() + particle.colorType.slice(1)})`}
+                  opacity={getOpacity(particle.colorType)}
+                />
+              </G>
             ))}
-          </G>
-
-          {/* Particles with varied colors */}
-          {particles.map((particle) => (
-            <Circle
-              key={`particle-${particle.id}`}
-              cx={particle.x}
-              cy={particle.y}
-              r={particle.size}
-              fill={`url(#gradient${particle.colorType.charAt(0).toUpperCase() + particle.colorType.slice(1)})`}
-              opacity={getOpacity(particle.colorType)}
-            />
-          ))}
-        </Svg>
-      </Animated.View>
+          </Svg>
+        </Animated.View>
+      ))}
     </View>
   );
 };
@@ -348,7 +392,7 @@ const styles = StyleSheet.create({
     zIndex: 0,
   },
   svgContainer: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
   },
   svg: {
     position: 'absolute',

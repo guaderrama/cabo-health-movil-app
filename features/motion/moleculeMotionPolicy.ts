@@ -4,6 +4,21 @@ export interface MoleculeMotionState {
   reduceMotion: boolean | null;
 }
 
+export interface MoleculeDriftLayer {
+  durationMs: number;
+  translateX: number;
+  translateY: number;
+}
+
+// The native artwork mirrors the slow, independently drifting node groups used
+// by the hosted CaboHealth network canvas. Distances stay small because this is
+// a frequently seen ambient layer, not foreground animation.
+export const MOLECULE_DRIFT_PLAN: readonly MoleculeDriftLayer[] = Object.freeze([
+  Object.freeze({ durationMs: 7200, translateX: 5, translateY: -5 }),
+  Object.freeze({ durationMs: 9200, translateX: -6, translateY: 4 }),
+  Object.freeze({ durationMs: 11400, translateX: 4, translateY: 6 }),
+]);
+
 export function allowsMoleculeMotion({
   active,
   appActive,

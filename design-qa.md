@@ -134,3 +134,49 @@ The native Home and shared-surface palette have `passed`: no actionable P0/P1/P2
 - App TypeScript check and minimal-public-v1 scope verifier: passed.
 
 final result: blocked
+
+## Home molecular network and brand lockup QA — 2026-08-20
+
+### Source visual truth and normalization
+
+- User focus reference: `/var/folders/zd/tys1mb_s1yb31y4gjh_y6sxm0000gn/T/codex-clipboard-a4fd6264-dab0-4d6a-9a75-015ac70d4207.png` (878 × 448). This is a cropped before-state plus the explicit direction to lower/center the logo, add a short phrase, and reuse the moving official network texture; it is not treated as a full-screen pixel target.
+- Approved full Home composition: `/Users/ivan/.codex/generated_images/01a00a52-06e3-7512-b043-39c7fb3aee86/exec-88f5b333-ecd8-4fba-bdb3-2c2a6a3ce783.png` (853 × 1844), normalized with Lanczos resampling to 390 × 844.
+- Final browser-rendered Home: `/Users/ivan/Dropbox/Ai/IOS Cabo Health App/webapp-launcher/.worktrees/cabohealth-premium-miniapps/.superpowers/qa/home-motion-final-texture-390x844.png` (390 × 844 CSS pixels and screenshot pixels, device scale 1).
+- Approved composition ↔ final implementation: `.superpowers/qa/home-motion-approved-vs-final-texture.png` (780 × 844).
+- Exact before ↔ final implementation: `.superpowers/qa/home-motion-before-vs-final-texture.png` (780 × 844).
+- State: light theme, `es-MX`, Home selected, one local development-only test card visible. The test card is intentional current state and not part of the App Store catalog.
+
+### Comparison history
+
+1. The first implementation pass enlarged the logo to 142 × 78 and pushed Resources too far below the approved hierarchy (P2 spacing/density). The lockup was reduced to 104 × 60, placed eight pixels lower than the prior screen, and given a compact 12 pt Georgia promise with restrained bronze rules. Resources remains visible above the fold.
+2. The first motion pass separated the artwork into three drift layers but made the connection field too sparse and muted relative to the approved texture (P2 color/image treatment). The final pass retains every reviewed connection, distributes it across the three moving layers, restores brighter sea/cyan nodes, and adds low-opacity halos only to the largest existing particles.
+3. Post-fix comparison found no remaining P0/P1/P2 issue in the Home lockup, texture density, card rhythm, or bilingual copy.
+
+### Required fidelity surfaces
+
+- Fonts and typography: the real CaboHealth wordmark remains unchanged. The new sentence uses Georgia at 12/17 with normal case so it reads as a quiet editorial promise rather than a second title. Section labels and card typography are unchanged.
+- Spacing and layout rhythm: the logo is visually centered in the upper field without consuming the resource list. The 390 × 844 view keeps Resources, the local test card, and the beginning of Tools visible; the 320 × 568 capture at `.superpowers/qa/home-motion-320x568.png` remains scrollable with no overlap or horizontal clipping.
+- Colors and visual tokens: background, ink, sea, paper, and bronze remain the approved Intro palette. The particles use sea/cyan derivatives over the same pale gradient; no unrelated palette was introduced.
+- Image quality and asset fidelity: `assets/logo-wordmark.png` is still the exact source wordmark. The molecular network is the existing native SVG artwork, now using the independently drifting behavior of the reviewed hosted network instead of a raster substitute or new decorative asset.
+- Copy and content: English is “Curated resources for everyday wellbeing.” Spanish is “Recursos seleccionados para tu bienestar diario.” Both are non-medical, do not add a service/location claim, and are covered by the localization contract.
+- Accessibility and motion: the network is decorative and hidden from assistive technology. Three native-driver layers drift only 4–6 px over 7.2–11.4 seconds. Runtime sampling confirmed all three transforms change independently. Focus loss, app backgrounding, OS Reduce Motion, and the native Reduce Effects preference stop the single owned loop and restore a static composition; cleanup remains owned by `AnimatedMolecules`.
+
+### Browser evidence
+
+- Enter was exercised from the persistent intro to the real Home.
+- The Home was captured at 390 × 844 and 320 × 568.
+- Two runtime samples 1.8 seconds apart showed three distinct transform changes; no application error appeared in the browser console.
+- Focused app/type/localization/motion tests, TypeScript, scope verification, and diff checks pass. The complete repository suite passed 638/638 immediately before the final color/halo-only refinement; the final focused/type/scope gates pass. A later complete dot-reporter run was stopped after an unrelated long-running Task 8 fixture, not because of a Home failure.
+
+### Motion review
+
+- Purpose/frequency: quiet brand continuity on every Home visit; no action waits for it.
+- Voice/physicality: slow independent drift, no bounce, pulse, flash, or large travel.
+- Lifecycle/performance: one controller, three native-driver transforms, no frame-by-frame React renders, no network/media payload, and exact foreground/focus/reduced-motion teardown.
+- Verdict: conditional pass pending a final feel/performance check in Expo Go on the user's iPhone; no code-level blocker remains.
+
+### Result
+
+The Home molecular network and revised brand lockup have **passed** browser-rendered design QA. The overall release remains blocked only by the existing real-iPhone WKWebView/safe-area and motion-feel gate.
+
+final result: blocked

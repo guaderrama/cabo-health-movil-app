@@ -38,6 +38,7 @@ test('English and Mexican Spanish expose the same non-empty public message contr
 
 test('approved simplified home has matching English and Spanish copy', () => {
   const keys = [
+    'home.brandPromise',
     'home.resources',
     'home.tools',
     'home.clinicSummary',
@@ -48,6 +49,7 @@ test('approved simplified home has matching English and Spanish copy', () => {
   assert.deepEqual(
     keys.map((key) => translateMessage('en', key)),
     [
+      'Curated resources for everyday wellbeing.',
       'Resources',
       'Tools',
       'Plan your visit and contact the clinic.',
@@ -59,6 +61,7 @@ test('approved simplified home has matching English and Spanish copy', () => {
   assert.deepEqual(
     keys.map((key) => translateMessage('es-MX', key)),
     [
+      'Recursos seleccionados para tu bienestar diario.',
       'Recursos',
       'Herramientas',
       'Planea tu visita y contacta a la clínica.',

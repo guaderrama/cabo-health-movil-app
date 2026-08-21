@@ -74,33 +74,42 @@ export default function HomeScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.header, { paddingTop: Math.max(insets.top + 10, 64) }]}>
-          {devCatalog.enabled ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="CaboHealth"
-              accessibilityHint={t('devPanel.openHint')}
-              delayLongPress={900}
-              onPress={handleDevLogoTap}
-              onLongPress={() => setDevPanelVisible(true)}
-              style={({ pressed }) => pressed && styles.logoPressed}
-            >
+        <View style={[styles.header, { paddingTop: Math.max(insets.top + 18, 72) }]}>
+          <View style={styles.brandLockup}>
+            {devCatalog.enabled ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="CaboHealth"
+                accessibilityHint={t('devPanel.openHint')}
+                delayLongPress={900}
+                onPress={handleDevLogoTap}
+                onLongPress={() => setDevPanelVisible(true)}
+                style={({ pressed }) => [styles.logoControl, pressed && styles.logoPressed]}
+              >
+                <Image
+                  source={require('../../assets/logo-wordmark.png')}
+                  resizeMode="contain"
+                  tintColor={colors.text}
+                  style={styles.logo}
+                />
+              </Pressable>
+            ) : (
               <Image
                 source={require('../../assets/logo-wordmark.png')}
+                accessibilityLabel="CaboHealth"
                 resizeMode="contain"
                 tintColor={colors.text}
                 style={styles.logo}
               />
-            </Pressable>
-          ) : (
-            <Image
-              source={require('../../assets/logo-wordmark.png')}
-              accessibilityLabel="CaboHealth"
-              resizeMode="contain"
-              tintColor={colors.text}
-              style={styles.logo}
-            />
-          )}
+            )}
+            <View style={styles.brandPromiseRow}>
+              <View style={[styles.brandRule, { backgroundColor: colors.accent }]} />
+              <Text style={[styles.brandPromise, { color: colors.textSecondary }]}>
+                {t('home.brandPromise')}
+              </Text>
+              <View style={[styles.brandRule, { backgroundColor: colors.accent }]} />
+            </View>
+          </View>
         </View>
 
         <View style={styles.body}>
@@ -259,8 +268,26 @@ function SectionLabel({ label, color }: { label: string; color: string }) {
 const styles = StyleSheet.create({
   container: { flex: 1, overflow: 'hidden' },
   scrollContent: { flexGrow: 1 },
-  header: { alignItems: 'center', paddingBottom: 54, paddingHorizontal: 20 },
-  logo: { width: 86, height: 50 },
+  header: { alignItems: 'center', paddingBottom: 48, paddingHorizontal: 20 },
+  brandLockup: { width: '100%', alignItems: 'center' },
+  logoControl: { minWidth: 104, minHeight: 60, alignItems: 'center', justifyContent: 'center' },
+  logo: { width: 104, height: 60 },
+  brandPromiseRow: {
+    width: '100%',
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  brandRule: { width: 18, height: 1, opacity: 0.78 },
+  brandPromise: {
+    maxWidth: 258,
+    fontFamily: 'Georgia',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+  },
   body: { paddingTop: 14, paddingHorizontal: 20, paddingBottom: 24 },
   sectionLabel: {
     marginTop: 14,

@@ -68,6 +68,8 @@ test('the approved Home removes the repeated welcome hero and keeps rich edge mo
   assert.doesNotMatch(source, /home\.welcome|catalog\.title|catalog\.subtitle/u);
   assert.doesNotMatch(source, /FeaturedGuide|QuickActionCard/u);
   assert.match(source, /density="rich"/u);
+  assert.match(source, /home\.brandPromise/u);
+  assert.match(source, /styles\.brandLockup/u);
   assert.match(source, /home\.resources/u);
   assert.match(source, /home\.tools/u);
   assert.match(source, /home\.prepareVisit/u);

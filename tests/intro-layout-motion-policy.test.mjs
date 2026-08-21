@@ -18,6 +18,7 @@ const require = createRequire(import.meta.url);
 const {
   allowsMoleculeMotion,
   createMoleculeLoopController,
+  MOLECULE_DRIFT_PLAN,
   resolveReducedMotion,
 } = require(join(projectRoot, '.test-build/features/motion/moleculeMotionPolicy.js'));
 const {
@@ -71,6 +72,18 @@ test('molecule lifecycle owns one loop and stops before each static transition',
     ['stop', 2],
     ['static'],
   ]);
+});
+
+test('molecular network uses three quiet, distinct drift layers', () => {
+  assert.equal(MOLECULE_DRIFT_PLAN.length, 3);
+  assert.equal(new Set(MOLECULE_DRIFT_PLAN.map(({ durationMs }) => durationMs)).size, 3);
+
+  for (const layer of MOLECULE_DRIFT_PLAN) {
+    assert.ok(layer.durationMs >= 7000);
+    assert.ok(layer.durationMs <= 12000);
+    assert.ok(Math.abs(layer.translateX) <= 8);
+    assert.ok(Math.abs(layer.translateY) <= 8);
+  }
 });
 
 test('normal portrait layout keeps the logo near 18 percent and all content in safe flow', () => {
