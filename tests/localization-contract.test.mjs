@@ -50,7 +50,7 @@ test('approved simplified home has matching English and Spanish copy', () => {
     keys.map((key) => translateMessage('en', key)),
     [
       'Curated resources for everyday wellbeing.',
-      'Resources',
+      'Mini apps',
       'Tools',
       'Plan your visit and contact the clinic.',
       'Practical recipes for everyday wellbeing.',
@@ -62,7 +62,7 @@ test('approved simplified home has matching English and Spanish copy', () => {
     keys.map((key) => translateMessage('es-MX', key)),
     [
       'Recursos seleccionados para tu bienestar diario.',
-      'Recursos',
+      'Mini apps',
       'Herramientas',
       'Planea tu visita y contacta a la clínica.',
       'Recetas prácticas para el bienestar diario.',

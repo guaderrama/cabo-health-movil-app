@@ -5,20 +5,22 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BrandedBackground, PremiumResourceRow } from '../../components';
+import { BrandedBackground, PremiumMiniappTile } from '../../components';
 import { PUBLIC_MINIAPPS, type PublicMiniapp } from '../../constants/publicMiniapps';
+import { resolveCatalogCardColumns } from '../../features/catalog/catalogPresentation';
 import {
   buildPremiumHomeModel,
   type PremiumHomeTool,
 } from '../../features/home/premiumHomePresentation';
 import { DevMiniappPanel } from '../../features/devMiniapps/DevMiniappPanel';
 import { DevMiniappPreview } from '../../features/devMiniapps/DevMiniappPreview';
-import { DevMiniappRow } from '../../features/devMiniapps/DevMiniappRow';
+import { DevMiniappTile } from '../../features/devMiniapps/DevMiniappTile';
 import { type DevMiniapp } from '../../features/devMiniapps/devMiniappCatalog';
 import { useDevMiniapps } from '../../features/devMiniapps/useDevMiniapps';
 import { useFavorites, useTheme, useTranslations, useWebApps } from '../../hooks';
@@ -26,6 +28,7 @@ import { useFavorites, useTheme, useTranslations, useWebApps } from '../../hooks
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width, fontScale } = useWindowDimensions();
   const { colors, isDark } = useTheme();
   const { language, t } = useTranslations();
   const { isOffline } = useWebApps();
@@ -35,6 +38,7 @@ export default function HomeScreen() {
   const [devPanelVisible, setDevPanelVisible] = useState(false);
   const [previewMiniapp, setPreviewMiniapp] = useState<Readonly<DevMiniapp> | null>(null);
   const logoTapCount = useRef(0);
+  const columns = resolveCatalogCardColumns({ width, fontScale });
 
   const openMiniapp = useCallback((miniapp: Readonly<PublicMiniapp>) => {
     router.push({ pathname: '/apps/[slug]', params: { slug: miniapp.slug } });
@@ -114,52 +118,40 @@ export default function HomeScreen() {
 
         <View style={styles.body}>
           <SectionLabel label={t('home.resources')} color={colors.primary} />
-          <View
-            style={[
-              styles.groupSurface,
-              {
-                backgroundColor: colors.glass,
-                borderColor: colors.glassBorder,
-                shadowColor: colors.text,
-              },
-            ]}
-          >
-            {model.resources.map((miniapp, index) => (
-              <PremiumResourceRow
+          <View style={styles.miniappGrid}>
+            {model.resources.map((miniapp) => (
+              <View
                 key={miniapp.slug}
-                miniapp={miniapp}
-                title={titleFor(miniapp)}
-                summary={summaryFor(miniapp)}
-                favorite={isFavorite(miniapp.slug)}
-                first={index === 0}
-                onPress={() => openMiniapp(miniapp)}
-                onToggleFavorite={() => toggleFavorite(miniapp.slug)}
-              />
+                style={columns === 2 ? styles.halfTile : styles.fullTile}
+              >
+                <PremiumMiniappTile
+                  miniapp={miniapp}
+                  title={titleFor(miniapp)}
+                  summary={summaryFor(miniapp)}
+                  favorite={isFavorite(miniapp.slug)}
+                  onPress={() => openMiniapp(miniapp)}
+                  onToggleFavorite={() => toggleFavorite(miniapp.slug)}
+                />
+              </View>
             ))}
           </View>
 
           {devCatalog.enabled && devCatalog.visibleMiniapps.length > 0 && (
             <View style={styles.testSection}>
               <SectionLabel label={t('home.testMiniapps')} color={colors.primary} />
-              <View
-                style={[
-                  styles.groupSurface,
-                  {
-                    backgroundColor: colors.glass,
-                    borderColor: colors.glassBorder,
-                    shadowColor: colors.text,
-                  },
-                ]}
-              >
-                {devCatalog.visibleMiniapps.map((miniapp, index) => (
-                  <DevMiniappRow
+              <View style={styles.miniappGrid}>
+                {devCatalog.visibleMiniapps.map((miniapp) => (
+                  <View
                     key={miniapp.id}
-                    miniapp={miniapp}
-                    title={devTitleFor(miniapp)}
-                    summary={devSummaryFor(miniapp)}
-                    first={index === 0}
-                    onPress={() => setPreviewMiniapp(miniapp)}
-                  />
+                    style={columns === 2 ? styles.halfTile : styles.fullTile}
+                  >
+                    <DevMiniappTile
+                      miniapp={miniapp}
+                      title={devTitleFor(miniapp)}
+                      summary={devSummaryFor(miniapp)}
+                      onPress={() => setPreviewMiniapp(miniapp)}
+                    />
+                  </View>
                 ))}
               </View>
             </View>
@@ -307,6 +299,14 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 4,
   },
+  miniappGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'stretch',
+    gap: 12,
+  },
+  halfTile: { width: '48.2%' },
+  fullTile: { width: '100%' },
   toolsSection: { marginTop: 31 },
   testSection: { marginTop: 17 },
   toolsSurface: { marginTop: 0 },

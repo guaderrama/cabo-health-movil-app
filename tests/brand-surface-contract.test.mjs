@@ -66,6 +66,8 @@ test('Saved reuses the same compact resource surface instead of the retired cata
 
 test('the approved Home removes the repeated welcome hero and keeps rich edge motion', () => {
   const source = readFileSync('app/(main)/index.tsx', 'utf8');
+  assert.match(source, /PremiumMiniappTile/u);
+  assert.match(source, /resolveCatalogCardColumns/u);
   assert.doesNotMatch(source, /home\.welcome|catalog\.title|catalog\.subtitle/u);
   assert.doesNotMatch(source, /FeaturedGuide|QuickActionCard/u);
   assert.match(source, /density="rich"/u);

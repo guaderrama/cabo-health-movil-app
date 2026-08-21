@@ -180,3 +180,38 @@ final result: blocked
 The Home molecular network and revised brand lockup have **passed** browser-rendered design QA. The overall release remains blocked only by the existing real-iPhone WKWebView/safe-area and motion-feel gate.
 
 final result: blocked
+
+## Home miniapp grid QA — 2026-08-21
+
+### Selected direction
+
+- User-approved structural target: miniapps become near-square cards in a two-column mobile grid; new cards flow left-to-right and then downward; cards must separate clearly from the molecular background; Tools remain a distinct full-width list.
+- This iteration changes no logo, particle, palette, navigation destination, miniapp URL, or hidden test-panel behavior.
+
+### Current visual evidence
+
+- Normal iPhone viewport, 390 × 844: `.superpowers/qa/home-miniapp-grid/home-miniapp-grid-390x844.png`.
+- Narrow mobile viewport, 320 × 568: `.superpowers/qa/home-miniapp-grid/home-miniapp-grid-320x568.png`.
+- Both saved captures were reopened and inspected after the final solid-card fill adjustment.
+
+### Findings
+
+- At 390 px, the two public miniapps render as equal-height individual cards in one row. The icon, two-line title, short summary, public badge, 44-point Save action, and forward affordance remain readable and do not collide.
+- Development-only test miniapps use the same grid and continue on the left of the next row when the count is odd. The test-only and Public/Clients labels remain visible.
+- At 320 px, the existing responsive policy switches to one column. The Clinic title remains complete, the Save action stays 44 × 44, and no horizontal clipping is visible.
+- Solid theme card surfaces, the existing sea border, and restrained shadow make the cards visibly distinct from the animated molecular field in both light and dark theme tokens.
+- Tools remain a separate full-width row surface below the miniapp grid, preserving the difference between hosted miniapps and native utilities.
+- The change uses the existing CaboHealth typography, Ionicons, palette, background artwork, bilingual strings, and navigation behavior. No new asset or visual language was introduced.
+
+### Verification
+
+- Focused grid/localization/brand/development-panel tests: 20 passed, 0 failed.
+- Full repository suite: 643 passed, 0 failed.
+- App TypeScript and minimal-public-v1 scope verifier: passed.
+- Browser DOM inspection confirmed the 390 px card layout, distinct solid surfaces, complete labels, and separate 44-point favorite controls.
+
+### Result
+
+The Home miniapp grid has **passed** scoped browser design QA with no actionable P0/P1/P2 finding. The overall release remains blocked by the pre-existing real-iPhone WKWebView/safe-area and motion-feel gate documented earlier in this file.
+
+final result: blocked
