@@ -16,6 +16,7 @@ import {
   createMoleculeLoopController,
   MOLECULE_DRIFT_PLAN,
   RICH_CENTER_PARTICLE_PLAN,
+  shouldKeepMoleculeConnection,
   type MoleculeLoopController,
 } from '../features/motion/moleculeMotionPolicy';
 
@@ -205,7 +206,7 @@ const generateConnections = (particles: Particle[]): { from: Particle; to: Parti
     }
   }
 
-  return connections;
+  return connections.filter((_, index) => shouldKeepMoleculeConnection(index));
 };
 
 export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({

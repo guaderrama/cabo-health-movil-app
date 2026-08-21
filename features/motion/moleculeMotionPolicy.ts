@@ -45,6 +45,10 @@ export const RICH_CENTER_PARTICLE_PLAN: readonly Readonly<RichCenterParticle>[] 
   Object.freeze({ x: 0.52, y: 845, size: 5, warm: true }),
 ]);
 
+export function shouldKeepMoleculeConnection(candidateIndex: number): boolean {
+  return Number.isInteger(candidateIndex) && candidateIndex >= 0 && candidateIndex % 4 !== 3;
+}
+
 export function allowsMoleculeMotion({
   active,
   appActive,

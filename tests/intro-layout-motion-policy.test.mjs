@@ -21,6 +21,7 @@ const {
   MOLECULE_DRIFT_PLAN,
   RICH_CENTER_PARTICLE_PLAN,
   resolveReducedMotion,
+  shouldKeepMoleculeConnection,
 } = require(join(projectRoot, '.test-build/features/motion/moleculeMotionPolicy.js'));
 const {
   calculateIntroLayout,
@@ -104,6 +105,14 @@ test('rich brand motion fills the center with restrained warm accents', () => {
     RICH_CENTER_PARTICLE_PLAN.map(({ y }) => Math.floor(y / 150)),
   );
   assert.ok(verticalBands.size >= 6);
+});
+
+test('molecular network removes exactly one of every four candidate lines', () => {
+  const candidates = Array.from({ length: 40 }, (_, index) => index);
+  const retained = candidates.filter(shouldKeepMoleculeConnection);
+
+  assert.equal(retained.length, 30);
+  assert.deepEqual(retained.slice(0, 6), [0, 1, 2, 4, 5, 6]);
 });
 
 test('normal portrait layout keeps the logo near 18 percent and all content in safe flow', () => {
