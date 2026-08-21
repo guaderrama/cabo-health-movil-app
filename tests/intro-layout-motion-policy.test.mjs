@@ -19,6 +19,7 @@ const {
   allowsMoleculeMotion,
   createMoleculeLoopController,
   MOLECULE_DRIFT_PLAN,
+  RICH_CENTER_PARTICLE_PLAN,
   resolveReducedMotion,
 } = require(join(projectRoot, '.test-build/features/motion/moleculeMotionPolicy.js'));
 const {
@@ -85,6 +86,21 @@ test('molecular network uses three distinct drift layers that remain visibly per
     assert.ok(Math.abs(layer.translateX) <= 16);
     assert.ok(Math.abs(layer.translateY) <= 16);
   }
+});
+
+test('rich brand motion fills the center with restrained warm accents', () => {
+  assert.ok(RICH_CENTER_PARTICLE_PLAN.length >= 14);
+  assert.ok(RICH_CENTER_PARTICLE_PLAN.every(({ x }) => x >= 0.34 && x <= 0.66));
+  assert.ok(RICH_CENTER_PARTICLE_PLAN.every(({ size }) => size >= 2 && size <= 4));
+
+  const warmCount = RICH_CENTER_PARTICLE_PLAN.filter(({ warm }) => warm).length;
+  assert.ok(warmCount >= 3);
+  assert.ok(warmCount <= Math.ceil(RICH_CENTER_PARTICLE_PLAN.length / 3));
+
+  const verticalBands = new Set(
+    RICH_CENTER_PARTICLE_PLAN.map(({ y }) => Math.floor(y / 150)),
+  );
+  assert.ok(verticalBands.size >= 6);
 });
 
 test('normal portrait layout keeps the logo near 18 percent and all content in safe flow', () => {

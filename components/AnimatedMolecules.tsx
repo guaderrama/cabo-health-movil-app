@@ -14,6 +14,7 @@ import {
   allowsMoleculeMotion,
   createMoleculeLoopController,
   MOLECULE_DRIFT_PLAN,
+  RICH_CENTER_PARTICLE_PLAN,
   type MoleculeLoopController,
 } from '../features/motion/moleculeMotionPolicy';
 
@@ -22,7 +23,7 @@ interface Particle {
   x: number;
   y: number;
   size: number;
-  colorType: 'dark' | 'medium' | 'light' | 'accent';
+  colorType: 'dark' | 'medium' | 'light' | 'accent' | 'warm';
 }
 
 export interface AnimatedMoleculesProps {
@@ -40,12 +41,16 @@ const COLORS = {
     medium: '#2A9FB3',
     light: '#72D7DF',
     accent: '#19BECC',
+    warm: '#B8956A',
+    warmLight: '#D8BF9D',
   },
   dark: {
     dark: '#8BC7D2',
     medium: '#5AA5B7',
     light: '#B8DDE3',
     accent: '#DEC9AA',
+    warm: '#C9A978',
+    warmLight: '#E4D3B9',
   }
 };
 
@@ -88,11 +93,15 @@ const generateParticles = (
 
   // Small accent particles (very subtle)
   const accentParticles = [
-    { x: 0.15, y: 260 }, { x: 0.85, y: 300 },
-    { x: 0.18, y: 460 }, { x: 0.82, y: 520 },
-    { x: 0.12, y: 660 }, { x: 0.88, y: 720 },
-    { x: 0.40, y: 300 }, { x: 0.60, y: 600 },
-  ];
+    { x: 0.15, y: 260, colorType: 'light' },
+    { x: 0.85, y: 300, colorType: 'warm' },
+    { x: 0.18, y: 460, colorType: 'light' },
+    { x: 0.82, y: 520, colorType: 'accent' },
+    { x: 0.12, y: 660, colorType: 'light' },
+    { x: 0.88, y: 720, colorType: 'accent' },
+    { x: 0.40, y: 300, colorType: 'warm' },
+    { x: 0.60, y: 600, colorType: 'accent' },
+  ] as const;
 
   let id = 1;
 
@@ -130,13 +139,13 @@ const generateParticles = (
   });
 
   // Add accent particles (smallest, most subtle)
-  accentParticles.forEach((pos, i) => {
+  accentParticles.forEach((pos) => {
     particles.push({
       id: id++,
       x: width * pos.x,
       y: height * (pos.y / 900),
       size: 2,
-      colorType: i % 2 === 0 ? 'light' : 'accent',
+      colorType: pos.colorType,
     });
   });
 
@@ -154,6 +163,16 @@ const generateParticles = (
         y: height * (pos.y / 900),
         size: i % 6 === 0 ? 6 : i % 3 === 0 ? 4 : 2.5,
         colorType: colorTypes[(i + 1) % colorTypes.length],
+      });
+    });
+
+    RICH_CENTER_PARTICLE_PLAN.forEach((pos, i) => {
+      particles.push({
+        id: id++,
+        x: width * pos.x,
+        y: height * (pos.y / 900),
+        size: pos.size,
+        colorType: pos.warm ? 'warm' : colorTypes[(i + 2) % colorTypes.length],
       });
     });
   }
@@ -305,6 +324,7 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
       case 'medium': return baseOpacity + 0.08;
       case 'light': return baseOpacity + 0.04;
       case 'accent': return baseOpacity + 0.10;
+      case 'warm': return baseOpacity + 0.16;
       default: return baseOpacity;
     }
   };
@@ -338,6 +358,10 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
               <LinearGradient id="gradientAccent" x1="0%" y1="0%" x2="100%" y2="100%">
                 <Stop offset="0%" stopColor={colors.accent} />
                 <Stop offset="100%" stopColor={colors.light} />
+              </LinearGradient>
+              <LinearGradient id="gradientWarm" x1="0%" y1="0%" x2="100%" y2="100%">
+                <Stop offset="0%" stopColor={colors.warm} />
+                <Stop offset="100%" stopColor={colors.warmLight} />
               </LinearGradient>
             </Defs>
 
