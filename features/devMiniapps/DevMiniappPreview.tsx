@@ -19,6 +19,13 @@ import {
   type DevMiniapp,
 } from './devMiniappCatalog';
 
+const DEV_MINIAPP_WEBVIEW_SECURITY_PROPS = Object.freeze({
+  ...RESTRICTED_WEBVIEW_SECURITY_PROPS,
+  // Development previews may target an owner-supplied HTTPS domain that is
+  // intentionally not part of the production app-bound domain allowlist.
+  limitsNavigationsToAppBoundDomains: false,
+});
+
 export function DevMiniappPreview({
   miniapp,
   title,
@@ -88,7 +95,7 @@ export function DevMiniappPreview({
               classifyDevMiniappNavigation(miniapp.url, request.url) || block()
             )}
             onOpenWindow={block}
-            {...RESTRICTED_WEBVIEW_SECURITY_PROPS}
+            {...DEV_MINIAPP_WEBVIEW_SECURITY_PROPS}
           />
           {loading && (
             <View style={[styles.overlay, { backgroundColor: colors.background }]}>

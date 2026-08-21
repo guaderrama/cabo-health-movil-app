@@ -40,21 +40,30 @@ test('a valid CaboHealth app link becomes a local test miniapp', () => {
   });
 });
 
-test('test miniapps reject every URL outside an exact CaboHealth app root', () => {
+test('a public HTTPS page on another domain becomes a local test miniapp', () => {
+  const url = 'https://guides.example.org/microbiota/foods?lang=es#fiber';
+  const result = createDevMiniapp({ ...validInput, url }, []);
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.value.url, url);
+  assert.equal(result.value.slug, 'guides.example.org');
+  assert.equal(result.value.access, 'client');
+});
+
+test('test miniapps reject insecure or non-public URL shapes', () => {
   for (const url of [
     'http://cabohealth.org/apps/microbiota-guide/',
-    'https://evil.example/apps/microbiota-guide/',
     'https://cabohealth.org:443/apps/microbiota-guide/',
     'https://user@cabohealth.org/apps/microbiota-guide/',
-    'https://cabohealth.org/apps/microbiota-guide/?preview=1',
-    'https://cabohealth.org/apps/microbiota-guide/#secret',
-    'https://cabohealth.org/apps/microbiota-guide/page/',
+    'https://localhost/guide/',
+    'https://127.0.0.1/guide/',
     'https://cabohealth.org/apps/%2e%2e/support/',
     ' https://cabohealth.org/apps/microbiota-guide/',
   ]) {
     assert.deepEqual(createDevMiniapp({ ...validInput, url }, []), {
       ok: false,
-      reason: 'Use an unused https://cabohealth.org/apps/name/ link.',
+      reason: 'Use an unused public HTTPS link without credentials or a custom port.',
     }, url);
   }
 });
@@ -179,6 +188,25 @@ test('a test WebView stays inside the selected CaboHealth miniapp path', () => {
     'https://evil.example/apps/microbiota-guide/',
     'https://cabohealth.org/apps/microbiota-guide/%2e%2e/support/',
     'mailto:ivan@example.com',
+  ]) {
+    assert.equal(classifyDevMiniappNavigation(selected, url), false, url);
+  }
+});
+
+test('an external test WebView may navigate only inside its selected HTTPS origin', () => {
+  const selected = 'https://guides.example.org/microbiota/foods?lang=es#fiber';
+  assert.equal(classifyDevMiniappNavigation(selected, selected), true);
+  assert.equal(classifyDevMiniappNavigation(
+    selected,
+    'https://guides.example.org/microbiota/recipes?page=2#beans',
+  ), true);
+
+  for (const url of [
+    'https://accounts.example.org/login',
+    'https://evil.example/microbiota/foods',
+    'http://guides.example.org/microbiota/foods',
+    'https://guides.example.org:443/microbiota/foods',
+    'https://guides.example.org/%2e%2e/private',
   ]) {
     assert.equal(classifyDevMiniappNavigation(selected, url), false, url);
   }

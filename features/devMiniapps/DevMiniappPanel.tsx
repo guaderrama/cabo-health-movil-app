@@ -243,7 +243,7 @@ export function DevMiniappPanel({
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
-              placeholder="https://cabohealth.org/apps/microbiota-guide/"
+              placeholder="https://example.org/guide/"
             />
 
             <Text style={[styles.fieldLabel, { color: colors.text }]}>{t('devPanel.access')}</Text>

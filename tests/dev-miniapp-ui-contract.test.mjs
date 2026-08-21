@@ -20,7 +20,8 @@ test('the miniapp test panel is development-only and has no Expo admin route', (
 test('the test WebView uses the restricted policy without a native bridge', () => {
   const preview = read('features/devMiniapps/DevMiniappPreview.tsx');
   assert.match(preview, /classifyDevMiniappNavigation\(miniapp\.url, request\.url\)/u);
-  assert.match(preview, /\.\.\.RESTRICTED_WEBVIEW_SECURITY_PROPS/u);
+  assert.match(preview, /\.\.\.DEV_MINIAPP_WEBVIEW_SECURITY_PROPS/u);
+  assert.match(preview, /limitsNavigationsToAppBoundDomains: false/u);
   assert.doesNotMatch(preview, /onMessage|injectedJavaScript|nativeConfig/u);
 });
 

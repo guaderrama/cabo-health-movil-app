@@ -58,6 +58,52 @@ const DEV_MINIAPP_KEYS = Object.freeze([
   'url',
 ]);
 
+type ParsedDevMiniappUrl = Readonly<{
+  canonicalUrl: string;
+  hostname: string;
+  origin: string;
+}>;
+
+function parsePublicHttpsUrl(rawUrl: string): ParsedDevMiniappUrl | null {
+  if (
+    rawUrl.length === 0
+    || rawUrl.length > 2048
+    || /[\u0000-\u0020\u007f\\]/u.test(rawUrl)
+    || /%(?:2e|2f|5c)/iu.test(rawUrl)
+    || !rawUrl.startsWith('https://')
+  ) return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  const authority = rawUrl.slice('https://'.length).split(/[/?#]/u, 1)[0];
+  const hostname = parsed.hostname.toLowerCase();
+  if (
+    parsed.protocol !== 'https:'
+    || parsed.username !== ''
+    || parsed.password !== ''
+    || parsed.port !== ''
+    || authority.includes('@')
+    || authority.includes(':')
+    || !hostname.includes('.')
+    || hostname.startsWith('.')
+    || hostname.endsWith('.')
+    || hostname === 'localhost'
+    || hostname.endsWith('.local')
+    || /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(hostname)
+  ) return null;
+
+  return {
+    canonicalUrl: parsed.toString(),
+    hostname,
+    origin: parsed.origin,
+  };
+}
+
 export function parseDevMiniappCatalog(stored: string): readonly Readonly<DevMiniapp>[] {
   try {
     const parsed: unknown = JSON.parse(stored);
@@ -107,20 +153,16 @@ export function classifyDevMiniappNavigation(
   selectedRootUrl: string,
   candidateUrl: string,
 ): boolean {
+  const selectedUrl = parsePublicHttpsUrl(selectedRootUrl);
+  const candidate = parsePublicHttpsUrl(candidateUrl);
+  if (!selectedUrl || !candidate || selectedUrl.origin !== candidate.origin) return false;
+
   const selected = /^https:\/\/cabohealth\.org(\/apps\/[a-z0-9]+(?:-[a-z0-9]+)*\/)$/.exec(selectedRootUrl);
-  if (!selected || /[\u0000-\u0020\u007f\\%?]/u.test(candidateUrl)) return false;
-  let parsed: URL;
-  try {
-    parsed = new URL(candidateUrl);
-  } catch {
-    return false;
-  }
+  if (!selected) return candidateUrl === selectedRootUrl || !/%(?:2e|2f|5c)/iu.test(candidateUrl);
+  if (/[\u0000-\u0020\u007f\\%?]/u.test(candidateUrl)) return false;
+  const parsed = new URL(candidateUrl);
   if (
-    parsed.protocol !== 'https:'
-    || parsed.hostname !== 'cabohealth.org'
-    || parsed.port !== ''
-    || parsed.username !== ''
-    || parsed.password !== ''
+    parsed.hostname !== 'cabohealth.org'
     || !parsed.pathname.startsWith(selected[1])
   ) return false;
 
@@ -166,27 +208,26 @@ export function createDevMiniapp(
       reason: 'Complete both languages and choose Public or Clients.',
     };
   }
-  const match = /^https:\/\/cabohealth\.org\/apps\/([a-z0-9]+(?:-[a-z0-9]+)*)\/$/u.exec(input.url);
-  const slug = match?.[1];
-  if (
-    !slug
-    || existing.some((miniapp) => miniapp.slug === slug)
-  ) {
+  const parsedUrl = parsePublicHttpsUrl(input.url);
+  const cabohealthMatch = /^https:\/\/cabohealth\.org\/apps\/([a-z0-9]+(?:-[a-z0-9]+)*)\/$/u.exec(input.url);
+  if (!parsedUrl || existing.some((miniapp) => miniapp.url === parsedUrl.canonicalUrl)) {
     return {
       ok: false,
-      reason: 'Use an unused https://cabohealth.org/apps/name/ link.',
+      reason: 'Use an unused public HTTPS link without credentials or a custom port.',
     };
   }
+  const slug = cabohealthMatch?.[1] ?? parsedUrl.hostname;
+  const id = cabohealthMatch?.[1] ?? `external:${parsedUrl.canonicalUrl}`;
   return {
     ok: true,
     value: {
-      id: slug,
+      id,
       slug,
       titleEn,
       titleEs,
       summaryEn,
       summaryEs,
-      url: input.url,
+      url: parsedUrl.canonicalUrl,
       access: input.access,
       active: true,
     },
