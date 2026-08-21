@@ -15,6 +15,7 @@ test('the approved intro palette is the light-theme authority', () => {
   assert.equal(lightColors.text, introColors.ink);
   assert.equal(lightColors.textSecondary, introColors.soft);
   assert.equal(lightColors.favorite, introColors.bronze);
+  assert.equal(introColors.gold, '#C69745');
   assert.equal(lightColors.gradientStart, introColors.gradientTop);
   assert.equal(lightColors.gradientMiddle, introColors.gradientMiddle);
   assert.equal(lightColors.gradientEnd, introColors.gradientBottom);

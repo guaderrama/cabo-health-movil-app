@@ -27,22 +27,22 @@ export const MOLECULE_DRIFT_PLAN: readonly MoleculeDriftLayer[] = Object.freeze(
 ]);
 
 // Rich surfaces add a quiet center field so the network does not read as an
-// edge-only frame. Warm nodes stay a minority and reuse the brand bronze.
+// edge-only frame. Warm nodes stay a minority and use the approved brand gold.
 export const RICH_CENTER_PARTICLE_PLAN: readonly Readonly<RichCenterParticle>[] = Object.freeze([
   Object.freeze({ x: 0.46, y: 80, size: 2, warm: false }),
-  Object.freeze({ x: 0.57, y: 135, size: 2.5, warm: true }),
+  Object.freeze({ x: 0.57, y: 135, size: 4.5, warm: true }),
   Object.freeze({ x: 0.37, y: 195, size: 2, warm: false }),
   Object.freeze({ x: 0.63, y: 250, size: 3, warm: false }),
-  Object.freeze({ x: 0.48, y: 305, size: 2.5, warm: true }),
+  Object.freeze({ x: 0.48, y: 305, size: 3, warm: true }),
   Object.freeze({ x: 0.58, y: 365, size: 2, warm: false }),
   Object.freeze({ x: 0.42, y: 425, size: 3.5, warm: false }),
   Object.freeze({ x: 0.53, y: 485, size: 2, warm: false }),
   Object.freeze({ x: 0.35, y: 545, size: 2.5, warm: false }),
-  Object.freeze({ x: 0.65, y: 605, size: 2.5, warm: true }),
+  Object.freeze({ x: 0.65, y: 605, size: 4, warm: true }),
   Object.freeze({ x: 0.47, y: 665, size: 3, warm: false }),
   Object.freeze({ x: 0.58, y: 725, size: 2, warm: false }),
   Object.freeze({ x: 0.40, y: 785, size: 2.5, warm: false }),
-  Object.freeze({ x: 0.52, y: 845, size: 3.5, warm: true }),
+  Object.freeze({ x: 0.52, y: 845, size: 5, warm: true }),
 ]);
 
 export function allowsMoleculeMotion({

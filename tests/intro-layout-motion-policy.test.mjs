@@ -91,11 +91,14 @@ test('molecular network uses three distinct drift layers that remain visibly per
 test('rich brand motion fills the center with restrained warm accents', () => {
   assert.ok(RICH_CENTER_PARTICLE_PLAN.length >= 14);
   assert.ok(RICH_CENTER_PARTICLE_PLAN.every(({ x }) => x >= 0.34 && x <= 0.66));
-  assert.ok(RICH_CENTER_PARTICLE_PLAN.every(({ size }) => size >= 2 && size <= 4));
+  assert.ok(RICH_CENTER_PARTICLE_PLAN.every(({ size }) => size >= 2 && size <= 5));
 
   const warmCount = RICH_CENTER_PARTICLE_PLAN.filter(({ warm }) => warm).length;
   assert.ok(warmCount >= 3);
   assert.ok(warmCount <= Math.ceil(RICH_CENTER_PARTICLE_PLAN.length / 3));
+  assert.ok(
+    RICH_CENTER_PARTICLE_PLAN.filter(({ size, warm }) => warm && size >= 4).length >= 2,
+  );
 
   const verticalBands = new Set(
     RICH_CENTER_PARTICLE_PLAN.map(({ y }) => Math.floor(y / 150)),

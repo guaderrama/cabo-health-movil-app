@@ -7,6 +7,7 @@ export const introColors = {
   sea: '#0E5876',
   paper: '#FBFAF7',
   bronze: '#B8956A',
+  gold: '#C69745',
   soft: '#4F7785',
   gradientTop: '#E3F1F5',
   gradientMiddle: '#EDF6F7',

@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Svg, { Circle, Line, Defs, LinearGradient, Stop, G } from 'react-native-svg';
+import { introColors } from '../constants';
 import {
   allowsMoleculeMotion,
   createMoleculeLoopController,
@@ -41,16 +42,16 @@ const COLORS = {
     medium: '#2A9FB3',
     light: '#72D7DF',
     accent: '#19BECC',
-    warm: '#B8956A',
-    warmLight: '#D8BF9D',
+    warm: introColors.gold,
+    warmLight: '#EBCB82',
   },
   dark: {
     dark: '#8BC7D2',
     medium: '#5AA5B7',
     light: '#B8DDE3',
     accent: '#DEC9AA',
-    warm: '#C9A978',
-    warmLight: '#E4D3B9',
+    warm: '#D8AF60',
+    warmLight: '#F3D99C',
   }
 };
 
@@ -93,14 +94,14 @@ const generateParticles = (
 
   // Small accent particles (very subtle)
   const accentParticles = [
-    { x: 0.15, y: 260, colorType: 'light' },
-    { x: 0.85, y: 300, colorType: 'warm' },
-    { x: 0.18, y: 460, colorType: 'light' },
-    { x: 0.82, y: 520, colorType: 'accent' },
-    { x: 0.12, y: 660, colorType: 'light' },
-    { x: 0.88, y: 720, colorType: 'accent' },
-    { x: 0.40, y: 300, colorType: 'warm' },
-    { x: 0.60, y: 600, colorType: 'accent' },
+    { x: 0.15, y: 260, size: 2, colorType: 'light' },
+    { x: 0.85, y: 300, size: 4.5, colorType: 'warm' },
+    { x: 0.18, y: 460, size: 2, colorType: 'light' },
+    { x: 0.82, y: 520, size: 2, colorType: 'accent' },
+    { x: 0.12, y: 660, size: 2, colorType: 'light' },
+    { x: 0.88, y: 720, size: 2, colorType: 'accent' },
+    { x: 0.40, y: 300, size: 4, colorType: 'warm' },
+    { x: 0.60, y: 600, size: 2, colorType: 'accent' },
   ] as const;
 
   let id = 1;
@@ -144,7 +145,7 @@ const generateParticles = (
       id: id++,
       x: width * pos.x,
       y: height * (pos.y / 900),
-      size: 2,
+      size: pos.size,
       colorType: pos.colorType,
     });
   });
@@ -324,7 +325,7 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
       case 'medium': return baseOpacity + 0.08;
       case 'light': return baseOpacity + 0.04;
       case 'accent': return baseOpacity + 0.10;
-      case 'warm': return baseOpacity + 0.16;
+      case 'warm': return baseOpacity + 0.24;
       default: return baseOpacity;
     }
   };
@@ -381,13 +382,13 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
 
             {layer.particles.map((particle) => (
               <G key={`particle-${particle.id}`}>
-                {particle.size >= 6 && (
+                {(particle.size >= 6 || (particle.colorType === 'warm' && particle.size >= 4)) && (
                   <Circle
                     cx={particle.x}
                     cy={particle.y}
                     r={particle.size * 2.3}
-                    fill={colors.light}
-                    opacity={isDark ? 0.08 : 0.11}
+                    fill={particle.colorType === 'warm' ? colors.warmLight : colors.light}
+                    opacity={particle.colorType === 'warm' ? 0.18 : isDark ? 0.08 : 0.11}
                   />
                 )}
                 <Circle
