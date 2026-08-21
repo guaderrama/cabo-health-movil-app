@@ -14,6 +14,7 @@ import * as Network from 'expo-network';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { BrandedBackground } from '../../components';
 import { config } from '../../constants';
 import { classifyMiniappNavigation } from '../../features/launch/navigationPolicy';
 import { usePreferences, useTheme, useTranslations } from '../../hooks';
@@ -65,11 +66,10 @@ export default function SettingsScreen() {
   }, [t]);
 
   return (
-    <ScrollView
-      style={{ backgroundColor: colors.background }}
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + 18 }]}
-    >
-      <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{t('settings.title')}</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <BrandedBackground moleculeOpacity={0.32} />
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 18 }]}>
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{t('settings.title')}</Text>
 
       <SettingsSection title={t('settings.languageSection')}>
         <Text style={[styles.itemTitle, { color: colors.text }]}>{t('settings.language')}</Text>
@@ -130,11 +130,12 @@ export default function SettingsScreen() {
         <LinkRow icon="flag-outline" title={t('settings.reportContent')} onPress={() => openUrl(config.urls.reportContent)} />
       </SettingsSection>
 
-      <View style={styles.appInfo}>
-        <Text style={[styles.appName, { color: colors.text }]}>CaboHealth</Text>
-        <Text style={[styles.version, { color: colors.textSecondary }]}>v{config.app.version}</Text>
-      </View>
-    </ScrollView>
+        <View style={styles.appInfo}>
+          <Text style={[styles.appName, { color: colors.text }]}>CaboHealth</Text>
+          <Text style={[styles.version, { color: colors.textSecondary }]}>v{config.app.version}</Text>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -232,6 +233,7 @@ function Separator() {
 }
 
 const styles = StyleSheet.create({
+  container: { flex: 1, overflow: 'hidden' },
   content: { paddingHorizontal: 16, paddingBottom: 34 },
   title: { fontFamily: 'Georgia', fontSize: 31, lineHeight: 37, fontWeight: '600', marginBottom: 8 },
   section: { marginTop: 18 },

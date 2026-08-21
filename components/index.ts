@@ -10,6 +10,8 @@ export { SkeletonCard, SkeletonGrid } from './SkeletonCard';
 export { PremiumIcon } from './icons/PremiumIcon';
 export type { PremiumIconName } from './icons/PremiumIcon';
 export { AnimatedMolecules } from './AnimatedMolecules';
+export { BrandedBackground } from './BrandedBackground';
+export { PremiumResourceRow } from './PremiumResourceRow';
 export type { AnimatedMoleculesProps } from './AnimatedMolecules';
 export { BottomNavigation } from './BottomNavigation';
 export { EditorialMetadata } from './EditorialMetadata';

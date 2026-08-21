@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { BrandedBackground } from '../../components';
 import { RecipeBrowser } from '../../features/resources/RecipeBrowser';
 import { useTheme, useTranslations } from '../../hooks';
 
@@ -12,7 +13,8 @@ export default function RecipesScreen() {
   const { t } = useTranslations();
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <BrandedBackground moleculeOpacity={0.3} />
+      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.glass }]}>
         <Pressable accessibilityRole="button" accessibilityLabel={t('common.back')} onPress={() => router.back()} style={styles.back}>
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </Pressable>

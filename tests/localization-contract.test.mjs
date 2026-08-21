@@ -36,33 +36,36 @@ test('English and Mexican Spanish expose the same non-empty public message contr
   assert.equal(MESSAGES['es-MX']['recipes.beverage'], 'Bebida');
 });
 
-test('approved premium home journey has matching English and Spanish copy', () => {
+test('approved simplified home has matching English and Spanish copy', () => {
   const keys = [
-    'home.welcome',
-    'home.quickAccess',
-    'home.availableNow',
+    'home.resources',
+    'home.tools',
+    'home.clinicSummary',
+    'home.recipesSummary',
     'home.planVisit',
-    'home.contactClinic',
-    'home.clinicMap',
+    'home.visitChecklist',
   ];
   assert.deepEqual(
     keys.map((key) => translateMessage('en', key)),
-    ['Welcome', 'Quick access', 'Available now', 'Plan your visit', 'Contact clinic', 'Clinic map'],
+    [
+      'Resources',
+      'Tools',
+      'Plan your visit and contact the clinic.',
+      'Practical recipes for everyday wellbeing.',
+      'Plan your visit',
+      'Visit checklist',
+    ],
   );
   assert.deepEqual(
     keys.map((key) => translateMessage('es-MX', key)),
-    ['Bienvenido', 'Acceso rápido', 'Disponible ahora', 'Planea tu visita', 'Contacta la clínica', 'Mapa de la clínica'],
-  );
-});
-
-test('featured guide and offline tools use concise localized calls to action', () => {
-  assert.deepEqual(
-    ['home.openGuide', 'home.localTools'].map((key) => translateMessage('en', key)),
-    ['Open guide', 'Available offline'],
-  );
-  assert.deepEqual(
-    ['home.openGuide', 'home.localTools'].map((key) => translateMessage('es-MX', key)),
-    ['Abrir guía', 'Disponible sin conexión'],
+    [
+      'Recursos',
+      'Herramientas',
+      'Planea tu visita y contacta a la clínica.',
+      'Recetas prácticas para el bienestar diario.',
+      'Planea tu visita',
+      'Lista para tu visita',
+    ],
   );
 });
 

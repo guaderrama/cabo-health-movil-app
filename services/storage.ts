@@ -95,7 +95,7 @@ export async function getThemePreference(): Promise<StoredValueResult<'light' | 
       }
       return stored;
     },
-    'system',
+    'light',
   );
 }
 

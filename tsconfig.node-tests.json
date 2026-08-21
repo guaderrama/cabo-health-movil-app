@@ -10,6 +10,7 @@
     "skipLibCheck": true
   },
   "files": [
+    "constants/colors.ts",
     "constants/publicMiniapps.ts",
     "constants/publicContacts.ts",
     "features/catalog/publicCatalogState.ts",

@@ -1,68 +1,84 @@
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { AppCard } from '../../components';
+import { BrandedBackground, PremiumResourceRow } from '../../components';
 import { PUBLIC_MINIAPPS, type PublicMiniapp } from '../../constants/publicMiniapps';
-import { resolveCatalogCardColumns } from '../../features/catalog/catalogPresentation';
 import { useFavorites, useTheme, useTranslations } from '../../hooks';
 
 export default function SavedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const window = useWindowDimensions();
   const { colors } = useTheme();
-  const { t } = useTranslations();
+  const { language, t } = useTranslations();
   const { favorites, isFavorite, toggleFavorite } = useFavorites();
   const saved = PUBLIC_MINIAPPS.filter((miniapp) => favorites.includes(miniapp.slug));
-  const cardColumns = resolveCatalogCardColumns(window);
   const openMiniapp = (miniapp: Readonly<PublicMiniapp>) => {
     router.push({ pathname: '/apps/[slug]', params: { slug: miniapp.slug } });
   };
 
   return (
-    <ScrollView
-      style={{ backgroundColor: colors.background }}
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + 18 }]}
-    >
-      <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{t('saved.title')}</Text>
-      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{t('saved.subtitle')}</Text>
-      {saved.length === 0 ? (
-        <View style={styles.empty}>
-          <View style={[styles.emptyIcon, { backgroundColor: `${colors.primary}14` }]}>
-            <Ionicons name="star-outline" size={34} color={colors.primary} />
-          </View>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('saved.emptyTitle')}</Text>
-          <Text style={[styles.emptyBody, { color: colors.textSecondary }]}>{t('saved.emptyBody')}</Text>
-        </View>
-      ) : (
-        <View style={styles.cardRow}>
-          {saved.map((miniapp, index) => (
-            <View
-              key={miniapp.slug}
-              style={[styles.cardColumn, { width: cardColumns === 2 ? '50%' : '100%' }]}
-            >
-              <AppCard
-                miniapp={miniapp}
-                favorite={isFavorite(miniapp.slug)}
-                onPress={openMiniapp}
-                onToggleFavorite={toggleFavorite}
-                index={index}
-              />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <BrandedBackground moleculeOpacity={0.38} />
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 18 }]}>
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{t('saved.title')}</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{t('saved.subtitle')}</Text>
+        {saved.length === 0 ? (
+          <View style={styles.empty}>
+            <View style={[styles.emptyIcon, { backgroundColor: `${colors.primary}14` }]}>
+              <Ionicons name="star-outline" size={34} color={colors.primary} />
             </View>
-          ))}
-        </View>
-      )}
-    </ScrollView>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('saved.emptyTitle')}</Text>
+            <Text style={[styles.emptyBody, { color: colors.textSecondary }]}>{t('saved.emptyBody')}</Text>
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.savedGroup,
+              {
+                backgroundColor: colors.glass,
+                borderColor: colors.glassBorder,
+                shadowColor: colors.text,
+              },
+            ]}
+          >
+            {saved.map((miniapp, index) => (
+              <PremiumResourceRow
+                key={miniapp.slug}
+                miniapp={miniapp}
+                title={miniapp.title[language === 'es-MX' ? 'es' : 'en']}
+                summary={miniapp.slug === 'clinic-guide'
+                  ? t('home.clinicSummary')
+                  : t('home.recipesSummary')}
+                favorite={isFavorite(miniapp.slug)}
+                first={index === 0}
+                onPress={() => openMiniapp(miniapp)}
+                onToggleFavorite={() => toggleFavorite(miniapp.slug)}
+              />
+            ))}
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: { flex: 1, overflow: 'hidden' },
   content: { flexGrow: 1, paddingBottom: 30 },
   title: { fontFamily: 'Georgia', fontSize: 31, lineHeight: 37, fontWeight: '600', paddingHorizontal: 16 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 4, paddingHorizontal: 16 },
-  cardRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 10, paddingTop: 18 },
-  cardColumn: { padding: 5 },
+  savedGroup: {
+    marginHorizontal: 16,
+    marginTop: 18,
+    borderWidth: 1,
+    borderRadius: 17,
+    overflow: 'hidden',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.09,
+    shadowRadius: 20,
+    elevation: 4,
+  },
   empty: { flex: 1, minHeight: 360, alignItems: 'center', justifyContent: 'center', padding: 32 },
   emptyIcon: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: 20, lineHeight: 26, fontWeight: '700', marginTop: 18, textAlign: 'center' },

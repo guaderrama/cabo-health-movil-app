@@ -33,7 +33,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const systemColorScheme = useColorScheme();
-  const [theme, setThemeState] = useState<ThemeMode>('system');
+  const [theme, setThemeState] = useState<ThemeMode>('light');
   const [isLoaded, setIsLoaded] = useState(false);
   const [persistenceIssue, setPersistenceIssue] = useState<PersistenceIssue | null>(null);
   const writerRef = useRef<ReturnType<typeof createOrderedPersistence<ThemeMode>> | null>(null);

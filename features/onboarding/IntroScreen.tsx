@@ -124,8 +124,8 @@ export function IntroScreen({ onComplete }: IntroScreenProps) {
             source={require('../../assets/logo.png')}
             accessibilityLabel="CaboHealth"
             resizeMode="contain"
+            tintColor={introColors.ink}
             style={[
-              styles.logo,
               {
                 width: introLayout.logoSize,
                 height: introLayout.logoSize,
@@ -196,9 +196,6 @@ const styles = StyleSheet.create({
   },
   flow: {
     alignItems: 'center',
-  },
-  logo: {
-    tintColor: introColors.ink,
   },
   identity: {
     width: '100%',

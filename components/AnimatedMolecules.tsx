@@ -3,6 +3,7 @@ import {
   Animated,
   AppState,
   StyleSheet,
+  StyleProp,
   View,
   ViewStyle,
   useWindowDimensions,
@@ -26,7 +27,8 @@ export interface AnimatedMoleculesProps {
   isDark?: boolean;
   active: boolean;
   reduceMotion: boolean | null;
-  style?: ViewStyle;
+  density?: 'standard' | 'rich';
+  style?: StyleProp<ViewStyle>;
 }
 
 // Color palette matching header gradient
@@ -46,7 +48,11 @@ const COLORS = {
 };
 
 // Generate DNA-style particles distributed across the screen
-const generateParticles = (width: number, height: number): Particle[] => {
+const generateParticles = (
+  width: number,
+  height: number,
+  density: 'standard' | 'rich',
+): Particle[] => {
   const particles: Particle[] = [];
   const colorTypes: Array<'dark' | 'medium' | 'light' | 'accent'> = ['dark', 'medium', 'light', 'accent'];
 
@@ -132,6 +138,24 @@ const generateParticles = (width: number, height: number): Particle[] => {
     });
   });
 
+  if (density === 'rich') {
+    const richParticles = [
+      { x: 0.02, y: 95 }, { x: 0.18, y: 120 }, { x: 0.34, y: 90 }, { x: 0.68, y: 105 }, { x: 0.83, y: 135 }, { x: 0.98, y: 110 },
+      { x: 0.03, y: 315 }, { x: 0.22, y: 350 }, { x: 0.42, y: 270 }, { x: 0.61, y: 330 }, { x: 0.79, y: 370 }, { x: 0.98, y: 300 },
+      { x: 0.02, y: 535 }, { x: 0.24, y: 520 }, { x: 0.39, y: 610 }, { x: 0.63, y: 570 }, { x: 0.77, y: 500 }, { x: 0.98, y: 585 },
+      { x: 0.03, y: 760 }, { x: 0.21, y: 825 }, { x: 0.39, y: 785 }, { x: 0.59, y: 840 }, { x: 0.78, y: 805 }, { x: 0.98, y: 755 },
+    ];
+    richParticles.forEach((pos, i) => {
+      particles.push({
+        id: id++,
+        x: width * pos.x,
+        y: height * (pos.y / 900),
+        size: i % 6 === 0 ? 6 : i % 3 === 0 ? 4 : 2.5,
+        colorType: colorTypes[(i + 1) % colorTypes.length],
+      });
+    });
+  }
+
   return particles;
 };
 
@@ -166,10 +190,14 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
   isDark = false,
   active,
   reduceMotion,
+  density = 'standard',
   style,
 }) => {
   const { width, height } = useWindowDimensions();
-  const particles = useMemo(() => generateParticles(width, height), [height, width]);
+  const particles = useMemo(
+    () => generateParticles(width, height, density),
+    [density, height, width],
+  );
   const connections = useMemo(() => generateConnections(particles), [particles]);
   const colors = isDark ? COLORS.dark : COLORS.light;
   const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
@@ -279,7 +307,7 @@ export const AnimatedMolecules: React.FC<AnimatedMoleculesProps> = ({
           </Defs>
 
           {/* Connection lines (DNA rungs style) */}
-          <G opacity={isDark ? 0.2 : 0.06}>
+          <G opacity={isDark ? 0.2 : density === 'rich' ? 0.1 : 0.06}>
             {connections.map((conn, index) => (
               <Line
                 key={`line-${index}`}

@@ -85,4 +85,52 @@ Before release approval, on a real iPhone:
 4. Exercise Back, Save, Share, Retry, recipe detail/filter, all three Clinic states, and checklist reset.
 5. Confirm Share emits the canonical URL without a fragment and no bottom WebView toolbar appears.
 
+## Native Home and unified-surfaces QA — 2026-08-20
+
+### Source and normalization
+
+- Approved Home visual truth: `/Users/ivan/.codex/generated_images/01a00a52-06e3-7512-b043-39c7fb3aee86/exec-88f5b333-ecd8-4fba-bdb3-2c2a6a3ce783.png`.
+- Source pixels: 853 × 1844. The source was normalized with Lanczos resampling to 390 × 844 so it could be compared at the same dimensions as the implementation.
+- Browser-rendered implementation: `/Users/ivan/Dropbox/Ai/IOS Cabo Health App/webapp-launcher/.worktrees/cabohealth-premium-miniapps/.superpowers/qa/native-unified/home-approved-final-390x844.png`.
+- Full-view side-by-side comparison: `/Users/ivan/Dropbox/Ai/IOS Cabo Health App/webapp-launcher/.worktrees/cabohealth-premium-miniapps/.superpowers/qa/native-unified/home-final-comparison.png`.
+- CSS viewport: 390 × 844. Browser screenshot pixels: 390 × 844. No device frame or browser chrome was included.
+- State: light theme, English, no favorites, online catalog, Home selected.
+
+### Additional rendered evidence
+
+- Saved empty: `.superpowers/qa/native-unified/saved-390x844.png`.
+- Saved with a real reviewed resource: `.superpowers/qa/native-unified/saved-unified-390x844.png`.
+- Settings: `.superpowers/qa/native-unified/settings-390x844.png`.
+- Home in `es-MX`: `.superpowers/qa/native-unified/home-es-390x844.png`.
+- Optional dark theme after contrast correction: `.superpowers/qa/native-unified/home-dark-es-fixed-390x844.png`.
+- Narrow 320 × 568 initial state and scrolled tools state: `.superpowers/qa/native-unified/home-320x568.png` and `.superpowers/qa/native-unified/home-320x568-scrolled.png`.
+
+### Comparison history
+
+1. First native pass found three actionable differences.
+   - P1 color continuity: a device using system dark mode moved from the approved light intro into a dark Home on first launch. The first-launch theme now defaults to the approved light palette; Dark and System remain explicit Settings choices.
+   - P2 Home density: the logo, resource rows, tools, and vertical spacing did not align with the selected composition. The repeated Welcome/Explore hero was removed, the logo was centered and reduced, the exact two-resource/two-tool grouping was adopted, copy was shortened in both locales, and the rich molecular field was retained.
+   - P2 Saved inconsistency: Saved still rendered the retired narrow editorial card with severe wrapping. Saved now reuses the same compact resource-row component and visual surface as Home while retaining the complete VoiceOver editorial narration.
+2. Post-fix comparison at 390 × 844 found no remaining P0/P1/P2 difference for the native Home or the unified color system.
+
+### Required fidelity surfaces
+
+- Fonts and typography: the centered wordmark uses the real CaboHealth asset; section labels retain the tracked uppercase hierarchy; resource/tool text stays readable at mobile sizes; Settings, Saved, and local utility headings retain Georgia as the shared display face. English and `es-MX` wrapping were inspected.
+- Spacing and layout rhythm: the final resource and tool groups align with the normalized source composition. Cards use the same 17 px radius, border, glass fill, row height, and horizontal margins. A 320 × 568 viewport remains scrollable and keeps the bottom navigation persistent.
+- Colors and visual tokens: Intro is the authority: ink `#082A3C`, sea `#0E5876`, paper `#FBFAF7`, bronze `#B8956A`, soft `#4F7785`, and the exact intro gradient. Home, Saved, Settings, Recipes, Visit Checklist, not-found, native miniapp chrome, and hosted miniapps now use this family. The optional dark mode uses ink/sea/paper/bronze derivatives and its icons were rechecked for contrast.
+- Image quality and asset fidelity: the source CaboHealth wordmark is reused directly; no replacement logo, placeholder image, emoji, handcrafted SVG logo, or generated substitute was introduced. The moving molecular network remains the existing accessible, Reduce-Motion-aware app artwork and is denser only on Home.
+- Copy and content: the visible Home copy is concise, bilingual, and makes no new clinic, medical, location, or service claim. Complete editorial facts remain in each resource's accessible narration.
+- Icons and behavior: Ionicons remain one consistent outline family. Home, Saved, Settings, local checklist navigation, Save/Remove Saved, English/Spanish, Light/Dark, and small-screen scrolling were exercised. The browser console contained no application errors; only expected React Native Web compatibility/deprecation warnings were present.
+
+### Focused-region decision
+
+Separate full-size captures of Home, Saved with real content, Settings, Spanish, dark mode, and the 320 px breakpoint made the important type, icon, state, and contrast details readable. No additional crop was necessary.
+
+### Native result
+
+The native Home and shared-surface palette have `passed`: no actionable P0/P1/P2 finding remains in the browser-rendered native surfaces. The overall release remains blocked only by the pre-existing real-iPhone WKWebView/safe-area gate documented above.
+
+- Final repository suite after the native unification: 621 passed, 0 failed.
+- App TypeScript check and minimal-public-v1 scope verifier: passed.
+
 final result: blocked
