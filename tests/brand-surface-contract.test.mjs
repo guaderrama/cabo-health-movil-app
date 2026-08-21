@@ -70,7 +70,7 @@ test('the approved Home removes the repeated welcome hero and keeps rich edge mo
   assert.match(source, /density="rich"/u);
   assert.match(source, /home\.resources/u);
   assert.match(source, /home\.tools/u);
-  assert.match(source, /home\.visitChecklist/u);
+  assert.match(source, /home\.prepareVisit/u);
   assert.doesNotMatch(source, /color=\{colors\.primaryDark\}/u);
 });
 

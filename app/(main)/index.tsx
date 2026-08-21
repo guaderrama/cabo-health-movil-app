@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -16,6 +16,11 @@ import {
   buildPremiumHomeModel,
   type PremiumHomeTool,
 } from '../../features/home/premiumHomePresentation';
+import { DevMiniappPanel } from '../../features/devMiniapps/DevMiniappPanel';
+import { DevMiniappPreview } from '../../features/devMiniapps/DevMiniappPreview';
+import { DevMiniappRow } from '../../features/devMiniapps/DevMiniappRow';
+import { type DevMiniapp } from '../../features/devMiniapps/devMiniappCatalog';
+import { useDevMiniapps } from '../../features/devMiniapps/useDevMiniapps';
 import { useFavorites, useTheme, useTranslations, useWebApps } from '../../hooks';
 
 export default function HomeScreen() {
@@ -26,19 +31,18 @@ export default function HomeScreen() {
   const { isOffline } = useWebApps();
   const { isFavorite, toggleFavorite } = useFavorites();
   const model = useMemo(() => buildPremiumHomeModel(PUBLIC_MINIAPPS), []);
+  const devCatalog = useDevMiniapps();
+  const [devPanelVisible, setDevPanelVisible] = useState(false);
+  const [previewMiniapp, setPreviewMiniapp] = useState<Readonly<DevMiniapp> | null>(null);
+  const logoTapCount = useRef(0);
 
   const openMiniapp = useCallback((miniapp: Readonly<PublicMiniapp>) => {
     router.push({ pathname: '/apps/[slug]', params: { slug: miniapp.slug } });
   }, [router]);
 
   const openTool = useCallback((tool: PremiumHomeTool) => {
-    if (tool.kind === 'miniapp') {
-      const miniapp = model.resources.find((resource) => resource.slug === tool.destination);
-      if (miniapp) openMiniapp(miniapp);
-      return;
-    }
     router.push(tool.destination as never);
-  }, [model.resources, openMiniapp, router]);
+  }, [router]);
 
   const titleFor = useCallback((miniapp: Readonly<PublicMiniapp>) => (
     miniapp.title[language === 'es-MX' ? 'es' : 'en']
@@ -46,6 +50,19 @@ export default function HomeScreen() {
   const summaryFor = useCallback((miniapp: Readonly<PublicMiniapp>) => (
     miniapp.slug === 'clinic-guide' ? t('home.clinicSummary') : t('home.recipesSummary')
   ), [t]);
+  const devTitleFor = useCallback((miniapp: Readonly<DevMiniapp>) => (
+    language === 'es-MX' ? miniapp.titleEs : miniapp.titleEn
+  ), [language]);
+  const devSummaryFor = useCallback((miniapp: Readonly<DevMiniapp>) => (
+    language === 'es-MX' ? miniapp.summaryEs : miniapp.summaryEn
+  ), [language]);
+  const handleDevLogoTap = useCallback(() => {
+    logoTapCount.current += 1;
+    if (logoTapCount.current >= 5) {
+      logoTapCount.current = 0;
+      setDevPanelVisible(true);
+    }
+  }, []);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -58,13 +75,32 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.header, { paddingTop: Math.max(insets.top + 10, 64) }]}>
-          <Image
-            source={require('../../assets/logo-wordmark.png')}
-            accessibilityLabel="CaboHealth"
-            resizeMode="contain"
-            tintColor={colors.text}
-            style={styles.logo}
-          />
+          {devCatalog.enabled ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="CaboHealth"
+              accessibilityHint={t('devPanel.openHint')}
+              delayLongPress={900}
+              onPress={handleDevLogoTap}
+              onLongPress={() => setDevPanelVisible(true)}
+              style={({ pressed }) => pressed && styles.logoPressed}
+            >
+              <Image
+                source={require('../../assets/logo-wordmark.png')}
+                resizeMode="contain"
+                tintColor={colors.text}
+                style={styles.logo}
+              />
+            </Pressable>
+          ) : (
+            <Image
+              source={require('../../assets/logo-wordmark.png')}
+              accessibilityLabel="CaboHealth"
+              resizeMode="contain"
+              tintColor={colors.text}
+              style={styles.logo}
+            />
+          )}
         </View>
 
         <View style={styles.body}>
@@ -92,6 +128,33 @@ export default function HomeScreen() {
               />
             ))}
           </View>
+
+          {devCatalog.enabled && devCatalog.visibleMiniapps.length > 0 && (
+            <View style={styles.testSection}>
+              <SectionLabel label={t('home.testMiniapps')} color={colors.primary} />
+              <View
+                style={[
+                  styles.groupSurface,
+                  {
+                    backgroundColor: colors.glass,
+                    borderColor: colors.glassBorder,
+                    shadowColor: colors.text,
+                  },
+                ]}
+              >
+                {devCatalog.visibleMiniapps.map((miniapp, index) => (
+                  <DevMiniappRow
+                    key={miniapp.id}
+                    miniapp={miniapp}
+                    title={devTitleFor(miniapp)}
+                    summary={devSummaryFor(miniapp)}
+                    first={index === 0}
+                    onPress={() => setPreviewMiniapp(miniapp)}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
 
           {isOffline && (
             <View
@@ -125,7 +188,7 @@ export default function HomeScreen() {
                 <ToolRow
                   key={tool.id}
                   tool={tool}
-                  title={tool.id === 'plan-visit' ? t('home.planVisit') : t('home.visitChecklist')}
+                  title={t('home.prepareVisit')}
                   first={index === 0}
                   onPress={() => openTool(tool)}
                 />
@@ -134,6 +197,21 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
+      <DevMiniappPanel
+        visible={devPanelVisible}
+        miniapps={devCatalog.miniapps}
+        saving={devCatalog.saving}
+        storageError={devCatalog.storageError}
+        onClose={() => setDevPanelVisible(false)}
+        onAdd={devCatalog.addMiniapp}
+        onToggle={devCatalog.toggleMiniapp}
+        onRemove={devCatalog.deleteMiniapp}
+      />
+      <DevMiniappPreview
+        miniapp={previewMiniapp}
+        title={previewMiniapp ? devTitleFor(previewMiniapp) : ''}
+        onClose={() => setPreviewMiniapp(null)}
+      />
     </View>
   );
 }
@@ -150,7 +228,6 @@ function ToolRow({
   onPress: () => void;
 }) {
   const { colors } = useTheme();
-  const icon = tool.id === 'plan-visit' ? 'navigate-outline' : 'checkbox-outline';
   return (
     <Pressable
       accessibilityRole="button"
@@ -163,7 +240,7 @@ function ToolRow({
       ]}
     >
       <View style={styles.toolIcon}>
-        <Ionicons name={icon} size={26} color={colors.primary} />
+        <Ionicons name="checkbox-outline" size={26} color={colors.primary} />
       </View>
       <Text style={[styles.toolTitle, { color: colors.text }]}>{title}</Text>
       <Ionicons name="chevron-forward" size={20} color={colors.primary} />
@@ -204,6 +281,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   toolsSection: { marginTop: 31 },
+  testSection: { marginTop: 17 },
   toolsSurface: { marginTop: 0 },
   toolRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 14, paddingVertical: 9 },
   toolIcon: { width: 43, height: 43, alignItems: 'center', justifyContent: 'center' },
@@ -211,4 +289,5 @@ const styles = StyleSheet.create({
   offline: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginTop: 14, borderWidth: 1, borderRadius: 14, padding: 11 },
   offlineText: { flex: 1, fontSize: 13, lineHeight: 18 },
   pressed: { opacity: 0.7, transform: [{ scale: 0.99 }] },
+  logoPressed: { opacity: 0.7, transform: [{ scale: 0.97 }] },
 });

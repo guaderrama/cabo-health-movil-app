@@ -4,7 +4,7 @@ import test from 'node:test';
 import { PUBLIC_MINIAPPS } from '../.test-build/constants/publicMiniapps.js';
 import { buildPremiumHomeModel } from '../.test-build/features/home/premiumHomePresentation.js';
 
-test('approved home shows exactly two reviewed resources and two concise tools', () => {
+test('approved home shows exactly two reviewed resources and one useful offline tool', () => {
   const model = buildPremiumHomeModel(PUBLIC_MINIAPPS);
 
   assert.deepEqual(model.resources.map((miniapp) => miniapp.slug), [
@@ -12,7 +12,6 @@ test('approved home shows exactly two reviewed resources and two concise tools',
     'healthy-recipes',
   ]);
   assert.deepEqual(model.tools, [
-    { id: 'plan-visit', kind: 'miniapp', destination: 'clinic-guide' },
     { id: 'visit-checklist', kind: 'route', destination: '/(main)/visit-checklist' },
   ]);
 });

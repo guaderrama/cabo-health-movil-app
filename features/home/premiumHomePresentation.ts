@@ -1,8 +1,8 @@
 import type { PublicMiniapp } from '../../constants/publicMiniapps';
 
 export type PremiumHomeTool = Readonly<{
-  id: 'plan-visit' | 'visit-checklist';
-  kind: 'miniapp' | 'route';
+  id: 'visit-checklist';
+  kind: 'route';
   destination: string;
 }>;
 
@@ -29,7 +29,6 @@ export function buildPremiumHomeModel(
     return miniapp;
   });
   const tools: readonly PremiumHomeTool[] = [
-    { id: 'plan-visit', kind: 'miniapp', destination: 'clinic-guide' },
     { id: 'visit-checklist', kind: 'route', destination: '/(main)/visit-checklist' },
   ];
 
