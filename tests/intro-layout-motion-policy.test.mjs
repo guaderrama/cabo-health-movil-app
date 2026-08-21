@@ -74,15 +74,16 @@ test('molecule lifecycle owns one loop and stops before each static transition',
   ]);
 });
 
-test('molecular network uses three quiet, distinct drift layers', () => {
+test('molecular network uses three distinct drift layers that remain visibly perceptible', () => {
   assert.equal(MOLECULE_DRIFT_PLAN.length, 3);
   assert.equal(new Set(MOLECULE_DRIFT_PLAN.map(({ durationMs }) => durationMs)).size, 3);
 
   for (const layer of MOLECULE_DRIFT_PLAN) {
-    assert.ok(layer.durationMs >= 7000);
-    assert.ok(layer.durationMs <= 12000);
-    assert.ok(Math.abs(layer.translateX) <= 8);
-    assert.ok(Math.abs(layer.translateY) <= 8);
+    assert.ok(layer.durationMs >= 4000);
+    assert.ok(layer.durationMs <= 7500);
+    assert.ok(Math.max(Math.abs(layer.translateX), Math.abs(layer.translateY)) >= 10);
+    assert.ok(Math.abs(layer.translateX) <= 16);
+    assert.ok(Math.abs(layer.translateY) <= 16);
   }
 });
 

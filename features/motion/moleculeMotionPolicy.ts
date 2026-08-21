@@ -10,13 +10,13 @@ export interface MoleculeDriftLayer {
   translateY: number;
 }
 
-// The native artwork mirrors the slow, independently drifting node groups used
-// by the hosted CaboHealth network canvas. Distances stay small because this is
-// a frequently seen ambient layer, not foreground animation.
+// The native artwork mirrors the independently drifting node groups used by
+// the hosted CaboHealth network canvas. The movement must remain visible on a
+// phone without competing with foreground content.
 export const MOLECULE_DRIFT_PLAN: readonly MoleculeDriftLayer[] = Object.freeze([
-  Object.freeze({ durationMs: 7200, translateX: 5, translateY: -5 }),
-  Object.freeze({ durationMs: 9200, translateX: -6, translateY: 4 }),
-  Object.freeze({ durationMs: 11400, translateX: 4, translateY: 6 }),
+  Object.freeze({ durationMs: 4200, translateX: 12, translateY: -10 }),
+  Object.freeze({ durationMs: 5400, translateX: -14, translateY: 9 }),
+  Object.freeze({ durationMs: 6800, translateX: 10, translateY: 15 }),
 ]);
 
 export function allowsMoleculeMotion({
