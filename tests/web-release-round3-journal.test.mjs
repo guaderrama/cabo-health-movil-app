@@ -22,6 +22,7 @@ const helperPath = join(projectRoot, 'scripts/secure_web_release.py');
 const fixtureTmp = realpathSync(tmpdir());
 const paths = Object.freeze([
   '.well-known/apple-app-site-association',
+  'app/index.html',
   'app/privacy/index.html',
   'app/report-content/index.html',
   'app/support/index.html',
@@ -41,6 +42,7 @@ const paths = Object.freeze([
 const targets = Object.freeze([
   'public_html/apps/.htaccess',
   'public_html/apps/shared',
+  'public_html/app/index.html',
   'public_html/app/privacy',
   'public_html/app/terms',
   'public_html/app/support',
@@ -71,6 +73,7 @@ function mediaType(path) {
 function kind(path) {
   if (path === 'apps/.htaccess') return 'apache-security';
   if (path.startsWith('apps/')) return 'task6b-miniapp';
+  if (path === 'app/index.html') return 'marketing-landing';
   if (path.startsWith('app/')) return 'task7-legal';
   return 'aasa';
 }
@@ -165,14 +168,14 @@ test('rollback-next reverses exactly one promoted unit and leaves the earlier pr
   assert.deepEqual(JSON.parse(result.stdout), {
     schemaVersion: 1,
     index: 2,
-    target: 'public_html/app/privacy',
+    target: 'public_html/app/index.html',
     status: 'unit-rolled-back',
     complete: false,
   });
-  assert.equal(existsSync(join(root, 'public_html/app/privacy')), false);
+  assert.equal(existsSync(join(root, 'public_html/app/index.html')), false);
   assert.equal(existsSync(join(root, 'public_html/apps/.htaccess')), true);
   assert.equal(existsSync(join(root, 'public_html/apps/shared')), true);
-  assert.equal(existsSync(join(root, 'stage', transport.releaseId, 'public_html/app/terms')), true);
+  assert.equal(existsSync(join(root, 'stage', transport.releaseId, 'public_html/app/privacy')), true);
 });
 
 test('rollback-next expected index makes a lost response idempotent before the next probe-authorized unit', () => {
