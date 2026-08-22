@@ -150,7 +150,7 @@ export function IntroScreen({ onComplete }: IntroScreenProps) {
               end={{ x: 1, y: 0 }}
               style={styles.rule}
             />
-            <Text style={styles.tagline}>PRECISION LONGEVITY MEDICINE</Text>
+            <Text style={styles.tagline}>LONGEVITY, GROUNDED IN SCIENCE.</Text>
           </View>
 
           <View style={{ height: introLayout.messageGap }} />
