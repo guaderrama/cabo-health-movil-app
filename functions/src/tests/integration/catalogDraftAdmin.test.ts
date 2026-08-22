@@ -1,0 +1,165 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
+import {
+  CatalogDraftAdminService,
+  CatalogDraftConflictError,
+  CatalogDraftInputError,
+  type CatalogDraftInput,
+  validateCatalogDraftInput,
+} from '../../domain/catalogDraftAdmin.js';
+import { AccessCodeIssuer } from '../../domain/accessCodeIssuer.js';
+import {
+  clientResourcePath,
+  FirestoreClientAccessStore,
+} from '../../repositories/firestoreClientAccessStore.js';
+import { FirestoreCatalogDraftStore } from '../../repositories/firestoreCatalogDraftStore.js';
+import { VersionedHmac } from '../../security/versionedHmac.js';
+import { InMemoryDocumentDatabase } from '../support/inMemoryDocumentDatabase.js';
+
+const draftInput: CatalogDraftInput = Object.freeze({
+  access: 'clients',
+  icon: 'nutrition',
+  summary: Object.freeze({ en: 'Science-backed nutrition.', 'es-MX': 'Nutrición basada en ciencia.' }),
+  title: Object.freeze({ en: 'Nutrition guide', 'es-MX': 'Guía de nutrición' }),
+  url: 'https://resources.example.test/nutrition',
+});
+
+test('creates an opaque draft and lists its exact portal view without publishing it', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogDraftAdminService({
+    nowMs: () => 1_800_000_000_000,
+    randomBytes: () => Buffer.alloc(24, 7),
+    store: new FirestoreCatalogDraftStore(database),
+  });
+
+  const created = await service.create(draftInput);
+
+  assert.deepEqual(created, {
+    access: 'clients',
+    draftId: 'dr_BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH',
+    icon: 'nutrition',
+    revision: 1,
+    status: 'draft',
+    summary: { en: 'Science-backed nutrition.', 'es-MX': 'Nutrición basada en ciencia.' },
+    title: { en: 'Nutrition guide', 'es-MX': 'Guía de nutrición' },
+    updatedAtMs: 1_800_000_000_000,
+    url: 'https://resources.example.test/nutrition',
+  });
+  assert.deepEqual(await service.list(), [created]);
+
+  const state = database.serializedState();
+  assert.match(state, /_private_catalog_drafts\/dr_/u);
+  assert.doesNotMatch(state, /_private_client_resources|signed_catalog|published/u);
+  const audit = await database.listCollection('_private_audit_events');
+  assert.equal(audit.length, 1);
+  assert.doesNotMatch(JSON.stringify(audit), /resources\.example\.test/u, 'audit records must not copy the URL');
+});
+
+test('updates and archives only the exact current revision while recording bounded sanitized audit', async () => {
+  const database = new InMemoryDocumentDatabase();
+  let byte = 1;
+  const service = new CatalogDraftAdminService({
+    nowMs: (() => {
+      let now = 1_800_000_000_000;
+      return () => now++;
+    })(),
+    randomBytes: (size) => Buffer.alloc(size, byte++),
+    store: new FirestoreCatalogDraftStore(database),
+  });
+  const created = await service.create(draftInput);
+  const updateInput = Object.freeze({
+    ...draftInput,
+    access: 'public' as const,
+    title: Object.freeze({ en: 'Updated guide', 'es-MX': 'Guía actualizada' }),
+  });
+
+  const updated = await service.update(created.draftId, 1, updateInput);
+  assert.equal(updated.revision, 2);
+  assert.equal(updated.access, 'public');
+  await assert.rejects(
+    service.update(created.draftId, 1, draftInput),
+    CatalogDraftConflictError,
+  );
+  const archived = await service.archive(created.draftId, 2);
+  assert.equal(archived.revision, 3);
+  assert.equal(archived.status, 'archived');
+
+  assert.deepEqual((await service.listAudit()).map((event) => event.action), [
+    'draft.archived',
+    'draft.updated',
+    'draft.created',
+  ]);
+  for (const event of await service.listAudit()) {
+    assert.deepEqual(Object.keys(event).sort(), [
+      'action',
+      'actorLabel',
+      'eventId',
+      'occurredAtMs',
+      'outcome',
+      'targetSuffix',
+    ]);
+    assert.equal(event.actorLabel, 'Staff');
+    assert.equal(event.outcome, 'success');
+    assert.match(event.targetSuffix, /^[A-Za-z0-9_-]{1,12}$/u);
+  }
+  assert.doesNotMatch(JSON.stringify(await service.listAudit()), /resources\.example\.test/u);
+});
+
+test('rejects non-exact drafts and ambiguous or unsafe HTTPS URLs', () => {
+  const invalidInputs: unknown[] = [
+    { ...draftInput, extra: true },
+    { ...draftInput, access: 'premium' },
+    { ...draftInput, icon: 'custom' },
+    { ...draftInput, title: { en: 'x', 'es-MX': 'y', es: 'z' } },
+    { ...draftInput, summary: { en: 'x'.repeat(121), 'es-MX': 'y' } },
+    { ...draftInput, url: 'http://resources.example.test/path' },
+    { ...draftInput, url: 'https://user:pass@resources.example.test/path' },
+    { ...draftInput, url: 'https://resources.example.test:8443/path' },
+    { ...draftInput, url: 'https://resources.example.test/path?next=https://evil.test' },
+    { ...draftInput, url: 'https://resources.example.test/path#section' },
+  ];
+  for (const value of invalidInputs) {
+    assert.throws(() => validateCatalogDraftInput(value), CatalogDraftInputError);
+  }
+});
+
+test('exposes only successful create/revoke code audit with the one-time suffix', async () => {
+  const nowMs = 1_800_000_000_000;
+  const resource = Object.freeze({
+    access: 'client',
+    iconKey: 'nutrition',
+    id: 'reviewed-resource',
+    schemaVersion: 1,
+    status: 'active',
+    summary: { en: 'Summary', es: 'Resumen' },
+    title: { en: 'Title', es: 'Título' },
+  });
+  const database = new InMemoryDocumentDatabase({
+    [clientResourcePath(resource.id)]: resource,
+  });
+  const clientStore = new FirestoreClientAccessStore(database);
+  const issuer = new AccessCodeIssuer({
+    codeHasher: VersionedHmac.fromTestKeys({
+      currentVersion: 'v1',
+      keys: { v1: 'catalog-audit-test-pepper-at-least-32-bytes' },
+    }),
+    nowMs: () => nowMs,
+    randomSource: () => Buffer.from('00112233445566778899aabbccddeeff', 'hex'),
+    store: clientStore,
+  });
+  const issued = await issuer.issue({
+    expiresAtMs: nowMs + 86_400_000,
+    resourceIds: [resource.id],
+    slot: 1,
+  });
+  await clientStore.revokeAccessCode(issued.summary.codeId, nowMs + 1);
+
+  const audit = await new FirestoreCatalogDraftStore(database).listAudit();
+  assert.deepEqual(audit.map(({ action, targetSuffix }) => ({ action, targetSuffix })), [
+    { action: 'client_code.revoked', targetSuffix: issued.summary.displaySuffix },
+    { action: 'client_code.created', targetSuffix: issued.summary.displaySuffix },
+  ]);
+  assert.equal(JSON.stringify(audit).includes(issued.summary.codeId), false);
+  assert.equal(JSON.stringify(audit).includes(issued.oneTimeCode), false);
+});

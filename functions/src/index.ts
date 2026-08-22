@@ -26,8 +26,17 @@ import { dispatchBrokerCommand } from './domain/brokerApi.js';
 import { ClientSessionManager } from './domain/clientSessionManager.js';
 import { ClientLaunchService } from './domain/clientLaunchService.js';
 import { WebSessionBroker } from './domain/webSessionBroker.js';
+import {
+  CatalogDraftAdminService,
+  CatalogDraftConflictError,
+  CatalogDraftInputError,
+  CatalogDraftNotFoundError,
+  type CatalogDraftInput,
+  validateCatalogDraftInput,
+} from './domain/catalogDraftAdmin.js';
 import { AdminFirestoreDocumentDatabase } from './infrastructure/adminFirestoreDocumentDatabase.js';
 import { FirestoreClientAccessStore } from './repositories/firestoreClientAccessStore.js';
+import { FirestoreCatalogDraftStore } from './repositories/firestoreCatalogDraftStore.js';
 import { parsePepperRingSecret, VersionedHmac } from './security/versionedHmac.js';
 import {
   authorizeProductionAdmin,
@@ -132,6 +141,69 @@ export const adminRevokeClientAccessCode = onCall({
   } catch (error) {
     if (error instanceof HttpsError) throw error;
     throw new HttpsError('internal', 'client_access_operation_failed');
+  }
+});
+
+export const adminListCatalogDrafts = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  assertEmptyData(request.data, 'invalid_admin_input');
+  await assertProductionAdmin(request, 'client_resource_drafts');
+  try {
+    return Object.freeze({ drafts: await createCatalogDraftService().list() });
+  } catch {
+    throw new HttpsError('internal', 'catalog_draft_operation_failed');
+  }
+});
+
+export const adminCreateCatalogDraft = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  await assertProductionAdmin(request, 'client_resource_drafts');
+  try {
+    const draft = await createCatalogDraftService().create(
+      validateCatalogDraftInput(request.data),
+    );
+    return Object.freeze({ draft });
+  } catch (error) {
+    throw mapCatalogDraftError(error);
+  }
+});
+
+export const adminUpdateCatalogDraft = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  await assertProductionAdmin(request, 'client_resource_drafts');
+  try {
+    const input = parseCatalogDraftUpdate(request.data);
+    const draft = await createCatalogDraftService().update(
+      input.draftId,
+      input.revision,
+      input.draft,
+    );
+    return Object.freeze({ draft });
+  } catch (error) {
+    throw mapCatalogDraftError(error);
+  }
+});
+
+export const adminArchiveCatalogDraft = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  await assertProductionAdmin(request, 'client_resource_drafts');
+  try {
+    const input = parseCatalogDraftArchive(request.data);
+    const draft = await createCatalogDraftService().archive(input.draftId, input.revision);
+    return Object.freeze({ archived: true, draft });
+  } catch (error) {
+    throw mapCatalogDraftError(error);
+  }
+});
+
+export const adminListAudit = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  assertEmptyData(request.data, 'invalid_admin_input');
+  await assertProductionAdmin(request, 'client_resource_drafts');
+  try {
+    return Object.freeze({ events: await createCatalogDraftService().listAudit() });
+  } catch {
+    throw new HttpsError('internal', 'audit_operation_failed');
   }
 });
 
@@ -293,6 +365,14 @@ function createStore(): FirestoreClientAccessStore {
   return new FirestoreClientAccessStore(
     new AdminFirestoreDocumentDatabase(getFirestore()),
   );
+}
+
+function createCatalogDraftService(): CatalogDraftAdminService {
+  return new CatalogDraftAdminService({
+    store: new FirestoreCatalogDraftStore(
+      new AdminFirestoreDocumentDatabase(getFirestore()),
+    ),
+  });
 }
 
 function createSessionManager(
@@ -486,6 +566,43 @@ function parseCodeId(value: unknown): string {
   return value.codeId;
 }
 
+function parseCatalogDraftUpdate(value: unknown): Readonly<{
+  draft: CatalogDraftInput;
+  draftId: string;
+  revision: number;
+}> {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, ['access', 'draftId', 'icon', 'revision', 'summary', 'title', 'url'])
+    || typeof value.draftId !== 'string'
+    || typeof value.revision !== 'number'
+  ) throw new HttpsError('invalid-argument', 'invalid_admin_input');
+  return Object.freeze({
+    draft: validateCatalogDraftInput({
+      access: value.access,
+      icon: value.icon,
+      summary: value.summary,
+      title: value.title,
+      url: value.url,
+    }),
+    draftId: value.draftId,
+    revision: value.revision,
+  });
+}
+
+function parseCatalogDraftArchive(value: unknown): Readonly<{
+  draftId: string;
+  revision: number;
+}> {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, ['draftId', 'revision'])
+    || typeof value.draftId !== 'string'
+    || typeof value.revision !== 'number'
+  ) throw new HttpsError('invalid-argument', 'invalid_admin_input');
+  return Object.freeze({ draftId: value.draftId, revision: value.revision });
+}
+
 function parseInstallationId(value: unknown): string {
   if (
     !isRecord(value)
@@ -513,6 +630,20 @@ function mapClientAccessError(error: unknown): HttpsError {
     return new HttpsError('permission-denied', 'invalid_access');
   }
   return new HttpsError('internal', 'client_access_operation_failed');
+}
+
+function mapCatalogDraftError(error: unknown): HttpsError {
+  if (error instanceof HttpsError) return error;
+  if (error instanceof CatalogDraftInputError) {
+    return new HttpsError('invalid-argument', 'invalid_admin_input');
+  }
+  if (error instanceof CatalogDraftConflictError) {
+    return new HttpsError('aborted', 'catalog_draft_revision_conflict');
+  }
+  if (error instanceof CatalogDraftNotFoundError) {
+    return new HttpsError('not-found', 'catalog_draft_not_found');
+  }
+  return new HttpsError('internal', 'catalog_draft_operation_failed');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

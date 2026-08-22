@@ -242,6 +242,16 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         schemaVersion: 1,
         updatedAtMs: record.createdAtMs,
       }));
+      const createdEventId = staffAuditEventId('client_code.created', record.codeId, record.createdAtMs);
+      transaction.create(
+        `${AUDIT_EVENT_PREFIX}/${createdEventId}`,
+        staffAudit(
+          createdEventId,
+          'client_code.created',
+          record.displaySuffix,
+          record.createdAtMs,
+        ),
+      );
       return 'created';
     });
   }
@@ -347,9 +357,10 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
           );
         }
       }
+      const revokedEventId = staffAuditEventId('client_code.revoked', codeId, nowMs);
       transaction.create(
-        `${AUDIT_EVENT_PREFIX}/revoke_${codeId}_${nowMs}`,
-        sanitizedAudit('access_code_revoked', nowMs, codeId),
+        `${AUDIT_EVENT_PREFIX}/${revokedEventId}`,
+        staffAudit(revokedEventId, 'client_code.revoked', code.displaySuffix, nowMs),
       );
       return Object.freeze({ kind: 'revoked' as const, subjectUid: code.subjectUid });
     });
@@ -1444,6 +1455,36 @@ function sanitizedAudit(eventType: string, occurredAtMs: number, codeId?: string
     occurredAtMs,
     schemaVersion: 1,
   });
+}
+
+function staffAudit(
+  eventId: string,
+  action: 'client_code.created' | 'client_code.revoked',
+  targetSuffix: string,
+  occurredAtMs: number,
+): Readonly<Record<string, unknown>> {
+  return Object.freeze({
+    action,
+    actorLabel: 'Staff',
+    eventId,
+    expiresAtMs: occurredAtMs + AUDIT_RETENTION_MS,
+    occurredAtMs,
+    outcome: 'success',
+    schemaVersion: 2,
+    targetSuffix,
+  });
+}
+
+function staffAuditEventId(action: string, codeId: string, occurredAtMs: number): string {
+  return `evt_${createHash('sha256')
+    .update('cabohealth/staff-audit-event/v1\0', 'utf8')
+    .update(action, 'utf8')
+    .update('\0', 'utf8')
+    .update(codeId, 'utf8')
+    .update('\0', 'utf8')
+    .update(String(occurredAtMs), 'utf8')
+    .digest('base64url')
+    .slice(0, 32)}`;
 }
 
 function subjectAuditId(subjectUid: string): string {

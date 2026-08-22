@@ -53,6 +53,11 @@ activated**. Deployment remains an explicit release gate.
   per-subject exception or malformed tombstone raises one aggregate operational
   error with counts only—never document IDs, Auth UIDs, or underlying error
   text.
+- The staff catalog workflow is draft-only. It stores opaque-ID candidates in
+  `_private_catalog_drafts` with bilingual title/summary, a reviewed icon key,
+  `public|clients` access, and a normalized HTTPS candidate URL. Revision
+  checks are transactional. There is deliberately no publish callable and no
+  draft write can modify `_private_client_resources` or a signed catalog.
 
 The deliberate response exceptions are: the one-time code to the authorized
 administrator, a Firebase custom token from client redemption, the short
@@ -72,6 +77,11 @@ iOS app; administrator callables accept only the configured staff web app.
 | `adminListClientAccessCodes` | `{}` | slot, suffix, dates, status, and opaque code ID only |
 | `adminCreateClientAccessCode` | `{slot, expiresAtMs, resourceIds}` | `{oneTimeCode, summary}` |
 | `adminRevokeClientAccessCode` | `{codeId}` | `{revoked:true}` |
+| `adminListCatalogDrafts` | `{}` | `{drafts:[...]}` (maximum 100, newest first) |
+| `adminCreateCatalogDraft` | `{access,icon,summary,title,url}` | `{draft}` |
+| `adminUpdateCatalogDraft` | `{draftId,revision,access,icon,summary,title,url}` | `{draft}` |
+| `adminArchiveCatalogDraft` | `{draftId,revision}` | `{archived:true,draft}` |
+| `adminListAudit` | `{}` | `{events:[...]}` (maximum 100, newest first) |
 | `redeemClientAccessCode` | `{code, installationId, requestId}` | `{customToken, grant}` |
 | `refreshClientAccess` | `{installationId}` | `{grant}` |
 | `removeClientAccess` | `{installationId}` | `{removed:true}` after revocation and deletion job are durable |
@@ -88,6 +98,17 @@ Admin operations additionally require all of the following server-side:
 
 Claims alone never authorize an administrator. A review-sandbox admin document
 cannot operate on production.
+
+Draft input is exact: icons are `laboratory`, `guide`, `nutrition`, `recipes`,
+`wellness`, `location`, `contact`, or `featured`; localized objects contain
+only `en` and `es-MX`, with non-empty values of at most 120 characters. URLs
+must be HTTPS and cannot contain credentials, a custom port, query, fragment,
+control characters, whitespace, or a backslash. Draft creation/update/archive
+write only a sanitized 30-day audit event. The staff audit response exposes
+only successful `client_code.created`, `client_code.revoked`, `draft.created`,
+`draft.updated`, and `draft.archived` actions, the label `Staff`, an opaque
+event ID, a short target suffix, and occurrence time. It never exposes a draft
+URL, full access code, Auth UID, or client data.
 
 `removeClientAccess` closes the current pseudonymous client identity: it returns
 `{removed:true}` only after access is revoked and cleanup is durably queued,
@@ -247,10 +268,10 @@ Do not call this Apple-ready or production-ready until all are complete:
    isolated review-sandbox repository. It must be multi-device/non-expiring,
    excluded from the four production slots, and unable to read or mutate
    production. No generic bypass or master code is acceptable.
-8. Implement the requested admin draft CRUD as a separate fail-closed tracer.
-   Drafts may contain bilingual text, icon key, access, and a reviewed HTTPS
-   candidate URL, but must never publish or change the signed production
-   catalog automatically.
+8. Wire the staff portal adapters to the five documented draft/audit callables
+   and verify optimistic-conflict/error handling in staging. Draft publication
+   remains an intentionally separate, reviewed release process; do not add a
+   generic publish endpoint.
 9. Resolve or formally accept the current npm-audit residual: seven moderate
    `uuid` advisories arrive transitively through the latest pinned Firebase
    Admin/Functions packages. `npm audit` offers only a breaking downgrade;
