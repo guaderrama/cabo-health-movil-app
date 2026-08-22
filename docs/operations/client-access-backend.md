@@ -58,12 +58,20 @@ activated**. Deployment remains an explicit release gate.
   `public|clients` access, and a normalized HTTPS candidate URL. Revision
   checks are transactional. There is deliberately no publish callable and no
   draft write can modify `_private_client_resources` or a signed catalog.
+- App Review uses a separate synthetic `purpose: "app_review"` credential,
+  `review_*` Firebase Auth subjects, seven independent HMAC key rings, an
+  independently named Firestore database, and a separate HTTP broker signing
+  realm. It never reads the production catalog or code repositories, never
+  consumes one of the four production slots, and can grant only one fixed,
+  compiled non-clinical sample. The credential can be used on multiple review
+  installations and remains valid until an authorized staff member rotates it.
 
-The deliberate response exceptions are: the one-time code to the authorized
-administrator, a Firebase custom token from client redemption, the short
-launch nonce to the authenticated native client, and the opaque web session
-and CSRF token across the authenticated server-to-server broker. No response
-contains a premium target URL.
+The deliberate response exceptions are: a one-time production code or App
+Review credential to the authorized administrator, a Firebase custom token
+from the corresponding redemption endpoint, the short launch nonce to the
+authenticated native client, and the opaque web session and CSRF token across
+the corresponding authenticated server-to-server broker. No response contains
+a premium target URL.
 
 ## Callable Functions v2 contracts
 
@@ -82,11 +90,16 @@ iOS app; administrator callables accept only the configured staff web app.
 | `adminUpdateCatalogDraft` | `{draftId,revision,access,icon,summary,title,url}` | `{draft}` |
 | `adminArchiveCatalogDraft` | `{draftId,revision}` | `{archived:true,draft}` |
 | `adminListAudit` | `{}` | `{events:[...]}` (maximum 100, newest first) |
+| `adminGetAppReviewCredentialStatus` | `{}` | `{configured,generation,rotatedAtMs,purpose:'app_review'}` |
+| `adminRotateAppReviewCredential` | `{expectedGeneration:number\|null}` | `{oneTimeCredential,generation,rotatedAtMs,purpose:'app_review'}` |
 | `redeemClientAccessCode` | `{code, installationId, requestId}` | `{customToken, grant}` |
 | `refreshClientAccess` | `{installationId}` | `{grant}` |
 | `removeClientAccess` | `{installationId}` | `{removed:true}` after revocation and deletion job are durable |
 | `deleteClientAccount` | `{installationId}` | `{status:'pending'\|'completed'}` |
 | `createClientLaunch` | `{installationId, resourceId}` | fixed HTTPS POST URL, nonce, expiry |
+| `redeemAppReviewCredential` | `{credential,installationId,requestId}` | `{customToken,grant}` in the review realm only |
+| `refreshAppReviewAccess` | `{installationId}` | `{grant}` for the authenticated `review_*` subject |
+| `createAppReviewLaunch` | `{installationId}` | fixed review HTTPS POST URL, nonce, expiry |
 
 Admin operations additionally require all of the following server-side:
 
@@ -94,7 +107,8 @@ Admin operations additionally require all of the following server-side:
 2. An exact TOTP second-factor claim (`sign_in_second_factor: "totp"`).
 3. `auth_time` no older than 15 minutes.
 4. An active `_private_admins/{uid}` document with `scope: "production"`.
-5. The exact permission (`client_codes` or `client_resource_drafts`).
+5. The exact permission (`client_codes`, `client_resource_drafts`, or
+   `app_review_credential`).
 
 Claims alone never authorize an administrator. A review-sandbox admin document
 cannot operate on production.
@@ -128,6 +142,80 @@ they contain no subject/code and remain only until their short TTL. Sanitized
 audit event bodies omit Auth UID, installation ID, code plaintext, and health
 data, but may retain an opaque code ID; deletion event document names use a
 one-way subject-derived suffix. All expire after 30 days.
+
+## Isolated App Review credential contract
+
+The review credential format is
+`AR-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX`; every `X` is an uppercase hexadecimal
+digit and the 32 digits contain 128 bits of cryptographic entropy. Input may be
+normalized for case, spaces, and common dash characters, but Firestore stores
+only a versioned HMAC lookup. The complete credential is returned only once by
+`adminRotateAppReviewCredential`. It has no expiry date; rotation is its
+revocation mechanism and immediately invalidates every prior review grant,
+launch nonce, and web session through a live generation check.
+
+The status/rotation portal contracts are exact:
+
+```json
+{"configured":true,"generation":3,"purpose":"app_review","rotatedAtMs":1800000000000}
+```
+
+```json
+{
+  "oneTimeCredential":"AR-...",
+  "generation":4,
+  "purpose":"app_review",
+  "rotatedAtMs":1800000000000
+}
+```
+
+Rotation is optimistic concurrency: the portal must first read status and send
+that exact `generation` as `expectedGeneration`; it sends `null` only for the
+first generation. A mismatch is `aborted/app_review_generation_conflict` and
+must cause a status refresh. The portal must never persist, log, cache, or show
+the returned credential again after the operator leaves the one-time result.
+
+`redeemAppReviewCredential` accepts the review credential on any number of
+review devices. After signing in with its returned Firebase `customToken`, the
+Auth UID is always `review_` plus 32 base64url characters and the token has the
+exact claim `authority: "app_review"`. Production client callables accept only
+`client_*`; review refresh/launch callables accept only this review UID and
+claim. The native app stores only Firebase Auth state after redemption, never
+the review credential.
+
+The review grant is a discriminated, UI-compatible grant with no expiry:
+
+```json
+{
+  "schemaVersion": 1,
+  "status": "active",
+  "scope": "review_sandbox",
+  "purpose": "app_review",
+  "credentialGeneration": 4,
+  "expiresAtMs": null,
+  "resources": [{
+    "id": "review-sandbox-app-review-sample-v1",
+    "access": "client",
+    "iconKey": "featured",
+    "title": {
+      "en": "App Review Sample",
+      "es": "Muestra para App Review"
+    },
+    "summary": {
+      "en": "A fixed, non-clinical sample prepared only for App Review.",
+      "es": "Una muestra fija y no clínica preparada sólo para App Review."
+    }
+  }]
+}
+```
+
+Neither redeem nor launch accepts a resource ID, URL, scope, purpose, or
+entitlement from the caller. `createAppReviewLaunch({installationId})` returns
+exactly `{launchUrl,method:'POST',nonce,expiresAtMs}`. `launchUrl` is fixed to
+`https://cabohealth.org/apps/app-review/launch/`, `method` is `POST`, and the
+nonce is one-use with a 60-second lifetime. The iOS WebView posts exactly
+`nonce=<URL-encoded nonce>` using
+`application/x-www-form-urlencoded;charset=UTF-8`.
 
 ## Server-to-server broker API
 
@@ -169,6 +257,22 @@ The native launch target is fixed to
 `application/x-www-form-urlencoded;charset=UTF-8` with exactly
 `nonce=<URL-encoded nonce>`.
 
+The App Review web path uses the separate exported HTTP function
+`appReviewBrokerApi`. Its three JSON routes and response schemas are identical
+to `brokerApi`, but its key ring, replay documents, nonce/session documents,
+and signature domain are separate. Its exact canonical first line is:
+
+```text
+cabohealth-app-review-broker-v1
+```
+
+A production-broker signature is invalid at the review broker and vice versa,
+even if an operator accidentally provisions identical raw key bytes. The
+review `/v1/sessions/introspect` response can contain only the fixed entitlement
+`review-sandbox-app-review-sample-v1`. Hostinger must configure a distinct
+fail-closed adapter/base URL for `appReviewBrokerApi`; it must not route review
+requests through the production broker adapter.
+
 ## Secret Manager parameters
 
 - `CLIENT_CODE_PEPPER_RING`
@@ -178,6 +282,16 @@ The native launch target is fixed to
 - `CLIENT_WEB_SESSION_PEPPER_RING`
 - `CLIENT_WEB_CSRF_PEPPER_RING`
 - `CLIENT_BROKER_HMAC_KEY_RING`
+
+The review realm requires seven additional, independently generated rings:
+
+- `APP_REVIEW_CREDENTIAL_PEPPER_RING`
+- `APP_REVIEW_INSTALLATION_PEPPER_RING`
+- `APP_REVIEW_RATE_LIMIT_PEPPER_RING`
+- `APP_REVIEW_LAUNCH_NONCE_PEPPER_RING`
+- `APP_REVIEW_WEB_SESSION_PEPPER_RING`
+- `APP_REVIEW_WEB_CSRF_PEPPER_RING`
+- `APP_REVIEW_BROKER_HMAC_KEY_RING`
 
 Each secret is an independently generated JSON key ring:
 
@@ -199,6 +313,13 @@ Firebase App IDs, not project IDs or bundle IDs:
 
 - `CLIENT_IOS_FIREBASE_APP_ID` (`1:...:ios:...`)
 - `STAFF_WEB_FIREBASE_APP_ID` (`1:...:web:...`)
+
+`APP_REVIEW_FIRESTORE_DATABASE_ID` is also mandatory. It must be an
+independently provisioned named Firestore database whose verified ID begins
+with `cabohealth-review-`; `(default)` is rejected by source validation. The
+committed `firestore.review.rules` and `firestore.review.indexes.json` belong
+only to that named database. They must never replace the production/default
+database configuration.
 
 The committed `.firebaserc` intentionally has no `default` project and contains
 only unconfigured `cabohealth-staging` and `cabohealth-prod` aliases. Replace
@@ -239,6 +360,15 @@ The committed Firestore configuration enables TTL on `expiresAtMs` for:
 Expiry is already enforced in transactions; TTL is retention cleanup, not an
 authorization mechanism.
 
+The review database has a separate default-deny rules file and TTL overrides
+for `review_sandbox_rate_limits`, `review_sandbox_redemption_requests`,
+`review_sandbox_launch_nonces`, `review_sandbox_web_sessions`, and
+`review_sandbox_broker_requests`. Live-generation validation, not asynchronous
+TTL deletion, revokes old review authority. Old pseudonymous grant documents
+are authorization-dead after rotation but are not yet physically purged by a
+background worker; define and verify their retention/purge procedure before
+activating the review credential.
+
 Account deletion actively removes linked launch, web-session, redemption, and
 safely attributable installation-rate records before returning `completed`.
 The residual non-account records are bounded by TTL: broker requests two
@@ -264,10 +394,12 @@ Do not call this Apple-ready or production-ready until all are complete:
    and malformed tombstones in staging; verify the sanitized aggregate alert,
    deployed TTL status, and that the native UI treats `pending` as pending
    rather than as completed erasure.
-7. Implement a **separate** synthetic `purpose: "app_review"` credential and
-   isolated review-sandbox repository. It must be multi-device/non-expiring,
-   excluded from the four production slots, and unable to read or mutate
-   production. No generic bypass or master code is acceptable.
+7. Provision and verify the source-implemented App Review realm: the named
+   Firestore database, its default-deny rules/TTL policy, least-privilege
+   runtime identity, seven separate key rings, fixed Hostinger sample, portal
+   status/rotation adapter, and native redeem/refresh/launch adapter. Run
+   cross-realm and rotation tests end-to-end; define cleanup of stale review
+   grants. Do not issue the credential until all of those checks pass.
 8. Wire the staff portal adapters to the five documented draft/audit callables
    and verify optimistic-conflict/error handling in staging. Draft publication
    remains an intentionally separate, reviewed release process; do not add a

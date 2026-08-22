@@ -27,6 +27,14 @@ import { ClientSessionManager } from './domain/clientSessionManager.js';
 import { ClientLaunchService } from './domain/clientLaunchService.js';
 import { WebSessionBroker } from './domain/webSessionBroker.js';
 import {
+  AppReviewAccessRedeemer,
+  AppReviewCredentialConflictError,
+  AppReviewCredentialService,
+  AppReviewInputError,
+  AppReviewLaunchService,
+  AppReviewSessionManager,
+} from './domain/appReviewAccess.js';
+import {
   CatalogDraftAdminService,
   CatalogDraftConflictError,
   CatalogDraftInputError,
@@ -37,13 +45,17 @@ import {
 import { AdminFirestoreDocumentDatabase } from './infrastructure/adminFirestoreDocumentDatabase.js';
 import { FirestoreClientAccessStore } from './repositories/firestoreClientAccessStore.js';
 import { FirestoreCatalogDraftStore } from './repositories/firestoreCatalogDraftStore.js';
+import { FirestoreAppReviewSandboxStore } from './repositories/firestoreAppReviewSandboxStore.js';
 import { parsePepperRingSecret, VersionedHmac } from './security/versionedHmac.js';
 import {
   authorizeProductionAdmin,
   authorizeProductionStaff,
   type ProductionAdminPermission,
 } from './security/adminAuthorization.js';
-import { authenticateBrokerRequest } from './security/brokerAuthentication.js';
+import {
+  authenticateAppReviewBrokerRequest,
+  authenticateBrokerRequest,
+} from './security/brokerAuthentication.js';
 import { authorizeAppCheckSurface } from './security/appCheckAuthorization.js';
 
 const REGION = 'us-central1';
@@ -54,8 +66,16 @@ const LAUNCH_NONCE_PEPPER_RING = defineSecret('CLIENT_LAUNCH_NONCE_PEPPER_RING')
 const WEB_SESSION_PEPPER_RING = defineSecret('CLIENT_WEB_SESSION_PEPPER_RING');
 const WEB_CSRF_PEPPER_RING = defineSecret('CLIENT_WEB_CSRF_PEPPER_RING');
 const BROKER_HMAC_KEY_RING = defineSecret('CLIENT_BROKER_HMAC_KEY_RING');
+const APP_REVIEW_CREDENTIAL_PEPPER_RING = defineSecret('APP_REVIEW_CREDENTIAL_PEPPER_RING');
+const APP_REVIEW_INSTALLATION_PEPPER_RING = defineSecret('APP_REVIEW_INSTALLATION_PEPPER_RING');
+const APP_REVIEW_RATE_LIMIT_PEPPER_RING = defineSecret('APP_REVIEW_RATE_LIMIT_PEPPER_RING');
+const APP_REVIEW_LAUNCH_NONCE_PEPPER_RING = defineSecret('APP_REVIEW_LAUNCH_NONCE_PEPPER_RING');
+const APP_REVIEW_WEB_SESSION_PEPPER_RING = defineSecret('APP_REVIEW_WEB_SESSION_PEPPER_RING');
+const APP_REVIEW_WEB_CSRF_PEPPER_RING = defineSecret('APP_REVIEW_WEB_CSRF_PEPPER_RING');
+const APP_REVIEW_BROKER_HMAC_KEY_RING = defineSecret('APP_REVIEW_BROKER_HMAC_KEY_RING');
 const CLIENT_IOS_FIREBASE_APP_ID = defineString('CLIENT_IOS_FIREBASE_APP_ID');
 const STAFF_WEB_FIREBASE_APP_ID = defineString('STAFF_WEB_FIREBASE_APP_ID');
+const APP_REVIEW_FIRESTORE_DATABASE_ID = defineString('APP_REVIEW_FIRESTORE_DATABASE_ID');
 
 if (getApps().length === 0) initializeApp();
 
@@ -204,6 +224,116 @@ export const adminListAudit = onCall(baseCallableOptions, async (request) => {
     return Object.freeze({ events: await createCatalogDraftService().listAudit() });
   } catch {
     throw new HttpsError('internal', 'audit_operation_failed');
+  }
+});
+
+export const adminGetAppReviewCredentialStatus = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  assertEmptyData(request.data, 'invalid_admin_input');
+  await assertProductionAdmin(request, 'app_review_credential');
+  try {
+    return await createAppReviewStore().credentialStatus();
+  } catch {
+    throw new HttpsError('internal', 'app_review_operation_failed');
+  }
+});
+
+export const adminRotateAppReviewCredential = onCall({
+  ...baseCallableOptions,
+  secrets: [APP_REVIEW_CREDENTIAL_PEPPER_RING],
+}, async (request) => {
+  assertStaffAppCheck(request);
+  await assertProductionAdmin(request, 'app_review_credential');
+  try {
+    const result = await createAppReviewCredentialService().rotate(
+      parseAppReviewRotation(request.data),
+    );
+    if (result.status.generation === null || result.status.rotatedAtMs === null) {
+      throw new Error('invalid_app_review_status');
+    }
+    return Object.freeze({
+      generation: result.status.generation,
+      oneTimeCredential: result.oneTimeCredential,
+      purpose: 'app_review' as const,
+      rotatedAtMs: result.status.rotatedAtMs,
+    });
+  } catch (error) {
+    if (error instanceof AppReviewCredentialConflictError) {
+      throw new HttpsError('aborted', 'app_review_generation_conflict');
+    }
+    if (error instanceof AppReviewInputError) {
+      throw new HttpsError('invalid-argument', 'invalid_admin_input');
+    }
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'app_review_operation_failed');
+  }
+});
+
+export const redeemAppReviewCredential = onCall({
+  ...baseCallableOptions,
+  secrets: [
+    APP_REVIEW_CREDENTIAL_PEPPER_RING,
+    APP_REVIEW_INSTALLATION_PEPPER_RING,
+    APP_REVIEW_RATE_LIMIT_PEPPER_RING,
+  ],
+}, async (request) => {
+  assertClientAppCheck(request);
+  const input = parseAppReviewRedeemInput(request);
+  const redeemer = new AppReviewAccessRedeemer({
+    credentialHasher: hasherFromSecret(
+      APP_REVIEW_CREDENTIAL_PEPPER_RING,
+      'cabohealth/app-review/credential/v1',
+    ),
+    installationHasher: hasherFromSecret(
+      APP_REVIEW_INSTALLATION_PEPPER_RING,
+      'cabohealth/app-review/installation/v1',
+    ),
+    rateLimitHasher: hasherFromSecret(
+      APP_REVIEW_RATE_LIMIT_PEPPER_RING,
+      'cabohealth/app-review/rate-limit/v1',
+    ),
+    store: createAppReviewStore(),
+    tokenIssuer: {
+      createCustomToken: (subjectUid, claims) => getAuth().createCustomToken(subjectUid, claims),
+    },
+  });
+  try {
+    return await redeemer.redeem(input);
+  } catch (error) {
+    throw mapAppReviewClientError(error);
+  }
+});
+
+export const refreshAppReviewAccess = onCall({
+  ...baseCallableOptions,
+  secrets: [APP_REVIEW_INSTALLATION_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  const subjectUid = assertAppReviewAuth(request);
+  try {
+    const grant = await createAppReviewSessionManager().refresh({
+      installationId: parseInstallationId(request.data),
+      subjectUid,
+    });
+    return Object.freeze({ grant });
+  } catch (error) {
+    throw mapAppReviewClientError(error);
+  }
+});
+
+export const createAppReviewLaunch = onCall({
+  ...baseCallableOptions,
+  secrets: [APP_REVIEW_INSTALLATION_PEPPER_RING, APP_REVIEW_LAUNCH_NONCE_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  const subjectUid = assertAppReviewAuth(request);
+  try {
+    return await createAppReviewLaunchService().create({
+      installationId: parseInstallationId(request.data),
+      subjectUid,
+    });
+  } catch (error) {
+    throw mapAppReviewClientError(error);
   }
 });
 
@@ -361,10 +491,111 @@ export const brokerApi = onRequest({
   }
 });
 
+/** Isolated server-to-server broker for the fixed, non-production App Review sample. */
+export const appReviewBrokerApi = onRequest({
+  cors: false,
+  maxInstances: 5,
+  memory: '256MiB',
+  region: REGION,
+  secrets: [
+    APP_REVIEW_BROKER_HMAC_KEY_RING,
+    APP_REVIEW_LAUNCH_NONCE_PEPPER_RING,
+    APP_REVIEW_WEB_CSRF_PEPPER_RING,
+    APP_REVIEW_WEB_SESSION_PEPPER_RING,
+  ],
+  timeoutSeconds: 15,
+}, async (request, response) => {
+  response.set('Cache-Control', 'no-store');
+  response.set('X-Content-Type-Options', 'nosniff');
+  try {
+    const rawBody = request.rawBody;
+    const contentType = request.get('content-type') ?? '';
+    if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/iu.test(contentType)) {
+      throw new Error('broker_authentication_failed');
+    }
+    const authenticated = authenticateAppReviewBrokerRequest({
+      body: rawBody,
+      keyId: requiredHeader(request.get('x-cabohealth-key-id')),
+      method: request.method,
+      nowMs: Date.now(),
+      path: request.path,
+      requestId: requiredHeader(request.get('x-cabohealth-request-id')),
+      signature: requiredHeader(request.get('x-cabohealth-signature')),
+      timestamp: requiredHeader(request.get('x-cabohealth-timestamp')),
+    }, parsePepperRingSecret(APP_REVIEW_BROKER_HMAC_KEY_RING.value()));
+    const result = await dispatchBrokerCommand({
+      path: request.path,
+      rawBody,
+      requestHash: authenticated.requestHash,
+    }, createAppReviewWebSessionBroker());
+    response.status(200).json(result);
+  } catch {
+    response.status(403).json(Object.freeze({ error: 'invalid_access' }));
+  }
+});
+
 function createStore(): FirestoreClientAccessStore {
   return new FirestoreClientAccessStore(
     new AdminFirestoreDocumentDatabase(getFirestore()),
   );
+}
+
+function createAppReviewStore(): FirestoreAppReviewSandboxStore {
+  return new FirestoreAppReviewSandboxStore(
+    new AdminFirestoreDocumentDatabase(getFirestore(requireAppReviewDatabaseId())),
+  );
+}
+
+function createAppReviewCredentialService(): AppReviewCredentialService {
+  return new AppReviewCredentialService({
+    credentialHasher: hasherFromSecret(
+      APP_REVIEW_CREDENTIAL_PEPPER_RING,
+      'cabohealth/app-review/credential/v1',
+    ),
+    store: createAppReviewStore(),
+  });
+}
+
+function createAppReviewSessionManager(): AppReviewSessionManager {
+  return new AppReviewSessionManager({
+    installationHasher: hasherFromSecret(
+      APP_REVIEW_INSTALLATION_PEPPER_RING,
+      'cabohealth/app-review/installation/v1',
+    ),
+    store: createAppReviewStore(),
+  });
+}
+
+function createAppReviewLaunchService(): AppReviewLaunchService {
+  return new AppReviewLaunchService({
+    installationHasher: hasherFromSecret(
+      APP_REVIEW_INSTALLATION_PEPPER_RING,
+      'cabohealth/app-review/installation/v1',
+    ),
+    nonceHasher: hasherFromSecret(
+      APP_REVIEW_LAUNCH_NONCE_PEPPER_RING,
+      'cabohealth/app-review/launch-nonce/v1',
+    ),
+    store: createAppReviewStore(),
+  });
+}
+
+function createAppReviewWebSessionBroker(): WebSessionBroker {
+  return new WebSessionBroker({
+    csrfHasher: hasherFromSecret(
+      APP_REVIEW_WEB_CSRF_PEPPER_RING,
+      'cabohealth/app-review/web-csrf/v1',
+    ),
+    nonceHasher: hasherFromSecret(
+      APP_REVIEW_LAUNCH_NONCE_PEPPER_RING,
+      'cabohealth/app-review/launch-nonce/v1',
+    ),
+    sessionHasher: hasherFromSecret(
+      APP_REVIEW_WEB_SESSION_PEPPER_RING,
+      'cabohealth/app-review/web-session/v1',
+    ),
+    store: createAppReviewStore(),
+  });
 }
 
 function createCatalogDraftService(): CatalogDraftAdminService {
@@ -509,6 +740,23 @@ function assertClientAuth(request: CallableRequest<unknown>): string {
   return request.auth.uid;
 }
 
+function assertAppReviewAuth(request: CallableRequest<unknown>): string {
+  if (
+    !request.auth
+    || !/^review_[A-Za-z0-9_-]{32}$/u.test(request.auth.uid)
+    || request.auth.token.authority !== 'app_review'
+  ) throw new HttpsError('unauthenticated', 'app_review_authentication_required');
+  return request.auth.uid;
+}
+
+function requireAppReviewDatabaseId(): string {
+  const databaseId = APP_REVIEW_FIRESTORE_DATABASE_ID.value();
+  if (!/^cabohealth-review-[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/u.test(databaseId)) {
+    throw new Error('app_review_database_not_configured');
+  }
+  return databaseId;
+}
+
 function parseIssueInput(value: unknown): {
   expiresAtMs: number;
   resourceIds: readonly string[];
@@ -553,6 +801,43 @@ function parseRedeemInput(request: CallableRequest<unknown>): {
     requestId: value.requestId,
     sourceAddress,
   };
+}
+
+function parseAppReviewRotation(value: unknown): Readonly<{
+  expectedGeneration: number | null;
+}> {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, ['expectedGeneration'])
+    || !(value.expectedGeneration === null || typeof value.expectedGeneration === 'number')
+  ) throw new HttpsError('invalid-argument', 'invalid_admin_input');
+  return Object.freeze({ expectedGeneration: value.expectedGeneration });
+}
+
+function parseAppReviewRedeemInput(request: CallableRequest<unknown>): Readonly<{
+  credential: string;
+  installationId: string;
+  requestId: string;
+  sourceAddress: string;
+}> {
+  const value = request.data;
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, ['credential', 'installationId', 'requestId'])
+    || typeof value.credential !== 'string'
+    || typeof value.installationId !== 'string'
+    || typeof value.requestId !== 'string'
+  ) throw new HttpsError('invalid-argument', 'invalid_access');
+  const sourceAddress = request.rawRequest.ip ?? request.rawRequest.socket.remoteAddress;
+  if (typeof sourceAddress !== 'string') {
+    throw new HttpsError('invalid-argument', 'invalid_access');
+  }
+  return Object.freeze({
+    credential: value.credential,
+    installationId: value.installationId,
+    requestId: value.requestId,
+    sourceAddress,
+  });
 }
 
 function parseCodeId(value: unknown): string {
@@ -644,6 +929,19 @@ function mapCatalogDraftError(error: unknown): HttpsError {
     return new HttpsError('not-found', 'catalog_draft_not_found');
   }
   return new HttpsError('internal', 'catalog_draft_operation_failed');
+}
+
+function mapAppReviewClientError(error: unknown): HttpsError {
+  if (error instanceof HttpsError) return error;
+  if (error instanceof AppReviewInputError) {
+    if (error.code === 'rate_limited') {
+      return new HttpsError('resource-exhausted', 'rate_limited', {
+        retryAfterSeconds: error.retryAfterSeconds,
+      });
+    }
+    return new HttpsError('permission-denied', 'invalid_access');
+  }
+  return new HttpsError('internal', 'app_review_operation_failed');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

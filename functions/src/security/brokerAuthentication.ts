@@ -36,6 +36,32 @@ export function authenticateBrokerRequest(
   input: Readonly<BrokerAuthenticationInput>,
   keyRing: PepperRing,
 ): Readonly<{ requestHash: string }> {
+  return authenticateRealm(
+    input,
+    keyRing,
+    'cabohealth-broker-v1',
+    'cabohealth/broker-request-id/v1\0',
+  );
+}
+
+export function authenticateAppReviewBrokerRequest(
+  input: Readonly<BrokerAuthenticationInput>,
+  keyRing: PepperRing,
+): Readonly<{ requestHash: string }> {
+  return authenticateRealm(
+    input,
+    keyRing,
+    'cabohealth-app-review-broker-v1',
+    'cabohealth/app-review-broker-request-id/v1\0',
+  );
+}
+
+function authenticateRealm(
+  input: Readonly<BrokerAuthenticationInput>,
+  keyRing: PepperRing,
+  signatureDomain: string,
+  requestHashDomain: string,
+): Readonly<{ requestHash: string }> {
   try {
     if (
       input.method !== 'POST'
@@ -59,7 +85,7 @@ export function authenticateBrokerRequest(
 
     const bodyHash = createHash('sha256').update(input.body).digest('base64url');
     const canonical = [
-      'cabohealth-broker-v1',
+      signatureDomain,
       input.method,
       input.path,
       input.timestamp,
@@ -75,7 +101,7 @@ export function authenticateBrokerRequest(
     // The UUID carries 122 random bits. A namespaced digest is opaque enough for
     // storage and, unlike a signing-key HMAC, remains stable during key rotation.
     const requestHash = createHash('sha256')
-      .update('cabohealth/broker-request-id/v1\0', 'utf8')
+      .update(requestHashDomain, 'utf8')
       .update(input.requestId, 'utf8')
       .digest('base64url');
     return Object.freeze({ requestHash });

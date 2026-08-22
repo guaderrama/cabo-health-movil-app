@@ -1,0 +1,35 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "review_sandbox_broker_requests",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "review_sandbox_launch_nonces",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "review_sandbox_rate_limits",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "review_sandbox_redemption_requests",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "review_sandbox_web_sessions",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    }
+  ]
+}

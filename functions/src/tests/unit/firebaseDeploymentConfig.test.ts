@@ -37,6 +37,29 @@ test('Firestore index config contains no legacy catalog index', async () => {
   assert.doesNotMatch(JSON.stringify(parsed), /cabohealth_apps/u);
 });
 
+test('App Review named-database rules and TTL policy are isolated and default-deny', async () => {
+  const rules = await readFile('../firestore.review.rules', 'utf8');
+  assert.match(rules, /allow read, write: if false/u);
+  const parsed: unknown = JSON.parse(await readFile('../firestore.review.indexes.json', 'utf8'));
+  assert.ok(isRecord(parsed));
+  assert.deepEqual(parsed.indexes, []);
+  assert.ok(Array.isArray(parsed.fieldOverrides));
+  assert.deepEqual(parsed.fieldOverrides.map((override) => {
+    assert.ok(isRecord(override));
+    assert.equal(override.fieldPath, 'expiresAtMs');
+    assert.equal(override.ttl, true);
+    assert.deepEqual(override.indexes, []);
+    return override.collectionGroup;
+  }).sort(), [
+    'review_sandbox_broker_requests',
+    'review_sandbox_launch_nonces',
+    'review_sandbox_rate_limits',
+    'review_sandbox_redemption_requests',
+    'review_sandbox_web_sessions',
+  ]);
+  assert.doesNotMatch(JSON.stringify(parsed), /_private_|client_|cabohealth_apps/u);
+});
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

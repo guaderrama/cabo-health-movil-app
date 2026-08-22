@@ -43,6 +43,8 @@ test('every callable is wired to the correct iOS or staff-web App Check surface'
     'adminUpdateCatalogDraft',
     'adminArchiveCatalogDraft',
     'adminListAudit',
+    'adminGetAppReviewCredentialStatus',
+    'adminRotateAppReviewCredential',
   ];
   const clientCallables = [
     'redeemClientAccessCode',
@@ -50,6 +52,9 @@ test('every callable is wired to the correct iOS or staff-web App Check surface'
     'removeClientAccess',
     'deleteClientAccount',
     'createClientLaunch',
+    'redeemAppReviewCredential',
+    'refreshAppReviewAccess',
+    'createAppReviewLaunch',
   ];
   for (const callable of staffCallables) {
     assert.match(source, new RegExp(
@@ -63,6 +68,6 @@ test('every callable is wired to the correct iOS or staff-web App Check surface'
       'u',
     ));
   }
-  assert.equal(source.match(/assertStaffAppCheck\(request\)/gu)?.length, 9);
-  assert.equal(source.match(/assertClientAppCheck\(request\)/gu)?.length, 5);
+  assert.equal(source.match(/assertStaffAppCheck\(request\)/gu)?.length, 11);
+  assert.equal(source.match(/assertClientAppCheck\(request\)/gu)?.length, 8);
 });

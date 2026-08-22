@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // The App Review sandbox is server-only and lives in its own named database.
+    // Firebase Admin SDK access must be constrained separately with IAM.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

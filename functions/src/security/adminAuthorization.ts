@@ -4,6 +4,7 @@ const MAX_CLOCK_SKEW_MS = 30 * 1_000;
 const KNOWN_PERMISSIONS = Object.freeze([
   'client_codes',
   'client_resource_drafts',
+  'app_review_credential',
 ] as const);
 
 export type ProductionAdminPermission = typeof KNOWN_PERMISSIONS[number];

@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { createHash, createHmac } from 'node:crypto';
 import { test } from 'node:test';
 
-import { authenticateBrokerRequest } from '../../security/brokerAuthentication.js';
+import {
+  authenticateAppReviewBrokerRequest,
+  authenticateBrokerRequest,
+} from '../../security/brokerAuthentication.js';
 import { parsePepperRingSecret } from '../../security/versionedHmac.js';
 
 const key = Buffer.alloc(32, 71);
@@ -104,8 +107,45 @@ test('broker replay hash stays opaque and stable while an old signing key remain
   assert.equal(first.requestHash.includes(requestId), false);
 });
 
-function sign(method: string, route: string, at: string, id: string, rawBody: Buffer): string {
+test('production and App Review broker signatures cannot cross realms even with the same key bytes', () => {
+  const ring = parsePepperRingSecret(JSON.stringify({
+    currentVersion: keyId,
+    keys: { [keyId]: key.toString('base64') },
+  }));
+  const input = (signature: string) => ({
+    body, keyId, method: 'POST', nowMs, path, requestId, signature, timestamp,
+  });
+  const productionSignature = sign('POST', path, timestamp, requestId, body);
+  const reviewSignature = sign(
+    'POST',
+    path,
+    timestamp,
+    requestId,
+    body,
+    'cabohealth-app-review-broker-v1',
+  );
+
+  assert.doesNotThrow(() => authenticateBrokerRequest(input(productionSignature), ring));
+  assert.doesNotThrow(() => authenticateAppReviewBrokerRequest(input(reviewSignature), ring));
+  assert.throws(
+    () => authenticateAppReviewBrokerRequest(input(productionSignature), ring),
+    /broker_authentication_failed/u,
+  );
+  assert.throws(
+    () => authenticateBrokerRequest(input(reviewSignature), ring),
+    /broker_authentication_failed/u,
+  );
+});
+
+function sign(
+  method: string,
+  route: string,
+  at: string,
+  id: string,
+  rawBody: Buffer,
+  domain = 'cabohealth-broker-v1',
+): string {
   const bodyHash = createHash('sha256').update(rawBody).digest('base64url');
-  const canonical = `cabohealth-broker-v1\n${method}\n${route}\n${at}\n${id}\n${bodyHash}`;
+  const canonical = `${domain}\n${method}\n${route}\n${at}\n${id}\n${bodyHash}`;
   return createHmac('sha256', key).update(canonical, 'utf8').digest('base64url');
 }

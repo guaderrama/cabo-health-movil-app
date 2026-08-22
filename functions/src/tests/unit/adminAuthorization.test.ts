@@ -79,3 +79,21 @@ test('staff bootstrap returns only known permissions from the active production 
     nowMs,
   }), /admin_authorization_failed/u);
 });
+
+test('App Review rotation requires its exact permission in the active production staff document', async () => {
+  await assert.doesNotReject(authorizeProductionAdmin({
+    auth: validAuth,
+    loadAdmin: async () => ({
+      ...validDocument,
+      permissions: ['app_review_credential'],
+    }),
+    nowMs,
+    requiredPermission: 'app_review_credential',
+  }));
+  await assert.rejects(authorizeProductionAdmin({
+    auth: validAuth,
+    loadAdmin: async () => validDocument,
+    nowMs,
+    requiredPermission: 'app_review_credential',
+  }), /admin_authorization_failed/u);
+});
