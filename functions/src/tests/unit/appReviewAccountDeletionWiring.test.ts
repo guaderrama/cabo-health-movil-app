@@ -42,9 +42,14 @@ test('App Review deletion status uses only App Check, the named review DB, and i
   assert.match(block, /APP_REVIEW_DELETION_RECEIPT_PEPPER_RING/u);
   assert.match(block, /createAppReviewStore\(\)/u);
   assert.match(block, /AccountDeletionReceiptStatusService/u);
+  assert.match(block, /assertClientAppCheck\(request\);\s*try/u);
   assert.doesNotMatch(block, /assertAppReviewDeletionAuth|assertClientAuth|request\.auth/u);
   assert.doesNotMatch(block, /createStore\(\)/u);
   assert.doesNotMatch(block, /console\.|logger\./u);
+  assert.match(
+    source,
+    /function mapDeletionReceiptStatusError[\s\S]{0,700}?not-found[\s\S]{0,120}?invalid_access/u,
+  );
 });
 
 function callableBlock(source: string, name: string): string {

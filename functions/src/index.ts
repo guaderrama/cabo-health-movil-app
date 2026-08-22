@@ -1114,7 +1114,7 @@ function mapDeletionReceiptStatusError(
   realm: 'app_review' | 'production',
 ): HttpsError {
   if (error instanceof AccountDeletionReceiptError || error instanceof HttpsError) {
-    return new HttpsError('permission-denied', 'invalid_access');
+    return new HttpsError('not-found', 'invalid_access');
   }
   return new HttpsError(
     'internal',

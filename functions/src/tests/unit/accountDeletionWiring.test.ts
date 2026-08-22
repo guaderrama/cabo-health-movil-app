@@ -39,9 +39,18 @@ test('production deletion status is App-Check-only and isolated behind its own r
   assert.match(status, /assertClientAppCheck\(request\)/u);
   assert.match(status, /AccountDeletionReceiptStatusService/u);
   assert.match(status, /CLIENT_DELETION_RECEIPT_PEPPER_RING/u);
+  assert.match(status, /assertClientAppCheck\(request\);\s*try/u);
   assert.doesNotMatch(status, /assertClientAuth|assertAppReviewAuth|request\.auth/u);
   assert.doesNotMatch(status, /createAppReviewStore/u);
   assert.doesNotMatch(status, /console\.|logger\./u);
+  assert.match(
+    source,
+    /function mapDeletionReceiptStatusError[\s\S]{0,500}?AccountDeletionReceiptError[\s\S]{0,120}?not-found[\s\S]{0,120}?invalid_access/u,
+  );
+  assert.match(
+    source,
+    /function mapDeletionReceiptStatusError[\s\S]{0,700}?instanceof HttpsError[\s\S]{0,120}?not-found[\s\S]{0,120}?invalid_access/u,
+  );
 });
 
 function callableBlock(source: string, name: string): string {

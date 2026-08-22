@@ -104,12 +104,46 @@ test('pending receipts remain consultable after their expected completion date',
   assert.equal((await service.getStatus({ deletionReceipt: receipt })).status, 'pending');
 });
 
+test('a receipt lookup from the other realm reveals no status', async () => {
+  const productionLookupIds = new Set(
+    realmHasher('production').lookupCandidates(receipt).map(({ lookupId }) => lookupId),
+  );
+  const reviewService = new AccountDeletionReceiptStatusService({
+    receiptHasher: realmHasher('review'),
+    store: {
+      async findAccountDeletionReceiptStatus(candidates) {
+        return candidates.some(({ lookupId }) => productionLookupIds.has(lookupId))
+          ? {
+            completedAtMs: null,
+            expectedCompletionByMs,
+            requestedAtMs,
+            schemaVersion: 1,
+            status: 'pending' as const,
+          }
+          : null;
+      },
+    },
+  });
+
+  await assert.rejects(
+    reviewService.getStatus({ deletionReceipt: receipt }),
+    (error: unknown) => (
+      error instanceof AccountDeletionReceiptError
+      && error.message === 'invalid_access'
+    ),
+  );
+});
+
 function hasher(): VersionedHmac {
+  return realmHasher('shared');
+}
+
+function realmHasher(realm: string): VersionedHmac {
   return VersionedHmac.fromTestKeys({
     currentVersion: 'v2',
     keys: {
-      v1: 'receipt-old-test-pepper-at-least-32-bytes',
-      v2: 'receipt-current-test-pepper-at-least-32-bytes',
+      v1: `receipt-old-${realm}-pepper-at-least-32-bytes`,
+      v2: `receipt-current-${realm}-pepper-at-least-32-bytes`,
     },
   });
 }
