@@ -73,13 +73,13 @@ export const lightColors = {
   glassBorder: 'rgba(14, 88, 118, 0.14)',
 
   // Editorial resource surfaces
-  editorialSurface: 'rgba(255, 255, 255, 0.96)',
+  editorialSurface: 'rgba(255, 255, 255, 0.985)',
   editorialSurfaceMuted: 'rgba(251, 250, 247, 0.9)',
   editorialCover: '#DCEEF2',
   editorialCoverWarm: '#F3ECDD',
   editorialCoverMuted: '#E7EEF0',
   editorialIconSurface: 'rgba(251, 250, 247, 0.94)',
-  editorialBorder: 'rgba(8, 42, 60, 0.17)',
+  editorialBorder: 'rgba(8, 42, 60, 0.22)',
 } as const;
 
 // Dark Mode Colors - Premium Aesthetic
@@ -141,13 +141,13 @@ export const darkColors = {
   glassBorder: 'rgba(139, 199, 210, 0.22)',
 
   // Editorial resource surfaces
-  editorialSurface: 'rgba(16, 56, 74, 0.97)',
+  editorialSurface: 'rgba(16, 56, 74, 0.99)',
   editorialSurfaceMuted: 'rgba(13, 50, 66, 0.94)',
   editorialCover: '#154A5D',
   editorialCoverWarm: '#4B4031',
   editorialCoverMuted: '#173A48',
   editorialIconSurface: 'rgba(8, 42, 60, 0.88)',
-  editorialBorder: 'rgba(251, 250, 247, 0.2)',
+  editorialBorder: 'rgba(251, 250, 247, 0.24)',
 } as const;
 
 // Default export para compatibilidad (Light Mode)

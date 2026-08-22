@@ -2,7 +2,7 @@ import type { ComponentProps } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Line } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { useEditorialTileMotion, useTheme } from '../hooks';
 
 export type EditorialMiniappTone = 'clinic' | 'recipes' | 'test';
@@ -36,7 +36,7 @@ export function EditorialMiniappCover({
   favorite?: FavoriteAction;
   onPress: () => void;
 }) {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const motion = useEditorialTileMotion(index);
   const coverColor = tone === 'clinic'
     ? colors.editorialCover
@@ -77,7 +77,7 @@ export function EditorialMiniappCover({
           locations={[0, 1]}
           style={styles.cover}
         >
-          <EditorialNetwork tone={tone} />
+          <EditorialCoverArt tone={tone} />
           <Text style={[styles.eyebrow, { color: colors.primary }]} numberOfLines={1}>
             {eyebrow.toUpperCase()}
           </Text>
@@ -106,13 +106,23 @@ export function EditorialMiniappCover({
           </Text>
           <View style={styles.footer}>
             <View style={[styles.footerRule, { backgroundColor: colors.accent }]} />
-            <Ionicons
+            <View
               accessible={false}
               importantForAccessibility="no-hide-descendants"
-              name="arrow-forward"
-              size={18}
-              color={isDark ? colors.accentLight : colors.accentDark}
-            />
+              style={[
+                styles.openAction,
+                {
+                  backgroundColor: tone === 'test' ? colors.editorialIconSurface : colors.primary,
+                  borderColor: tone === 'test' ? colors.editorialBorder : colors.primary,
+                },
+              ]}
+            >
+              <Ionicons
+                name="arrow-forward"
+                size={18}
+                color={tone === 'test' ? colors.primary : colors.onPrimary}
+              />
+            </View>
           </View>
         </View>
       </Pressable>
@@ -145,10 +155,8 @@ export function EditorialMiniappCover({
   );
 }
 
-function EditorialNetwork({ tone }: { tone: EditorialMiniappTone }) {
+function EditorialCoverArt({ tone }: { tone: EditorialMiniappTone }) {
   const { colors } = useTheme();
-  const warm = tone === 'recipes';
-  const muted = tone === 'test';
   return (
     <Svg
       accessible={false}
@@ -157,14 +165,45 @@ function EditorialNetwork({ tone }: { tone: EditorialMiniappTone }) {
       viewBox="0 0 170 90"
       style={StyleSheet.absoluteFill}
     >
-      <Line x1="-6" y1="69" x2="51" y2="20" stroke={colors.primary} strokeWidth="0.8" opacity={muted ? 0.12 : 0.2} />
-      <Line x1="51" y1="20" x2="108" y2="58" stroke={colors.primary} strokeWidth="0.8" opacity={muted ? 0.1 : 0.18} />
-      <Line x1="108" y1="58" x2="177" y2="22" stroke={colors.primary} strokeWidth="0.8" opacity={muted ? 0.1 : 0.2} />
-      <Line x1="27" y1="86" x2="108" y2="58" stroke={colors.primary} strokeWidth="0.8" opacity={muted ? 0.08 : 0.15} />
-      <Circle cx="51" cy="20" r="4" fill={colors.primaryLight} opacity={muted ? 0.22 : 0.42} />
-      <Circle cx="108" cy="58" r="5" fill={warm ? colors.accent : colors.primary} opacity={muted ? 0.18 : 0.38} />
-      <Circle cx="150" cy="36" r="2.4" fill={colors.accent} opacity={muted ? 0.2 : 0.72} />
-      <Circle cx="27" cy="86" r="2.5" fill={colors.primaryLight} opacity={0.32} />
+      {tone === 'clinic' && (
+        <>
+          <Circle cx="146" cy="12" r="43" fill={colors.primary} opacity={0.055} />
+          <Circle cx="129" cy="51" r="19" fill={colors.primaryLight} opacity={0.09} />
+          <Path
+            d="M92 82 C112 64 138 52 177 46"
+            fill="none"
+            stroke={colors.primary}
+            strokeWidth="1.5"
+            opacity={0.18}
+          />
+          <Circle cx="126" cy="61" r="3.5" fill={colors.primary} opacity={0.24} />
+          <Circle cx="154" cy="50" r="5.5" fill={colors.accent} opacity={0.36} />
+        </>
+      )}
+      {tone === 'recipes' && (
+        <>
+          <Circle cx="145" cy="17" r="39" fill={colors.accent} opacity={0.075} />
+          <Path
+            d="M119 73 C104 50 118 27 151 18 C154 46 145 66 119 73 Z"
+            fill={colors.accent}
+            opacity={0.18}
+          />
+          <Path
+            d="M122 70 C142 58 153 42 158 22"
+            fill="none"
+            stroke={colors.primary}
+            strokeWidth="1.3"
+            opacity={0.2}
+          />
+          <Circle cx="151" cy="26" r="4" fill={colors.primaryLight} opacity={0.2} />
+        </>
+      )}
+      {tone === 'test' && (
+        <>
+          <Circle cx="143" cy="18" r="42" fill={colors.primary} opacity={0.045} />
+          <Circle cx="143" cy="18" r="22" fill="none" stroke={colors.primary} strokeWidth="1" opacity={0.08} />
+        </>
+      )}
     </Svg>
   );
 }
@@ -173,13 +212,13 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     minHeight: 218,
-    borderWidth: 1,
+    borderWidth: 1.25,
     borderRadius: 22,
     overflow: 'hidden',
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.13,
-    shadowRadius: 22,
-    elevation: 5,
+    shadowOpacity: 0.17,
+    shadowRadius: 18,
+    elevation: 7,
   },
   testCard: {
     borderStyle: 'dashed',
@@ -230,14 +269,22 @@ const styles = StyleSheet.create({
   },
   summary: { flexGrow: 1, marginTop: 4, fontSize: 12, lineHeight: 16 },
   footer: {
-    minHeight: 24,
+    minHeight: 38,
     marginTop: 7,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 8,
   },
-  footerRule: { width: 21, height: 1 },
+  footerRule: { width: 25, height: 1 },
+  openAction: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   favoriteWrap: { position: 'absolute', top: 8, right: 8, zIndex: 2 },
   favorite: {
     width: 44,

@@ -31,7 +31,10 @@ test('public miniapps render as editorial covers with full-card navigation and a
   assert.match(tile, /catalog\.publicBadge/u);
   assert.match(cover, /useEditorialTileMotion/u);
   assert.match(cover, /fontFamily: 'Georgia'/u);
-  assert.match(cover, /EditorialNetwork/u);
+  assert.match(cover, /EditorialCoverArt/u);
+  assert.doesNotMatch(cover, /<Line(?:\s|\/>)/u);
+  assert.match(cover, /styles\.openAction/u);
+  assert.match(cover, /colors\.onPrimary/u);
 });
 
 test('test miniapps reuse the editorial cover but remain visually subordinate while Tools stay quiet rows', () => {
