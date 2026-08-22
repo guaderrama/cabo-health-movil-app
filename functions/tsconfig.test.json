@@ -5,9 +5,11 @@
   },
   "include": [
     "src/domain/**/*.ts",
+    "src/infrastructure/**/*.ts",
     "src/repositories/**/*.ts",
     "src/security/**/*.ts",
-    "src/tests/**/*.ts"
+    "src/tests/**/*.ts",
+    "src/tools/**/*.ts"
   ],
   "exclude": []
 }

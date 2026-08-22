@@ -47,6 +47,7 @@ yarn-error.*
 
 # Development and private material not needed by the production upload
 docs/
+functions/
 prototypes/
 tests/
 scripts/seed-firestore.ts
@@ -56,12 +57,12 @@ docs/operations/private/
 
 # Server, staff, hosted-web, release-evidence, and private content never belong
 # in the native EAS build context.
-functions/
 staff-portal/
 web-hosting/
 miniapps/
 client-resources-private/
 app-review-private/
+release/private/
 release/
 firebase.json
 .firebaserc

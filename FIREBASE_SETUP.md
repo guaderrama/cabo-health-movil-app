@@ -19,3 +19,8 @@ server uses its runtime identity and secrets from a managed secret store.
 
 For backup, deployment, verification, and rollback gates, follow
 `docs/operations/firestore-legacy-containment.md`.
+
+For the isolated default/review database configuration, emulator proof, and
+guarded owner/bootstrap handoff, follow
+`docs/operations/firebase-activation.md`. Its cloud steps require separate
+owner approval; the checked-in configuration remains deliberately fail-closed.

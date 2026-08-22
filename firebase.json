@@ -12,8 +12,16 @@
       "source": "functions"
     }
   ],
-  "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  }
+  "firestore": [
+    {
+      "database": "(default)",
+      "rules": "firestore.rules",
+      "indexes": "firestore.indexes.json"
+    },
+    {
+      "database": "UNCONFIGURED_CABOHEALTH_REVIEW_DATABASE_ID",
+      "rules": "firestore.review.rules",
+      "indexes": "firestore.review.indexes.json"
+    }
+  ]
 }
