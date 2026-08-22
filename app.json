@@ -26,6 +26,10 @@
         "WKAppBoundDomains": [
           "cabohealth.org"
         ]
+      },
+      "privacyManifests": {
+        "NSPrivacyTracking": false,
+        "NSPrivacyTrackingDomains": []
       }
     },
     "android": {

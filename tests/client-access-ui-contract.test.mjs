@@ -10,8 +10,12 @@ test('home always presents the locked Client Resources folio and code modal', ()
   const folio = read('features/clientAccess/ClientAccessFolio.tsx');
   const modal = read('features/clientAccess/ClientAccessModal.tsx');
   const provider = read('context/ClientAccessContext.tsx');
+  const bootstrap = read('context/ClientAccessBootstrap.tsx');
 
-  assert.match(root, /<ClientAccessProvider>/u);
+  assert.match(root, /<ClientAccessBootstrap>/u);
+  assert.match(bootstrap, /<ClientAccessProvider/u);
+  assert.match(bootstrap, /loadClientAccessRuntime/u);
+  assert.match(bootstrap, /runtime\?\.gateway/u);
   assert.match(home, /<ClientAccessFolio/u);
   assert.match(home, /<ClientAccessModal/u);
   assert.match(home, /t\('clientAccess\.sectionTitle'\)/u);
@@ -20,7 +24,8 @@ test('home always presents the locked Client Resources folio and code modal', ()
   assert.match(folio, /badgeIcon="lock-closed-outline"/u);
   assert.match(modal, /secureTextEntry/u);
   assert.match(provider, /createLaunch: async \(\) => null/u);
-  assert.doesNotMatch(`${home}\n${folio}\n${modal}\n${provider}`, /AsyncStorage|firebase|firestore/iu);
+  assert.doesNotMatch(`${root}\n${home}\n${folio}\n${modal}\n${provider}\n${bootstrap}`, /firebase|firestore/iu);
+  assert.doesNotMatch(`${home}\n${folio}\n${modal}\n${provider}\n${bootstrap}`, /AsyncStorage/u);
 });
 
 test('client access refreshes on foreground and never stores the submitted code', () => {

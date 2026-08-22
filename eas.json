@@ -7,14 +7,30 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "APP_ENV": "development"
+      },
       "ios": {
         "simulator": true
       }
     },
+    "development-device": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "APP_ENV": "development"
+      }
+    },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "APP_ENV": "staging"
+      }
     },
     "production": {
+      "env": {
+        "APP_ENV": "production"
+      },
       "ios": {
         "resourceClass": "m-medium"
       }

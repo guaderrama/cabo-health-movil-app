@@ -10,7 +10,7 @@ import { View, StyleSheet } from 'react-native';
 import { ThemeProvider, useTheme } from '../hooks';
 import { PreferencesProvider } from '../context/PreferencesContext';
 import { FavoritesProvider } from '../context/FavoritesContext';
-import { ClientAccessProvider } from '../context/ClientAccessContext';
+import { ClientAccessBootstrap } from '../context/ClientAccessBootstrap';
 import {
   removeLegacyPrivateState,
   settleLegacyPrivateStateMigration,
@@ -44,11 +44,11 @@ export default function RootLayout() {
   return (
     <ThemeProvider>
       <PreferencesProvider>
-        <ClientAccessProvider>
+        <ClientAccessBootstrap>
           <FavoritesProvider>
             <ThemedLayout />
           </FavoritesProvider>
-        </ClientAccessProvider>
+        </ClientAccessBootstrap>
       </PreferencesProvider>
     </ThemeProvider>
   );

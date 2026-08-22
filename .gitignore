@@ -39,6 +39,11 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Native Firebase service files are supplied per environment at build time.
+/firebase-config/
+/GoogleService-Info*.plist
+/google-services*.json
+
 # Private Client Resources activation files (examples/schemas remain versioned)
 /client-resources-private/config/broker-config.json
 /client-resources-private/config/backend-factory.php
