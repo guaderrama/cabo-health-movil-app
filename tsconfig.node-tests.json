@@ -20,6 +20,7 @@
     "features/clientAccess/clientAccessController.ts",
     "features/clientAccess/firebaseClientAccessAdapter.ts",
     "features/clientAccess/clientInstallationStore.ts",
+    "features/clientAccess/clientResourceDeepLink.ts",
     "features/clientAccess/nativeClientAccessRuntime.ts",
     "features/clientAccess/reactNativeFirebaseBridge.ts",
     "features/clientAccess/clientResourceNavigation.ts",
