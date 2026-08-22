@@ -33,6 +33,7 @@ function moduleHtml(slug) {
 function localOriginArtifact() {
   const bodies = new Map([
     ['.well-known/apple-app-site-association', readFileSync(join(projectRoot, 'web-hosting/cabohealth.org/.well-known/apple-app-site-association'))],
+    ['app/index.html', readFileSync(join(projectRoot, 'web-hosting/cabohealth.org/app/index.html'))],
     ['app/privacy/index.html', legalHtml('privacy')],
     ['app/report-content/index.html', legalHtml('report-content')],
     ['app/support/index.html', legalHtml('support')],
@@ -63,10 +64,11 @@ function localOriginArtifact() {
     deployMode: '0644',
     kind: path === 'apps/.htaccess' ? 'apache-security'
       : path.startsWith('apps/') ? 'task6b-miniapp'
+        : path === 'app/index.html' ? 'marketing-landing'
         : path.startsWith('app/') ? 'task7-legal' : 'aasa',
   }));
   const promoteTargets = [
-    'public_html/apps/.htaccess', 'public_html/apps/shared', 'public_html/app/privacy',
+    'public_html/apps/.htaccess', 'public_html/apps/shared', 'public_html/app/index.html', 'public_html/app/privacy',
     'public_html/app/terms', 'public_html/app/support', 'public_html/app/report-content',
     'public_html/apps/healthy-recipes', 'public_html/apps/clinic-guide',
     'public_html/.well-known/apple-app-site-association',
@@ -83,6 +85,7 @@ function localOriginArtifact() {
   const inventorySha256 = sha256(Buffer.from(`${JSON.stringify(policy)}\n`));
   const inputPolicy = [
     ['miniapps/dist', 'task6b-miniapp'],
+    ['web-hosting/cabohealth.org/app/index.html', 'marketing-landing'],
     ['web-hosting/cabohealth.org/app/privacy/index.html', 'task7-legal'],
     ['web-hosting/cabohealth.org/app/terms/index.html', 'task7-legal'],
     ['web-hosting/cabohealth.org/app/support/index.html', 'task7-legal'],
@@ -275,7 +278,7 @@ test('sanitized production evidence reconciles the exact artifact URL set withou
       redirects: 0,
       contentType: mediaType,
       sha256,
-      headerProfile: path.startsWith('apps/') ? 'miniapp-security' : (path.startsWith('app/') ? 'legal-frame-blocked' : 'aasa'),
+      headerProfile: path.startsWith('apps/') ? 'miniapp-security' : (path === 'app/index.html' ? 'marketing-frame-blocked' : (path.startsWith('app/') ? 'legal-frame-blocked' : 'aasa')),
       cookieFree: true,
       canonical: true,
     }));
@@ -299,7 +302,7 @@ test('sanitized production evidence reconciles the exact artifact URL set withou
       status: 'verified',
       releaseId: artifact.releaseId,
       rootCount: 3,
-      fileCount: 16,
+      fileCount: 17,
       paths: artifact.files.map(({ path }) => path),
       inventorySha256: artifact.inventorySha256,
     },
@@ -433,7 +436,7 @@ test('origin verification accepts exact local HTTP responses and emits only sani
       },
     });
     assert.equal(result.rootStatus, 200);
-    assert.equal(result.urls.length, 15);
+    assert.equal(result.urls.length, 16);
     assert.equal(JSON.stringify(result).includes('headers'), false);
     assert.equal(JSON.stringify(result).includes('set-cookie'), false);
     assert.equal(result.urls.every(({ cookieFree }) => cookieFree === true), true);

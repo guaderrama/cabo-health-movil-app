@@ -27,6 +27,7 @@ from typing import Any
 
 PAYLOAD_PATHS = (
     ".well-known/apple-app-site-association",
+    "app/index.html",
     "app/privacy/index.html",
     "app/report-content/index.html",
     "app/support/index.html",
@@ -46,6 +47,7 @@ PAYLOAD_PATHS = (
 INPUT_PATHS = (
     "miniapps/shared/security-headers.conf",
     "web-hosting/cabohealth.org/.well-known/apple-app-site-association",
+    "web-hosting/cabohealth.org/app/index.html",
     "web-hosting/cabohealth.org/app/privacy/index.html",
     "web-hosting/cabohealth.org/app/report-content/index.html",
     "web-hosting/cabohealth.org/app/support/index.html",
@@ -60,6 +62,7 @@ HOSTED_SOURCE_PATHS = tuple(
 PROMOTE_TARGETS = (
     "public_html/apps/.htaccess",
     "public_html/apps/shared",
+    "public_html/app/index.html",
     "public_html/app/privacy",
     "public_html/app/terms",
     "public_html/app/support",
@@ -74,6 +77,8 @@ APP_ID = "DQ8PH2DZ3R.com.cabohealth.app"
 CAPSULE_SIZE = 719595
 CAPSULE_SHA256 = "2c839893cca416fdd471fef037bdfb8fc099960d9855e9d7b47981b13892602b"
 APACHE_SECURITY_SHA256 = "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"
+MARKETING_LANDING_SIZE = 15758
+MARKETING_LANDING_SHA256 = "f7fa9340fd458da3e49962b7dfe2bb222968c33f9a59146c0b040255eebe222a"
 MINIAPP_MIME_OVERLAY = (
     b"Options -Indexes\n"
     b"<FilesMatch \"\\.html$\">\n"
@@ -193,7 +198,7 @@ ALLOWED_MEDIA_TYPES = {
     "text/javascript; charset=utf-8",
     "text/plain; charset=utf-8",
 }
-ALLOWED_KINDS = {"task6b-miniapp", "task7-legal", "aasa", "apache-security"}
+ALLOWED_KINDS = {"task6b-miniapp", "task7-legal", "marketing-landing", "aasa", "apache-security"}
 OPEN_DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 OPEN_FILE_READ = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 TREE_DIRECTORIES = (
@@ -219,19 +224,20 @@ UNITS = (
         "apps/shared/shell.js",
         "apps/shared/styles.css",
     )),
-    ("app/privacy", "02-app-privacy", ("app/privacy/index.html",)),
-    ("app/terms", "03-app-terms", ("app/terms/index.html",)),
-    ("app/support", "04-app-support", ("app/support/index.html",)),
-    ("app/report-content", "05-app-report-content", ("app/report-content/index.html",)),
-    ("apps/healthy-recipes", "06-apps-healthy-recipes", (
+    ("app/index.html", "02-app-index", ("app/index.html",)),
+    ("app/privacy", "03-app-privacy", ("app/privacy/index.html",)),
+    ("app/terms", "04-app-terms", ("app/terms/index.html",)),
+    ("app/support", "05-app-support", ("app/support/index.html",)),
+    ("app/report-content", "06-app-report-content", ("app/report-content/index.html",)),
+    ("apps/healthy-recipes", "07-apps-healthy-recipes", (
         "apps/healthy-recipes/app.js",
         "apps/healthy-recipes/index.html",
     )),
-    ("apps/clinic-guide", "07-apps-clinic-guide", (
+    ("apps/clinic-guide", "08-apps-clinic-guide", (
         "apps/clinic-guide/app.js",
         "apps/clinic-guide/index.html",
     )),
-    (".well-known/apple-app-site-association", "08-aasa", (
+    (".well-known/apple-app-site-association", "09-aasa", (
         ".well-known/apple-app-site-association",
     )),
 )
@@ -247,9 +253,9 @@ TRANSITION_KEYS = (
     "transition",
     "attempt",
 )
-TRANSITION_NAME = re.compile(r"^(0[0-8])-(prepared|promoted|rolled-back)-([0-9]{3})\.json$")
+TRANSITION_NAME = re.compile(r"^(0[0-9])-(prepared|promoted|rolled-back)-([0-9]{3})\.json$")
 CANDIDATE_NAME = re.compile(
-    r"^(0[0-8])-(prepared|promoted|rolled-back)-([0-9]{3})(?:-[a-f0-9]{16})?\.candidate$"
+    r"^(0[0-9])-(prepared|promoted|rolled-back)-([0-9]{3})(?:-[a-f0-9]{16})?\.candidate$"
 )
 OPERATION_LOCK_CANDIDATE_NAME = re.compile(r"^operation-lock-[a-f0-9]{32}\.candidate$")
 OPERATION_LOCK_BYTES = b"CABOHEALTH_OPERATION_LOCK_V1\n"
@@ -269,6 +275,7 @@ MANIFEST_KEYS = (
 )
 INPUT_MANIFEST_PATHS = (
     "miniapps/dist",
+    "web-hosting/cabohealth.org/app/index.html",
     "web-hosting/cabohealth.org/app/privacy/index.html",
     "web-hosting/cabohealth.org/app/terms/index.html",
     "web-hosting/cabohealth.org/app/support/index.html",
@@ -279,6 +286,7 @@ INPUT_MANIFEST_PATHS = (
 )
 INPUT_MANIFEST_KINDS = (
     "task6b-miniapp",
+    "marketing-landing",
     "task7-legal",
     "task7-legal",
     "task7-legal",
@@ -406,6 +414,8 @@ def expected_kind(path: str) -> str:
         return "apache-security"
     if path.startswith("apps/"):
         return "task6b-miniapp"
+    if path == "app/index.html":
+        return "marketing-landing"
     if path.startswith("app/"):
         return "task7-legal"
     return "aasa"
@@ -2182,7 +2192,7 @@ def inventory_live(root_path: str, release_argument: str, raw: bytes) -> dict[st
             verify_hosting_overlays(root_fd, public_fd)
             expected_children = {
                 "apps": (".htaccess", "clinic-guide", "healthy-recipes", "shared"),
-                "app": (".htaccess", "privacy", "report-content", "support", "terms"),
+                "app": (".htaccess", "index.html", "privacy", "report-content", "support", "terms"),
                 ".well-known": (".htaccess", "apple-app-site-association"),
             }
             for parent, children in expected_children.items():
@@ -4300,6 +4310,14 @@ def independently_captured_assembly(root_fd: int) -> tuple[dict[str, bytes], lis
     aasa_path = "web-hosting/cabohealth.org/.well-known/apple-app-site-association"
     if captured_inputs[aasa_path] != canonical_aasa_bytes():
         fail("WEB_RELEASE_AASA_INVALID")
+    marketing_path = "web-hosting/cabohealth.org/app/index.html"
+    marketing_bytes = captured_inputs[marketing_path]
+    if (
+        len(marketing_bytes) != MARKETING_LANDING_SIZE
+        or hashlib.sha256(marketing_bytes).hexdigest() != MARKETING_LANDING_SHA256
+    ):
+        fail("MARKETING_LANDING_PIN_MISMATCH")
+    assert_static_web_policy("app/index.html", marketing_bytes)
     for slug in LEGAL_SLUGS:
         legal_path = f"web-hosting/cabohealth.org/app/{slug}/index.html"
         legal_bytes = captured_inputs[legal_path]
@@ -4315,6 +4333,7 @@ def independently_captured_assembly(root_fd: int) -> tuple[dict[str, bytes], lis
     expected_buffers[".well-known/apple-app-site-association"] = captured_inputs[
         aasa_path
     ]
+    expected_buffers["app/index.html"] = marketing_bytes
     for slug in LEGAL_SLUGS:
         expected_buffers[f"app/{slug}/index.html"] = captured_inputs[
             f"web-hosting/cabohealth.org/app/{slug}/index.html"

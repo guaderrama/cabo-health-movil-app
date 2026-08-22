@@ -13,6 +13,7 @@ const assemblerPath = join(projectRoot, 'scripts/assemble-web-release.mjs');
 const helperPath = join(projectRoot, 'scripts/secure_web_release.py');
 const payloadPaths = Object.freeze([
   '.well-known/apple-app-site-association',
+  'app/index.html',
   'app/privacy/index.html',
   'app/report-content/index.html',
   'app/support/index.html',
@@ -32,6 +33,7 @@ const payloadPaths = Object.freeze([
 const promoteTargets = Object.freeze([
   'public_html/apps/.htaccess',
   'public_html/apps/shared',
+  'public_html/app/index.html',
   'public_html/app/privacy',
   'public_html/app/terms',
   'public_html/app/support',
@@ -70,7 +72,7 @@ function fixtureTransport() {
     const mediaType = path.endsWith('apple-app-site-association')
       ? 'application/json'
       : ({ html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', png: 'image/png' }[extension] ?? 'text/plain; charset=utf-8');
-    const kind = path.startsWith('apps/')
+    const kind = path === 'app/index.html' ? 'marketing-landing' : path.startsWith('apps/')
       ? (path === 'apps/.htaccess' ? 'apache-security' : 'task6b-miniapp')
       : (path.startsWith('app/') ? 'task7-legal' : 'aasa');
     return {
@@ -115,6 +117,7 @@ function materializeFixture(transport = fixtureTransport()) {
 function fixtureArtifactManifest(transport) {
   const inputs = [
     'miniapps/dist',
+    'web-hosting/cabohealth.org/app/index.html',
     'web-hosting/cabohealth.org/app/privacy/index.html',
     'web-hosting/cabohealth.org/app/terms/index.html',
     'web-hosting/cabohealth.org/app/support/index.html',
@@ -127,6 +130,7 @@ function fixtureArtifactManifest(transport) {
     size: 1,
     sha256: 'e'.repeat(64),
     kind: path === 'miniapps/dist' ? 'task6b-miniapp'
+      : path === 'web-hosting/cabohealth.org/app/index.html' ? 'marketing-landing'
       : path.includes('/app/') ? 'task7-legal'
         : path.includes('apple-app-site-association') ? 'aasa' : 'apache-security',
   }));
@@ -375,7 +379,7 @@ test('the real assembler refuses materialization until independently reviewed de
   assert.deepEqual(existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null, bundlesBefore);
 });
 
-test('descriptor-relative staging creates the exact private 16-file tree', () => {
+test('descriptor-relative staging creates the exact private 17-file tree', () => {
   const { result, root, transport } = materializeFixture();
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
@@ -417,6 +421,7 @@ test('input capture reads only the fixed public source allowlist through retaine
   const sourcePaths = [
     'miniapps/shared/security-headers.conf',
     'web-hosting/cabohealth.org/.well-known/apple-app-site-association',
+    'web-hosting/cabohealth.org/app/index.html',
     'web-hosting/cabohealth.org/app/privacy/index.html',
     'web-hosting/cabohealth.org/app/report-content/index.html',
     'web-hosting/cabohealth.org/app/support/index.html',
@@ -440,7 +445,7 @@ test('input capture reads only the fixed public source allowlist through retaine
   }
 });
 
-test('remote materialization foundation creates only the nine fixed promotion leaves in a private local stage', () => {
+test('remote materialization foundation creates only the ten fixed promotion leaves in a private local stage', () => {
   const transport = fixtureTransport();
   const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-stage-fixture-'));
   const result = spawnSync('python3', [helperPath, 'materialize-stage', root, transport.releaseId], {
@@ -461,7 +466,7 @@ test('remote materialization foundation creates only the nine fixed promotion le
   assert.equal(statSync(join(publicRoot, 'apps/shared')).mode & 0o777, 0o755);
 });
 
-test('atomic local promotion and rollback change only the nine leaves and restore present and absent targets', () => {
+test('atomic local promotion and rollback change only the ten leaves and restore present and absent targets', () => {
   const transport = fixtureTransport();
   const root = mkdtempSync(join(fixtureTmp, 'cabohealth-web-promote-fixture-'));
   const stageResult = spawnSync('python3', [helperPath, 'materialize-stage', root, transport.releaseId], {
@@ -544,6 +549,7 @@ test('materialize-release rejects pending and coordinated compliance/legal/AASA/
   pendingFacts.ageRating.miniapps['clinic-guide'] = { value: null, status: 'pending' };
   writeFileSync(pendingFactsPath, canonicalJson(pendingFacts));
   const inputPaths = [
+    'web-hosting/cabohealth.org/app/index.html',
     'web-hosting/cabohealth.org/app/privacy/index.html',
     'web-hosting/cabohealth.org/app/terms/index.html',
     'web-hosting/cabohealth.org/app/support/index.html',
@@ -561,6 +567,7 @@ test('materialize-release rejects pending and coordinated compliance/legal/AASA/
   const envelope = () => {
     const outputs = new Map([
       ['.well-known/apple-app-site-association', readFileSync(join(root, 'web-hosting/cabohealth.org/.well-known/apple-app-site-association'))],
+      ['app/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/index.html'))],
       ['app/privacy/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/privacy/index.html'))],
       ['app/report-content/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/report-content/index.html'))],
       ['app/support/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/support/index.html'))],
@@ -635,6 +642,7 @@ test('post-pin materialization independently reaches legal, canonical AASA, and 
   const { createWebReleaseTransport } = await import('../scripts/assemble-web-release.mjs');
   const legalSlugs = ['privacy', 'report-content', 'support', 'terms'];
   const inputPaths = [
+    'web-hosting/cabohealth.org/app/index.html',
     'web-hosting/cabohealth.org/app/privacy/index.html',
     'web-hosting/cabohealth.org/app/terms/index.html',
     'web-hosting/cabohealth.org/app/support/index.html',
@@ -662,7 +670,7 @@ test('post-pin materialization independently reaches legal, canonical AASA, and 
     writeFileSync(join(root, 'release/compliance-facts.json'), canonicalJson(facts));
     for (const source of inputPaths) {
       const original = readFileSync(join(projectRoot, source));
-      const bytes = source.includes('/app/')
+      const bytes = source.includes('/app/') && source !== 'web-hosting/cabohealth.org/app/index.html'
         ? Buffer.concat([original, Buffer.from('<!-- independently reviewed final fixture -->\n')])
         : original;
       writeFixturePath(root, source, bytes);
@@ -688,6 +696,7 @@ test('post-pin materialization independently reaches legal, canonical AASA, and 
       const capsule = JSON.parse(capsuleBytes.toString('utf8'));
       const outputs = new Map([
         ['.well-known/apple-app-site-association', readFileSync(join(root, 'web-hosting/cabohealth.org/.well-known/apple-app-site-association'))],
+        ['app/index.html', readFileSync(join(root, 'web-hosting/cabohealth.org/app/index.html'))],
         ...legalSlugs.map((slug) => [
           `app/${slug}/index.html`,
           readFileSync(join(root, `web-hosting/cabohealth.org/app/${slug}/index.html`)),

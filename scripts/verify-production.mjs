@@ -30,6 +30,7 @@ const HIDDEN_HOSTING_CONFIG_PATHS = Object.freeze([
 ]);
 const ORIGIN_PAYLOAD_PATHS = Object.freeze([
   '.well-known/apple-app-site-association',
+  'app/index.html',
   'app/privacy/index.html',
   'app/report-content/index.html',
   'app/support/index.html',
@@ -55,6 +56,7 @@ const LEGAL_URLS = Object.freeze([
 const PROMOTE_TARGETS = Object.freeze([
   'public_html/apps/.htaccess',
   'public_html/apps/shared',
+  'public_html/app/index.html',
   'public_html/app/privacy',
   'public_html/app/terms',
   'public_html/app/support',
@@ -65,6 +67,7 @@ const PROMOTE_TARGETS = Object.freeze([
 ]);
 const INPUT_POLICY = Object.freeze([
   Object.freeze(['miniapps/dist', 'task6b-miniapp']),
+  Object.freeze(['web-hosting/cabohealth.org/app/index.html', 'marketing-landing']),
   Object.freeze(['web-hosting/cabohealth.org/app/privacy/index.html', 'task7-legal']),
   Object.freeze(['web-hosting/cabohealth.org/app/terms/index.html', 'task7-legal']),
   Object.freeze(['web-hosting/cabohealth.org/app/support/index.html', 'task7-legal']),
@@ -108,6 +111,7 @@ function publicUrlPath(path) {
 
 function headerProfile(path) {
   if (path.startsWith('apps/')) return 'miniapp-security';
+  if (path === 'app/index.html') return 'marketing-frame-blocked';
   if (path.startsWith('app/')) return 'legal-frame-blocked';
   return 'aasa';
 }
@@ -132,6 +136,7 @@ function expectedMediaType(path) {
 function expectedKind(path) {
   if (path === 'apps/.htaccess') return 'apache-security';
   if (path.startsWith('apps/')) return 'task6b-miniapp';
+  if (path === 'app/index.html') return 'marketing-landing';
   if (path.startsWith('app/')) return 'task7-legal';
   return 'aasa';
 }

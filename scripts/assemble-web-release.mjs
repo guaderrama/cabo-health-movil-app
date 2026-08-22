@@ -47,6 +47,7 @@ const LEGAL_SOURCES = Object.freeze([
 const INPUT_PATHS = Object.freeze([
   'miniapps/shared/security-headers.conf',
   'web-hosting/cabohealth.org/.well-known/apple-app-site-association',
+  'web-hosting/cabohealth.org/app/index.html',
   'web-hosting/cabohealth.org/app/privacy/index.html',
   'web-hosting/cabohealth.org/app/report-content/index.html',
   'web-hosting/cabohealth.org/app/support/index.html',
@@ -58,6 +59,12 @@ const DRAFT_LEGAL_SHA256 = Object.freeze({
   'report-content': '35d304f3ee82364616ab9b0f96013319857d4acc347b6764579a7604392bffb5',
   support: '4580d6de3db45af3830428497715d903cad557c143a5312d95b6c73f7f575a1a',
   terms: '0dfc0b40144db111e78e2a2e6a1de1c0e978c9a31bb9dceb819599d7b5e70d44',
+});
+const REVIEWED_MARKETING_LANDING = Object.freeze({
+  source: 'web-hosting/cabohealth.org/app/index.html',
+  output: 'app/index.html',
+  size: 15758,
+  sha256: 'f7fa9340fd458da3e49962b7dfe2bb222968c33f9a59146c0b040255eebe222a',
 });
 
 // Pinned after owner-authorized fact reconciliation and independent byte review.
@@ -73,6 +80,7 @@ export const FINAL_LEGAL_SHA256 = Object.freeze({
 export const WEB_DEPLOYMENT_READINESS_SHA256 = null;
 export const WEB_RELEASE_PATHS = Object.freeze([
   '.well-known/apple-app-site-association',
+  'app/index.html',
   'app/privacy/index.html',
   'app/report-content/index.html',
   'app/support/index.html',
@@ -93,6 +101,7 @@ const MINIAPP_PATHS = Object.freeze(WEB_RELEASE_PATHS.filter((path) => path.star
 export const WEB_PROMOTE_TARGETS = Object.freeze([
   'public_html/apps/.htaccess',
   'public_html/apps/shared',
+  'public_html/app/index.html',
   'public_html/app/privacy',
   'public_html/app/terms',
   'public_html/app/support',
@@ -104,6 +113,16 @@ export const WEB_PROMOTE_TARGETS = Object.freeze([
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+export function assertReviewedMarketingLanding(bytes) {
+  if (!Buffer.isBuffer(bytes)
+    || bytes.byteLength !== REVIEWED_MARKETING_LANDING.size
+    || sha256(bytes) !== REVIEWED_MARKETING_LANDING.sha256) {
+    throw new Error('MARKETING_LANDING_PIN_MISMATCH');
+  }
+  assertStaticWebPolicy(REVIEWED_MARKETING_LANDING.output, bytes);
+  return true;
 }
 
 function canonicalJson(value) {
@@ -145,6 +164,7 @@ function mediaTypeFor(path) {
 function kindFor(path) {
   if (path === 'apps/.htaccess') return 'apache-security';
   if (path.startsWith('apps/')) return 'task6b-miniapp';
+  if (path === 'app/index.html') return 'marketing-landing';
   if (path.startsWith('app/')) return 'task7-legal';
   return 'aasa';
 }
@@ -486,6 +506,9 @@ export function planWebRelease(snapshot, reviewedLegalSha256 = FINAL_LEGAL_SHA25
 
   const outputBuffers = new Map();
   outputBuffers.set('.well-known/apple-app-site-association', Buffer.from(aasaBytes));
+  const marketingLandingBytes = capturedInputs.get(REVIEWED_MARKETING_LANDING.source);
+  assertReviewedMarketingLanding(marketingLandingBytes);
+  outputBuffers.set(REVIEWED_MARKETING_LANDING.output, Buffer.from(marketingLandingBytes));
   for (const legal of LEGAL_SOURCES) {
     const bytes = capturedInputs.get(legal.source);
     if (!bytes || sha256(bytes) !== reviewedLegalSha256[legal.slug]) {
@@ -509,6 +532,7 @@ export function planWebRelease(snapshot, reviewedLegalSha256 = FINAL_LEGAL_SHA25
   const legalBySlug = new Map(LEGAL_SOURCES.map((item) => [item.slug, item]));
   const inputs = [
     inputFor('miniapps/dist', 'task6b-miniapp', capsule.bytes),
+    inputFor(REVIEWED_MARKETING_LANDING.source, 'marketing-landing', marketingLandingBytes),
     ...['privacy', 'terms', 'support', 'report-content'].map((slug) => {
       const legal = legalBySlug.get(slug);
       return inputFor(legal.source, 'task7-legal', capturedInputs.get(legal.source));
