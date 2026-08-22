@@ -53,3 +53,19 @@ scripts/seed-firestore.ts
 screenshots-in-progress/
 private-notes/
 docs/operations/private/
+
+# Server, staff, hosted-web, release-evidence, and private content never belong
+# in the native EAS build context.
+functions/
+staff-portal/
+web-hosting/
+miniapps/
+client-resources-private/
+app-review-private/
+release/
+firebase.json
+.firebaserc
+firestore.rules
+firestore.indexes.json
+firestore.review.rules
+firestore.review.indexes.json
