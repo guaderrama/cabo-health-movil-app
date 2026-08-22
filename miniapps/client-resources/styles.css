@@ -1,0 +1,86 @@
+.client-resources-main {
+  display: grid;
+  gap: clamp(1rem, 3vw, 1.75rem);
+}
+
+.client-session-status {
+  align-items: center;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.client-session-mark {
+  align-items: center;
+  background: var(--ink, #073047);
+  border-radius: 50%;
+  color: #fff;
+  display: inline-flex;
+  font-size: .78rem;
+  font-weight: 800;
+  height: 3.25rem;
+  justify-content: center;
+  letter-spacing: .12em;
+  width: 3.25rem;
+}
+
+.client-resource-content[hidden],
+.client-session-status[hidden],
+.client-session-actions[hidden] {
+  display: none;
+}
+
+.client-session-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .8rem 1rem;
+}
+
+.client-session-end {
+  background: #073047;
+  border: 1px solid #073047;
+  border-radius: 999px;
+  color: #fff;
+  font: inherit;
+  font-weight: 750;
+  min-height: 2.85rem;
+  padding: .7rem 1.15rem;
+}
+
+.client-session-end:disabled {
+  cursor: wait;
+  opacity: .6;
+}
+
+.client-session-actions p {
+  color: var(--muted, #557585);
+  margin: 0;
+}
+
+.client-resource-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.client-resource-panel h3 {
+  color: var(--ink, #073047);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(1.35rem, 5vw, 2rem);
+  margin: 0 0 .5rem;
+}
+
+.client-resource-panel li + li {
+  margin-top: .65rem;
+}
+
+.client-privacy-note {
+  border-left: .2rem solid var(--gold, #b68a4a);
+}
+
+@media (min-width: 760px) {
+  .client-resource-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

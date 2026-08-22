@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "locale": "es-MX",
+  "title": "Biblioteca educativa para clientes",
+  "introduction": "Material educativo general para clientes actuales de CaboHealth. No es un diagnóstico, plan de tratamiento ni servicio de emergencia.",
+  "sections": [
+    {
+      "id": "fundamentos-envejecimiento-saludable",
+      "title": "Fundamentos del envejecimiento saludable",
+      "summary": "Usa estas ideas generales para apoyar una conversación con un profesional de salud calificado.",
+      "items": [
+        "Mantén una rutina regular de sueño, alimentación, movimiento y recuperación cuando sea práctico.",
+        "Anota tus preguntas antes de una consulta para recordar con mayor facilidad los temas importantes.",
+        "Busca orientación profesional antes de realizar un cambio importante en tus rutinas de salud."
+      ]
+    },
+    {
+      "id": "uso-recursos-educativos",
+      "title": "Uso de recursos educativos",
+      "summary": "Una lista breve para leer información general de bienestar con el contexto apropiado.",
+      "items": [
+        "Revisa la fecha de publicación y la organización responsable del material.",
+        "Distingue la educación general de los consejos destinados a una sola persona.",
+        "Contacta a los servicios de emergencia locales ante una situación urgente o de emergencia."
+      ]
+    }
+  ]
+}

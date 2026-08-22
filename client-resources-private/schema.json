@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cabohealth.org/schemas/client-resources-v1.json",
+  "title": "CaboHealth general client resource document",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "locale", "title", "introduction", "sections"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "locale": { "enum": ["en", "es-MX"] },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "introduction": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "summary", "items"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "locale": "en",
+  "title": "Client education library",
+  "introduction": "General educational material for existing CaboHealth clients. It is not a diagnosis, treatment plan, or emergency service.",
+  "sections": [
+    {
+      "id": "healthy-aging-foundations",
+      "title": "Healthy-aging foundations",
+      "summary": "Use these general ideas to support a conversation with a qualified health professional.",
+      "items": [
+        "Keep a regular routine for sleep, meals, movement, and recovery when practical.",
+        "Write down questions before an appointment so important topics are easier to remember.",
+        "Seek professional guidance before making a significant change to health routines."
+      ]
+    },
+    {
+      "id": "using-educational-resources",
+      "title": "Using educational resources",
+      "summary": "A short checklist for reading general wellness information with appropriate context.",
+      "items": [
+        "Check the publication date and the organization responsible for the material.",
+        "Separate general education from advice intended for one individual.",
+        "Contact local emergency services for urgent or emergency concerns."
+      ]
+    }
+  ]
+}

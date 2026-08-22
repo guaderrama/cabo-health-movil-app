@@ -39,6 +39,10 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Private Client Resources activation files (examples/schemas remain versioned)
+/client-resources-private/config/broker-config.json
+/client-resources-private/config/backend-factory.php
+
 # typescript
 *.tsbuildinfo
 .test-build/

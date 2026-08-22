@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Secure bilingual CaboHealth resources for existing clients.">
+  <meta name="theme-color" content="#eaf5f7">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; font-src 'self'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'; worker-src 'none'; media-src 'none'">
+  <link rel="canonical" href="https://cabohealth.org/apps/client-resources/">
+  <link rel="stylesheet" href="../shared/styles.css">
+  <link rel="stylesheet" href="./styles.css">
+  <title>Client Resources | CaboHealth</title>
+</head>
+<body data-premium-miniapp="client-resources">
+  <a class="skip-link" href="#main-content"><span lang="en" data-locale="en">Skip to resources</span><span lang="es-MX" data-locale="es-MX">Ir a los recursos</span></a>
+  <div class="page-shell">
+    <header class="premium-topbar" data-network-region>
+      <canvas class="network-canvas" data-network-canvas aria-hidden="true"></canvas>
+      <div class="header-bar">
+        <a class="brand-link" href="https://cabohealth.org/apps/client-resources/" data-aria-label-en="CaboHealth Client Resources" data-aria-label-es="Recursos para clientes CaboHealth" aria-label="CaboHealth Client Resources / Recursos para clientes CaboHealth">
+          <img class="brand-logo" src="../shared/logo-wordmark.png" width="452" height="236" alt="CaboHealth">
+        </a>
+        <nav class="language-control" data-aria-label-en="Language" data-aria-label-es="Idioma" aria-label="Language / Idioma">
+          <button type="button" data-language="en" aria-pressed="true" disabled>English</button>
+          <button type="button" data-language="es-MX" aria-pressed="false" disabled>Español</button>
+        </nav>
+      </div>
+      <div class="hero">
+        <h1><span lang="en" data-locale="en">Client Resources</span><span lang="es-MX" data-locale="es-MX">Recursos para clientes</span></h1>
+        <section lang="en" data-locale="en">
+          <p class="eyebrow">CaboHealth · Secure access</p>
+          <p class="hero-copy">General educational resources for existing CaboHealth clients.</p>
+        </section>
+        <section lang="es-MX" data-locale="es-MX">
+          <p class="eyebrow">CaboHealth · Acceso seguro</p>
+          <p class="hero-copy">Recursos educativos generales para clientes actuales de CaboHealth.</p>
+        </section>
+      </div>
+      <div class="motion-control">
+        <button type="button" data-motion-toggle disabled>Automatic motion unavailable / Movimiento no disponible</button>
+        <span data-motion-status aria-live="polite">Static composition / Composición estática</span>
+      </div>
+    </header>
+
+    <main id="main-content" class="miniapp-main client-resources-main">
+      <section class="information-panel client-session-status" data-resource-status role="status" aria-live="polite" aria-atomic="true">
+        <span class="client-session-mark" aria-hidden="true">CH</span>
+        <div>
+          <p class="eyebrow"><span lang="en" data-locale="en">Protected resource</span><span lang="es-MX" data-locale="es-MX">Recurso protegido</span></p>
+          <h2 data-resource-status-title>Checking access</h2>
+          <p data-resource-status-message>Please wait while we confirm this session.</p>
+        </div>
+      </section>
+
+      <section class="client-resource-content" data-resource-content hidden aria-live="polite"></section>
+
+      <section class="client-session-actions" data-session-actions hidden>
+        <button type="button" class="client-session-end" data-end-session disabled>
+          <span lang="en" data-locale="en">End client session</span>
+          <span lang="es-MX" data-locale="es-MX">Cerrar sesión de cliente</span>
+        </button>
+        <p data-session-action-status role="status" aria-live="polite"></p>
+      </section>
+
+      <aside class="information-panel client-privacy-note">
+        <div lang="en" data-locale="en">
+          <p class="eyebrow">Privacy</p>
+          <h2>General education only</h2>
+          <p>This area does not request names, medical records, diagnoses, laboratory results, uploads, or free-text health information.</p>
+        </div>
+        <div lang="es-MX" data-locale="es-MX">
+          <p class="eyebrow">Privacidad</p>
+          <h2>Sólo educación general</h2>
+          <p>Esta área no solicita nombres, expedientes médicos, diagnósticos, resultados de laboratorio, archivos ni texto libre de salud.</p>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="site-footer">
+      <nav class="footer-nav" data-aria-label-en="Policies and support" data-aria-label-es="Políticas y soporte" aria-label="Policies and support / Políticas y soporte">
+        <ul>
+          <li><a href="https://cabohealth.org/app/privacy/" data-external-action data-label-en="Privacy" data-label-es="Privacidad"><span data-external-label>Privacy / Privacidad</span> <span class="external-marker" aria-hidden="true">↗</span></a></li>
+          <li><a href="https://cabohealth.org/app/terms/" data-external-action data-label-en="Terms" data-label-es="Términos"><span data-external-label>Terms / Términos</span> <span class="external-marker" aria-hidden="true">↗</span></a></li>
+          <li><a href="https://cabohealth.org/app/support/" data-external-action data-label-en="Support" data-label-es="Soporte"><span data-external-label>Support / Soporte</span> <span class="external-marker" aria-hidden="true">↗</span></a></li>
+          <li><a href="https://cabohealth.org/app/report-content/" data-external-action data-label-en="Report Content" data-label-es="Reportar contenido"><span data-external-label>Report Content / Reportar contenido</span> <span class="external-marker" aria-hidden="true">↗</span></a></li>
+        </ul>
+      </nav>
+      <p class="footer-note"><span lang="en" data-locale="en">Content reports are reviewed within 2 business days. Do not include health or other sensitive information.</span><span lang="es-MX" data-locale="es-MX">Los reportes de contenido se revisan dentro de 2 días hábiles. No incluyas información de salud ni otra información sensible.</span></p>
+      <p class="footer-note"><span lang="en" data-locale="en">No emergency service or personalized medical care is provided through this resource.</span><span lang="es-MX" data-locale="es-MX">Este recurso no presta servicios de emergencia ni atención médica personalizada.</span></p>
+    </footer>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

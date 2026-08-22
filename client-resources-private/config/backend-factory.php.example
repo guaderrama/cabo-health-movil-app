@@ -1,0 +1,15 @@
+<?php
+
+declare(strict_types=1);
+
+return static function (): ClientResourcesBackend {
+    $configPath = getenv('CABOHEALTH_CLIENT_RESOURCES_SIGNING_CONFIG');
+    $documentRoot = (string) ($_SERVER['DOCUMENT_ROOT'] ?? '');
+    if (!is_string($configPath) || $configPath === '') {
+        throw new ClientResourcesUnavailable('Private broker signing configuration is not installed.');
+    }
+    return SignedFunctionsClientResourcesBackend::fromPrivateConfigFile(
+        $configPath,
+        $documentRoot,
+    );
+};
