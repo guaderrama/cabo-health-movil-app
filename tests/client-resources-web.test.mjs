@@ -7,7 +7,7 @@ import {
   isClientResourceDocument,
   requestClientResources,
   requestEndClientSession,
-} from '../miniapps/client-resources/app.js';
+} from '../web-hosting/cabohealth.org/apps/client-resources/client-resources-api.js';
 
 test('the public shell fails closed when the protected API returns 401', async () => {
   let bodyRead = false;
@@ -142,9 +142,10 @@ test('ending a client session uses same-origin credentials and an in-memory CSRF
 
 test('the public shell contains no protected educational material', () => {
   const publicBundle = [
-    'miniapps/client-resources/index.html',
-    'miniapps/client-resources/app.js',
-    'miniapps/client-resources/styles.css',
+    'web-hosting/cabohealth.org/apps/client-resources/index.html',
+    'web-hosting/cabohealth.org/apps/client-resources/app.js',
+    'web-hosting/cabohealth.org/apps/client-resources/client-resources-api.js',
+    'web-hosting/cabohealth.org/apps/client-resources/styles.css',
   ].map((path) => readFileSync(path, 'utf8')).join('\n');
 
   for (const locale of ['en', 'es-MX']) {

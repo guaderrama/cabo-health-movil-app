@@ -7,7 +7,8 @@ deployment was performed as part of this change.
 
 ## Trust boundary
 
-- The public document root contains only the bilingual shell, JavaScript,
+- The protected public subtree under `web-hosting/cabohealth.org/apps/client-resources/`
+  contains only the bilingual shell, JavaScript,
   styles, PHP entry points, and the generic runtime.
 - The reviewed EN/ES resource documents, backend factory, endpoint
   configuration, and signing key must live outside the docroot.
