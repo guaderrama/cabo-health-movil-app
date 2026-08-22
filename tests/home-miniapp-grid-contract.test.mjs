@@ -20,6 +20,7 @@ test('Home presents public and test miniapps as the same responsive tile grid', 
 test('public miniapps render as editorial covers with full-card navigation and a separate 44-point favorite action', () => {
   const tile = read('components/PremiumMiniappTile.tsx');
   const cover = read('components/EditorialMiniappCover.tsx');
+  const colors = read('constants/colors.ts');
 
   assert.match(tile, /EditorialMiniappCover/u);
   assert.match(tile, /buildCatalogCardAccessibilityLabel/u);
@@ -31,8 +32,14 @@ test('public miniapps render as editorial covers with full-card navigation and a
   assert.match(tile, /catalog\.publicBadge/u);
   assert.match(cover, /useEditorialTileMotion/u);
   assert.match(cover, /fontFamily: 'Georgia'/u);
-  assert.match(cover, /EditorialCoverArt/u);
-  assert.doesNotMatch(cover, /<Line(?:\s|\/>)/u);
+  assert.match(cover, /miniappCardHeader/u);
+  assert.match(cover, /miniappCardSurface/u);
+  assert.match(cover, /boxShadow/u);
+  assert.match(cover, /badgeIcon/u);
+  assert.doesNotMatch(cover, /EditorialCoverArt|LinearGradient/u);
+  assert.doesNotMatch(cover, /borderStyle:\s*'dashed'/u);
+  assert.match(colors, /miniappCardHeaderClient/u);
+  assert.match(colors, /miniappCardBorderClient/u);
   assert.match(cover, /styles\.openAction/u);
   assert.match(cover, /colors\.onPrimary/u);
 });
@@ -45,8 +52,10 @@ test('test miniapps reuse the editorial cover but remain visually subordinate wh
   assert.match(tile, /devPanel\.testOnly/u);
   assert.match(tile, /devPanel\.clients/u);
   assert.match(tile, /devPanel\.public/u);
+  assert.match(tile, /miniapp\.access === 'client' \? 'client' : 'test'/u);
+  assert.match(tile, /lock-closed-outline/u);
+  assert.match(tile, /globe-outline/u);
   assert.match(read('components/EditorialMiniappCover.tsx'), /numberOfLines=\{2\}/u);
-  assert.match(tile, /tone="test"/u);
   assert.match(home, /<ToolRow/u);
   assert.match(home, /styles\.toolsSurface/u);
   assert.match(home, /colors\.editorialSurface/u);

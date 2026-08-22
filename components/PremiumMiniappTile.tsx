@@ -30,6 +30,7 @@ export function PremiumMiniappTile({
       title={title}
       summary={summary}
       icon={clinic ? 'sparkles-outline' : 'restaurant-outline'}
+      badgeIcon="globe-outline"
       accessibilityLabel={buildCatalogCardAccessibilityLabel(miniapp, language, t)}
       accessibilityHint={t('catalog.open')}
       index={index}

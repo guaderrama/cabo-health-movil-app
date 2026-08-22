@@ -21,11 +21,12 @@ export function DevMiniappTile({
 
   return (
     <EditorialMiniappCover
-      tone="test"
+      tone={miniapp.access === 'client' ? 'client' : 'test'}
       eyebrow={access}
       title={title}
       summary={summary}
       icon={miniapp.icon}
+      badgeIcon={miniapp.access === 'client' ? 'lock-closed-outline' : 'globe-outline'}
       accessibilityLabel={label}
       accessibilityHint={t('catalog.open')}
       index={index}

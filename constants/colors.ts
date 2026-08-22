@@ -80,6 +80,19 @@ export const lightColors = {
   editorialCoverMuted: '#E7EEF0',
   editorialIconSurface: 'rgba(251, 250, 247, 0.94)',
   editorialBorder: 'rgba(8, 42, 60, 0.22)',
+
+  // Opaque miniapp covers stay visually separate from the moving network.
+  miniappCardSurface: '#FFFFFF',
+  miniappCardSurfaceClient: '#FFFCF5',
+  miniappCardHeader: introColors.sea,
+  miniappCardHeaderWarm: '#7A562F',
+  miniappCardHeaderTest: '#397A90',
+  miniappCardHeaderClient: introColors.ink,
+  miniappCardHeaderText: '#FFFFFF',
+  miniappCardBorder: '#527887',
+  miniappCardBorderClient: '#8A633A',
+  miniappCardIconSurface: introColors.paper,
+  miniappCardIconBorder: '#6D8C97',
 } as const;
 
 // Dark Mode Colors - Premium Aesthetic
@@ -148,6 +161,19 @@ export const darkColors = {
   editorialCoverMuted: '#173A48',
   editorialIconSurface: 'rgba(8, 42, 60, 0.88)',
   editorialBorder: 'rgba(251, 250, 247, 0.24)',
+
+  // Opaque miniapp covers stay visually separate from the moving network.
+  miniappCardSurface: '#123B4C',
+  miniappCardSurfaceClient: '#173747',
+  miniappCardHeader: '#236A80',
+  miniappCardHeaderWarm: '#6B5136',
+  miniappCardHeaderTest: '#315F6F',
+  miniappCardHeaderClient: '#061F2D',
+  miniappCardHeaderText: introColors.paper,
+  miniappCardBorder: '#8BC7D2',
+  miniappCardBorderClient: '#DEC9AA',
+  miniappCardIconSurface: '#0B3042',
+  miniappCardIconBorder: '#8BC7D2',
 } as const;
 
 // Default export para compatibilidad (Light Mode)
