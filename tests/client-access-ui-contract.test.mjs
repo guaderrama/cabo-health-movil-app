@@ -135,7 +135,7 @@ test('durable deletion receipts are polled before session restore and remain use
   assert.match(modal, /acknowledgeDeletionCompletion/u);
   assert.match(modal, /archiveDeletionReceipt/u);
   assert.match(messages, /normally retries about every five minutes/u);
-  assert.match(messages, /normalmente reintenta aproximadamente cada cinco minutos/u);
+  assert.match(messages, /normalmente reintenta la eliminación aproximadamente cada cinco minutos/u);
   assert.match(messages, /Completion is expected by/u);
   assert.match(messages, /Se espera que termine antes del/u);
   assert.doesNotMatch(messages, /guaranteed|garantizad[oa]/iu);

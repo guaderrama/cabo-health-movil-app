@@ -94,8 +94,8 @@ test('account deletion acknowledgements are explicit and localized for App Revie
     MESSAGES['es-MX']['clientAccess.confirmDeleteReviewTitle'],
     '¿Eliminar acceso de revisión y datos?',
   );
-  assert.match(MESSAGES.en['clientAccess.deletionPendingBody'], /accepted[^]*server[^]*retry/iu);
-  assert.match(MESSAGES['es-MX']['clientAccess.deletionPendingBody'], /aceptada[^]*servidor[^]*reintentar/iu);
+  assert.match(MESSAGES.en['clientAccess.deletionPendingBody'], /accepted[^]*server[^]*retr(?:y|ies)/iu);
+  assert.match(MESSAGES['es-MX']['clientAccess.deletionPendingBody'], /aceptada[^]*servidor[^]*reintenta/iu);
   assert.match(MESSAGES.en['clientAccess.deletionCompletedBody'], /removed/iu);
   assert.match(MESSAGES['es-MX']['clientAccess.deletionCompletedBody'], /eliminaron/iu);
   assert.match(MESSAGES.en['clientAccess.deleteUnavailable'], /not accepted[^]*try again/iu);
