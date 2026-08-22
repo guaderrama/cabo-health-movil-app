@@ -7,10 +7,29 @@
         ],
         "components": [
           {
+            "/": "/apps/client-resources/launch/",
+            "exclude": true
+          },
+          {
+            "/": "/apps/client-resources/launch/*",
+            "exclude": true
+          },
+          {
+            "/": "/apps/client-resources/api/",
+            "exclude": true
+          },
+          {
+            "/": "/apps/client-resources/api/*",
+            "exclude": true
+          },
+          {
             "/": "/apps/healthy-recipes/"
           },
           {
             "/": "/apps/clinic-guide/"
+          },
+          {
+            "/": "/apps/client-resources/"
           }
         ]
       }

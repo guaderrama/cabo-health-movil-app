@@ -3,8 +3,13 @@ import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const AASA_COMPONENTS = Object.freeze([
+  Object.freeze({ '/': '/apps/client-resources/launch/', exclude: true }),
+  Object.freeze({ '/': '/apps/client-resources/launch/*', exclude: true }),
+  Object.freeze({ '/': '/apps/client-resources/api/', exclude: true }),
+  Object.freeze({ '/': '/apps/client-resources/api/*', exclude: true }),
   Object.freeze({ '/': '/apps/healthy-recipes/' }),
   Object.freeze({ '/': '/apps/clinic-guide/' }),
+  Object.freeze({ '/': '/apps/client-resources/' }),
 ]);
 
 export function readReleaseIdentity(root = process.cwd()) {

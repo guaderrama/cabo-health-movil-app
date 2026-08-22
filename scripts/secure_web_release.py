@@ -4245,8 +4245,13 @@ def canonical_aasa_bytes() -> bytes:
             "details": [{
                 "appIDs": [APP_ID],
                 "components": [
+                    {"/": "/apps/client-resources/launch/", "exclude": True},
+                    {"/": "/apps/client-resources/launch/*", "exclude": True},
+                    {"/": "/apps/client-resources/api/", "exclude": True},
+                    {"/": "/apps/client-resources/api/*", "exclude": True},
                     {"/": "/apps/healthy-recipes/"},
                     {"/": "/apps/clinic-guide/"},
+                    {"/": "/apps/client-resources/"},
                 ],
             }],
         },

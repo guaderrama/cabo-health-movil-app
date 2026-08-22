@@ -13,8 +13,13 @@ const expectedBytes = `${JSON.stringify({
     details: [{
       appIDs: ['DQ8PH2DZ3R.com.cabohealth.app'],
       components: [
+        { '/': '/apps/client-resources/launch/', exclude: true },
+        { '/': '/apps/client-resources/launch/*', exclude: true },
+        { '/': '/apps/client-resources/api/', exclude: true },
+        { '/': '/apps/client-resources/api/*', exclude: true },
         { '/': '/apps/healthy-recipes/' },
         { '/': '/apps/clinic-guide/' },
+        { '/': '/apps/client-resources/' },
       ],
     }],
   },
@@ -27,7 +32,7 @@ function run(script, file) {
   });
 }
 
-test('generator derives the exact App ID and canonical root-only components deterministically', () => {
+test('generator derives the exact App ID and ordered protected-route components deterministically', () => {
   const directory = mkdtempSync(join(tmpdir(), 'cabohealth-aasa-generate-'));
   const output = join(directory, 'apple-app-site-association');
 
@@ -62,6 +67,23 @@ test('verifier rejects duplicate keys, BOM, trailing content, extras, wildcards,
     expectedBytes.replace('"appIDs": [', '"extra": true,\n        "appIDs": ['),
     expectedBytes.replace('DQ8PH2DZ3R.com.cabohealth.app', 'WRONG.com.cabohealth.app'),
     expectedBytes.replace('/apps/healthy-recipes/', '/apps/healthy-recipes/*'),
+    expectedBytes.replace(
+      '          {\n            "/": "/apps/client-resources/"\n          }',
+      '          {\n            "/": "/apps/client-resources/*"\n          }',
+    ),
+    expectedBytes.replace('"exclude": true', '"exclude": false'),
+    expectedBytes.replace(
+      '          {\n            "/": "/apps/client-resources/launch/",\n            "exclude": true\n          },\n',
+      '',
+    ),
+    expectedBytes.replace(
+      '          {\n            "/": "/apps/client-resources/"\n          }',
+      '          {\n            "/": "/staff/"\n          }',
+    ),
+    expectedBytes.replace(
+      '          {\n            "/": "/apps/client-resources/"\n          }',
+      '          {\n            "/": "/apps/app-review/"\n          }',
+    ),
     expectedBytes.replace(
       '          {\n            "/": "/apps/clinic-guide/"\n          }',
       '          {\n            "/": "/apps/clinic-guide/"\n          },\n          {\n            "/": "/apps/third/"\n          }',
