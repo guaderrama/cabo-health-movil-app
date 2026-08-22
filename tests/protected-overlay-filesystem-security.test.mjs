@@ -327,6 +327,30 @@ test('first promotion recovers to truly absent state before an idempotent retry'
   assert.equal(readFileSync(join(fixture, 'state.json'), 'utf8'), '{"release":"B"}\n');
 });
 
+test('recovery will not clear a committed journal when archived topology is missing', (context) => {
+  const fixture = makeMoveTransactionFixture();
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const crashed = spawnSync(process.execPath, [journalWorkerPath, 'execute', fixture], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: 'state-committed',
+    },
+  });
+  assert.equal(crashed.signal, 'SIGKILL');
+  rmSync(join(fixture, 'backup'), { recursive: true });
+
+  const recovery = spawnSync(process.execPath, [journalWorkerPath, 'recover', fixture], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  assert.notEqual(recovery.status, 0, recovery.stdout);
+  assert.match(recovery.stderr, /protected_overlay_transaction_recovery_failed/u);
+  assert.equal(existsSync(join(fixture, 'managed/transaction.json')), true);
+});
+
 test('artifact creation rejects a reviewed source inode swapped after inventory validation', (context) => {
   const fixture = makeProjectFixture();
   context.after(() => rmSync(fixture, { recursive: true, force: true }));

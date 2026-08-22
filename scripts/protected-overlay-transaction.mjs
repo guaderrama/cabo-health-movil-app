@@ -368,7 +368,16 @@ export function recoverDurableMoveTransaction({
   if (!validateState(currentState)) {
     throw new Error('protected_overlay_transaction_state_invalid');
   }
-  if (statesEqual(currentState, journal.afterState) && verifyLive(journal.afterState)) {
+  const appliedCount = inferAppliedMoveCount(
+    context.root,
+    journal.moves,
+    journal.appliedCount,
+  );
+  if (
+    statesEqual(currentState, journal.afterState)
+    && appliedCount === journal.moves.length
+    && verifyLive(journal.afterState)
+  ) {
     clearTransactionJournal(journalPath);
     return Object.freeze({ status: 'recovered-committed', operation: journal.operation });
   }
@@ -380,7 +389,7 @@ export function recoverDurableMoveTransaction({
   reverseMovePlan(
     context.root,
     journal.moves,
-    inferAppliedMoveCount(context.root, journal.moves, journal.appliedCount),
+    appliedCount,
   );
   if (!statesEqual(currentState, journal.beforeState)) writeState(journal.beforeState);
   if (
