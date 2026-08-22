@@ -7,6 +7,7 @@ export type ClientAccountDeletionStatus = 'pending' | 'completed';
 export interface ClientAccountDeletionResult {
   readonly status: ClientAccountDeletionStatus;
 }
+export type ClientAccountDeletionCleanupStatus = 'none' | 'pending' | 'completed';
 const CLIENT_RESOURCE_ICON_KEYS = new Set([
   'flask-outline',
   'book-outline',
@@ -77,6 +78,9 @@ export interface ClientAccessGateway {
   createLaunch(session: OpaqueClientSession, resourceId: string): Promise<unknown>;
   removeAccess(session: OpaqueClientSession): Promise<void>;
   deleteAccount(session: OpaqueClientSession): Promise<Readonly<ClientAccountDeletionResult>>;
+  cleanupAccountDeletion?(
+    mode: 'begin' | 'retry',
+  ): Promise<ClientAccountDeletionCleanupStatus>;
   signOut(): Promise<void>;
 }
 
@@ -343,6 +347,7 @@ export function createClientAccessController({
   let generation = 0;
   let redemptionPending = false;
   let deletionPending = false;
+  let accountDeletionCleanupPending = false;
   const listeners = new Set<(snapshot: Readonly<ClientAccessSnapshot>) => void>();
   const publish = (next: ClientAccessSnapshot) => {
     snapshot = Object.freeze(next);
@@ -355,9 +360,42 @@ export function createClientAccessController({
     return results.every((result) => result.status === 'fulfilled');
   };
 
+  const cleanupAcknowledgedDeletion = async () => {
+    currentSession = null;
+    if (!gateway.cleanupAccountDeletion) {
+      accountDeletionCleanupPending = !(await clearLocalSession());
+      return;
+    }
+    const [cleanupResult, sessionResult] = await Promise.allSettled([
+      gateway.cleanupAccountDeletion('begin'),
+      sessionStore.clear(),
+    ]);
+    accountDeletionCleanupPending = (
+      cleanupResult.status === 'rejected'
+      || cleanupResult.value !== 'completed'
+      || sessionResult.status === 'rejected'
+    );
+  };
+
+  const retryAcknowledgedDeletionCleanup = async () => {
+    if (!gateway.cleanupAccountDeletion) return false;
+    const cleanupStatus = await gateway.cleanupAccountDeletion('retry');
+    if (cleanupStatus === 'none') return false;
+    currentSession = null;
+    const sessionCleared = await sessionStore.clear().then(
+      () => true,
+      () => false,
+    );
+    accountDeletionCleanupPending = cleanupStatus !== 'completed' || !sessionCleared;
+    publish({ status: 'locked', grant: null, error: null });
+    return true;
+  };
+
   const refresh = async () => {
     if (redemptionPending || deletionPending) return;
     const operationGeneration = ++generation;
+    if (await retryAcknowledgedDeletionCleanup()) return;
+    if (operationGeneration !== generation) return;
     const session = currentSession;
     if (!session) {
       publish({ status: 'locked', grant: null, error: null });
@@ -432,13 +470,9 @@ export function createClientAccessController({
       deletionPending = false;
       return null;
     }
-    const localSucceeded = await clearLocalSession();
+    await cleanupAcknowledgedDeletion();
     deletionPending = false;
-    publish({
-      status: localSucceeded ? 'locked' : 'error',
-      grant: null,
-      error: localSucceeded ? null : 'unavailable',
-    });
+    publish({ status: 'locked', grant: null, error: null });
     return result;
   };
 
@@ -501,7 +535,7 @@ export function createClientAccessController({
       await refresh();
     },
     redeem: async (rawCode) => {
-      if (redemptionPending || deletionPending) return false;
+      if (redemptionPending || deletionPending || accountDeletionCleanupPending) return false;
       const credential = normalizeClientAccessCredential(rawCode);
       if (!credential) {
         publish({ status: 'locked', grant: null, error: 'invalid-code' });

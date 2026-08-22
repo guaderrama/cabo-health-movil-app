@@ -83,3 +83,24 @@ test('a failed or altered write never returns an unpersisted installation id', a
 
   await assert.rejects(port.getOrCreate(), /client_installation_persistence_failed/u);
 });
+
+test('a deletion-cleanup marker survives runtime recreation until cleanup completes', async () => {
+  const values = new Map();
+  const storage = {
+    getItem: async (key) => values.get(key) ?? null,
+    setItem: async (key, value) => { values.set(key, value); },
+    deleteItem: async (key) => { values.delete(key); },
+  };
+  const createPort = () => createClientInstallationPort({
+    storage,
+    randomBytes: async () => new Uint8Array(32),
+  });
+
+  const firstRuntime = createPort();
+  await firstRuntime.markDeletionCleanupPending();
+
+  const nextRuntime = createPort();
+  assert.equal(await nextRuntime.hasDeletionCleanupPending(), true);
+  await nextRuntime.clearDeletionCleanupPending();
+  assert.equal(await createPort().hasDeletionCleanupPending(), false);
+});

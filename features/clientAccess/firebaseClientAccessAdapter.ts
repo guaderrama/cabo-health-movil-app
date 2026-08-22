@@ -32,6 +32,9 @@ export interface FirebaseCallablePort {
 export interface ClientInstallationPort {
   getOrCreate(): Promise<string>;
   clear(): Promise<void>;
+  markDeletionCleanupPending(): Promise<void>;
+  hasDeletionCleanupPending(): Promise<boolean>;
+  clearDeletionCleanupPending(): Promise<void>;
 }
 
 export interface FirebaseClientAccessAdapter {
@@ -52,6 +55,7 @@ export function createFirebaseClientAccessAdapter({
   readonly createRequestId: () => string;
   readonly now?: () => number;
 }): FirebaseClientAccessAdapter {
+  let localDeletionCleanupPending = false;
   const getInstallationId = async () => {
     const value = await installation.getOrCreate();
     if (!INSTALLATION_ID_PATTERN.test(value)) throw new Error('client_installation_unavailable');
@@ -169,8 +173,36 @@ export function createFirebaseClientAccessAdapter({
       ) {
         throw new Error('invalid_backend_response');
       }
-      await installation.clear();
       return Object.freeze({ status: response.status as 'pending' | 'completed' });
+    },
+
+    cleanupAccountDeletion: async (mode: 'begin' | 'retry') => {
+      if (mode === 'retry' && !localDeletionCleanupPending) {
+        const persistedPending = await installation.hasDeletionCleanupPending()
+          .catch(() => false);
+        if (!persistedPending) return 'none';
+      }
+      localDeletionCleanupPending = true;
+      let markerPersisted = true;
+      if (mode === 'begin') {
+        markerPersisted = await installation.markDeletionCleanupPending().then(
+          () => true,
+          () => false,
+        );
+      }
+      const results = await Promise.allSettled([
+        installation.clear(),
+        auth.signOut(),
+      ]);
+      if (results.some((result) => result.status === 'rejected')) return 'pending';
+      if (!markerPersisted) return 'pending';
+      try {
+        await installation.clearDeletionCleanupPending();
+      } catch {
+        return 'pending';
+      }
+      localDeletionCleanupPending = false;
+      return 'completed';
     },
 
     signOut: () => auth.signOut(),

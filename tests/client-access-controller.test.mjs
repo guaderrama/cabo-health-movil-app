@@ -513,6 +513,52 @@ for (const status of ['pending', 'completed']) {
   });
 }
 
+test('pending local deletion cleanup blocks new access until a safe retry completes', async () => {
+  const session = createOpaqueClientSession();
+  const replacementSession = createOpaqueClientSession();
+  let cleanupStatus = 'pending';
+  let cleanupStarted = false;
+  let redeemCalls = 0;
+  const controller = createClientAccessController({
+    gateway: {
+      redeem: async () => {
+        redeemCalls += 1;
+        return { session: replacementSession, grant };
+      },
+      refresh: async () => reviewGrant,
+      removeAccess: async () => {},
+      deleteAccount: async () => ({ status: 'pending' }),
+      cleanupAccountDeletion: async (mode) => {
+        if (mode === 'retry' && !cleanupStarted) return 'none';
+        cleanupStarted = true;
+        return cleanupStatus;
+      },
+      signOut: async () => {},
+    },
+    sessionStore: {
+      restore: async () => session,
+      commit: async () => {},
+      clear: async () => {},
+    },
+  });
+  await controller.initialize();
+  assert.deepEqual(await controller.deleteAccount(), { status: 'pending' });
+
+  assert.equal(
+    await controller.redeem('CH-ABCDEF01-23456789-A1B2C3D4-E5F60718'),
+    false,
+  );
+  assert.equal(redeemCalls, 0);
+
+  cleanupStatus = 'completed';
+  await controller.refresh();
+  assert.equal(
+    await controller.redeem('CH-ABCDEF01-23456789-A1B2C3D4-E5F60718'),
+    true,
+  );
+  assert.equal(redeemCalls, 1);
+});
+
 test('gateway grants fail closed when a client resource contains an unapproved field', async () => {
   const session = createOpaqueClientSession();
   const effects = [];

@@ -104,5 +104,14 @@ test('remove and delete copy disclose the durable backend deletion and local-ins
   assert.match(messages, /Delete also removes this app installation identifier from your iPhone\./u);
   assert.match(messages, /Eliminar también borra de tu iPhone el identificador de esta instalación de la app\./u);
   assert.match(adapter, /removeAccess:[^]*functions\.call\('removeClientAccess'/u);
-  assert.match(adapter, /deleteAccount:[^]*functions\.call\('deleteClientAccount'[^]*installation\.clear\(\)/u);
+  assert.match(adapter, /deleteAccount:[^]*principal\.realm === 'production_client'[^]*'deleteClientAccount'[^]*'deleteAppReviewAccount'/u);
+  assert.match(adapter, /cleanupAccountDeletion:[^]*installation\.clear\(\)[^]*auth\.signOut\(\)/u);
+});
+
+test('the destructive confirmation isolates VoiceOver from the controls behind it', () => {
+  const modal = read('features/clientAccess/ClientAccessModal.tsx');
+
+  assert.match(modal, /accessibilityElementsHidden=\{confirmAction !== null\}/u);
+  assert.match(modal, /importantForAccessibility=\{confirmAction !== null \? 'no-hide-descendants' : 'auto'\}/u);
+  assert.match(modal, /accessibilityViewIsModal/u);
 });

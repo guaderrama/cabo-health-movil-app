@@ -4,6 +4,9 @@ import test from 'node:test';
 import {
   createFirebaseClientAccessAdapter,
 } from '../.test-build/features/clientAccess/firebaseClientAccessAdapter.js';
+import {
+  createClientAccessController,
+} from '../.test-build/features/clientAccess/clientAccessController.js';
 
 const ACTIVE_GRANT = Object.freeze({
   schemaVersion: 1,
@@ -41,8 +44,12 @@ function makeHarness({
   currentUid = null,
   signedInUid = 'client_abcdefghijklmnopqrstuvwxyz123456',
   installationId = 'installation_abcdefghijklmnopqrstuvwxyz123456',
+  failInstallationClear = false,
+  signOutFailures = 0,
+  cleanupState = null,
 } = {}) {
   let uid = currentUid;
+  let signOutAttempts = 0;
   const calls = [];
   const auth = {
     waitForReady: async () => uid === null ? null : { uid },
@@ -52,7 +59,12 @@ function makeHarness({
       uid = signedInUid;
       return { uid };
     },
-    signOut: async () => { calls.push(['signOut']); uid = null; },
+    signOut: async () => {
+      calls.push(['signOut']);
+      signOutAttempts += 1;
+      if (signOutAttempts <= signOutFailures) throw new Error('sign_out_failed');
+      uid = null;
+    },
   };
   let callImpl = async (name, data) => {
       calls.push(['call', name, data]);
@@ -87,7 +99,28 @@ function makeHarness({
   const functions = { call: (name, data) => callImpl(name, data) };
   const installation = {
     getOrCreate: async () => installationId,
-    clear: async () => { calls.push(['clearInstallation']); },
+    clear: async () => {
+      calls.push(['clearInstallation']);
+      if (cleanupState) {
+        cleanupState.clearAttempts += 1;
+        if (cleanupState.clearFailures > 0) {
+          cleanupState.clearFailures -= 1;
+          throw new Error('clear_failed');
+        }
+      }
+      if (failInstallationClear) throw new Error('clear_failed');
+    },
+    markDeletionCleanupPending: async () => {
+      if (cleanupState?.markerFailures > 0) {
+        cleanupState.markerFailures -= 1;
+        throw new Error('marker_failed');
+      }
+      if (cleanupState) cleanupState.pending = true;
+    },
+    hasDeletionCleanupPending: async () => cleanupState?.pending ?? false,
+    clearDeletionCleanupPending: async () => {
+      if (cleanupState) cleanupState.pending = false;
+    },
   };
   const requestIds = ['request_abcdefghijklmnop', 'request_qrstuvwxyz123456'];
   const adapter = createFirebaseClientAccessAdapter({
@@ -410,11 +443,13 @@ test('remove and delete require the live principal, clear Firebase auth, and del
   const deletion = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
   const deletionSession = await deletion.adapter.sessionStore.restore();
   await deletion.adapter.gateway.deleteAccount(deletionSession);
+  await deletion.adapter.gateway.cleanupAccountDeletion('begin');
   assert.deepEqual(deletion.calls, [
     ['call', 'deleteClientAccount', {
       installationId: 'installation_abcdefghijklmnopqrstuvwxyz123456',
     }],
     ['clearInstallation'],
+    ['signOut'],
   ]);
 });
 
@@ -430,17 +465,140 @@ test('review deletion uses only its realm-specific callable and returns the dura
   assert.ok(session);
 
   const result = await harness.adapter.gateway.deleteAccount(session);
+  const cleanup = await harness.adapter.gateway.cleanupAccountDeletion('begin');
 
   assert.deepEqual(result, { status: 'pending' });
+  assert.equal(cleanup, 'completed');
   assert.deepEqual(harness.calls, [
     ['call', 'deleteAppReviewAccount', {
       installationId: 'installation_abcdefghijklmnopqrstuvwxyz123456',
     }],
     ['clearInstallation'],
+    ['signOut'],
   ]);
   assert.equal(harness.calls.some((entry) => (
     entry.includes('removeClientAccess') || entry.includes('deleteClientAccount')
   )), false);
+});
+
+test('an acknowledged review deletion locks locally and signs out even when installation cleanup fails', async () => {
+  const harness = makeHarness({
+    currentUid: 'review_abcdefghijklmnopqrstuvwxyz123456',
+    failInstallationClear: true,
+  });
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    if (name === 'refreshAppReviewAccess') return { grant: REVIEW_GRANT };
+    if (name === 'deleteAppReviewAccount') return { status: 'pending' };
+    throw new Error('wrong_realm');
+  });
+  const controller = createClientAccessController({
+    gateway: harness.adapter.gateway,
+    sessionStore: harness.adapter.sessionStore,
+  });
+  await controller.initialize();
+  assert.equal(controller.getSnapshot().status, 'unlocked');
+
+  assert.deepEqual(await controller.deleteAccount(), { status: 'pending' });
+  assert.deepEqual(controller.getSnapshot(), {
+    status: 'locked',
+    grant: null,
+    error: null,
+  });
+  assert.equal(harness.calls.filter(([kind]) => kind === 'clearInstallation').length, 1);
+  assert.equal(harness.calls.filter(([kind]) => kind === 'signOut').length, 1);
+});
+
+test('foreground refresh retries failed local cleanup without repeating an acknowledged deletion', async () => {
+  const harness = makeHarness({
+    currentUid: 'review_abcdefghijklmnopqrstuvwxyz123456',
+    signOutFailures: 1,
+  });
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    if (name === 'refreshAppReviewAccess') return { grant: REVIEW_GRANT };
+    if (name === 'deleteAppReviewAccount') return { status: 'pending' };
+    throw new Error('wrong_realm');
+  });
+  const controller = createClientAccessController({
+    gateway: harness.adapter.gateway,
+    sessionStore: harness.adapter.sessionStore,
+  });
+  await controller.initialize();
+  assert.deepEqual(await controller.deleteAccount(), { status: 'pending' });
+
+  await controller.refresh();
+
+  assert.deepEqual(controller.getSnapshot(), {
+    status: 'locked',
+    grant: null,
+    error: null,
+  });
+  assert.equal(harness.calls.filter(([kind]) => kind === 'clearInstallation').length, 2);
+  assert.equal(harness.calls.filter(([kind]) => kind === 'signOut').length, 2);
+  assert.equal(harness.calls.filter(([, name]) => name === 'deleteAppReviewAccount').length, 1);
+});
+
+test('a fresh runtime resumes durable local cleanup without repeating the backend deletion', async () => {
+  const cleanupState = { pending: false, clearAttempts: 0, clearFailures: 1 };
+  const firstRuntime = makeHarness({
+    currentUid: 'review_abcdefghijklmnopqrstuvwxyz123456',
+    cleanupState,
+  });
+  firstRuntime.replaceCall(async (name, data) => {
+    firstRuntime.calls.push(['call', name, data]);
+    if (name === 'refreshAppReviewAccess') return { grant: REVIEW_GRANT };
+    if (name === 'deleteAppReviewAccount') return { status: 'pending' };
+    throw new Error('wrong_realm');
+  });
+  const firstController = createClientAccessController({
+    gateway: firstRuntime.adapter.gateway,
+    sessionStore: firstRuntime.adapter.sessionStore,
+  });
+  await firstController.initialize();
+  assert.deepEqual(await firstController.deleteAccount(), { status: 'pending' });
+  assert.equal(cleanupState.pending, true);
+
+  const nextRuntime = makeHarness({ cleanupState });
+  nextRuntime.replaceCall(async () => { throw new Error('backend_must_not_repeat'); });
+  const nextController = createClientAccessController({
+    gateway: nextRuntime.adapter.gateway,
+    sessionStore: nextRuntime.adapter.sessionStore,
+  });
+  await nextController.initialize();
+
+  assert.equal(cleanupState.pending, false);
+  assert.equal(cleanupState.clearAttempts, 2);
+  assert.equal(nextRuntime.calls.some(([kind]) => kind === 'call'), false);
+  assert.deepEqual(nextController.getSnapshot(), {
+    status: 'locked',
+    grant: null,
+    error: null,
+  });
+});
+
+test('a failed cleanup-marker write remains pending until a safe in-process retry', async () => {
+  const cleanupState = {
+    pending: false,
+    clearAttempts: 0,
+    clearFailures: 0,
+    markerFailures: 1,
+  };
+  const harness = makeHarness({
+    currentUid: 'review_abcdefghijklmnopqrstuvwxyz123456',
+    cleanupState,
+  });
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    if (name === 'deleteAppReviewAccount') return { status: 'pending' };
+    throw new Error('wrong_realm');
+  });
+  const session = await harness.adapter.sessionStore.restore();
+
+  assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), { status: 'pending' });
+  assert.equal(await harness.adapter.gateway.cleanupAccountDeletion('begin'), 'pending');
+  assert.equal(await harness.adapter.gateway.cleanupAccountDeletion('retry'), 'completed');
+  assert.equal(harness.calls.filter(([, name]) => name === 'deleteAppReviewAccount').length, 1);
 });
 
 test('account deletion accepts only the durable pending or completed backend contract', async () => {
@@ -449,7 +607,7 @@ test('account deletion accepts only the durable pending or completed backend con
     harness.replaceCall(async () => ({ status }));
     const session = await harness.adapter.sessionStore.restore();
     assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), { status });
-    assert.deepEqual(harness.calls, [['clearInstallation']]);
+    assert.deepEqual(harness.calls, []);
   }
 
   for (const response of [

@@ -161,6 +161,11 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
           style={[styles.container, { backgroundColor: colors.background }]}
         >
         <View
+          accessibilityElementsHidden={confirmAction !== null}
+          importantForAccessibility={confirmAction !== null ? 'no-hide-descendants' : 'auto'}
+          style={styles.modalContent}
+        >
+        <View
           style={[
             styles.header,
             {
@@ -335,6 +340,7 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
             </View>
           )}
         </ScrollView>
+        </View>
 
         <ConfirmationDialog
           action={confirmAction}
@@ -365,7 +371,7 @@ function ConfirmationDialog({
   const deleting = action !== 'remove';
   const reviewDeleting = action === 'delete-review';
   return (
-    <View style={styles.confirmOverlay}>
+    <View accessibilityViewIsModal style={styles.confirmOverlay}>
       <View accessibilityRole="alert" style={[styles.confirmCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
         <Text style={[styles.confirmTitle, { color: colors.text }]}>
           {reviewDeleting
@@ -412,6 +418,7 @@ function ConfirmationDialog({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  modalContent: { flex: 1 },
   header: { minHeight: 104, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 20, paddingBottom: 16, flexDirection: 'row', alignItems: 'flex-end' },
   headerCopy: { flex: 1, paddingRight: 12 },
   title: { fontFamily: 'Georgia', fontSize: 25, lineHeight: 31, fontWeight: '600' },

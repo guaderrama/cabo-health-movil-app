@@ -1,9 +1,11 @@
 import type { ClientInstallationPort } from './firebaseClientAccessAdapter';
 
 export const CLIENT_INSTALLATION_KEY = 'cabohealth.client.installation.v1';
+export const CLIENT_DELETION_CLEANUP_KEY = 'cabohealth.client.deletion-cleanup.v1';
 const INSTALLATION_BYTES = 32;
 const INSTALLATION_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+const DELETION_CLEANUP_PENDING = 'pending';
 
 export interface ClientInstallationSecureStorage {
   getItem(key: string): Promise<string | null>;
@@ -54,6 +56,21 @@ export function createClientInstallationPort({
     clear: async () => {
       if (pending) await pending.catch(() => {});
       await storage.deleteItem(CLIENT_INSTALLATION_KEY);
+    },
+    markDeletionCleanupPending: async () => {
+      await storage.setItem(CLIENT_DELETION_CLEANUP_KEY, DELETION_CLEANUP_PENDING);
+      if (await storage.getItem(CLIENT_DELETION_CLEANUP_KEY) !== DELETION_CLEANUP_PENDING) {
+        throw new Error('client_deletion_cleanup_persistence_failed');
+      }
+    },
+    hasDeletionCleanupPending: async () => (
+      await storage.getItem(CLIENT_DELETION_CLEANUP_KEY)
+    ) === DELETION_CLEANUP_PENDING,
+    clearDeletionCleanupPending: async () => {
+      await storage.deleteItem(CLIENT_DELETION_CLEANUP_KEY);
+      if (await storage.getItem(CLIENT_DELETION_CLEANUP_KEY) !== null) {
+        throw new Error('client_deletion_cleanup_clear_failed');
+      }
     },
   });
 }
