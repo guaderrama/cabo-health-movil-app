@@ -49,6 +49,32 @@ test('production build and submit scripts cannot bypass the release guard', () =
   assert.doesNotMatch(packageJson.scripts.submit, /\beas\s+submit\b/u);
 });
 
+test('release tooling pins EAS CLI and its compatible patched parser closure exactly', () => {
+  const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
+  const packageLock = JSON.parse(readFileSync(join(projectRoot, 'package-lock.json'), 'utf8'));
+
+  assert.equal(packageJson.devDependencies['eas-cli'], '22.2.0');
+  assert.equal(packageLock.packages[''].devDependencies['eas-cli'], '22.2.0');
+  assert.equal(packageLock.packages['node_modules/eas-cli'].version, '22.2.0');
+  assert.deepEqual(packageJson.overrides['eas-cli'], {
+    ajv: '8.20.0',
+    joi: '17.13.6',
+    minimatch: '5.1.8',
+    nanoid: '3.3.18',
+    tar: '7.5.22',
+    yaml: '2.9.0',
+  });
+  assert.equal(packageLock.packages['node_modules/ajv'].version, '8.20.0');
+  assert.equal(packageLock.packages['node_modules/joi'].version, '17.13.6');
+  assert.equal(
+    packageLock.packages['node_modules/eas-cli/node_modules/minimatch'].version,
+    '5.1.8',
+  );
+  assert.equal(packageLock.packages['node_modules/nanoid'].version, '3.3.18');
+  assert.equal(packageLock.packages['node_modules/tar'].version, '7.5.22');
+  assert.equal(packageLock.packages['node_modules/yaml'].version, '2.9.0');
+});
+
 test('each release phase refuses to run while its independently reviewed authority is unpinned', async (t) => {
   for (const [action, error] of [
     ['build', 'EXACT_BUILD_INPUT_ATTESTATION_MISSING'],
