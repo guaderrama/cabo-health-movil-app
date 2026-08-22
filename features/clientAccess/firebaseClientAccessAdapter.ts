@@ -152,9 +152,26 @@ export function createFirebaseClientAccessAdapter({
     } catch (error) {
       if (isNotFound(error)) {
         if (receipt.phase === 'prepared') {
+          // A status lookup can race a deletion request whose response was
+          // lost while the backend is still committing it. Re-submit the
+          // same idempotent receipt when the authenticated installation is
+          // still available. Any uncertainty keeps the only recovery receipt
+          // and the prior grant locked.
           try {
-            await deletionReceipts.clear(receipt);
-            return Object.freeze({ kind: 'none' as const });
+            const principal = requireAccessPrincipal();
+            if (principal.realm !== receipt.realm) throw new Error('client_realm_mismatch');
+            const retriedResponse = await functions.call(
+              receipt.realm === 'production_client'
+                ? 'deleteClientAccount'
+                : 'deleteAppReviewAccount', {
+              deletionReceipt: receipt.deletionReceipt,
+              installationId: await getInstallationId(),
+            });
+            const retriedStatus = parseDeletionStatus(retriedResponse);
+            if (!retriedStatus) throw new Error('invalid_backend_response');
+            const accepted = await deletionReceipts.markAccepted(receipt, retriedStatus);
+            await ensureReceiptCleanup().catch(() => 'pending');
+            return trackingState(accepted, retriedStatus, 'current');
           } catch {
             return Object.freeze({
               kind: 'unavailable' as const,
@@ -406,6 +423,11 @@ export function createFirebaseClientAccessAdapter({
 
   const sessionStore: ClientSessionStore = Object.freeze({
     restore: async () => {
+      // Receipt tracking is the authority during an ambiguous or accepted
+      // deletion. Refuse to restore the previous grant even if a caller
+      // reaches the session store without first running the UI bootstrap.
+      const receiptState = await deletionReceipts.load().catch(() => null);
+      if (receiptState === null || receiptState.kind !== 'none') return null;
       const principal = await auth.waitForReady();
       if (principal === null) return null;
       if (!realmForUid(principal.uid)) {

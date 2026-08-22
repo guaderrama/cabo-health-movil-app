@@ -745,7 +745,7 @@ test('offline uncertainty keeps a prepared receipt and locks without clearing Au
   });
 });
 
-test('only explicit not-found discards a prepared receipt and permits restoring the old session', async () => {
+test('not-found cannot discard an ambiguous prepared receipt or restore the old session', async () => {
   const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
   let offline = true;
   harness.replaceCall(async (name, data) => {
@@ -764,10 +764,41 @@ test('only explicit not-found discards a prepared receipt and permits restoring 
   assert.deepEqual(await controller.deleteAccount(), { status: 'unavailable' });
 
   offline = false;
-  assert.deepEqual(await harness.adapter.deletionTracker.check(), { kind: 'none' });
-  assert.equal(harness.secureValues.size, 0);
+  assert.deepEqual(await harness.adapter.deletionTracker.check(), {
+    kind: 'unavailable',
+    phase: 'prepared',
+    realm: 'production_client',
+  });
+  assert.equal(harness.secureValues.size, 1);
   await controller.initialize();
-  assert.equal(controller.getSnapshot().status, 'unlocked');
+  assert.equal(controller.getSnapshot().status, 'locked');
+});
+
+test('prepared not-found retries the exact idempotent deletion request before staying locked', async () => {
+  const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+  let deletionCalls = 0;
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    if (name === 'deleteClientAccount') {
+      deletionCalls += 1;
+      if (deletionCalls === 1) throw new Error('response_lost');
+      return DELETION_PENDING;
+    }
+    if (name === 'getClientAccountDeletionStatus') {
+      if (deletionCalls >= 2) return DELETION_PENDING;
+      const error = new Error('invalid_access');
+      error.code = 'functions/not-found';
+      throw error;
+    }
+    throw new Error('wrong_callable');
+  });
+  const session = await harness.adapter.sessionStore.restore();
+
+  assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), DELETION_PENDING);
+  const deletionRequests = harness.calls.filter(([, name]) => name === 'deleteClientAccount');
+  assert.equal(deletionRequests.length, 2);
+  assert.equal(deletionRequests[0][2].deletionReceipt, deletionRequests[1][2].deletionReceipt);
+  assert.equal((await harness.adapter.deletionTracker.check()).kind, 'pending');
 });
 
 test('accepted not-found never restores access and requires explicit safe archival', async () => {
