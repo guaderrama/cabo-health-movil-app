@@ -23,6 +23,7 @@ const helperPath = join(projectRoot, 'scripts/secure_web_release.py');
 const fixtureTmp = realpathSync(tmpdir());
 const paths = Object.freeze([
   '.well-known/apple-app-site-association',
+  'app/index.html',
   'app/privacy/index.html',
   'app/report-content/index.html',
   'app/support/index.html',
@@ -42,6 +43,7 @@ const paths = Object.freeze([
 const targets = Object.freeze([
   'public_html/apps/.htaccess',
   'public_html/apps/shared',
+  'public_html/app/index.html',
   'public_html/app/privacy',
   'public_html/app/terms',
   'public_html/app/support',
@@ -53,16 +55,18 @@ const targets = Object.freeze([
 const slots = Object.freeze([
   '00-apps-htaccess',
   '01-apps-shared',
-  '02-app-privacy',
-  '03-app-terms',
-  '04-app-support',
-  '05-app-report-content',
-  '06-apps-healthy-recipes',
-  '07-apps-clinic-guide',
-  '08-aasa',
+  '02-app-index',
+  '03-app-privacy',
+  '04-app-terms',
+  '05-app-support',
+  '06-app-report-content',
+  '07-apps-healthy-recipes',
+  '08-apps-clinic-guide',
+  '09-aasa',
 ]);
 const inputPolicy = Object.freeze([
   ['miniapps/dist', 'task6b-miniapp'],
+  ['web-hosting/cabohealth.org/app/index.html', 'marketing-landing'],
   ['web-hosting/cabohealth.org/app/privacy/index.html', 'task7-legal'],
   ['web-hosting/cabohealth.org/app/terms/index.html', 'task7-legal'],
   ['web-hosting/cabohealth.org/app/support/index.html', 'task7-legal'],
@@ -92,6 +96,7 @@ function mediaType(path) {
 function kind(path) {
   if (path === 'apps/.htaccess') return 'apache-security';
   if (path.startsWith('apps/')) return 'task6b-miniapp';
+  if (path === 'app/index.html') return 'marketing-landing';
   if (path.startsWith('app/')) return 'task7-legal';
   return 'aasa';
 }
@@ -302,15 +307,15 @@ test('canonical out-of-order promoted transition is rejected before the next liv
   if (!existsSync(transitionDirectory)) mkdirSync(transitionDirectory, { mode: 0o700 });
   const record = {
     schemaVersion: 1,
-    index: 8,
-    target: targets[8],
-    slot: slots[8],
+    index: 9,
+    target: targets[9],
+    slot: slots[9],
     original: 'absent',
     oldInventorySha256: null,
     transition: 'promoted',
     attempt: 0,
   };
-  writeFileSync(join(transitionDirectory, '08-promoted-000.json'), canonicalJson(record), {
+  writeFileSync(join(transitionDirectory, '09-promoted-000.json'), canonicalJson(record), {
     flag: 'wx',
     mode: 0o600,
   });
@@ -917,7 +922,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       checkedAt: '2026-08-18T02:03:04.000Z',
     });
     assert.equal(validateBrowserEvidence(evidence, artifact, authority), true);
-    assert.equal(evidence.observations.length, 48);
+    assert.equal(evidence.observations.length, 56);
     assert.equal(Object.hasOwn(evidence, 'measurementSha256'), false);
     assert.deepEqual([...new Set(evidence.observations.map(({ actualWidth, actualHeight }) => `${actualWidth}x${actualHeight}`))], [
       '390x844',
@@ -936,12 +941,12 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
     assert.equal(evidence.observations
       .filter(({ path }) => path.startsWith('/app/'))
       .every(({ bilingualStaticVisible }) => bilingualStaticVisible), true);
-    assert.equal(urlCommandCount, 48);
-    assert.equal(tabActionCount, 56);
+    assert.equal(urlCommandCount, 56);
+    assert.equal(tabActionCount, 64);
     assert.equal(spaceActionCount, 16);
-    assert.equal(enterActionCount, 48);
+    assert.equal(enterActionCount, 56);
     assert.equal(noPreferenceCommandCount, 8);
-    assert.equal(frameTreeCommandCount, 96);
+    assert.equal(frameTreeCommandCount, 112);
     assert.equal(networkEnableCommandCount, 8);
     assert.equal(performanceWaitCount > 0, true);
     assert.equal(nextSession, 8);
@@ -1106,7 +1111,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
     assert.equal(validateBrowserEvidence(cliEvidence, artifact, authority, {
       reviewedBrowserMeasurementSha256: browserEvidenceSha256(cliEvidence),
     }), true);
-    assert.equal(cliEvidence.observations.length, 48);
+    assert.equal(cliEvidence.observations.length, 56);
     driverFault = 'allowed-url-failure';
     const cliFailure = await runBrowserCli();
     assert.equal(cliFailure.status, 1, cliFailure.stderr || cliFailure.stdout);

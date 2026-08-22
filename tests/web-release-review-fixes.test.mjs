@@ -24,6 +24,7 @@ const fixtureTmp = realpathSync(tmpdir());
 const helperPath = join(projectRoot, 'scripts/secure_web_release.py');
 const paths = Object.freeze([
   '.well-known/apple-app-site-association',
+  'app/index.html',
   'app/privacy/index.html',
   'app/report-content/index.html',
   'app/support/index.html',
@@ -43,6 +44,7 @@ const paths = Object.freeze([
 const targets = Object.freeze([
   'public_html/apps/.htaccess',
   'public_html/apps/shared',
+  'public_html/app/index.html',
   'public_html/app/privacy',
   'public_html/app/terms',
   'public_html/app/support',
@@ -53,6 +55,7 @@ const targets = Object.freeze([
 ]);
 const inputs = Object.freeze([
   ['miniapps/dist', 'task6b-miniapp'],
+  ['web-hosting/cabohealth.org/app/index.html', 'marketing-landing'],
   ['web-hosting/cabohealth.org/app/privacy/index.html', 'task7-legal'],
   ['web-hosting/cabohealth.org/app/terms/index.html', 'task7-legal'],
   ['web-hosting/cabohealth.org/app/support/index.html', 'task7-legal'],
@@ -82,6 +85,7 @@ function expectedMedia(path) {
 function expectedKind(path) {
   if (path === 'apps/.htaccess') return 'apache-security';
   if (path.startsWith('apps/')) return 'task6b-miniapp';
+  if (path === 'app/index.html') return 'marketing-landing';
   if (path.startsWith('app/')) return 'task7-legal';
   return 'aasa';
 }
@@ -387,7 +391,7 @@ test('promote-next stops after one unit and rollback restores a root-probe failu
           status: 'verified',
           releaseId: transport.releaseId,
           rootCount: 3,
-          fileCount: 16,
+          fileCount: 17,
           paths: [...paths],
           inventorySha256: transport.inventorySha256,
         });
@@ -474,7 +478,7 @@ test('production action contracts use nonce slugs and sanitize controls, invento
     status: 'verified',
     releaseId: artifact.releaseId,
     rootCount: 3,
-    fileCount: 16,
+    fileCount: 17,
     paths: [...paths],
     inventorySha256: artifact.inventorySha256,
   }, artifact, authority), true);
