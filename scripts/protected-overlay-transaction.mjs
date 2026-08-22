@@ -405,6 +405,39 @@ export function transactionCheckpoint(step) {
     process.env.NODE_ENV === 'test'
     && process.env.CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP === step
   ) process.kill(process.pid, 'SIGKILL');
+  if (
+    process.env.NODE_ENV === 'test'
+    && process.env.CABOHEALTH_OVERLAY_TEST_PAUSE_AFTER_STEP === step
+  ) {
+    const readyPath = process.env.CABOHEALTH_OVERLAY_TEST_PAUSE_READY_PATH;
+    const resumePath = process.env.CABOHEALTH_OVERLAY_TEST_PAUSE_RESUME_PATH;
+    if (typeof readyPath !== 'string' || typeof resumePath !== 'string') {
+      throw new Error('protected_overlay_test_checkpoint_invalid');
+    }
+    writeDurableExclusiveFile(
+      readyPath,
+      `${step}\n`,
+      0o600,
+      'protected_overlay_test_checkpoint_invalid',
+    );
+    const waiter = new Int32Array(new SharedArrayBuffer(4));
+    for (;;) {
+      if (existsSync(resumePath)) {
+        const resume = readDescriptorBoundFile(resumePath, {
+          allowedModes: [0o600],
+          errorCode: 'protected_overlay_test_checkpoint_invalid',
+          expectedParentModes: [0o700, 0o755],
+          maximumSize: 7,
+          minimumSize: 7,
+        });
+        if (resume.bytes.toString('utf8') !== 'resume\n') {
+          throw new Error('protected_overlay_test_checkpoint_invalid');
+        }
+        break;
+      }
+      Atomics.wait(waiter, 0, 0, 10);
+    }
+  }
 }
 
 function acquireExclusiveLock(root) {

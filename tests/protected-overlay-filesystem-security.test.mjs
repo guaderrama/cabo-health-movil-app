@@ -140,6 +140,35 @@ test('a process killed while holding the deployment lock cannot deadlock recover
   assert.deepEqual(JSON.parse(recovered.stdout), { status: 'locked' });
 });
 
+test('test-only transaction barrier holds a real process until explicitly resumed', async (context) => {
+  const fixture = makeMoveTransactionFixture();
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const readyPath = join(fixture, 'checkpoint.ready');
+  const resumePath = join(fixture, 'checkpoint.resume');
+  const worker = spawn(process.execPath, [journalWorkerPath, 'execute', fixture], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      CABOHEALTH_OVERLAY_TEST_PAUSE_AFTER_STEP: 'journal-prepared',
+      CABOHEALTH_OVERLAY_TEST_PAUSE_READY_PATH: readyPath,
+      CABOHEALTH_OVERLAY_TEST_PAUSE_RESUME_PATH: resumePath,
+    },
+  });
+  const output = collectChildOutput(worker);
+
+  await waitForPath(readyPath);
+  assert.equal(worker.exitCode, null);
+  assert.equal(readFileSync(readyPath, 'utf8'), 'journal-prepared\n');
+
+  writeFileSync(resumePath, 'resume\n', { flag: 'wx', mode: 0o600 });
+  const [status] = await once(worker, 'exit');
+  const result = await output;
+  assert.equal(status, 0, result.stderr);
+  assert.equal(readFileSync(join(fixture, 'live/release.txt'), 'utf8'), 'B\n');
+});
+
 test('durable journal records replace atomically and clear without a stale candidate', async (context) => {
   const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-journal-'));
   context.after(() => rmSync(fixture, { recursive: true, force: true }));
