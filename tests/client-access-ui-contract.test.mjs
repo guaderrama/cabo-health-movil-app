@@ -87,3 +87,15 @@ test('one secret field consumes CH or AR while review-only UI never invokes acco
   assert.match(modal, /resource\.iconKey === 'featured'[^]*sparkles-outline/u);
   assert.doesNotMatch(nativeSources, /AsyncStorage|console\.|\blog(?:ger)?\b/iu);
 });
+
+test('remove and delete copy disclose the durable backend deletion and local-installation difference', () => {
+  const messages = read('i18n/messages.ts');
+  const adapter = read('features/clientAccess/firebaseClientAccessAdapter.ts');
+
+  assert.match(messages, /Removing access revokes authorization and queues deletion of the pseudonymous access account and linked records\./u);
+  assert.match(messages, /Quitar el acceso revoca la autorización y pone en cola la eliminación de la cuenta seudónima de acceso y sus registros vinculados\./u);
+  assert.match(messages, /Delete also removes this app installation identifier from your iPhone\./u);
+  assert.match(messages, /Eliminar también borra de tu iPhone el identificador de esta instalación de la app\./u);
+  assert.match(adapter, /removeAccess:[^]*functions\.call\('removeClientAccess'/u);
+  assert.match(adapter, /deleteAccount:[^]*functions\.call\('deleteClientAccount'[^]*installation\.clear\(\)/u);
+});
