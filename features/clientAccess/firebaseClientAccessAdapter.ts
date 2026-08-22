@@ -120,7 +120,10 @@ export function createFirebaseClientAccessAdapter({
       const response = await functions.call('deleteClientAccount', {
         installationId: await getInstallationId(),
       });
-      if (!hasExactKeys(response, ['deleted']) || response.deleted !== true) {
+      if (
+        !hasExactKeys(response, ['status'])
+        || !['pending', 'completed'].includes(response.status as string)
+      ) {
         throw new Error('invalid_backend_response');
       }
       await installation.clear();

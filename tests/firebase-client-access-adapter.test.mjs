@@ -46,7 +46,7 @@ function makeHarness({ currentUid = null } = {}) {
         };
       }
       if (name === 'removeClientAccess') return { removed: true };
-      if (name === 'deleteClientAccount') return { deleted: true };
+      if (name === 'deleteClientAccount') return { status: 'pending' };
       throw new Error(`Unexpected function ${name}`);
   };
   const functions = { call: (name, data) => callImpl(name, data) };
@@ -174,6 +174,31 @@ test('remove and delete require the live principal, clear Firebase auth, and del
     }],
     ['clearInstallation'],
   ]);
+});
+
+test('account deletion accepts only the durable pending or completed backend contract', async () => {
+  for (const status of ['pending', 'completed']) {
+    const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+    harness.replaceCall(async () => ({ status }));
+    const session = await harness.adapter.sessionStore.restore();
+    await harness.adapter.gateway.deleteAccount(session);
+    assert.deepEqual(harness.calls, [['clearInstallation']]);
+  }
+
+  for (const response of [
+    { deleted: true },
+    { status: 'queued' },
+    { status: 'pending', extra: true },
+  ]) {
+    const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+    harness.replaceCall(async () => response);
+    const session = await harness.adapter.sessionStore.restore();
+    await assert.rejects(
+      harness.adapter.gateway.deleteAccount(session),
+      /invalid_backend_response/u,
+    );
+    assert.deepEqual(harness.calls, []);
+  }
 });
 
 test('all authenticated operations fail closed when Firebase has no live client principal', async () => {
