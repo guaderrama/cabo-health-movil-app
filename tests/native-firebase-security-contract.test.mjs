@@ -89,6 +89,7 @@ function collectSourceFiles(root) {
   const ignored = new Set([
     '.git',
     '.test-build',
+    'dist',
     'lib',
     'node_modules',
     'test-build',
