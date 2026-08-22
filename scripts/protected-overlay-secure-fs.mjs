@@ -234,14 +234,14 @@ function captureAncestor(path) {
   }
   const mode = permissionMode(stat);
   const owner = Number(stat.uid);
-  const worldWritable = (mode & 0o002) !== 0;
+  const groupOrWorldWritable = (mode & 0o022) !== 0;
   const sticky = (Number(stat.mode) & 0o1000) !== 0;
   if (
     CURRENT_UID !== null
     && owner !== 0
     && owner !== CURRENT_UID
   ) throw new Error('protected_overlay_path_invalid');
-  if (worldWritable && !(owner === 0 && sticky)) {
+  if (groupOrWorldWritable && !(owner === 0 && sticky)) {
     throw new Error('protected_overlay_path_invalid');
   }
   return Object.freeze({ path, stat: Object.freeze(identityRecord(stat)) });
