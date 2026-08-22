@@ -19,6 +19,7 @@
     "features/devMiniapps/devMiniappStore.ts",
     "features/clientAccess/clientAccessController.ts",
     "features/clientAccess/firebaseClientAccessAdapter.ts",
+    "features/clientAccess/clientInstallationStore.ts",
     "features/clientAccess/clientResourceNavigation.ts",
     "features/home/premiumHomePresentation.ts",
     "features/motion/editorialTileMotion.ts",
