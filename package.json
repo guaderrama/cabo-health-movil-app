@@ -28,6 +28,7 @@
     "web:assemble": "node scripts/assemble-web-release.mjs --assemble",
     "web:verify:check": "node scripts/verify-production.mjs --check",
     "web:test": "node --test tests/web-release-assembly.test.mjs tests/web-release-review-fixes.test.mjs tests/web-release-round2.test.mjs tests/production-verifier.test.mjs",
+    "protected-overlays:release": "node scripts/protected-overlay-release.mjs",
     "functions:build": "npm --prefix functions run build",
     "functions:test": "npm --prefix functions test",
     "staff:dev": "npm --prefix staff-portal run dev",
