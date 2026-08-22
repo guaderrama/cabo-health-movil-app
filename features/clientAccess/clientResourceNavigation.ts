@@ -1,10 +1,17 @@
-import type { ClientResourceLaunch } from './clientAccessController';
+import {
+  APP_REVIEW_LAUNCH_URL,
+  type ClientAccessRealm,
+  type ClientResourceLaunch,
+} from './clientAccessController';
 import { RESTRICTED_WEBVIEW_SECURITY_PROPS } from '../launch/restrictedWebViewBehavior';
 
 const CLIENT_RESOURCE_PATH_PREFIX = '/apps/client-resources/';
 
 export type ClientResourceNavigationDecision =
-  | Readonly<{ decision: 'allow'; reason: 'client-resource-path' }>
+  | Readonly<{
+    decision: 'allow';
+    reason: 'client-resource-path' | 'app-review-launch-path';
+  }>
   | Readonly<{
     decision: 'block';
     reason:
@@ -19,6 +26,7 @@ export type ClientResourceNavigationDecision =
 
 export function classifyClientResourceNavigation(
   url: string,
+  realm: ClientAccessRealm = 'production_client',
 ): ClientResourceNavigationDecision {
   if (typeof url !== 'string' || /[\u0000-\u0020\u007f\\]/u.test(url)) {
     return block('unsafe-url-text');
@@ -51,6 +59,11 @@ export function classifyClientResourceNavigation(
   if (rawPath.includes('%') || !hasSafePathSegments(rawPath)) {
     return block('unsafe-path');
   }
+  if (realm === 'review_sandbox') {
+    return rawPath === '/apps/app-review/launch/'
+      ? { decision: 'allow', reason: 'app-review-launch-path' }
+      : block('path-not-allowed');
+  }
   if (!rawPath.startsWith(CLIENT_RESOURCE_PATH_PREFIX)) {
     return block('path-not-allowed');
   }
@@ -61,8 +74,11 @@ export function getClientResourceWebViewPolicyProps<ShouldStart>(
   source: Readonly<ClientResourceLaunch['source']>,
   onShouldStartLoadWithRequest: ShouldStart,
 ) {
+  const isFixedReviewPage = source.uri === APP_REVIEW_LAUNCH_URL;
   return {
     ...RESTRICTED_WEBVIEW_SECURITY_PROPS,
+    javaScriptEnabled: !isFixedReviewPage,
+    domStorageEnabled: !isFixedReviewPage,
     originWhitelist: ['https://cabohealth.org'],
     source,
     onShouldStartLoadWithRequest,

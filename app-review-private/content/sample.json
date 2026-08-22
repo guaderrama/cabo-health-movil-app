@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "resourceId": "review-sandbox-app-review-sample-v1",
+  "locales": {
+    "en": {
+      "title": "App Review Sample",
+      "introduction": "A fixed, non-clinical demonstration of CaboHealth educational resources.",
+      "sections": [
+        {
+          "id": "review-overview",
+          "title": "Educational sample",
+          "summary": "This review-only page demonstrates the protected resource experience without client or clinical information.",
+          "items": [
+            "The sample is identical for every reviewer installation.",
+            "It contains no personalized recommendations, records, or health measurements."
+          ]
+        }
+      ]
+    },
+    "es-MX": {
+      "title": "Muestra para App Review",
+      "introduction": "Una demostración fija y no clínica de los recursos educativos de CaboHealth.",
+      "sections": [
+        {
+          "id": "review-overview",
+          "title": "Muestra educativa",
+          "summary": "Esta página exclusiva de revisión demuestra la experiencia protegida sin información clínica ni de clientes.",
+          "items": [
+            "La muestra es idéntica en cada instalación del revisor.",
+            "No contiene recomendaciones personalizadas, expedientes ni mediciones de salud."
+          ]
+        }
+      ]
+    }
+  }
+}

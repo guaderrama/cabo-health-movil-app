@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   createClientAccessController,
   createOpaqueClientSession,
+  normalizeClientAccessCredential,
   normalizeClientAccessCode,
 } from '../.test-build/features/clientAccess/clientAccessController.js';
 
@@ -24,6 +25,45 @@ const grant = Object.freeze({
       access: 'client',
     }),
   ]),
+});
+
+const reviewGrant = Object.freeze({
+  schemaVersion: 1,
+  status: 'active',
+  scope: 'review_sandbox',
+  purpose: 'app_review',
+  credentialGeneration: 4,
+  expiresAtMs: null,
+  resources: Object.freeze([Object.freeze({
+    id: 'review-sandbox-app-review-sample-v1',
+    title: Object.freeze({ en: 'App Review Sample', es: 'Muestra para App Review' }),
+    summary: Object.freeze({
+      en: 'A fixed, non-clinical sample prepared only for App Review.',
+      es: 'Una muestra fija y no clínica preparada sólo para App Review.',
+    }),
+    iconKey: 'featured',
+    access: 'client',
+  })]),
+});
+
+test('CH and AR credentials canonicalize to distinct 128-bit realms', () => {
+  assert.deepEqual(
+    normalizeClientAccessCredential(' ch 01234567 89abcdef 01234567 89abcdef '),
+    {
+      canonical: 'CH-01234567-89ABCDEF-01234567-89ABCDEF',
+      realm: 'production_client',
+    },
+  );
+  assert.deepEqual(
+    normalizeClientAccessCredential('ar‐01234567‑89abcdef−01234567—89abcdef'),
+    {
+      canonical: 'AR-01234567-89ABCDEF-01234567-89ABCDEF',
+      realm: 'review_sandbox',
+    },
+  );
+  assert.equal(normalizeClientAccessCredential('AR-01234567-89ABCDEF'), null);
+  assert.equal(normalizeClientAccessCredential('ZZ-01234567-89ABCDEF-01234567-89ABCDEF'), null);
+  assert.equal(normalizeClientAccessCode('AR-01234567-89ABCDEF-01234567-89ABCDEF'), null);
 });
 
 test('a valid code establishes access while storage sees only an opaque session', async () => {
@@ -56,6 +96,83 @@ test('a valid code establishes access while storage sees only an opaque session'
   assert.deepEqual(persisted, [session]);
   assert.notEqual(persisted[0], code);
   assert.deepEqual(Object.keys(persisted[0]), []);
+});
+
+test('the same controller field accepts a fixed App Review grant without persisting its credential', async () => {
+  const credential = 'AR-01234567-89ABCDEF-01234567-89ABCDEF';
+  const session = createOpaqueClientSession();
+  const persisted = [];
+  const controller = createClientAccessController({
+    gateway: {
+      redeem: async (submitted) => {
+        assert.equal(submitted, credential);
+        return { session, grant: reviewGrant };
+      },
+      refresh: async () => null,
+      createLaunch: async () => null,
+      removeAccess: async () => {},
+      deleteAccount: async () => {},
+      signOut: async () => {},
+    },
+    sessionStore: {
+      restore: async () => null,
+      commit: async (value) => { persisted.push(value); },
+      clear: async () => {},
+    },
+  });
+
+  assert.equal(await controller.redeem(credential.toLowerCase()), true);
+  assert.deepEqual(controller.getSnapshot(), {
+    status: 'unlocked',
+    grant: reviewGrant,
+    error: null,
+  });
+  assert.deepEqual(persisted, [session]);
+  assert.equal(JSON.stringify(persisted).includes(credential), false);
+});
+
+test('an App Review grant creates only the fixed review POST launch source', async () => {
+  const session = createOpaqueClientSession();
+  const effects = [];
+  const controller = createClientAccessController({
+    now: () => 1_900_000_000_000,
+    gateway: {
+      redeem: async () => ({ session, grant: reviewGrant }),
+      refresh: async () => reviewGrant,
+      createLaunch: async (_session, resourceId) => {
+        effects.push(resourceId);
+        return {
+          expiresAtMs: 1_900_000_060_000,
+          launchUrl: 'https://cabohealth.org/apps/app-review/launch/',
+          method: 'POST',
+          nonce: 'review_nonce_abcdefghijklmnopqrs',
+        };
+      },
+      removeAccess: async () => {},
+      deleteAccount: async () => {},
+      signOut: async () => {},
+    },
+    sessionStore: {
+      restore: async () => null,
+      commit: async () => {},
+      clear: async () => {},
+    },
+  });
+  await controller.redeem('AR-01234567-89ABCDEF-01234567-89ABCDEF');
+
+  assert.deepEqual(await controller.createLaunch('review-sandbox-app-review-sample-v1'), {
+    realm: 'review_sandbox',
+    expiresAtMs: 1_900_000_060_000,
+    source: {
+      uri: 'https://cabohealth.org/apps/app-review/launch/',
+      method: 'POST',
+      body: 'nonce=review_nonce_abcdefghijklmnopqrs',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      },
+    },
+  });
+  assert.deepEqual(effects, ['review-sandbox-app-review-sample-v1']);
 });
 
 test('malformed codes fail locally without reaching the gateway or storage', async () => {
@@ -454,6 +571,7 @@ test('an unlocked assigned resource creates only a short-lived CaboHealth POST l
 
   assert.deepEqual(effects, [[session, 'microbiota-guide']]);
   assert.deepEqual(launch, {
+    realm: 'production_client',
     source: {
       uri: 'https://cabohealth.org/apps/client-resources/launch/',
       method: 'POST',

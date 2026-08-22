@@ -1,5 +1,8 @@
 const OPAQUE_SESSION = Symbol('cabohealth.clientAccess.session');
 export const CLIENT_RESOURCE_LAUNCH_URL = 'https://cabohealth.org/apps/client-resources/launch/' as const;
+export const APP_REVIEW_LAUNCH_URL = 'https://cabohealth.org/apps/app-review/launch/' as const;
+export const APP_REVIEW_RESOURCE_ID = 'review-sandbox-app-review-sample-v1' as const;
+export type ClientAccessRealm = 'production_client' | 'review_sandbox';
 const CLIENT_RESOURCE_ICON_KEYS = new Set([
   'flask-outline',
   'book-outline',
@@ -23,12 +26,24 @@ export interface ClientResourceView {
   readonly access: 'client';
 }
 
-export interface ClientGrantView {
+export interface ProductionClientGrantView {
   readonly schemaVersion: 1;
   readonly status: 'active';
   readonly expiresAtMs: number;
   readonly resources: readonly Readonly<ClientResourceView>[];
 }
+
+export interface AppReviewGrantView {
+  readonly schemaVersion: 1;
+  readonly status: 'active';
+  readonly scope: 'review_sandbox';
+  readonly purpose: 'app_review';
+  readonly credentialGeneration: number;
+  readonly expiresAtMs: null;
+  readonly resources: readonly [Readonly<ClientResourceView>];
+}
+
+export type ClientGrantView = ProductionClientGrantView | AppReviewGrantView;
 
 export type ClientAccessStatus = 'checking' | 'locked' | 'redeeming' | 'unlocked' | 'error';
 
@@ -39,8 +54,9 @@ export interface ClientAccessSnapshot {
 }
 
 export interface ClientResourceLaunch {
+  readonly realm: ClientAccessRealm;
   readonly source: Readonly<{
-    uri: typeof CLIENT_RESOURCE_LAUNCH_URL;
+    uri: typeof CLIENT_RESOURCE_LAUNCH_URL | typeof APP_REVIEW_LAUNCH_URL;
     method: 'POST';
     body: string;
     headers: Readonly<{ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }>;
@@ -82,16 +98,28 @@ export function createOpaqueClientSession(): OpaqueClientSession {
 }
 
 export function normalizeClientAccessCode(rawCode: string): string | null {
+  const credential = normalizeClientAccessCredential(rawCode);
+  return credential?.realm === 'production_client' ? credential.canonical : null;
+}
+
+export function normalizeClientAccessCredential(rawCode: string): Readonly<{
+  canonical: string;
+  realm: 'production_client' | 'review_sandbox';
+}> | null {
   if (typeof rawCode !== 'string' || /[\u0000-\u001f\u007f]/u.test(rawCode)) return null;
   const normalized = rawCode
     .trim()
     .toUpperCase()
     .replace(/[\u2010-\u2015\u2212]/gu, '-');
-  const match = /^CH[ -]*([A-F0-9 -]+)$/u.exec(normalized);
+  const match = /^(CH|AR)[ -]*([A-F0-9 -]+)$/u.exec(normalized);
   if (!match) return null;
-  const entropy = match[1].replace(/[ -]/gu, '');
+  const entropy = match[2].replace(/[ -]/gu, '');
   if (!/^[A-F0-9]{32}$/u.test(entropy)) return null;
-  return `CH-${entropy.match(/.{8}/gu)!.join('-')}`;
+  const prefix = match[1];
+  return Object.freeze({
+    canonical: `${prefix}-${entropy.match(/.{8}/gu)!.join('-')}`,
+    realm: prefix === 'CH' ? 'production_client' : 'review_sandbox',
+  });
 }
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
@@ -143,6 +171,7 @@ function parseClientResource(value: unknown): Readonly<ClientResourceView> | nul
 export function parseClientGrantView(value: unknown, nowMs: number): Readonly<ClientGrantView> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
+  if (record.scope === 'review_sandbox') return parseAppReviewGrant(record);
   if (!hasExactKeys(record, ['expiresAtMs', 'resources', 'schemaVersion', 'status'])) return null;
   if (
     record.schemaVersion !== 1
@@ -168,25 +197,113 @@ export function parseClientGrantView(value: unknown, nowMs: number): Readonly<Cl
   });
 }
 
+function parseAppReviewGrant(record: Record<string, unknown>): Readonly<AppReviewGrantView> | null {
+  if (!hasExactKeys(record, [
+    'credentialGeneration',
+    'expiresAtMs',
+    'purpose',
+    'resources',
+    'schemaVersion',
+    'scope',
+    'status',
+  ])) return null;
+  if (
+    record.schemaVersion !== 1
+    || record.status !== 'active'
+    || record.scope !== 'review_sandbox'
+    || record.purpose !== 'app_review'
+    || record.expiresAtMs !== null
+    || !Number.isSafeInteger(record.credentialGeneration)
+    || (record.credentialGeneration as number) < 1
+    || !Array.isArray(record.resources)
+    || record.resources.length !== 1
+  ) return null;
+  const expected = {
+    access: 'client',
+    iconKey: 'featured',
+    id: APP_REVIEW_RESOURCE_ID,
+    summary: {
+      en: 'A fixed, non-clinical sample prepared only for App Review.',
+      es: 'Una muestra fija y no clínica preparada sólo para App Review.',
+    },
+    title: { en: 'App Review Sample', es: 'Muestra para App Review' },
+  } as const;
+  const resource = record.resources[0];
+  if (!isExactReviewResource(resource, expected)) return null;
+  return Object.freeze({
+    credentialGeneration: record.credentialGeneration as number,
+    expiresAtMs: null,
+    purpose: 'app_review',
+    resources: Object.freeze([Object.freeze({
+      access: 'client',
+      iconKey: expected.iconKey,
+      id: expected.id,
+      summary: Object.freeze({ ...expected.summary }),
+      title: Object.freeze({ ...expected.title }),
+    })]) as readonly [Readonly<ClientResourceView>],
+    schemaVersion: 1,
+    scope: 'review_sandbox',
+    status: 'active',
+  });
+}
+
+function isExactReviewResource(
+  value: unknown,
+  expected: Readonly<ClientResourceView>,
+): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (!hasExactKeys(record, ['access', 'iconKey', 'id', 'summary', 'title'])) return false;
+  const title = parseLocalizedText(record.title, 80);
+  const summary = parseLocalizedText(record.summary, 240);
+  return record.access === expected.access
+    && record.iconKey === expected.iconKey
+    && record.id === expected.id
+    && title?.en === expected.title.en
+    && title.es === expected.title.es
+    && summary?.en === expected.summary.en
+    && summary.es === expected.summary.es;
+}
+
+export function clientGrantRealm(grant: Readonly<ClientGrantView>): ClientAccessRealm {
+  return 'scope' in grant && grant.scope === 'review_sandbox'
+    ? 'review_sandbox'
+    : 'production_client';
+}
+
+function clientGrantIsActive(grant: Readonly<ClientGrantView>, nowMs: number): boolean {
+  return grant.expiresAtMs === null || grant.expiresAtMs > nowMs;
+}
+
 function parseClientResourceLaunch(
   value: unknown,
   nowMs: number,
+  realm: ClientAccessRealm,
 ): Readonly<ClientResourceLaunch> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   if (!hasExactKeys(record, ['expiresAtMs', 'launchUrl', 'method', 'nonce'])) return null;
+  const noncePattern = realm === 'production_client'
+    ? /^[A-Za-z0-9_-]{32,256}$/u
+    : /^[A-Za-z0-9_-]{32}$/u;
   if (
-    record.launchUrl !== CLIENT_RESOURCE_LAUNCH_URL
+    record.launchUrl !== (
+      realm === 'production_client' ? CLIENT_RESOURCE_LAUNCH_URL : APP_REVIEW_LAUNCH_URL
+    )
     || record.method !== 'POST'
     || !Number.isSafeInteger(record.expiresAtMs)
     || (record.expiresAtMs as number) <= nowMs
     || (record.expiresAtMs as number) > nowMs + 120_000
     || typeof record.nonce !== 'string'
-    || !/^[A-Za-z0-9_-]{32,256}$/u.test(record.nonce)
+    || !noncePattern.test(record.nonce)
   ) return null;
+  const launchUrl = realm === 'production_client'
+    ? CLIENT_RESOURCE_LAUNCH_URL
+    : APP_REVIEW_LAUNCH_URL;
   return Object.freeze({
+    realm,
     source: Object.freeze({
-      uri: CLIENT_RESOURCE_LAUNCH_URL,
+      uri: launchUrl,
       method: 'POST' as const,
       body: `nonce=${encodeURIComponent(record.nonce)}`,
       headers: Object.freeze({
@@ -290,7 +407,7 @@ export function createClientAccessController({
       || !activeGrant
       || !activeGrant.resources.some((resource) => resource.id === resourceId)
     ) return null;
-    if (activeGrant.expiresAtMs <= now()) {
+    if (!clientGrantIsActive(activeGrant, now())) {
       ++generation;
       await clearLocalSession();
       publish({ status: 'locked', grant: null, error: null });
@@ -308,9 +425,9 @@ export function createClientAccessController({
       || currentSession !== session
       || snapshot.status !== 'unlocked'
       || snapshot.grant !== activeGrant
-      || activeGrant.expiresAtMs <= now()
+      || !clientGrantIsActive(activeGrant, now())
     ) return null;
-    return parseClientResourceLaunch(response, now());
+    return parseClientResourceLaunch(response, now(), clientGrantRealm(activeGrant));
   };
 
   return {
@@ -342,8 +459,8 @@ export function createClientAccessController({
     },
     redeem: async (rawCode) => {
       if (redemptionPending) return false;
-      const code = normalizeClientAccessCode(rawCode);
-      if (!code) {
+      const credential = normalizeClientAccessCredential(rawCode);
+      if (!credential) {
         publish({ status: 'locked', grant: null, error: 'invalid-code' });
         return false;
       }
@@ -352,7 +469,7 @@ export function createClientAccessController({
       publish({ status: 'redeeming', grant: null, error: null });
       let response: Awaited<ReturnType<ClientAccessGateway['redeem']>>;
       try {
-        response = await gateway.redeem(code);
+        response = await gateway.redeem(credential.canonical);
       } catch {
         redemptionPending = false;
         if (operationGeneration !== generation) return false;
@@ -371,7 +488,11 @@ export function createClientAccessController({
         return false;
       }
       const parsedGrant = parseClientGrantView(response.grant, now());
-      if (!isOpaqueClientSession(response.session) || !parsedGrant) {
+      if (
+        !isOpaqueClientSession(response.session)
+        || !parsedGrant
+        || clientGrantRealm(parsedGrant) !== credential.realm
+      ) {
         redemptionPending = false;
         await clearLocalSession();
         publish({ status: 'locked', grant: null, error: 'invalid-code' });

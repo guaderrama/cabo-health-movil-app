@@ -49,6 +49,44 @@ test('client WebView blocks sibling paths and path confusion or traversal', () =
   ]) block(url);
 });
 
+test('App Review WebView allows only its exact fixed launch path', () => {
+  assert.deepEqual(
+    classifyClientResourceNavigation(
+      'https://cabohealth.org/apps/app-review/launch/',
+      'review_sandbox',
+    ),
+    { decision: 'allow', reason: 'app-review-launch-path' },
+  );
+  for (const url of [
+    'https://cabohealth.org/apps/app-review/',
+    'https://cabohealth.org/apps/app-review/sample/',
+    'https://cabohealth.org/apps/app-review/launch/index.html',
+    'https://cabohealth.org/apps/app-review/launch/?nonce=leak',
+    'https://cabohealth.org/apps/client-resources/launch/',
+  ]) {
+    assert.equal(
+      classifyClientResourceNavigation(url, 'review_sandbox').decision,
+      'block',
+    );
+  }
+});
+
+test('the fixed App Review page runs without JavaScript or DOM storage', () => {
+  const source = {
+    uri: 'https://cabohealth.org/apps/app-review/launch/',
+    method: 'POST',
+    body: 'nonce=abcdefghijklmnopqrstuvwxyz123456',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+  };
+  const props = getClientResourceWebViewPolicyProps(source, () => true);
+
+  assert.equal(props.javaScriptEnabled, false);
+  assert.equal(props.domStorageEnabled, false);
+  assert.equal(props.source, source);
+  assert.equal('onMessage' in props, false);
+  assert.equal('injectedJavaScript' in props, false);
+});
+
 test('client launch policy uses POST and the shared app-bound WebView hardening', () => {
   const source = {
     uri: 'https://cabohealth.org/apps/client-resources/launch/',

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cabohealth.org/schemas/app-review-broker-config-v1.json",
+  "title": "CaboHealth private App Review broker configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "baseUrl", "expectedHost", "keyId", "hmacKeyBase64"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "baseUrl": {
+      "type": "string",
+      "pattern": "^https://[a-z0-9.-]+/appReviewBrokerApi$"
+    },
+    "expectedHost": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$"
+    },
+    "keyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "hmacKeyBase64": {
+      "type": "string",
+      "minLength": 44,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+    }
+  }
+}

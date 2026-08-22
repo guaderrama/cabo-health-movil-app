@@ -43,12 +43,12 @@ export function ClientResourceWebView({
   }, [t]);
 
   const handleNavigationRequest = useCallback((request: ShouldStartLoadRequest) => {
-    const decision = classifyClientResourceNavigation(request.url);
+    const decision = classifyClientResourceNavigation(request.url, launch.realm);
     if (decision.decision === 'allow') return true;
     setLoading(false);
     setErrorMessage(t('clientAccess.navigationBlocked'));
     return false;
-  }, [t]);
+  }, [launch.realm, t]);
 
   const handleLoadError = useCallback((_event: WebViewErrorEvent) => {
     showUnavailable();

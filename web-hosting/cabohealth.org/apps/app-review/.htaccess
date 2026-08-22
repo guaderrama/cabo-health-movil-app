@@ -1,0 +1,24 @@
+Options -Indexes -MultiViews
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^lib(?:/|$) - [F,L,NC]
+</IfModule>
+
+<FilesMatch "(^\.|\.(?:json|md|map)$)">
+  Require all denied
+</FilesMatch>
+
+<Files "runtime.php">
+  Require all denied
+</Files>
+
+<IfModule mod_headers.c>
+  Header always set Cache-Control "no-store, max-age=0"
+  Header always set Content-Security-Policy "default-src 'none'; style-src 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'none'; base-uri 'none'"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+  Header always set Referrer-Policy "no-referrer"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always unset X-Powered-By
+</IfModule>

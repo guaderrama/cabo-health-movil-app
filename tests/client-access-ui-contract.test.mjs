@@ -61,7 +61,7 @@ test('unlocked resources request an ephemeral launch and render only in the rest
   assert.match(modal, /<ClientResourceWebView/u);
   assert.match(modal, /status !== 'unlocked'[^]*setActiveLaunch\(null\)/u);
   assert.match(clientWebView, /<WebView/u);
-  assert.match(clientWebView, /classifyClientResourceNavigation\(request\.url\)/u);
+  assert.match(clientWebView, /classifyClientResourceNavigation\(request\.url, launch\.realm\)/u);
   assert.match(clientWebView, /getClientResourceWebViewPolicyProps/u);
   assert.match(navigation, /RESTRICTED_WEBVIEW_SECURITY_PROPS/u);
   assert.match(sharedWebViewSecurity, /limitsNavigationsToAppBoundDomains: true/u);
@@ -69,4 +69,21 @@ test('unlocked resources request an ephemeral launch and render only in the rest
   assert.deepEqual(appConfig.expo.ios.infoPlist.WKAppBoundDomains, ['cabohealth.org']);
   assert.doesNotMatch(`${modal}\n${clientWebView}\n${controller}`, /Linking|Share|onMessage|injectedJavaScript/iu);
   assert.doesNotMatch(controller, /private\.example|targetUrl|destinationUrl/iu);
+});
+
+test('one secret field consumes CH or AR while review-only UI never invokes account deletion', () => {
+  const modal = read('features/clientAccess/ClientAccessModal.tsx');
+  const controller = read('features/clientAccess/clientAccessController.ts');
+  const adapter = read('features/clientAccess/firebaseClientAccessAdapter.ts');
+  const nativeSources = `${modal}\n${controller}\n${adapter}`;
+
+  assert.equal((modal.match(/<TextInput\b/gu) ?? []).length, 1);
+  assert.match(modal, /secureTextEntry/u);
+  assert.match(controller, /\^\(CH\|AR\)/u);
+  assert.match(adapter, /redeemAppReviewCredential/u);
+  assert.match(adapter, /refreshAppReviewAccess/u);
+  assert.match(adapter, /createAppReviewLaunch/u);
+  assert.match(modal, /grant\.scope !== 'review_sandbox'[^]*clientAccess\.deleteAccount/u);
+  assert.match(modal, /resource\.iconKey === 'featured'[^]*sparkles-outline/u);
+  assert.doesNotMatch(nativeSources, /AsyncStorage|console\.|\blog(?:ger)?\b/iu);
 });

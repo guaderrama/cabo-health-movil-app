@@ -1,0 +1,117 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background:
+    radial-gradient(circle at 10% 0%, rgb(76 199 215 / 18%), transparent 30rem),
+    linear-gradient(180deg, #eaf8fb 0%, #f9fbfb 48%, #f7f3ec 100%);
+  color: #082e40;
+  margin: 0;
+  min-height: 100vh;
+}
+
+main {
+  margin: 0 auto;
+  max-width: 44rem;
+  padding: max(2rem, env(safe-area-inset-top)) 1rem max(3rem, env(safe-area-inset-bottom));
+}
+
+header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 1.5rem;
+  padding: 0 .25rem;
+}
+
+.brand {
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -.08em;
+  line-height: .72;
+  margin: 0;
+}
+
+.realm,
+.eyebrow {
+  color: #98703a;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .19em;
+  text-transform: uppercase;
+}
+
+.locale {
+  margin-bottom: 1rem;
+}
+
+.intro {
+  color: #41697a;
+  font-size: .98rem;
+  line-height: 1.55;
+  margin: 0 0 .75rem;
+  padding: 0 .25rem;
+}
+
+.sample-card {
+  background: rgb(255 255 255 / 92%);
+  border: 1px solid rgb(9 83 108 / 14%);
+  border-radius: 1.35rem;
+  box-shadow: 0 1.2rem 3rem rgb(5 49 66 / 10%);
+  padding: 1.35rem;
+}
+
+.sample-card h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.65rem, 8vw, 2.35rem);
+  letter-spacing: -.03em;
+  line-height: 1.05;
+  margin: .3rem 0 .8rem;
+}
+
+.sample-card p,
+.sample-card li {
+  color: #315e70;
+  line-height: 1.55;
+}
+
+.sample-card ul {
+  margin: 1rem 0 0;
+  padding-left: 1.25rem;
+}
+
+form {
+  margin-top: 1.5rem;
+}
+
+button {
+  appearance: none;
+  background: #0b617d;
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  min-height: 3rem;
+  padding: .75rem 1.25rem;
+  width: 100%;
+}
+
+button:focus-visible {
+  outline: 3px solid #bc8b49;
+  outline-offset: 3px;
+}
+
+@media (min-width: 42rem) {
+  main {
+    padding-inline: 2rem;
+  }
+}

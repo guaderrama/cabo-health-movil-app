@@ -1,0 +1,15 @@
+<?php
+
+declare(strict_types=1);
+
+return static function (): AppReviewBackend {
+    $configPath = getenv('CABOHEALTH_APP_REVIEW_SIGNING_CONFIG');
+    $documentRoot = (string) ($_SERVER['DOCUMENT_ROOT'] ?? '');
+    if (!is_string($configPath) || $configPath === '') {
+        throw new AppReviewUnavailable('Private App Review signing configuration is not installed.');
+    }
+    return SignedFunctionsAppReviewBackend::fromPrivateConfigFile(
+        $configPath,
+        $documentRoot,
+    );
+};

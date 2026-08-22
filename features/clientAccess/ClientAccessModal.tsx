@@ -187,7 +187,9 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
                     ]}
                   >
                     <Ionicons
-                      name={resource.iconKey as keyof typeof Ionicons.glyphMap}
+                      name={(resource.iconKey === 'featured'
+                        ? 'sparkles-outline'
+                        : resource.iconKey) as keyof typeof Ionicons.glyphMap}
                       size={21}
                       color={colors.primary}
                     />
@@ -212,13 +214,15 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
               >
                 <Text style={[styles.secondaryLabel, { color: colors.primary }]}>{t('clientAccess.removeAccess')}</Text>
               </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setConfirmAction('delete')}
-                style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
-              >
-                <Text style={[styles.deleteLabel, { color: colors.error }]}>{t('clientAccess.deleteAccount')}</Text>
-              </Pressable>
+              {(!('scope' in grant) || grant.scope !== 'review_sandbox') && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setConfirmAction('delete')}
+                  style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.deleteLabel, { color: colors.error }]}>{t('clientAccess.deleteAccount')}</Text>
+                </Pressable>
+              )}
             </View>
           ) : (
             <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
