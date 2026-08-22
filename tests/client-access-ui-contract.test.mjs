@@ -71,7 +71,7 @@ test('unlocked resources request an ephemeral launch and render only in the rest
   assert.doesNotMatch(controller, /private\.example|targetUrl|destinationUrl/iu);
 });
 
-test('one secret field consumes CH or AR while review-only UI never invokes account deletion', () => {
+test('one secret field consumes CH or AR while App Review exposes isolated durable account deletion', () => {
   const modal = read('features/clientAccess/ClientAccessModal.tsx');
   const controller = read('features/clientAccess/clientAccessController.ts');
   const adapter = read('features/clientAccess/firebaseClientAccessAdapter.ts');
@@ -83,7 +83,14 @@ test('one secret field consumes CH or AR while review-only UI never invokes acco
   assert.match(adapter, /redeemAppReviewCredential/u);
   assert.match(adapter, /refreshAppReviewAccess/u);
   assert.match(adapter, /createAppReviewLaunch/u);
-  assert.match(modal, /grant\.scope !== 'review_sandbox'[^]*clientAccess\.deleteAccount/u);
+  assert.match(adapter, /deleteAppReviewAccount/u);
+  assert.match(modal, /!isReviewGrant[^]*clientAccess\.removeAccess/u);
+  assert.match(modal, /isReviewGrant[^]*clientAccess\.deleteReviewAccount/u);
+  assert.match(modal, /reviewDeleting[^]*clientAccess\.confirmDeleteReviewTitle/u);
+  assert.match(modal, /deletionResult\.status === 'pending'/u);
+  assert.match(modal, /clientAccess\.deletionPendingBody/u);
+  assert.match(modal, /clientAccess\.deletionCompletedBody/u);
+  assert.match(modal, /deletionError[^]*clientAccess\.deleteUnavailable/u);
   assert.match(modal, /resource\.iconKey === 'featured'[^]*sparkles-outline/u);
   assert.doesNotMatch(nativeSources, /AsyncStorage|console\.|\blog(?:ger)?\b/iu);
 });

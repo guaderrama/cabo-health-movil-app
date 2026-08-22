@@ -418,17 +418,26 @@ test('remove and delete require the live principal, clear Firebase auth, and del
   ]);
 });
 
-test('review removal and deletion never cross into production account callables', async () => {
+test('review deletion uses only its realm-specific callable and returns the durable acknowledgement', async () => {
   const harness = makeHarness({
     currentUid: 'review_abcdefghijklmnopqrstuvwxyz123456',
+  });
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    return { status: 'pending' };
   });
   const session = await harness.adapter.sessionStore.restore();
   assert.ok(session);
 
-  await harness.adapter.gateway.removeAccess(session);
-  await harness.adapter.gateway.deleteAccount(session);
+  const result = await harness.adapter.gateway.deleteAccount(session);
 
-  assert.deepEqual(harness.calls, [['clearInstallation']]);
+  assert.deepEqual(result, { status: 'pending' });
+  assert.deepEqual(harness.calls, [
+    ['call', 'deleteAppReviewAccount', {
+      installationId: 'installation_abcdefghijklmnopqrstuvwxyz123456',
+    }],
+    ['clearInstallation'],
+  ]);
   assert.equal(harness.calls.some((entry) => (
     entry.includes('removeClientAccess') || entry.includes('deleteClientAccount')
   )), false);
@@ -439,7 +448,7 @@ test('account deletion accepts only the durable pending or completed backend con
     const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
     harness.replaceCall(async () => ({ status }));
     const session = await harness.adapter.sessionStore.restore();
-    await harness.adapter.gateway.deleteAccount(session);
+    assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), { status });
     assert.deepEqual(harness.calls, [['clearInstallation']]);
   }
 

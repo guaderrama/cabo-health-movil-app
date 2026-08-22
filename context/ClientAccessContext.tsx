@@ -12,6 +12,7 @@ import { AppState } from 'react-native';
 import {
   createClientAccessController,
   type ClientAccessController,
+  type ClientAccountDeletionResult,
   type ClientAccessGateway,
   type ClientAccessSnapshot,
   type ClientResourceLaunch,
@@ -23,7 +24,7 @@ const LOCKED_GATEWAY: ClientAccessGateway = Object.freeze({
   refresh: async () => null,
   createLaunch: async () => null,
   removeAccess: async () => {},
-  deleteAccount: async () => {},
+  deleteAccount: async () => { throw new Error('Client access is not configured'); },
   signOut: async () => {},
 });
 
@@ -38,7 +39,7 @@ interface ClientAccessContextValue extends ClientAccessSnapshot {
   refresh(): Promise<void>;
   createLaunch(resourceId: string): Promise<Readonly<ClientResourceLaunch> | null>;
   removeAccess(): Promise<boolean>;
-  deleteAccount(): Promise<boolean>;
+  deleteAccount(): Promise<Readonly<ClientAccountDeletionResult> | null>;
 }
 
 const ClientAccessContext = createContext<ClientAccessContextValue | undefined>(undefined);

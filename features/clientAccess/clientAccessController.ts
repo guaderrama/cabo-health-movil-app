@@ -3,6 +3,10 @@ export const CLIENT_RESOURCE_LAUNCH_URL = 'https://cabohealth.org/apps/client-re
 export const APP_REVIEW_LAUNCH_URL = 'https://cabohealth.org/apps/app-review/launch/' as const;
 export const APP_REVIEW_RESOURCE_ID = 'review-sandbox-app-review-sample-v1' as const;
 export type ClientAccessRealm = 'production_client' | 'review_sandbox';
+export type ClientAccountDeletionStatus = 'pending' | 'completed';
+export interface ClientAccountDeletionResult {
+  readonly status: ClientAccountDeletionStatus;
+}
 const CLIENT_RESOURCE_ICON_KEYS = new Set([
   'flask-outline',
   'book-outline',
@@ -72,7 +76,7 @@ export interface ClientAccessGateway {
   refresh(session: OpaqueClientSession): Promise<Readonly<ClientGrantView> | null>;
   createLaunch(session: OpaqueClientSession, resourceId: string): Promise<unknown>;
   removeAccess(session: OpaqueClientSession): Promise<void>;
-  deleteAccount(session: OpaqueClientSession): Promise<void>;
+  deleteAccount(session: OpaqueClientSession): Promise<Readonly<ClientAccountDeletionResult>>;
   signOut(): Promise<void>;
 }
 
@@ -90,7 +94,7 @@ export interface ClientAccessController {
   refresh(): Promise<void>;
   createLaunch(resourceId: string): Promise<Readonly<ClientResourceLaunch> | null>;
   removeAccess(): Promise<boolean>;
-  deleteAccount(): Promise<boolean>;
+  deleteAccount(): Promise<Readonly<ClientAccountDeletionResult> | null>;
 }
 
 export function createOpaqueClientSession(): OpaqueClientSession {
@@ -338,6 +342,7 @@ export function createClientAccessController({
   let currentSession: OpaqueClientSession | null = null;
   let generation = 0;
   let redemptionPending = false;
+  let deletionPending = false;
   const listeners = new Set<(snapshot: Readonly<ClientAccessSnapshot>) => void>();
   const publish = (next: ClientAccessSnapshot) => {
     snapshot = Object.freeze(next);
@@ -351,7 +356,7 @@ export function createClientAccessController({
   };
 
   const refresh = async () => {
-    if (redemptionPending) return;
+    if (redemptionPending || deletionPending) return;
     const operationGeneration = ++generation;
     const session = currentSession;
     if (!session) {
@@ -377,14 +382,15 @@ export function createClientAccessController({
     publish({ status: 'unlocked', grant: parsedGrant, error: null });
   };
 
-  const terminate = async (action: 'removeAccess' | 'deleteAccount') => {
+  const removeAccess = async () => {
+    if (deletionPending) return false;
     ++generation;
     const session = currentSession;
     publish({ status: 'checking', grant: null, error: null });
     let remoteSucceeded = true;
     if (session) {
       try {
-        await gateway[action](session);
+        await gateway.removeAccess(session);
       } catch {
         remoteSucceeded = false;
       }
@@ -397,6 +403,43 @@ export function createClientAccessController({
       error: succeeded ? null : 'unavailable',
     });
     return succeeded;
+  };
+
+  const deleteAccount = async (): Promise<Readonly<ClientAccountDeletionResult> | null> => {
+    if (deletionPending) return null;
+    deletionPending = true;
+    const operationGeneration = ++generation;
+    const session = currentSession;
+    const activeGrant = snapshot.status === 'unlocked' ? snapshot.grant : null;
+    publish({ status: 'checking', grant: null, error: null });
+    if (!session) {
+      deletionPending = false;
+      publish({ status: 'locked', grant: null, error: null });
+      return null;
+    }
+    let result: Readonly<ClientAccountDeletionResult>;
+    try {
+      result = await gateway.deleteAccount(session);
+    } catch {
+      deletionPending = false;
+      if (operationGeneration !== generation) return null;
+      publish(activeGrant
+        ? { status: 'unlocked', grant: activeGrant, error: 'unavailable' }
+        : { status: 'error', grant: null, error: 'unavailable' });
+      return null;
+    }
+    if (operationGeneration !== generation) {
+      deletionPending = false;
+      return null;
+    }
+    const localSucceeded = await clearLocalSession();
+    deletionPending = false;
+    publish({
+      status: localSucceeded ? 'locked' : 'error',
+      grant: null,
+      error: localSucceeded ? null : 'unavailable',
+    });
+    return result;
   };
 
   const createLaunch = async (resourceId: string) => {
@@ -458,7 +501,7 @@ export function createClientAccessController({
       await refresh();
     },
     redeem: async (rawCode) => {
-      if (redemptionPending) return false;
+      if (redemptionPending || deletionPending) return false;
       const credential = normalizeClientAccessCredential(rawCode);
       if (!credential) {
         publish({ status: 'locked', grant: null, error: 'invalid-code' });
@@ -518,7 +561,7 @@ export function createClientAccessController({
     },
     refresh,
     createLaunch,
-    removeAccess: () => terminate('removeAccess'),
-    deleteAccount: () => terminate('deleteAccount'),
+    removeAccess,
+    deleteAccount,
   };
 }

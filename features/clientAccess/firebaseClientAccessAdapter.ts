@@ -157,11 +157,10 @@ export function createFirebaseClientAccessAdapter({
 
     deleteAccount: async (_session: OpaqueClientSession) => {
       const principal = requireAccessPrincipal();
-      if (principal.realm === 'review_sandbox') {
-        await installation.clear();
-        return;
-      }
-      const response = await functions.call('deleteClientAccount', {
+      const response = await functions.call(
+        principal.realm === 'production_client'
+          ? 'deleteClientAccount'
+          : 'deleteAppReviewAccount', {
         installationId: await getInstallationId(),
       });
       if (
@@ -171,6 +170,7 @@ export function createFirebaseClientAccessAdapter({
         throw new Error('invalid_backend_response');
       }
       await installation.clear();
+      return Object.freeze({ status: response.status as 'pending' | 'completed' });
     },
 
     signOut: () => auth.signOut(),

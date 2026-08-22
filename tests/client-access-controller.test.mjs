@@ -345,19 +345,156 @@ test('a revoked foreground refresh clears the session and locks resources', asyn
   });
 });
 
-for (const action of ['removeAccess', 'deleteAccount']) {
-  test(`${action} locks immediately and clears local access even when the server fails`, async () => {
-    const session = createOpaqueClientSession();
-    const effects = [];
-    const gateway = {
+test('removeAccess locks immediately and clears local access even when the server fails', async () => {
+  const session = createOpaqueClientSession();
+  const effects = [];
+  const controller = createClientAccessController({
+    gateway: {
       redeem: async () => null,
       refresh: async () => grant,
       removeAccess: async () => { effects.push('remove-remote'); throw new Error('offline'); },
+      deleteAccount: async () => { throw new Error('not used'); },
+      signOut: async () => { effects.push('sign-out'); },
+    },
+    sessionStore: {
+      restore: async () => session,
+      commit: async () => {},
+      clear: async () => { effects.push('clear'); },
+    },
+  });
+  await controller.initialize();
+
+  const operation = controller.removeAccess();
+  assert.equal(controller.getSnapshot().grant, null);
+  assert.notEqual(controller.getSnapshot().status, 'unlocked');
+  assert.equal(await operation, false);
+  assert.deepEqual(effects, ['remove-remote', 'sign-out', 'clear']);
+  assert.deepEqual(controller.getSnapshot(), {
+    status: 'error',
+    grant: null,
+    error: 'unavailable',
+  });
+});
+
+test('account deletion keeps active access available when the server has not acknowledged a durable request', async () => {
+  const session = createOpaqueClientSession();
+  const effects = [];
+  const controller = createClientAccessController({
+    gateway: {
+      redeem: async () => null,
+      refresh: async () => grant,
+      removeAccess: async () => {},
       deleteAccount: async () => { effects.push('delete-remote'); throw new Error('offline'); },
       signOut: async () => { effects.push('sign-out'); },
-    };
+    },
+    sessionStore: {
+      restore: async () => session,
+      commit: async () => {},
+      clear: async () => { effects.push('clear'); },
+    },
+  });
+  await controller.initialize();
+
+  const operation = controller.deleteAccount();
+  assert.notEqual(controller.getSnapshot().status, 'unlocked');
+  assert.equal(await operation, null);
+  assert.deepEqual(effects, ['delete-remote']);
+  assert.deepEqual(controller.getSnapshot(), {
+    status: 'unlocked',
+    grant,
+    error: 'unavailable',
+  });
+});
+
+test('account deletion can be retried after a pre-acceptance network failure', async () => {
+  const session = createOpaqueClientSession();
+  const effects = [];
+  let attempts = 0;
+  const controller = createClientAccessController({
+    gateway: {
+      redeem: async () => null,
+      refresh: async () => reviewGrant,
+      removeAccess: async () => {},
+      deleteAccount: async () => {
+        attempts += 1;
+        effects.push(`delete-remote-${attempts}`);
+        if (attempts === 1) throw new Error('offline');
+        return { status: 'pending' };
+      },
+      signOut: async () => { effects.push('sign-out'); },
+    },
+    sessionStore: {
+      restore: async () => session,
+      commit: async () => {},
+      clear: async () => { effects.push('clear'); },
+    },
+  });
+  await controller.initialize();
+
+  assert.equal(await controller.deleteAccount(), null);
+  assert.equal(controller.getSnapshot().status, 'unlocked');
+  assert.deepEqual(await controller.deleteAccount(), { status: 'pending' });
+  assert.deepEqual(effects, [
+    'delete-remote-1',
+    'delete-remote-2',
+    'sign-out',
+    'clear',
+  ]);
+});
+
+test('a foreground refresh cannot cancel an in-flight acknowledged account deletion', async () => {
+  const session = createOpaqueClientSession();
+  const effects = [];
+  let resolveDeletion;
+  const pendingDeletion = new Promise((resolve) => { resolveDeletion = resolve; });
+  let refreshCount = 0;
+  const controller = createClientAccessController({
+    gateway: {
+      redeem: async () => null,
+      refresh: async () => {
+        refreshCount += 1;
+        return reviewGrant;
+      },
+      removeAccess: async () => {},
+      deleteAccount: async () => {
+        effects.push('delete-remote');
+        return pendingDeletion;
+      },
+      signOut: async () => { effects.push('sign-out'); },
+    },
+    sessionStore: {
+      restore: async () => session,
+      commit: async () => {},
+      clear: async () => { effects.push('clear'); },
+    },
+  });
+  await controller.initialize();
+
+  const deletion = controller.deleteAccount();
+  await controller.refresh();
+  resolveDeletion({ status: 'pending' });
+
+  assert.deepEqual(await deletion, { status: 'pending' });
+  assert.equal(refreshCount, 1);
+  assert.deepEqual(effects, ['delete-remote', 'sign-out', 'clear']);
+  assert.equal(controller.getSnapshot().status, 'locked');
+});
+
+for (const status of ['pending', 'completed']) {
+  test(`account deletion exposes the durable ${status} acknowledgement before locking locally`, async () => {
+    const session = createOpaqueClientSession();
+    const effects = [];
     const controller = createClientAccessController({
-      gateway,
+      gateway: {
+        redeem: async () => null,
+        refresh: async () => reviewGrant,
+        removeAccess: async () => {},
+        deleteAccount: async () => {
+          effects.push('delete-remote');
+          return { status };
+        },
+        signOut: async () => { effects.push('sign-out'); },
+      },
       sessionStore: {
         restore: async () => session,
         commit: async () => {},
@@ -366,19 +503,12 @@ for (const action of ['removeAccess', 'deleteAccount']) {
     });
     await controller.initialize();
 
-    const operation = controller[action]();
-    assert.equal(controller.getSnapshot().grant, null);
-    assert.notEqual(controller.getSnapshot().status, 'unlocked');
-    assert.equal(await operation, false);
-    assert.deepEqual(effects, [
-      action === 'removeAccess' ? 'remove-remote' : 'delete-remote',
-      'sign-out',
-      'clear',
-    ]);
+    assert.deepEqual(await controller.deleteAccount(), { status });
+    assert.deepEqual(effects, ['delete-remote', 'sign-out', 'clear']);
     assert.deepEqual(controller.getSnapshot(), {
-      status: 'error',
+      status: 'locked',
       grant: null,
-      error: 'unavailable',
+      error: null,
     });
   });
 }

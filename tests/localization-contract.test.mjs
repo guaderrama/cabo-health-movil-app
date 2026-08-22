@@ -77,6 +77,31 @@ test('the folio action is explicit and localized', () => {
   assert.equal(MESSAGES['es-MX']['catalog.openResource'], 'Abrir recurso');
 });
 
+test('account deletion acknowledgements are explicit and localized for App Review', () => {
+  assert.equal(
+    MESSAGES.en['clientAccess.deleteReviewAccount'],
+    'Delete review access and data',
+  );
+  assert.equal(
+    MESSAGES['es-MX']['clientAccess.deleteReviewAccount'],
+    'Eliminar acceso de revisión y datos',
+  );
+  assert.equal(
+    MESSAGES.en['clientAccess.confirmDeleteReviewTitle'],
+    'Delete review access and data?',
+  );
+  assert.equal(
+    MESSAGES['es-MX']['clientAccess.confirmDeleteReviewTitle'],
+    '¿Eliminar acceso de revisión y datos?',
+  );
+  assert.match(MESSAGES.en['clientAccess.deletionPendingBody'], /accepted[^]*server[^]*retry/iu);
+  assert.match(MESSAGES['es-MX']['clientAccess.deletionPendingBody'], /aceptada[^]*servidor[^]*reintentar/iu);
+  assert.match(MESSAGES.en['clientAccess.deletionCompletedBody'], /removed/iu);
+  assert.match(MESSAGES['es-MX']['clientAccess.deletionCompletedBody'], /eliminaron/iu);
+  assert.match(MESSAGES.en['clientAccess.deleteUnavailable'], /not accepted[^]*try again/iu);
+  assert.match(MESSAGES['es-MX']['clientAccess.deleteUnavailable'], /no fue aceptada[^]*inténtalo de nuevo/iu);
+});
+
 test('main navigation is exactly Home, Saved, and Settings in both languages', () => {
   assert.deepEqual(
     MAIN_NAV_ITEMS.map(({ id, route }) => ({ id, route })),
