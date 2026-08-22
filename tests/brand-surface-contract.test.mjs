@@ -10,6 +10,7 @@ import {
 
 test('the approved intro palette is the light-theme authority', () => {
   assert.equal(lightColors.primary, introColors.sea);
+  assert.equal(lightColors.onPrimary, '#FFFFFF');
   assert.equal(lightColors.primaryDark, introColors.ink);
   assert.equal(lightColors.background, introColors.paper);
   assert.equal(lightColors.text, introColors.ink);
@@ -23,6 +24,7 @@ test('the approved intro palette is the light-theme authority', () => {
 
 test('dark mode stays inside the CaboHealth ink, sea, paper, and bronze family', () => {
   assert.equal(darkColors.background, introColors.ink);
+  assert.equal(darkColors.onPrimary, introColors.ink);
   assert.equal(darkColors.accent, introColors.bronze);
   assert.equal(darkColors.text, introColors.paper);
   assert.match(darkColors.primary, /^#[0-9A-F]{6}$/u);

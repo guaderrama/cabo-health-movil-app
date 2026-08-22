@@ -25,7 +25,15 @@ export default function SavedScreen() {
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{t('saved.subtitle')}</Text>
         {saved.length === 0 ? (
           <View style={styles.empty}>
-            <View style={[styles.emptyIcon, { backgroundColor: `${colors.primary}14` }]}>
+            <View
+              style={[
+                styles.emptyIcon,
+                {
+                  backgroundColor: colors.editorialCover,
+                  borderColor: colors.editorialBorder,
+                },
+              ]}
+            >
               <Ionicons name="star-outline" size={34} color={colors.primary} />
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('saved.emptyTitle')}</Text>
@@ -36,8 +44,8 @@ export default function SavedScreen() {
             style={[
               styles.savedGroup,
               {
-                backgroundColor: colors.glass,
-                borderColor: colors.glassBorder,
+                backgroundColor: colors.editorialSurface,
+                borderColor: colors.editorialBorder,
                 shadowColor: colors.text,
               },
             ]}
@@ -65,14 +73,14 @@ export default function SavedScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, overflow: 'hidden' },
-  content: { flexGrow: 1, paddingBottom: 30 },
+  content: { flexGrow: 1, width: '100%', maxWidth: 620, alignSelf: 'center', paddingBottom: 30 },
   title: { fontFamily: 'Georgia', fontSize: 31, lineHeight: 37, fontWeight: '600', paddingHorizontal: 16 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 4, paddingHorizontal: 16 },
   savedGroup: {
     marginHorizontal: 16,
     marginTop: 18,
     borderWidth: 1,
-    borderRadius: 17,
+    borderRadius: 20,
     overflow: 'hidden',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.09,
@@ -80,7 +88,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   empty: { flex: 1, minHeight: 360, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  emptyIcon: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  emptyIcon: { width: 72, height: 72, borderRadius: 24, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: 20, lineHeight: 26, fontWeight: '700', marginTop: 18, textAlign: 'center' },
   emptyBody: { fontSize: 14, lineHeight: 21, marginTop: 7, textAlign: 'center', maxWidth: 280 },
 });

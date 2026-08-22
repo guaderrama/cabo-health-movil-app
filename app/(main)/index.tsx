@@ -119,7 +119,7 @@ export default function HomeScreen() {
         <View style={styles.body}>
           <SectionLabel label={t('home.resources')} color={colors.primary} />
           <View style={styles.miniappGrid}>
-            {model.resources.map((miniapp) => (
+            {model.resources.map((miniapp, index) => (
               <View
                 key={miniapp.slug}
                 style={columns === 2 ? styles.halfTile : styles.fullTile}
@@ -129,6 +129,7 @@ export default function HomeScreen() {
                   title={titleFor(miniapp)}
                   summary={summaryFor(miniapp)}
                   favorite={isFavorite(miniapp.slug)}
+                  index={index}
                   onPress={() => openMiniapp(miniapp)}
                   onToggleFavorite={() => toggleFavorite(miniapp.slug)}
                 />
@@ -140,7 +141,7 @@ export default function HomeScreen() {
             <View style={styles.testSection}>
               <SectionLabel label={t('home.testMiniapps')} color={colors.primary} />
               <View style={styles.miniappGrid}>
-                {devCatalog.visibleMiniapps.map((miniapp) => (
+                {devCatalog.visibleMiniapps.map((miniapp, index) => (
                   <View
                     key={miniapp.id}
                     style={columns === 2 ? styles.halfTile : styles.fullTile}
@@ -149,6 +150,7 @@ export default function HomeScreen() {
                       miniapp={miniapp}
                       title={devTitleFor(miniapp)}
                       summary={devSummaryFor(miniapp)}
+                      index={model.resources.length + index}
                       onPress={() => setPreviewMiniapp(miniapp)}
                     />
                   </View>
@@ -179,8 +181,8 @@ export default function HomeScreen() {
                 styles.groupSurface,
                 styles.toolsSurface,
                 {
-                  backgroundColor: colors.glass,
-                  borderColor: colors.glassBorder,
+                  backgroundColor: colors.editorialSurface,
+                  borderColor: colors.editorialBorder,
                   shadowColor: colors.text,
                 },
               ]}
@@ -240,7 +242,15 @@ function ToolRow({
         pressed && styles.pressed,
       ]}
     >
-      <View style={styles.toolIcon}>
+      <View
+        style={[
+          styles.toolIcon,
+          {
+            backgroundColor: colors.editorialCover,
+            borderColor: colors.editorialBorder,
+          },
+        ]}
+      >
         <Ionicons name="checkbox-outline" size={26} color={colors.primary} />
       </View>
       <Text style={[styles.toolTitle, { color: colors.text }]}>{title}</Text>
@@ -280,7 +290,7 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     textAlign: 'center',
   },
-  body: { paddingTop: 14, paddingHorizontal: 20, paddingBottom: 24 },
+  body: { width: '100%', maxWidth: 620, alignSelf: 'center', paddingTop: 14, paddingHorizontal: 20, paddingBottom: 24 },
   sectionLabel: {
     marginTop: 14,
     marginBottom: 10,
@@ -307,11 +317,11 @@ const styles = StyleSheet.create({
   },
   halfTile: { width: '48.2%' },
   fullTile: { width: '100%' },
-  toolsSection: { marginTop: 31 },
+  toolsSection: { marginTop: 34 },
   testSection: { marginTop: 17 },
   toolsSurface: { marginTop: 0 },
-  toolRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 14, paddingVertical: 9 },
-  toolIcon: { width: 43, height: 43, alignItems: 'center', justifyContent: 'center' },
+  toolRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  toolIcon: { width: 44, height: 44, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   toolTitle: { flex: 1, fontSize: 15, lineHeight: 20, fontWeight: '700' },
   offline: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginTop: 14, borderWidth: 1, borderRadius: 14, padding: 11 },
   offlineText: { flex: 1, fontSize: 13, lineHeight: 18 },

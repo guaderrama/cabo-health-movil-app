@@ -19,6 +19,7 @@ export const lightColors = {
   primary: introColors.sea,
   primaryLight: '#3F8298',
   primaryDark: introColors.ink,
+  onPrimary: '#FFFFFF',
 
   accent: introColors.bronze,
   accentLight: '#D8C2A3',
@@ -70,6 +71,15 @@ export const lightColors = {
   // Glassmorphism
   glass: 'rgba(255, 255, 255, 0.88)',
   glassBorder: 'rgba(14, 88, 118, 0.14)',
+
+  // Editorial resource surfaces
+  editorialSurface: 'rgba(255, 255, 255, 0.96)',
+  editorialSurfaceMuted: 'rgba(251, 250, 247, 0.9)',
+  editorialCover: '#DCEEF2',
+  editorialCoverWarm: '#F3ECDD',
+  editorialCoverMuted: '#E7EEF0',
+  editorialIconSurface: 'rgba(251, 250, 247, 0.94)',
+  editorialBorder: 'rgba(8, 42, 60, 0.17)',
 } as const;
 
 // Dark Mode Colors - Premium Aesthetic
@@ -77,6 +87,7 @@ export const darkColors = {
   primary: '#8BC7D2',
   primaryLight: '#B8DDE3',
   primaryDark: introColors.sea,
+  onPrimary: introColors.ink,
 
   accent: introColors.bronze,
   accentLight: '#DEC9AA',
@@ -128,6 +139,15 @@ export const darkColors = {
   // Glassmorphism - efecto vidrio oscuro premium
   glass: 'rgba(8, 42, 60, 0.88)',
   glassBorder: 'rgba(139, 199, 210, 0.22)',
+
+  // Editorial resource surfaces
+  editorialSurface: 'rgba(16, 56, 74, 0.97)',
+  editorialSurfaceMuted: 'rgba(13, 50, 66, 0.94)',
+  editorialCover: '#154A5D',
+  editorialCoverWarm: '#4B4031',
+  editorialCoverMuted: '#173A48',
+  editorialIconSurface: 'rgba(8, 42, 60, 0.88)',
+  editorialBorder: 'rgba(251, 250, 247, 0.2)',
 } as const;
 
 // Default export para compatibilidad (Light Mode)

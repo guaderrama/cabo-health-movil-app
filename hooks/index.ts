@@ -6,6 +6,7 @@ export { useNetworkStatus } from './useNetworkStatus';
 export { useFavorites } from './useFavorites';
 export { useReducedMotion } from './useReducedMotion';
 export { usePreferences } from '../context/PreferencesContext';
+export { useEditorialTileMotion } from './useEditorialTileMotion';
 export { useTranslations } from '../i18n/useTranslations';
 
 // Theme hook (re-export from context)

@@ -45,7 +45,15 @@ export function PremiumResourceRow({
         <View
           accessible={false}
           importantForAccessibility="no-hide-descendants"
-          style={styles.icon}
+          style={[
+            styles.icon,
+            {
+              backgroundColor: miniapp.slug === 'clinic-guide'
+                ? colors.editorialCover
+                : colors.editorialCoverWarm,
+              borderColor: colors.editorialBorder,
+            },
+          ]}
         >
           <Ionicons name={icon} size={27} color={colors.primary} />
         </View>
@@ -95,16 +103,19 @@ const styles = StyleSheet.create({
     paddingRight: 4,
   },
   icon: {
-    width: 43,
-    height: 43,
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   copy: { flex: 1 },
   title: {
+    fontFamily: 'Georgia',
     fontSize: 16,
-    lineHeight: 20,
-    fontWeight: '700',
+    lineHeight: 21,
+    fontWeight: '600',
     marginBottom: 3,
   },
   summary: { fontSize: 12, lineHeight: 17 },

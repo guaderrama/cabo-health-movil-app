@@ -18,6 +18,7 @@
     "features/devMiniapps/devMiniappCatalog.ts",
     "features/devMiniapps/devMiniappStore.ts",
     "features/home/premiumHomePresentation.ts",
+    "features/motion/editorialTileMotion.ts",
     "features/motion/moleculeMotionPolicy.ts",
     "features/launch/navigationPolicy.ts",
     "features/launch/restrictedWebViewBehavior.ts",

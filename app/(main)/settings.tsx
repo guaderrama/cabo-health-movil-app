@@ -143,8 +143,22 @@ function SettingsSection({ title, children }: { title: string; children: React.R
   const { colors } = useTheme();
   return (
     <View style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{title}</Text>
-      <View style={[styles.sectionCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>{children}</View>
+      <View style={styles.sectionHeading}>
+        <View style={[styles.sectionRule, { backgroundColor: colors.accent }]} />
+        <Text style={[styles.sectionTitle, { color: colors.primary }]}>{title}</Text>
+      </View>
+      <View
+        style={[
+          styles.sectionCard,
+          {
+            backgroundColor: colors.editorialSurface,
+            borderColor: colors.editorialBorder,
+            shadowColor: colors.text,
+          },
+        ]}
+      >
+        {children}
+      </View>
     </View>
   );
 }
@@ -172,12 +186,12 @@ function ChoiceRow({
             style={[
               styles.choice,
               {
-                backgroundColor: active ? colors.primary : colors.background,
-                borderColor: active ? colors.primary : colors.border,
+                backgroundColor: active ? colors.primary : colors.editorialSurfaceMuted,
+                borderColor: active ? colors.primary : colors.editorialBorder,
               },
             ]}
           >
-            <Text style={[styles.choiceText, { color: active ? colors.white : colors.text }]}>{option.label}</Text>
+            <Text style={[styles.choiceText, { color: active ? colors.onPrimary : colors.text }]}>{option.label}</Text>
           </Pressable>
         );
       })}
@@ -201,7 +215,7 @@ function ToggleRow({
   const { colors } = useTheme();
   return (
     <View style={styles.row}>
-      <Ionicons name={icon} size={22} color={colors.primary} />
+      <SettingIcon icon={icon} />
       <View style={styles.rowText}>
         <Text style={[styles.itemTitle, { color: colors.text }]}>{title}</Text>
         <Text style={[styles.itemSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
@@ -220,10 +234,29 @@ function LinkRow({ icon, title, onPress }: { icon: keyof typeof Ionicons.glyphMa
   const { colors } = useTheme();
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-      <Ionicons name={icon} size={22} color={colors.primary} />
+      <SettingIcon icon={icon} />
       <Text style={[styles.linkTitle, { color: colors.text }]}>{title}</Text>
       <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
     </Pressable>
+  );
+}
+
+function SettingIcon({ icon }: { icon: keyof typeof Ionicons.glyphMap }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      style={[
+        styles.rowIcon,
+        {
+          backgroundColor: colors.editorialCover,
+          borderColor: colors.editorialBorder,
+        },
+      ]}
+    >
+      <Ionicons name={icon} size={20} color={colors.primary} />
+    </View>
   );
 }
 
@@ -234,20 +267,32 @@ function Separator() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, overflow: 'hidden' },
-  content: { paddingHorizontal: 16, paddingBottom: 34 },
+  content: { width: '100%', maxWidth: 620, alignSelf: 'center', paddingHorizontal: 16, paddingBottom: 34 },
   title: { fontFamily: 'Georgia', fontSize: 31, lineHeight: 37, fontWeight: '600', marginBottom: 8 },
   section: { marginTop: 18 },
-  sectionTitle: { fontSize: 12, lineHeight: 17, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 7, marginLeft: 4 },
-  sectionCard: { borderWidth: 1, borderRadius: 18, overflow: 'hidden', padding: 12 },
+  sectionHeading: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 7, marginLeft: 4 },
+  sectionRule: { width: 18, height: 1 },
+  sectionTitle: { fontSize: 11, lineHeight: 16, fontWeight: '900', letterSpacing: 1.6, textTransform: 'uppercase' },
+  sectionCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    overflow: 'hidden',
+    padding: 12,
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 3,
+  },
   itemTitle: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
   itemSubtitle: { fontSize: 12, lineHeight: 17, marginTop: 2 },
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   choice: { flexGrow: 1, minHeight: 44, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   choiceText: { fontSize: 13, lineHeight: 18, fontWeight: '700' },
   row: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4, paddingVertical: 7 },
+  rowIcon: { width: 38, height: 38, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   rowText: { flex: 1 },
   linkTitle: { flex: 1, fontSize: 15, lineHeight: 21, fontWeight: '600' },
-  separator: { height: StyleSheet.hairlineWidth, marginLeft: 38 },
+  separator: { height: StyleSheet.hairlineWidth, marginLeft: 54 },
   pressed: { opacity: 0.65 },
   appInfo: { alignItems: 'center', paddingVertical: 28 },
   appName: { fontSize: 15, lineHeight: 20, fontWeight: '700' },
