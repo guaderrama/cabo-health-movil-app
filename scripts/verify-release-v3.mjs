@@ -27,7 +27,7 @@ const EXACT_AASA_COMPONENTS = [
 ];
 const EXACT_AUTHORITY_SHA256 = Object.freeze({
   'app.json': '4b9e83ac28c05b229531570f4ddfd3acac916f8f79337a7a5e8fff1ffae82eab',
-  'constants/config.ts': '7495a095c508f09fcc0b9fb1283ccfbaa5fea3db672a989ef3ff5d4087df22db',
+  'constants/config.ts': '56658ce4a607ee3f29e2f92929dca04141d5c87f2e274279d2e16f072b7d6692',
   'constants/publicMiniapps.ts': 'ca15483cf00b864878d7df7a003be5cf946b2565b60e6581dc3676c529c9af20',
   'release/app-store/3.0/release-manifest.json': 'e9a00247f4689bd25226d9b49c74df06a5d16ce43c5db101988f5ebd4922d057',
   'release/app-store/3.0/age-rating.json': 'b2bd2fdd9a5109a600923dee82eb0186df99a446128f3b05a37d54e2428e19bb',
