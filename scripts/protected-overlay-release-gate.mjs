@@ -7,13 +7,16 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
-  realpathSync,
   renameSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+
+import {
+  inspectDescriptorBoundDirectory,
+  readDescriptorBoundFile,
+} from './protected-overlay-secure-fs.mjs';
 
 const ARTIFACT_KIND = 'cabohealth-protected-hostinger-overlays-v1';
 const RELEASE_PREFIX = 'protected-overlays-v1-';
@@ -112,7 +115,7 @@ export function createProtectedOverlayArtifact({ projectRoot }) {
   const root = resolve(projectRoot);
   const realms = Object.freeze(REALM_DEFINITIONS.map((definition) => {
     const sourceRoot = resolve(root, definition.sourceRoot);
-    assertExactInventory(sourceRoot, definition.files);
+    const inventoryBefore = assertExactInventory(sourceRoot, definition.files);
     const files = Object.freeze(definition.files.map((path) => {
       const bytes = readRegularFile(resolve(sourceRoot, ...path.split('/')));
       return Object.freeze({
@@ -124,6 +127,9 @@ export function createProtectedOverlayArtifact({ projectRoot }) {
         bytesBase64: bytes.toString('base64'),
       });
     }));
+    if (inventoryBefore !== assertExactInventory(sourceRoot, definition.files)) {
+      throw new Error('protected_overlay_source_changed');
+    }
     assertRealmSecurityBoundary(definition, files);
     const configSchemaBytes = readRegularFile(resolve(root, definition.externalInputs.configSchemaPath));
     if (sha256(configSchemaBytes) !== definition.externalInputs.configSchemaSha256) {
@@ -231,6 +237,7 @@ export function createProtectedOverlayActivationPlan({
     const brokerConfig = readPrivateActivationFile(
       input.brokerConfigPath,
       documentRoot,
+      root,
       privateIdentities,
       4096,
     );
@@ -243,6 +250,7 @@ export function createProtectedOverlayActivationPlan({
     const backendFactory = readPrivateActivationFile(
       input.backendFactoryPath,
       documentRoot,
+      root,
       privateIdentities,
       65536,
     );
@@ -250,6 +258,7 @@ export function createProtectedOverlayActivationPlan({
     const privateContent = readPrivateContentInventory(
       input.privateContentRoot,
       documentRoot,
+      root,
       definition.externalInputs.contentFiles,
       privateIdentities,
     );
@@ -1187,7 +1196,10 @@ function ensureArtifactParents(root, destination) {
 
 function verifyRealmDirectory(path, realm) {
   const root = realDirectory(path, 0o755);
-  assertExactInventory(root, realm.files.map(({ path: filePath }) => filePath));
+  const inventoryBefore = assertExactInventory(
+    root,
+    realm.files.map(({ path: filePath }) => filePath),
+  );
   const expectedDirectories = new Set(['']);
   for (const file of realm.files) {
     const components = file.path.split('/');
@@ -1195,12 +1207,15 @@ function verifyRealmDirectory(path, realm) {
       expectedDirectories.add(components.slice(0, index).join('/'));
     }
     const absolute = resolve(root, ...components);
-    const stat = lstatSync(absolute);
-    const bytes = readFileSync(absolute);
+    const { bytes, identity } = readDescriptorBoundFile(absolute, {
+      allowedModes: [0o644],
+      errorCode: 'protected_overlay_live_bytes_invalid',
+      expectedParentModes: [0o755],
+      maximumSize: Math.max(file.size, 1),
+      minimumSize: file.size,
+    });
     if (
-      !stat.isFile()
-      || stat.isSymbolicLink()
-      || (stat.mode & 0o777) !== 0o644
+      Number(identity.size) !== file.size
       || bytes.length !== file.size
       || sha256(bytes) !== file.sha256
       || !bytes.equals(Buffer.from(file.bytesBase64, 'base64'))
@@ -1209,18 +1224,25 @@ function verifyRealmDirectory(path, realm) {
   for (const directory of expectedDirectories) {
     realDirectory(resolve(root, ...directory.split('/').filter(Boolean)), 0o755);
   }
+  if (
+    inventoryBefore
+    !== assertExactInventory(root, realm.files.map(({ path: filePath }) => filePath))
+  ) throw new Error('protected_overlay_live_bytes_invalid');
 }
 
 function storeImmutableArtifact(artifactsRoot, artifact) {
   const path = resolve(artifactsRoot, `${artifact.releaseId}.json`);
   const bytes = Buffer.from(`${canonical(artifact)}\n`, 'utf8');
   if (existsSync(path)) {
-    const stat = lstatSync(path);
+    const stored = readDescriptorBoundFile(path, {
+      allowedModes: [0o400],
+      errorCode: 'protected_overlay_artifact_store_collision',
+      expectedParentModes: [0o700],
+      maximumSize: bytes.length,
+      minimumSize: bytes.length,
+    });
     if (
-      !stat.isFile()
-      || stat.isSymbolicLink()
-      || (stat.mode & 0o777) !== 0o400
-      || !readFileSync(path).equals(bytes)
+      !stored.bytes.equals(bytes)
     ) throw new Error('protected_overlay_artifact_store_collision');
     return;
   }
@@ -1237,19 +1259,19 @@ function readStoredArtifact(root, pins) {
   );
   let artifact;
   let bytes;
-  let stat;
   try {
-    stat = lstatSync(path);
-    bytes = readFileSync(path);
+    ({ bytes } = readDescriptorBoundFile(path, {
+      allowedModes: [0o400],
+      errorCode: 'protected_overlay_artifact_store_invalid',
+      expectedParentModes: [0o700],
+      maximumSize: 16 * 1024 * 1024,
+    }));
     artifact = JSON.parse(bytes.toString('utf8'));
   } catch {
     throw new Error('protected_overlay_artifact_store_invalid');
   }
   if (
-    !stat.isFile()
-    || stat.isSymbolicLink()
-    || (stat.mode & 0o777) !== 0o400
-    || !bytes.equals(Buffer.from(`${canonical(artifact)}\n`, 'utf8'))
+    !bytes.equals(Buffer.from(`${canonical(artifact)}\n`, 'utf8'))
   ) throw new Error('protected_overlay_artifact_store_invalid');
   return validateArtifactCapsule(artifact, pins);
 }
@@ -1265,12 +1287,15 @@ function storeImmutableTransition(managedRoot, artifact, predecessor) {
   const path = resolve(transitionsRoot, `${artifact.releaseId}.json`);
   const bytes = Buffer.from(`${canonical(transition)}\n`, 'utf8');
   if (existsSync(path)) {
-    const stat = lstatSync(path);
+    const stored = readDescriptorBoundFile(path, {
+      allowedModes: [0o400],
+      errorCode: 'protected_overlay_transition_collision',
+      expectedParentModes: [0o700],
+      maximumSize: bytes.length,
+      minimumSize: bytes.length,
+    });
     if (
-      !stat.isFile()
-      || stat.isSymbolicLink()
-      || (stat.mode & 0o777) !== 0o400
-      || !readFileSync(path).equals(bytes)
+      !stored.bytes.equals(bytes)
     ) throw new Error('protected_overlay_transition_collision');
     return;
   }
@@ -1281,19 +1306,19 @@ function readImmutableTransition(root, releaseId) {
   const path = resolve(root, MANAGED_ROOT_NAME, 'transitions', `${releaseId}.json`);
   let transition;
   let bytes;
-  let stat;
   try {
-    stat = lstatSync(path);
-    bytes = readFileSync(path);
+    ({ bytes } = readDescriptorBoundFile(path, {
+      allowedModes: [0o400],
+      errorCode: 'protected_overlay_transition_invalid',
+      expectedParentModes: [0o700],
+      maximumSize: 1024 * 1024,
+    }));
     transition = JSON.parse(bytes.toString('utf8'));
   } catch {
     throw new Error('protected_overlay_transition_invalid');
   }
   if (
-    !stat.isFile()
-    || stat.isSymbolicLink()
-    || (stat.mode & 0o777) !== 0o400
-    || !bytes.equals(Buffer.from(`${canonical(transition)}\n`, 'utf8'))
+    !bytes.equals(Buffer.from(`${canonical(transition)}\n`, 'utf8'))
     || !isRecord(transition)
     || !hasExactKeys(transition, [
       'schemaVersion',
@@ -1338,20 +1363,21 @@ function assertDirectoryNames(path, expectedNames, errorCode) {
 function readManagedState(root) {
   const path = resolve(root, MANAGED_ROOT_NAME, 'state.json');
   if (!existsSync(path)) return null;
-  const stat = lstatSync(path);
   let state;
   let source;
   try {
-    source = readFileSync(path, 'utf8');
+    source = readDescriptorBoundFile(path, {
+      allowedModes: [0o600],
+      errorCode: 'protected_overlay_deployment_state_invalid',
+      expectedParentModes: [0o700],
+      maximumSize: 64 * 1024,
+    }).bytes.toString('utf8');
     state = JSON.parse(source);
   } catch {
     throw new Error('protected_overlay_deployment_state_invalid');
   }
   if (
-    !stat.isFile()
-    || stat.isSymbolicLink()
-    || (stat.mode & 0o777) !== 0o600
-    || source !== `${canonical(state)}\n`
+    source !== `${canonical(state)}\n`
     || !isValidManagedState(state)
   ) throw new Error('protected_overlay_deployment_state_invalid');
   return state;
@@ -1415,34 +1441,26 @@ function assertExpectedPredecessor(value) {
   ) throw new Error('protected_overlay_predecessor_pin_required');
 }
 
-function readPrivateActivationFile(path, documentRoot, identities, maximumSize) {
-  const lexical = resolve(path);
-  let resolved;
-  let lexicalStat;
-  try {
-    lexicalStat = lstatSync(lexical);
-    resolved = realpathSync(lexical);
-  } catch {
-    throw new Error('protected_overlay_private_input_invalid');
-  }
-  const stat = lstatSync(resolved);
-  const parent = lstatSync(dirname(lexical));
-  const identity = `${stat.dev}:${stat.ino}`;
-  if (
-    lexicalStat.isSymbolicLink()
-    || !stat.isFile()
-    || stat.isSymbolicLink()
-    || (stat.mode & 0o777) !== 0o600
-    || stat.size < 2
-    || stat.size > maximumSize
-    || !parent.isDirectory()
-    || parent.isSymbolicLink()
-    || (parent.mode & 0o777) !== 0o700
-    || !isOutsideDirectory(resolved, documentRoot)
-    || identities.has(identity)
-  ) throw new Error('protected_overlay_private_input_invalid');
+function readPrivateActivationFile(
+  path,
+  documentRoot,
+  deploymentRoot,
+  identities,
+  maximumSize,
+) {
+  const file = readDescriptorBoundFile(path, {
+    allowedModes: [0o600],
+    errorCode: 'protected_overlay_private_input_invalid',
+    expectedParentModes: [0o700],
+    maximumSize,
+    minimumSize: 2,
+    mustBeInside: deploymentRoot,
+    mustBeOutside: documentRoot,
+  });
+  const identity = `${file.identity.dev}:${file.identity.ino}`;
+  if (identities.has(identity)) throw new Error('protected_overlay_private_input_invalid');
   identities.add(identity);
-  return Object.freeze({ path: resolved, bytes: readFileSync(resolved) });
+  return Object.freeze({ path: file.path, bytes: file.bytes });
 }
 
 function validateTrustPolicy(policy, expectedTrustPolicySha256) {
@@ -1630,8 +1648,20 @@ function assertBackendFactory(bytes, definition) {
   }
 }
 
-function readPrivateContentInventory(path, documentRoot, expectedFiles, identities) {
-  const resolved = realDirectory(path, 0o700);
+function readPrivateContentInventory(
+  path,
+  documentRoot,
+  deploymentRoot,
+  expectedFiles,
+  identities,
+) {
+  const directoryBefore = inspectDescriptorBoundDirectory(path, {
+    allowedModes: [0o700],
+    errorCode: 'protected_overlay_directory_invalid',
+    mustBeInside: deploymentRoot,
+    mustBeOutside: documentRoot,
+  });
+  const resolved = directoryBefore.path;
   if (!isOutsideDirectory(resolved, documentRoot)) {
     throw new Error('protected_overlay_private_content_invalid');
   }
@@ -1649,33 +1679,29 @@ function readPrivateContentInventory(path, documentRoot, expectedFiles, identiti
     const file = readPrivateActivationFile(
       resolve(resolved, name),
       documentRoot,
+      deploymentRoot,
       identities,
       65536,
     );
     return Object.freeze({ path: name, size: file.bytes.length, sha256: sha256(file.bytes) });
   }));
+  const directoryAfter = inspectDescriptorBoundDirectory(resolved, {
+    allowedModes: [0o700],
+    errorCode: 'protected_overlay_private_content_invalid',
+    mustBeInside: deploymentRoot,
+    mustBeOutside: documentRoot,
+  });
+  if (directoryBefore.identity !== directoryAfter.identity) {
+    throw new Error('protected_overlay_private_content_invalid');
+  }
   return Object.freeze({ path: resolved, files });
 }
 
 function realDirectory(path, ...allowedModes) {
-  const lexical = resolve(path);
-  let resolved;
-  let lexicalStat;
-  try {
-    lexicalStat = lstatSync(lexical);
-    resolved = realpathSync(lexical);
-  } catch {
-    throw new Error('protected_overlay_directory_invalid');
-  }
-  const stat = lstatSync(resolved);
-  if (
-    lexicalStat.isSymbolicLink()
-    || !lexicalStat.isDirectory()
-    || !stat.isDirectory()
-    || stat.isSymbolicLink()
-    || !allowedModes.includes(stat.mode & 0o777)
-  ) throw new Error('protected_overlay_directory_invalid');
-  return resolved;
+  return inspectDescriptorBoundDirectory(path, {
+    allowedModes,
+    errorCode: 'protected_overlay_directory_invalid',
+  }).path;
 }
 
 function isOutsideDirectory(path, directory) {
@@ -1746,22 +1772,46 @@ function assertPinObject(pins) {
 }
 
 function assertExactInventory(root, expectedPaths) {
-  const rootStat = lstatSync(root);
-  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
-    throw new Error('protected_overlay_source_invalid');
-  }
+  const treeIdentity = [];
+  const rootDirectory = inspectDescriptorBoundDirectory(root, {
+    allowedModes: [0o700, 0o755],
+    errorCode: 'protected_overlay_source_invalid',
+  });
+  treeIdentity.push(`directory:${rootDirectory.path}:${rootDirectory.identity}`);
   const found = [];
   const foundDirectories = [];
   const walk = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const absolute = join(directory, entry.name);
-      const stat = lstatSync(absolute);
+      const stat = lstatSync(absolute, { bigint: true });
       if (stat.isSymbolicLink()) throw new Error('protected_overlay_symlink_rejected');
       if (stat.isDirectory()) {
-        foundDirectories.push(relative(root, absolute).split(sep).join('/'));
+        const relativeDirectory = relative(root, absolute).split(sep).join('/');
+        foundDirectories.push(relativeDirectory);
+        const directory = inspectDescriptorBoundDirectory(absolute, {
+          allowedModes: [0o700, 0o755],
+          errorCode: 'protected_overlay_source_invalid',
+        });
+        treeIdentity.push(`directory:${relativeDirectory}:${directory.identity}`);
         walk(absolute);
       }
-      else if (stat.isFile()) found.push(relative(root, absolute).split(sep).join('/'));
+      else if (stat.isFile()) {
+        const relativeFile = relative(root, absolute).split(sep).join('/');
+        found.push(relativeFile);
+        treeIdentity.push([
+          'file',
+          relativeFile,
+          stat.dev,
+          stat.ino,
+          stat.mode,
+          stat.nlink,
+          stat.uid,
+          stat.gid,
+          stat.size,
+          stat.mtimeMs,
+          stat.ctimeMs,
+        ].join(':'));
+      }
       else throw new Error('protected_overlay_special_file_rejected');
     }
   };
@@ -1781,14 +1831,16 @@ function assertExactInventory(root, expectedPaths) {
   ) {
     throw new Error('protected_overlay_inventory_invalid');
   }
+  return canonical(treeIdentity.sort(compareText));
 }
 
 function readRegularFile(path) {
-  const stat = lstatSync(path);
-  if (!stat.isFile() || stat.isSymbolicLink()) {
-    throw new Error('protected_overlay_file_invalid');
-  }
-  return readFileSync(path);
+  return readDescriptorBoundFile(path, {
+    allowedModes: [0o644],
+    errorCode: 'protected_overlay_file_invalid',
+    expectedParentModes: [0o700, 0o755],
+    maximumSize: 1024 * 1024,
+  }).bytes;
 }
 
 function mediaTypeFor(path) {

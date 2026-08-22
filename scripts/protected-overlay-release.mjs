@@ -1,6 +1,4 @@
 import {
-  lstatSync,
-  readFileSync,
   writeFileSync,
 } from 'node:fs';
 import { resolve } from 'node:path';
@@ -15,6 +13,9 @@ import {
   verifyProtectedOverlayDeployment,
   verifyProtectedOverlayArtifact,
 } from './protected-overlay-release-gate.mjs';
+import {
+  readDescriptorBoundCanonicalJson,
+} from './protected-overlay-secure-fs.mjs';
 
 const [command, ...argumentList] = process.argv.slice(2);
 const arguments_ = parseArguments(argumentList);
@@ -216,22 +217,12 @@ function writeImmutableJson(path, value) {
 }
 
 function readCanonicalJson(path, expectedMode) {
-  const absolute = resolve(path);
-  const stat = lstatSync(absolute);
-  if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o777) !== expectedMode) {
-    throw new Error('protected_overlay_input_file_invalid');
-  }
-  const source = readFileSync(absolute, 'utf8');
-  let value;
-  try {
-    value = JSON.parse(source);
-  } catch {
-    throw new Error('protected_overlay_input_file_invalid');
-  }
-  if (source !== `${JSON.stringify(value)}\n`) {
-    throw new Error('protected_overlay_input_file_invalid');
-  }
-  return value;
+  return readDescriptorBoundCanonicalJson(path, {
+    allowedModes: [expectedMode],
+    errorCode: 'protected_overlay_input_file_invalid',
+    expectedParentModes: [0o700, 0o755],
+    maximumSize: 16 * 1024 * 1024,
+  });
 }
 
 function deploymentArgumentNames({ includeEvidence = true } = {}) {
