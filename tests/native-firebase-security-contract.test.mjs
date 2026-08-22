@@ -38,6 +38,8 @@ test('Apple privacy config disables tracking, aggregates Pod manifests, and gate
   assert.match(runbook, /privacy report/iu);
   assert.match(runbook, /User ID.+Device ID.+diagnostics/isu);
   assert.match(runbook, /block the release/iu);
+  assert.match(runbook, /codesign.+appattest-environment/isu);
+  assert.match(runbook, /physical iPhone.+TestFlight/isu);
 });
 
 test('EAS exposes separate native development profiles for simulator and physical iPhone', () => {

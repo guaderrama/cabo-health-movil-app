@@ -79,6 +79,11 @@ Before a release:
    diagnostics collection: no tracking and app functionality only. Any mismatch
    must block the release; do not guess the final data types before the backend
    review is complete.
+7. Inspect the signed archive, not only the source config, with
+   `codesign -d --entitlements :- Payload/CaboHealth.app` after extracting the
+   IPA. Confirm `com.apple.developer.devicecheck.appattest-environment` is
+   `production`, then exercise App Attest on a physical iPhone through
+   TestFlight. A missing or altered signed entitlement must block release.
 
 Official references:
 

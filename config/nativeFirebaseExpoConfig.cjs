@@ -1,6 +1,7 @@
 'use strict';
 
 const STRICT_NATIVE_ENVIRONMENTS = new Set(['staging', 'production']);
+const APP_ATTEST_ENTITLEMENT = 'com.apple.developer.devicecheck.appattest-environment';
 
 function buildNativeFirebaseExpoConfig({
   baseConfig,
@@ -61,6 +62,12 @@ function buildNativeFirebaseExpoConfig({
     ios: {
       ...(baseConfig.ios || {}),
       googleServicesFile: serviceFile,
+      ...(STRICT_NATIVE_ENVIRONMENTS.has(appEnvironment) ? {
+        entitlements: {
+          ...(baseConfig.ios?.entitlements || {}),
+          [APP_ATTEST_ENTITLEMENT]: 'production',
+        },
+      } : {}),
       privacyManifests: {
         NSPrivacyTracking: false,
         NSPrivacyTrackingDomains: [],
