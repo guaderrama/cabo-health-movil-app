@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#eaf5f7">
+  <meta name="robots" content="index,follow,max-image-preview:none">
+  <title>CaboHealth · Longevity, grounded in science.</title>
+  <meta name="description" content="The official bilingual overview of the CaboHealth app and its reviewed resources.">
+  <link rel="canonical" href="https://cabohealth.org/app/">
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-synthesis: none;
+      line-height: 1.6;
+      color: #0b3043;
+      background: #eaf5f7;
+      --ink: #0b3043;
+      --muted: #456f7e;
+      --ocean: #08627b;
+      --ocean-deep: #064c64;
+      --aqua: #9bdce6;
+      --line: #c8dce1;
+      --gold: #b68742;
+      --gold-soft: #f4e6ce;
+      --paper: #fffdf9;
+      --white: #ffffff;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: auto; }
+
+    body {
+      min-width: 20rem;
+      margin: 0;
+      background:
+        radial-gradient(circle at 13% 9%, rgba(155, 220, 230, .52) 0 .3rem, transparent .34rem),
+        radial-gradient(circle at 86% 20%, rgba(182, 135, 66, .30) 0 .24rem, transparent .28rem),
+        radial-gradient(circle at 73% 65%, rgba(155, 220, 230, .34) 0 .2rem, transparent .24rem),
+        linear-gradient(155deg, #e4f3f6 0%, #f7fbfa 47%, #f5efe5 100%);
+    }
+
+    body::before {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      content: "";
+      opacity: .34;
+      background:
+        linear-gradient(31deg, transparent 0 24%, rgba(74, 159, 177, .18) 24.1% 24.25%, transparent 24.35% 100%),
+        linear-gradient(151deg, transparent 0 68%, rgba(74, 159, 177, .15) 68.1% 68.25%, transparent 68.35% 100%);
+    }
+
+    a { color: var(--ocean-deep); text-underline-offset: .22em; }
+
+    a:focus-visible {
+      outline: .2rem solid #ce8925;
+      outline-offset: .22rem;
+      border-radius: .2rem;
+    }
+
+    .skip-link {
+      position: fixed;
+      top: .75rem;
+      left: .75rem;
+      z-index: 10;
+      padding: .7rem 1rem;
+      border-radius: .55rem;
+      color: var(--white);
+      background: var(--ink);
+      transform: translateY(-180%);
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    .shell { width: min(73rem, calc(100% - 2rem)); margin-inline: auto; }
+
+    .site-header { padding: clamp(1.1rem, 3vw, 2rem) 0 0; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: inline-flex;
+      flex-direction: column;
+      color: var(--ink);
+      font-size: 1.08rem;
+      font-weight: 800;
+      line-height: .78;
+      letter-spacing: -.075em;
+      text-decoration: none;
+    }
+
+    .brand span:last-child { margin-left: .62rem; }
+
+    .language-nav ul,
+    .legal-nav ul {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem 1rem;
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+
+    .language-nav a {
+      display: inline-flex;
+      min-height: 2.75rem;
+      align-items: center;
+      padding: .3rem .8rem;
+      border: 1px solid rgba(6, 76, 100, .22);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .66);
+      font-size: .87rem;
+      font-weight: 750;
+      text-decoration: none;
+    }
+
+    .hero { padding: clamp(4.4rem, 12vw, 8.5rem) 0 clamp(3.5rem, 8vw, 6.2rem); }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(16rem, .75fr);
+      align-items: end;
+      gap: clamp(2rem, 7vw, 6rem);
+    }
+
+    .eyebrow {
+      margin: 0 0 .9rem;
+      color: var(--ocean);
+      font-size: .78rem;
+      font-weight: 800;
+      letter-spacing: .19em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p { margin-top: 0; }
+
+    h1,
+    h2,
+    h3 { line-height: 1.08; }
+
+    h1 {
+      max-width: 14ch;
+      margin-bottom: 1.25rem;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(3rem, 8vw, 6.8rem);
+      font-weight: 500;
+      letter-spacing: -.055em;
+    }
+
+    .hero-copy {
+      max-width: 34rem;
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(1.05rem, 2.1vw, 1.35rem);
+    }
+
+    .scope-note {
+      position: relative;
+      padding: 1.5rem;
+      border: 1px solid rgba(6, 76, 100, .22);
+      border-radius: 1.25rem;
+      background: rgba(255, 255, 255, .72);
+      box-shadow: 0 1rem 2.5rem rgba(11, 48, 67, .08);
+    }
+
+    .scope-note::before {
+      display: block;
+      width: 2.6rem;
+      height: .16rem;
+      margin-bottom: 1.1rem;
+      background: var(--gold);
+      content: "";
+    }
+
+    .scope-note p:last-child { margin-bottom: 0; }
+
+    .languages {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: clamp(1.2rem, 3.5vw, 2.7rem);
+      padding-bottom: clamp(3.5rem, 8vw, 6rem);
+    }
+
+    .language-panel {
+      overflow: hidden;
+      border: 1px solid rgba(6, 76, 100, .22);
+      border-radius: 1.65rem;
+      background: rgba(255, 255, 255, .82);
+      box-shadow: 0 1.4rem 3rem rgba(11, 48, 67, .09);
+    }
+
+    .language-heading {
+      padding: clamp(1.5rem, 4vw, 2.4rem);
+      color: var(--white);
+      background: var(--ocean-deep);
+    }
+
+    .language-heading .eyebrow { color: #c6edf2; }
+
+    .language-heading h2 {
+      max-width: 15ch;
+      margin-bottom: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(2rem, 4.2vw, 3.2rem);
+      font-weight: 500;
+      letter-spacing: -.035em;
+    }
+
+    .panel-body { padding: clamp(1.1rem, 3vw, 1.8rem); }
+
+    .resource-list {
+      display: grid;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .resource {
+      position: relative;
+      min-height: 13.5rem;
+      padding: 1.35rem;
+      border: 1px solid var(--line);
+      border-radius: 1.2rem;
+      background: var(--paper);
+    }
+
+    .resource::after {
+      position: absolute;
+      right: 1.25rem;
+      bottom: 1.25rem;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      background: var(--gold-soft);
+      content: "";
+    }
+
+    .resource-number {
+      display: block;
+      margin-bottom: 1.7rem;
+      color: var(--gold);
+      font-size: .76rem;
+      font-weight: 800;
+      letter-spacing: .16em;
+    }
+
+    .resource h3 {
+      max-width: 15ch;
+      margin-bottom: .7rem;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(1.55rem, 3vw, 2.1rem);
+      font-weight: 600;
+      letter-spacing: -.025em;
+    }
+
+    .resource p { color: var(--muted); }
+
+    .resource a {
+      position: relative;
+      z-index: 1;
+      display: inline-block;
+      padding-block: .25rem;
+      font-size: .93rem;
+      font-weight: 800;
+    }
+
+    .protected {
+      padding: 1.4rem;
+      border: 1px solid rgba(182, 135, 66, .45);
+      border-radius: 1.2rem;
+      background: linear-gradient(145deg, #fffaf0, #f7ead3);
+    }
+
+    .protected-label {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      margin-bottom: 1rem;
+      color: #785521;
+      font-size: .74rem;
+      font-weight: 850;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+
+    .protected-label::before {
+      width: .6rem;
+      height: .6rem;
+      border: .12rem solid currentColor;
+      border-radius: 50%;
+      content: "";
+    }
+
+    .protected h3 {
+      margin-bottom: .75rem;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(1.55rem, 3vw, 2rem);
+      font-weight: 600;
+    }
+
+    .protected p { color: #5e513c; }
+
+    .protected p:last-child { margin-bottom: 0; }
+
+    .boundary {
+      padding: 0 clamp(1.1rem, 3vw, 1.8rem) clamp(1.4rem, 3vw, 1.8rem);
+      color: var(--muted);
+      font-size: .9rem;
+    }
+
+    .boundary p { margin: 0; padding-top: 1rem; border-top: 1px solid var(--line); }
+
+    .site-footer {
+      padding: 1.6rem 0 3rem;
+      border-top: 1px solid rgba(6, 76, 100, .18);
+      background: rgba(255, 255, 255, .48);
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: minmax(0, .65fr) minmax(0, 1.35fr);
+      gap: 1.5rem 3rem;
+      align-items: start;
+    }
+
+    .footer-title { margin-bottom: .4rem; font-weight: 800; }
+
+    .footer-copy { max-width: 34rem; margin-bottom: 0; color: var(--muted); font-size: .88rem; }
+
+    .legal-nav a { font-size: .88rem; font-weight: 700; }
+
+    @media (max-width: 48rem) {
+      .topbar { align-items: flex-start; }
+      .language-nav ul { justify-content: flex-end; }
+      .hero-grid,
+      .languages,
+      .footer-grid { grid-template-columns: 1fr; }
+      .hero { padding-top: 4.2rem; }
+      .scope-note { max-width: 34rem; }
+    }
+
+    @media (max-width: 30rem) {
+      .shell { width: min(100% - 1.25rem, 73rem); }
+      .language-nav ul { gap: .35rem; }
+      .language-nav a { min-height: 2.7rem; padding-inline: .62rem; }
+      .resource { min-height: 0; }
+    }
+
+    @media (prefers-contrast: more) {
+      .language-panel,
+      .resource,
+      .protected,
+      .scope-note { border-width: 2px; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content / Ir al contenido</a>
+  <header class="site-header">
+    <div class="shell topbar">
+      <a class="brand" href="https://cabohealth.org/app/" aria-label="CaboHealth home">
+        <span>CABO</span>
+        <span>HEALTH</span>
+      </a>
+      <nav class="language-nav" aria-label="Language / Idioma">
+        <ul>
+          <li><a href="#english" hreflang="en">English</a></li>
+          <li><a href="#espanol" hreflang="es-MX">Español</a></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="shell hero">
+      <div class="hero-grid">
+        <div>
+          <p class="eyebrow">CaboHealth app</p>
+          <h1>Longevity, grounded in science.</h1>
+          <p class="hero-copy">A concise view of the app’s public editorial resources and its small, protected client area.</p>
+        </div>
+        <aside class="scope-note" aria-label="Resumen en español" lang="es-MX">
+          <p class="eyebrow">En español</p>
+          <p><strong>Longevidad, basada en ciencia.</strong></p>
+          <p>Una vista clara de los recursos editoriales públicos y del área pequeña y protegida para clientes.</p>
+        </aside>
+      </div>
+    </div>
+  </header>
+
+  <main id="content" class="shell" tabindex="-1">
+    <div class="languages">
+      <article id="english" lang="en" aria-labelledby="english-title">
+        <div class="language-panel">
+          <header class="language-heading">
+            <p class="eyebrow">Public app overview</p>
+            <h2 id="english-title">Two public editorial resources</h2>
+          </header>
+          <div class="panel-body">
+            <div class="resource-list">
+              <section class="resource" aria-labelledby="recipes-en">
+                <span class="resource-number" aria-hidden="true">01</span>
+                <h3 id="recipes-en">Healthy Recipes</h3>
+                <p>An editorial recipe collection with practical filters and favorites kept on your device.</p>
+                <a href="https://cabohealth.org/apps/healthy-recipes/">Open the public resource</a>
+              </section>
+              <section class="resource" aria-labelledby="clinic-en">
+                <span class="resource-number" aria-hidden="true">02</span>
+                <h3 id="clinic-en">CaboHealth Clinic Guide</h3>
+                <p>An editorial visit guide with public clinic information and a checklist stored on your device.</p>
+                <a href="https://cabohealth.org/apps/clinic-guide/">Open the public resource</a>
+              </section>
+            </div>
+            <section class="protected" aria-labelledby="clients-en">
+              <span class="protected-label">Protected</span>
+              <h3 id="clients-en">Client Resources</h3>
+              <p>Client Resources is a protected area for up to four eligible existing in-person clients. Access is granted in person with a single-use code and cannot be obtained on this public page.</p>
+              <p>For access questions, use <a href="https://cabohealth.org/app/support/">CaboHealth Support</a>.</p>
+            </section>
+          </div>
+          <aside class="boundary">
+            <p>The content is educational only and is not medical advice or an emergency service.</p>
+          </aside>
+        </div>
+      </article>
+
+      <article id="espanol" lang="es-MX" aria-labelledby="espanol-title">
+        <div class="language-panel">
+          <header class="language-heading">
+            <p class="eyebrow">Resumen público de la app</p>
+            <h2 id="espanol-title">Dos recursos editoriales públicos</h2>
+          </header>
+          <div class="panel-body">
+            <div class="resource-list">
+              <section class="resource" aria-labelledby="recipes-es">
+                <span class="resource-number" aria-hidden="true">01</span>
+                <h3 id="recipes-es">Recetas Saludables</h3>
+                <p>Una colección editorial de recetas con filtros prácticos y favoritos que permanecen en tu dispositivo.</p>
+                <a href="https://cabohealth.org/apps/healthy-recipes/">Abrir el recurso público</a>
+              </section>
+              <section class="resource" aria-labelledby="clinic-es">
+                <span class="resource-number" aria-hidden="true">02</span>
+                <h3 id="clinic-es">Guía de la Clínica CaboHealth</h3>
+                <p>Una guía editorial para la visita con información pública de la clínica y una lista que se guarda en tu dispositivo.</p>
+                <a href="https://cabohealth.org/apps/clinic-guide/">Abrir el recurso público</a>
+              </section>
+            </div>
+            <section class="protected" aria-labelledby="clients-es">
+              <span class="protected-label">Protegido</span>
+              <h3 id="clients-es">Recursos para clientes</h3>
+              <p>Client Resources es un área protegida para hasta cuatro clientes presenciales existentes que cumplan los requisitos. El acceso se entrega en persona mediante un código de un solo uso y no se puede obtener en esta página pública.</p>
+              <p>Para preguntas de acceso, consulta <a href="https://cabohealth.org/app/support/">Soporte de CaboHealth</a>.</p>
+            </section>
+          </div>
+          <aside class="boundary">
+            <p>El contenido es únicamente educativo; no es orientación médica ni un servicio de emergencias.</p>
+          </aside>
+        </div>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-grid">
+      <div>
+        <p class="footer-title">CaboHealth</p>
+        <p class="footer-copy">Official app information in English and Spanish. Información oficial de la app en inglés y español.</p>
+      </div>
+      <nav aria-label="Legal and support / Legal y soporte" class="legal-nav">
+        <ul>
+          <li><a href="https://cabohealth.org/app/privacy/">Privacy / Privacidad</a></li>
+          <li><a href="https://cabohealth.org/app/terms/">Terms / Términos</a></li>
+          <li><a href="https://cabohealth.org/app/support/">Support / Soporte</a></li>
+          <li><a href="https://cabohealth.org/app/report-content/">Report Content / Reportar contenido</a></li>
+        </ul>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>
