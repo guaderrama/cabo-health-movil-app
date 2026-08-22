@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -25,6 +26,10 @@ const cliPath = join(projectRoot, 'scripts/protected-overlay-release.mjs');
 const lockWorkerPath = join(
   projectRoot,
   'tests/fixtures/protected-overlay-lock-worker.mjs',
+);
+const journalWorkerPath = join(
+  projectRoot,
+  'tests/fixtures/protected-overlay-journal-worker.mjs',
 );
 
 test('CLI rejects an inode substituted between metadata validation and reading', (context) => {
@@ -194,6 +199,96 @@ test('durable staging cleanup removes only an owned tree below its managed root'
   assert.equal(existsSync(managedRoot), true);
 });
 
+test('SIGKILL at every durable move phase recovers one coherent release', (context) => {
+  const crashSteps = [
+    'journal-prepared',
+    'move-1',
+    'move-2',
+    'state-committed',
+    'journal-cleared',
+  ];
+  for (const crashStep of crashSteps) {
+    const fixture = makeMoveTransactionFixture();
+    context.after(() => rmSync(fixture, { recursive: true, force: true }));
+    const crashed = spawnSync(process.execPath, [journalWorkerPath, 'execute', fixture], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        NODE_ENV: 'test',
+        CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: crashStep,
+      },
+    });
+    assert.equal(crashed.status, null, `${crashStep}: ${crashed.stderr}`);
+    assert.equal(crashed.signal, 'SIGKILL', crashStep);
+
+    const recovered = spawnSync(process.execPath, [journalWorkerPath, 'recover', fixture], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+    });
+    assert.equal(recovered.status, 0, `${crashStep}: ${recovered.stderr}`);
+    const state = JSON.parse(readFileSync(join(fixture, 'state.json'), 'utf8'));
+    const live = readFileSync(join(fixture, 'live/release.txt'), 'utf8').trim();
+    assert.equal(live, state.release, crashStep);
+    assert.equal(['A', 'B'].includes(live), true, crashStep);
+    assert.equal(existsSync(join(fixture, 'managed/transaction.json')), false, crashStep);
+
+    if (state.release === 'A') {
+      const retry = spawnSync(process.execPath, [journalWorkerPath, 'execute', fixture], {
+        cwd: projectRoot,
+        encoding: 'utf8',
+      });
+      assert.equal(retry.status, 0, `${crashStep}: ${retry.stderr}`);
+      assert.equal(readFileSync(join(fixture, 'live/release.txt'), 'utf8'), 'B\n');
+    }
+  }
+});
+
+test('SIGKILL during journal recovery is itself idempotently recoverable', (context) => {
+  for (const recoveryStep of ['recovery-move-2', 'recovery-move-1']) {
+    const fixture = makeMoveTransactionFixture();
+    context.after(() => rmSync(fixture, { recursive: true, force: true }));
+    const interrupted = spawnSync(
+      process.execPath,
+      [journalWorkerPath, 'execute', fixture],
+      {
+        cwd: projectRoot,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          NODE_ENV: 'test',
+          CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: 'move-2',
+        },
+      },
+    );
+    assert.equal(interrupted.signal, 'SIGKILL', recoveryStep);
+
+    const crashedRecovery = spawnSync(
+      process.execPath,
+      [journalWorkerPath, 'recover', fixture],
+      {
+        cwd: projectRoot,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          NODE_ENV: 'test',
+          CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: recoveryStep,
+        },
+      },
+    );
+    assert.equal(crashedRecovery.signal, 'SIGKILL', recoveryStep);
+
+    const recovered = spawnSync(process.execPath, [journalWorkerPath, 'recover', fixture], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+    });
+    assert.equal(recovered.status, 0, `${recoveryStep}: ${recovered.stderr}`);
+    assert.equal(readFileSync(join(fixture, 'state.json'), 'utf8'), '{"release":"A"}\n');
+    assert.equal(readFileSync(join(fixture, 'live/release.txt'), 'utf8'), 'A\n');
+    assert.equal(existsSync(join(fixture, 'managed/transaction.json')), false);
+  }
+});
+
 test('artifact creation rejects a reviewed source inode swapped after inventory validation', (context) => {
   const fixture = makeProjectFixture();
   context.after(() => rmSync(fixture, { recursive: true, force: true }));
@@ -245,6 +340,20 @@ function makeProjectFixture() {
       { recursive: true },
     );
   }
+  return fixture;
+}
+
+function makeMoveTransactionFixture() {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-move-journal-'));
+  mkdirSync(join(fixture, 'managed'), { mode: 0o700 });
+  mkdirSync(join(fixture, 'live'), { mode: 0o755 });
+  mkdirSync(join(fixture, 'candidate'), { mode: 0o755 });
+  writeFileSync(join(fixture, 'live/release.txt'), 'A\n', { mode: 0o644 });
+  writeFileSync(join(fixture, 'candidate/release.txt'), 'B\n', { mode: 0o644 });
+  writeFileSync(join(fixture, 'state.json'), `${JSON.stringify({ release: 'A' })}\n`, {
+    mode: 0o600,
+  });
+  chmodSync(join(fixture, 'state.json'), 0o600);
   return fixture;
 }
 
