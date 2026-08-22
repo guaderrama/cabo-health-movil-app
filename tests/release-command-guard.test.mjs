@@ -90,11 +90,22 @@ test('tracked source includes guard behavior while normalizing only reviewed pin
     "export const guardedBehavior = 'v1';",
     '',
   ].join('\n'));
+  write(root, 'release/app-store/3.0/screenshots-manifest.json', '{"captures":[]}\n');
   git(root, 'init', '-q');
   git(root, 'add', '.');
   git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
     'commit', '-qm', 'guard fixture');
   const initial = computeTrackedSourceSha256(root);
+
+  write(root, 'release/app-store/3.0/screenshots-manifest.json', '{"captures":["exact-rc"]}\n');
+  git(root, 'add', 'release/app-store/3.0/screenshots-manifest.json');
+  git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+    'commit', '-qm', 'post-build screenshot evidence');
+  assert.equal(
+    computeTrackedSourceSha256(root),
+    initial,
+    'post-build screenshot evidence must not mutate the reviewed build-input digest',
+  );
 
   const source = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
   write(root, 'scripts/release-command-guard.mjs', source.replace(
@@ -439,6 +450,7 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     computeTrackedSourceSha256,
     verifyBuildArtifactAttestation,
     verifyBuildInputAttestation,
+    verifyRcAttestation,
   } = await import(guardPath);
   const requestedRoot = mkdtempSync(join(tmpdir(), 'cabohealth-release-phases-'));
   const root = realpathSync(requestedRoot);
@@ -464,6 +476,7 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     'release/app-store/3.0/build-input-attestation.json': '{}\n',
     'release/app-store/3.0/build-artifact-attestation.json': '{}\n',
     'release/app-store/3.0/rc-attestation.json': '{}\n',
+    'release/app-store/3.0/screenshots-manifest.json': '{"captures":[]}\n',
   };
   for (const [path, value] of Object.entries(initial)) write(root, path, value);
   git(root, 'init', '-q');
@@ -534,6 +547,51 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     buildInputSha256,
     buildArtifactSha256,
   }), buildArtifact);
+
+  write(root, 'release/private/rc/physical-iphone-qa.json', '{"passed":true}\n');
+  write(root, 'release/private/rc/app-store-connect-evidence.json', '{"saved":true}\n');
+  chmodSync(join(root, 'release/private/rc/physical-iphone-qa.json'), 0o600);
+  chmodSync(join(root, 'release/private/rc/app-store-connect-evidence.json'), 0o600);
+  const rcAttestation = {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-ios-exact-rc-attestation',
+    candidate: buildInput.candidate,
+    buildArtifactAttestationSha256: buildArtifactSha256,
+    sourceTreeSha256,
+    testFlightBuildId: '987654321',
+    testFlightProcessedAt: '2026-08-22T10:00:00.000Z',
+    physicalIphoneQaSha256: hash(readFileSync(
+      join(root, 'release/private/rc/physical-iphone-qa.json'),
+    )),
+    screenshotsManifestSha256: hash(readFileSync(
+      join(root, 'release/app-store/3.0/screenshots-manifest.json'),
+    )),
+    appStoreMetadataEvidenceSha256: hash(readFileSync(
+      join(root, 'release/private/rc/app-store-connect-evidence.json'),
+    )),
+    reviewedAt: '2026-08-22T11:00:00.000Z',
+  };
+  const rcBytes = Buffer.from(`${JSON.stringify(rcAttestation)}\n`);
+  write(root, 'release/app-store/3.0/rc-attestation.json', rcBytes);
+  git(root, 'add', 'release/app-store/3.0/rc-attestation.json');
+  git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+    'commit', '-qm', 'pin exact RC');
+  const rcSha256 = hash(rcBytes);
+  assert.deepEqual(verifyRcAttestation(root, {
+    buildInputSha256,
+    buildArtifactSha256,
+    rcSha256,
+  }), rcAttestation);
+
+  write(root, 'release/app-store/3.0/screenshots-manifest.json', '{"captures":["drift"]}\n');
+  git(root, 'add', 'release/app-store/3.0/screenshots-manifest.json');
+  git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+    'commit', '-qm', 'drift screenshot evidence');
+  assert.throws(() => verifyRcAttestation(root, {
+    buildInputSha256,
+    buildArtifactSha256,
+    rcSha256,
+  }), /EXACT_RC_ATTESTATION_INVALID/u);
 
   write(root, 'release/private/rc/CaboHealth-3.0-build-4.ipa', 'drifted ipa bytes');
   assert.throws(() => verifyBuildArtifactAttestation(root, {

@@ -51,6 +51,10 @@ const PINNED_APP_STORE_SUBMIT_ADAPTER = null;
 
 const SOURCE_DIGEST_EXCLUSIONS = new Set([
   ...Object.values(ATTESTATION_PATHS),
+  // Exact-RC screenshots can only be captured after the immutable build is in
+  // TestFlight. Their manifest is independently hashed by the RC attestation,
+  // so it is evidence about the build rather than an input to that build.
+  'release/app-store/3.0/screenshots-manifest.json',
 ]);
 const NORMALIZED_PIN_RULES = Object.freeze([
   ['BUILD_INPUT_ATTESTATION_SHA256', /^(?:null|'[a-f0-9]{64}')$/u],
