@@ -9,6 +9,7 @@ import {
   readFileSync,
   realpathSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -38,6 +39,12 @@ const durableRenameWorkerPath = join(
   projectRoot,
   'tests/fixtures/protected-overlay-durable-rename-worker.mjs',
 );
+
+function publishResumeSignal(path) {
+  const candidatePath = `${path}.candidate-${process.pid}`;
+  writeFileSync(candidatePath, 'resume\n', { flag: 'wx', mode: 0o600 });
+  renameSync(candidatePath, path);
+}
 
 test('CLI rejects an inode substituted between metadata validation and reading', (context) => {
   const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-cli-toctou-'));
@@ -118,7 +125,7 @@ test('deployment lock admits only one real operator process at a time', async (c
   assert.notEqual(contender.status, 0, contender.stdout);
   assert.match(contender.stderr, /protected_overlay_transaction_locked/u);
 
-  writeFileSync(resumePath, 'resume\n', { flag: 'wx', mode: 0o600 });
+  publishResumeSignal(resumePath);
   const [status] = await once(holder, 'exit');
   const output = await holderOutput;
   assert.equal(status, 0, output.stderr);
@@ -182,7 +189,7 @@ test('two stale-lock recoverers cannot unlink a newly acquired lock', async (con
     cwd: projectRoot,
     encoding: 'utf8',
   });
-  writeFileSync(staleUnlinkResume, 'resume\n', { flag: 'wx', mode: 0o600 });
+  publishResumeSignal(staleUnlinkResume);
   const [delayedStatus] = await once(delayedRecoverer, 'exit');
   const delayedResult = await delayedOutput;
 
@@ -261,7 +268,7 @@ test('test-only transaction barrier holds a real process until explicitly resume
   assert.equal(worker.exitCode, null);
   assert.equal(readFileSync(readyPath, 'utf8'), 'journal-prepared\n');
 
-  writeFileSync(resumePath, 'resume\n', { flag: 'wx', mode: 0o600 });
+  publishResumeSignal(resumePath);
   const [status] = await once(worker, 'exit');
   const result = await output;
   assert.equal(status, 0, result.stderr);

@@ -166,6 +166,13 @@ export function clearDurableCanonicalRecord(path, {
   removeOwnedFileIfPresent(target, mode, errorCode);
 }
 
+export function discardDurableCanonicalCandidate(path, {
+  errorCode = 'protected_overlay_journal_invalid',
+  mode = 0o600,
+} = {}) {
+  removeOwnedFileIfPresent(`${resolve(path)}.candidate`, mode, errorCode);
+}
+
 export function durableRename(source, destination, errorCode = 'protected_overlay_rename_failed') {
   const sourcePath = resolve(source);
   const destinationPath = resolve(destination);

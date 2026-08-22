@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   createHash,
   generateKeyPairSync,
@@ -9,10 +9,12 @@ import {
   chmodSync,
   cpSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -22,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
+import { once } from 'node:events';
 
 import {
   createProtectedOverlayActivationPlan,
@@ -36,6 +39,12 @@ import {
 } from '../scripts/protected-overlay-release-gate.mjs';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+function publishResumeSignal(path) {
+  const candidatePath = `${path}.candidate-${process.pid}`;
+  writeFileSync(candidatePath, 'resume\n', { flag: 'wx', mode: 0o600 });
+  renameSync(candidatePath, path);
+}
 
 test('package exposes the protected overlay operator gate without deploying', () => {
   const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
@@ -242,6 +251,57 @@ test('activation rejects symlinked private inputs even when their targets are ou
   symlinkSync(production.privateContentRoot, contentSymlinkPath);
   production.privateContentRoot = contentSymlinkPath;
   assert.throws(() => createActivation(fixture), /protected_overlay_directory_invalid/u);
+});
+
+test('activation rejects hard-linked private inputs', (context) => {
+  const fixture = makeDeploymentFixture();
+  context.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  const target = fixture.realms.production.brokerConfigPath;
+  const hardlink = join(dirname(target), 'broker-config-hardlink.json');
+  linkSync(target, hardlink);
+  fixture.realms.production.brokerConfigPath = hardlink;
+
+  assert.throws(() => createActivation(fixture), /protected_overlay_private_input_invalid/u);
+});
+
+test('CLI activation rejects a private inode substituted between validation and reading', (context) => {
+  const fixture = makeDeploymentFixture();
+  context.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  const inputsPath = join(fixture.root, 'raced-inputs.json');
+  const trustPolicyPath = join(fixture.root, 'raced-trust-policy.json');
+  const outputPath = join(fixture.root, 'must-not-exist-activation.json');
+  const preloadPath = join(fixture.root, 'swap-private-input.cjs');
+  const target = fixture.realms.production.brokerConfigPath;
+  const replacement = join(dirname(target), 'broker-config-replacement.json');
+  const backup = join(dirname(target), 'broker-config-reviewed.json');
+  writeFileSync(replacement, readFileSync(target), { mode: 0o600 });
+  chmodSync(replacement, 0o600);
+  for (const [path, value] of [
+    [inputsPath, { realms: fixture.realms }],
+    [trustPolicyPath, fixture.trustPolicy],
+  ]) {
+    writeFileSync(path, `${JSON.stringify(value)}\n`, { mode: 0o400 });
+    chmodSync(path, 0o400);
+  }
+  writeSwapAfterLstatPreload(preloadPath);
+
+  const result = runCli([
+    'create-activation',
+    '--deployment-root', fixture.root,
+    '--inputs', inputsPath,
+    '--out', outputPath,
+    '--trust-policy', trustPolicyPath,
+    '--trust-policy-sha256', fixture.trustPolicySha256,
+  ], {
+    NODE_OPTIONS: `--require=${preloadPath}`,
+    CABOHEALTH_TEST_SWAP_TARGET: target,
+    CABOHEALTH_TEST_SWAP_REPLACEMENT: replacement,
+    CABOHEALTH_TEST_SWAP_BACKUP: backup,
+  });
+
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /protected_overlay_private_input_invalid/u);
+  assert.equal(existsSync(outputPath), false);
 });
 
 test('activation rejects a factory that only names the authorized adapter contract in comments', (context) => {
@@ -883,6 +943,226 @@ test('operator CLI requires external activation evidence before promoting and ve
   });
 });
 
+test('first CLI promotion recovers a SIGKILL to truly absent state before retry', (context) => {
+  const deployment = makeDeploymentFixture();
+  context.after(() => rmSync(deployment.root, { recursive: true, force: true }));
+  const artifact = createProtectedOverlayArtifact({ projectRoot });
+  const activation = createActivation(deployment);
+  const evidence = createDeploymentEvidence(deployment, artifact, activation).evidence;
+  const commonArguments = writeDeploymentCliCapsules({
+    activation,
+    artifact,
+    deployment,
+    evidence,
+    name: 'first-crash',
+    sourceRoot: projectRoot,
+  });
+
+  const crashed = runCli([
+    'promote',
+    ...commonArguments,
+    '--predecessor-release-id', 'absent',
+  ], {
+    NODE_ENV: 'test',
+    CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: 'move-1',
+  });
+  assert.equal(crashed.signal, 'SIGKILL');
+
+  const recovery = runCli(['verify-deployment', ...commonArguments]);
+  assert.notEqual(recovery.status, 0, recovery.stdout);
+  assert.match(recovery.stderr, /protected_overlay_deployment_state_invalid/u);
+  assert.equal(
+    existsSync(join(deployment.root, '.cabohealth-protected-overlays/transaction.json')),
+    false,
+  );
+  for (const realm of artifact.realms) {
+    assert.equal(existsSync(join(deployment.root, ...realm.promoteTarget.split('/'))), false);
+  }
+
+  const retried = runCli([
+    'promote',
+    ...commonArguments,
+    '--predecessor-release-id', 'absent',
+  ]);
+  assert.equal(retried.status, 0, retried.stderr);
+  assert.equal(runCli(['verify-deployment', ...commonArguments]).status, 0);
+});
+
+test('two real CLI promotions cannot interleave realms or commit the same predecessor', async (context) => {
+  const deployment = makeDeploymentFixture();
+  const firstProject = makeProjectFixture();
+  const secondProject = makeProjectFixture();
+  context.after(() => {
+    rmSync(deployment.root, { recursive: true, force: true });
+    rmSync(firstProject, { recursive: true, force: true });
+    rmSync(secondProject, { recursive: true, force: true });
+  });
+  const initialArtifact = createProtectedOverlayArtifact({ projectRoot });
+  const activation = createActivation(deployment);
+  const initialEvidence = createDeploymentEvidence(
+    deployment,
+    initialArtifact,
+    activation,
+  ).evidence;
+  promoteProtectedOverlays({
+    activation,
+    artifact: initialArtifact,
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedPredecessorReleaseId: 'absent',
+    projectRoot,
+    ...artifactPins(initialArtifact),
+    ...securityPins(deployment, initialEvidence),
+  });
+
+  appendReviewedSuccessor(firstProject, 'concurrent-B');
+  appendReviewedSuccessor(secondProject, 'concurrent-C');
+  const firstArtifact = createProtectedOverlayArtifact({ projectRoot: firstProject });
+  const secondArtifact = createProtectedOverlayArtifact({ projectRoot: secondProject });
+  const firstEvidence = createDeploymentEvidence(
+    deployment,
+    firstArtifact,
+    activation,
+    firstProject,
+  ).evidence;
+  const secondEvidence = createDeploymentEvidence(
+    deployment,
+    secondArtifact,
+    activation,
+    secondProject,
+  ).evidence;
+  const firstArguments = writeDeploymentCliCapsules({
+    activation,
+    artifact: firstArtifact,
+    deployment,
+    evidence: firstEvidence,
+    name: 'concurrent-B',
+    sourceRoot: firstProject,
+  });
+  const secondArguments = writeDeploymentCliCapsules({
+    activation,
+    artifact: secondArtifact,
+    deployment,
+    evidence: secondEvidence,
+    name: 'concurrent-C',
+    sourceRoot: secondProject,
+  });
+  const readyPath = join(deployment.root, 'promotion.ready');
+  const resumePath = join(deployment.root, 'promotion.resume');
+  const first = spawn(process.execPath, [
+    join(projectRoot, 'scripts/protected-overlay-release.mjs'),
+    'promote',
+    ...firstArguments,
+    '--predecessor-release-id', initialArtifact.releaseId,
+  ], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      CABOHEALTH_OVERLAY_TEST_PAUSE_AFTER_STEP: 'journal-prepared',
+      CABOHEALTH_OVERLAY_TEST_PAUSE_READY_PATH: readyPath,
+      CABOHEALTH_OVERLAY_TEST_PAUSE_RESUME_PATH: resumePath,
+    },
+  });
+  const firstOutput = collectChildOutput(first);
+  await waitForPathWhileRunning(readyPath, first, firstOutput);
+
+  const contender = runCli([
+    'promote',
+    ...secondArguments,
+    '--predecessor-release-id', initialArtifact.releaseId,
+  ]);
+  publishResumeSignal(resumePath);
+  const [firstStatus] = await once(first, 'exit');
+  const firstResult = await firstOutput;
+
+  assert.notEqual(contender.status, 0, contender.stdout);
+  assert.match(contender.stderr, /protected_overlay_transaction_locked/u);
+  assert.equal(firstStatus, 0, firstResult.stderr);
+  assert.equal(runCli(['verify-deployment', ...firstArguments]).status, 0);
+  const staleRetry = runCli([
+    'promote',
+    ...secondArguments,
+    '--predecessor-release-id', initialArtifact.releaseId,
+  ]);
+  assert.notEqual(staleRetry.status, 0, staleRetry.stdout);
+  assert.match(staleRetry.stderr, /protected_overlay_predecessor_mismatch/u);
+});
+
+test('successor promotion recovers every realm move and state-commit SIGKILL coherently', (context) => {
+  for (const crashStep of ['move-1', 'move-2', 'move-3', 'move-4', 'state-committed']) {
+    const scenario = makeTwoReleaseCliScenario(`promote-${crashStep}`);
+    context.after(() => disposeTwoReleaseCliScenario(scenario));
+    const crashed = runCli([
+      'promote',
+      ...scenario.successorArguments,
+      '--predecessor-release-id', scenario.initialArtifact.releaseId,
+    ], {
+      NODE_ENV: 'test',
+      CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: crashStep,
+    });
+    assert.equal(crashed.signal, 'SIGKILL', crashStep);
+
+    const committed = crashStep === 'state-committed';
+    const expectedArguments = committed
+      ? scenario.successorArguments
+      : scenario.initialArguments;
+    const recovered = runCli(['verify-deployment', ...expectedArguments]);
+    assert.equal(recovered.status, 0, `${crashStep}: ${recovered.stderr}`);
+    assert.equal(
+      existsSync(join(
+        scenario.deployment.root,
+        '.cabohealth-protected-overlays/transaction.json',
+      )),
+      false,
+      crashStep,
+    );
+    if (!committed) {
+      const retried = runCli([
+        'promote',
+        ...scenario.successorArguments,
+        '--predecessor-release-id', scenario.initialArtifact.releaseId,
+      ]);
+      assert.equal(retried.status, 0, `${crashStep}: ${retried.stderr}`);
+    }
+  }
+});
+
+test('rollback recovers every realm move and state-commit SIGKILL coherently', (context) => {
+  for (const crashStep of ['move-1', 'move-2', 'move-3', 'move-4', 'state-committed']) {
+    const scenario = makeTwoReleaseCliScenario(`rollback-${crashStep}`, {
+      promoteSuccessor: true,
+    });
+    context.after(() => disposeTwoReleaseCliScenario(scenario));
+    const rollbackArguments = rollbackCliArguments(scenario);
+    const crashed = runCli(['rollback', ...rollbackArguments], {
+      NODE_ENV: 'test',
+      CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: crashStep,
+    });
+    assert.equal(crashed.signal, 'SIGKILL', crashStep);
+
+    const committed = crashStep === 'state-committed';
+    const expectedArguments = committed
+      ? scenario.initialArguments
+      : scenario.successorArguments;
+    const recovered = runCli(['verify-deployment', ...expectedArguments]);
+    assert.equal(recovered.status, 0, `${crashStep}: ${recovered.stderr}`);
+    assert.equal(
+      existsSync(join(
+        scenario.deployment.root,
+        '.cabohealth-protected-overlays/transaction.json',
+      )),
+      false,
+      crashStep,
+    );
+    if (!committed) {
+      const retried = runCli(['rollback', ...rollbackArguments]);
+      assert.equal(retried.status, 0, `${crashStep}: ${retried.stderr}`);
+    }
+  }
+});
+
 test('operator CLI rollback requires pins for the live release and its recorded predecessor', (context) => {
   const deployment = makeDeploymentFixture();
   const successorProject = makeProjectFixture();
@@ -993,12 +1273,194 @@ function artifactPins(artifact) {
   };
 }
 
-function runCli(arguments_) {
+function runCli(arguments_, environment = {}) {
   return spawnSync(
     process.execPath,
     [join(projectRoot, 'scripts/protected-overlay-release.mjs'), ...arguments_],
-    { cwd: projectRoot, encoding: 'utf8' },
+    { cwd: projectRoot, encoding: 'utf8', env: { ...process.env, ...environment } },
   );
+}
+
+function writeDeploymentCliCapsules({
+  activation,
+  artifact,
+  deployment,
+  evidence,
+  name,
+  sourceRoot,
+}) {
+  const artifactPath = join(deployment.root, `${name}-artifact.json`);
+  const activationPath = join(deployment.root, `${name}-activation.json`);
+  const evidencePath = join(deployment.root, `${name}-evidence.json`);
+  const trustPolicyPath = join(deployment.root, `${name}-trust-policy.json`);
+  for (const [path, value] of [
+    [artifactPath, artifact],
+    [activationPath, activation],
+    [evidencePath, evidence],
+    [trustPolicyPath, deployment.trustPolicy],
+  ]) {
+    writeFileSync(path, `${JSON.stringify(value)}\n`, { mode: 0o400 });
+    chmodSync(path, 0o400);
+  }
+  return [
+    '--project-root', sourceRoot,
+    '--deployment-root', deployment.root,
+    '--artifact', artifactPath,
+    '--activation', activationPath,
+    '--release-id', artifact.releaseId,
+    '--inventory-sha256', artifact.inventorySha256,
+    '--artifact-sha256', artifact.artifactSha256,
+    '--activation-sha256', activation.activationSha256,
+    '--evidence', evidencePath,
+    '--evidence-sha256', evidence.evidenceSha256,
+    '--trust-policy', trustPolicyPath,
+    '--trust-policy-sha256', deployment.trustPolicySha256,
+  ];
+}
+
+function appendReviewedSuccessor(sourceRoot, label) {
+  const path = join(
+    sourceRoot,
+    'web-hosting/cabohealth.org/apps/client-resources/app.js',
+  );
+  writeFileSync(path, `${readFileSync(path, 'utf8')}\n// ${label}\n`);
+}
+
+function makeTwoReleaseCliScenario(name, { promoteSuccessor = false } = {}) {
+  const deployment = makeDeploymentFixture();
+  const successorProject = makeProjectFixture();
+  appendReviewedSuccessor(successorProject, name);
+  const initialArtifact = createProtectedOverlayArtifact({ projectRoot });
+  const successorArtifact = createProtectedOverlayArtifact({ projectRoot: successorProject });
+  const activation = createActivation(deployment);
+  const initialEvidence = createDeploymentEvidence(
+    deployment,
+    initialArtifact,
+    activation,
+  ).evidence;
+  const successorEvidence = createDeploymentEvidence(
+    deployment,
+    successorArtifact,
+    activation,
+    successorProject,
+  ).evidence;
+  const initialArguments = writeDeploymentCliCapsules({
+    activation,
+    artifact: initialArtifact,
+    deployment,
+    evidence: initialEvidence,
+    name: `${name}-initial`,
+    sourceRoot: projectRoot,
+  });
+  const successorArguments = writeDeploymentCliCapsules({
+    activation,
+    artifact: successorArtifact,
+    deployment,
+    evidence: successorEvidence,
+    name: `${name}-successor`,
+    sourceRoot: successorProject,
+  });
+  const promoted = runCli([
+    'promote',
+    ...initialArguments,
+    '--predecessor-release-id', 'absent',
+  ]);
+  assert.equal(promoted.status, 0, promoted.stderr);
+  if (promoteSuccessor) {
+    const successor = runCli([
+      'promote',
+      ...successorArguments,
+      '--predecessor-release-id', initialArtifact.releaseId,
+    ]);
+    assert.equal(successor.status, 0, successor.stderr);
+  }
+  return {
+    activation,
+    deployment,
+    initialArguments,
+    initialArtifact,
+    initialEvidence,
+    successorArguments,
+    successorArtifact,
+    successorEvidence,
+    successorProject,
+  };
+}
+
+function disposeTwoReleaseCliScenario(scenario) {
+  rmSync(scenario.deployment.root, { recursive: true, force: true });
+  rmSync(scenario.successorProject, { recursive: true, force: true });
+}
+
+function rollbackCliArguments(scenario) {
+  return [
+    '--deployment-root', scenario.deployment.root,
+    '--activation', argumentValue(scenario.successorArguments, '--activation'),
+    '--activation-sha256', scenario.activation.activationSha256,
+    '--current-evidence-sha256', scenario.successorEvidence.evidenceSha256,
+    '--current-release-id', scenario.successorArtifact.releaseId,
+    '--current-inventory-sha256', scenario.successorArtifact.inventorySha256,
+    '--current-artifact-sha256', scenario.successorArtifact.artifactSha256,
+    '--predecessor-release-id', scenario.initialArtifact.releaseId,
+    '--predecessor-inventory-sha256', scenario.initialArtifact.inventorySha256,
+    '--predecessor-artifact-sha256', scenario.initialArtifact.artifactSha256,
+    '--predecessor-evidence-sha256', scenario.initialEvidence.evidenceSha256,
+    '--trust-policy', argumentValue(scenario.successorArguments, '--trust-policy'),
+    '--trust-policy-sha256', scenario.deployment.trustPolicySha256,
+  ];
+}
+
+function argumentValue(arguments_, name) {
+  const index = arguments_.indexOf(name);
+  if (index < 0 || typeof arguments_[index + 1] !== 'string') {
+    throw new Error(`missing test argument ${name}`);
+  }
+  return arguments_[index + 1];
+}
+
+function writeSwapAfterLstatPreload(path) {
+  writeFileSync(path, `'use strict';
+const fs = require('node:fs');
+const { syncBuiltinESMExports } = require('node:module');
+const pathModule = require('node:path');
+const originalLstat = fs.lstatSync;
+let swapped = false;
+fs.lstatSync = function guardedLstat(path, ...args) {
+  const stat = originalLstat.call(this, path, ...args);
+  if (
+    !swapped
+    && pathModule.resolve(path) === pathModule.resolve(process.env.CABOHEALTH_TEST_SWAP_TARGET)
+  ) {
+    swapped = true;
+    fs.renameSync(path, process.env.CABOHEALTH_TEST_SWAP_BACKUP);
+    fs.renameSync(process.env.CABOHEALTH_TEST_SWAP_REPLACEMENT, path);
+  }
+  return stat;
+};
+syncBuiltinESMExports();
+`);
+}
+
+function collectChildOutput(child) {
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  return new Promise((resolvePromise) => {
+    child.on('close', () => resolvePromise({ stderr, stdout }));
+  });
+}
+
+async function waitForPathWhileRunning(path, child, output) {
+  const deadline = Date.now() + 5_000;
+  while (!existsSync(path)) {
+    if (child.exitCode !== null) {
+      const result = await output;
+      throw new Error(`child exited before ${path}: ${result.stderr || result.stdout}`);
+    }
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+  }
 }
 
 function makeDeploymentFixture() {

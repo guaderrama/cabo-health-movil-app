@@ -6,10 +6,7 @@ import {
 import {
   existsSync,
   lstatSync,
-  mkdirSync,
   readdirSync,
-  renameSync,
-  writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
@@ -17,6 +14,20 @@ import {
   inspectDescriptorBoundDirectory,
   readDescriptorBoundFile,
 } from './protected-overlay-secure-fs.mjs';
+import {
+  clearDurableCanonicalRecord,
+  discardDurableCanonicalCandidate,
+  durableRename,
+  ensureDurableDirectory,
+  executeDurableMoveTransaction,
+  fsyncDirectory,
+  readDurableCanonicalRecord,
+  recoverDurableMoveTransaction,
+  removeDurableOwnedTree,
+  withExclusiveOverlayLock,
+  writeDurableCanonicalRecord,
+  writeDurableExclusiveFile,
+} from './protected-overlay-transaction.mjs';
 
 const ARTIFACT_KIND = 'cabohealth-protected-hostinger-overlays-v1';
 const RELEASE_PREFIX = 'protected-overlays-v1-';
@@ -759,52 +770,106 @@ export function promoteProtectedOverlays({
   assertExpectedPredecessor(expectedPredecessorReleaseId);
   const root = realDirectory(deploymentRoot, 0o700, 0o755);
   const documentRoot = realDirectory(resolve(root, 'public_html'), 0o755);
-  const existingState = readManagedState(root);
-  let predecessorArtifact = null;
-  if (existingState === null) {
-    if (expectedPredecessorReleaseId !== 'absent') {
-      throw new Error('protected_overlay_predecessor_mismatch');
-    }
-    for (const realm of verifiedArtifact.realms) {
-      if (existsSync(resolve(root, ...realm.promoteTarget.split('/')))) {
-        throw new Error('protected_overlay_unmanaged_live_target');
+  const managedRoot = ensureDurableDirectory(
+    resolve(root, MANAGED_ROOT_NAME),
+    0o700,
+    'protected_overlay_managed_root_invalid',
+  );
+  return withExclusiveOverlayLock(managedRoot, ({ token }) => {
+    const callbacks = managedTransactionCallbacks(root, managedRoot);
+    recoverDurableMoveTransaction({ ...callbacks, managedRoot, root, token });
+
+    const lockedActivation = verifyProtectedOverlayActivationPlan({
+      activation,
+      deploymentRoot,
+      expectedActivationSha256,
+      expectedTrustPolicySha256,
+      trustPolicy,
+    });
+    const lockedEvidenceRequest = buildDeploymentEvidenceRequest(
+      verifiedArtifact,
+      lockedActivation,
+      expectedTrustPolicySha256,
+    );
+    verifyProtectedOverlayDeploymentEvidence({
+      evidence,
+      evidenceRequest: lockedEvidenceRequest,
+      expectedEvidenceSha256,
+      expectedTrustPolicySha256,
+      trustPolicy,
+    });
+
+    const existingState = readManagedState(root);
+    let predecessorArtifact = null;
+    if (existingState === null) {
+      if (expectedPredecessorReleaseId !== 'absent') {
+        throw new Error('protected_overlay_predecessor_mismatch');
+      }
+      for (const realm of verifiedArtifact.realms) {
+        if (existsSync(resolve(root, ...realm.promoteTarget.split('/')))) {
+          throw new Error('protected_overlay_unmanaged_live_target');
+        }
+      }
+    } else {
+      if (
+        expectedPredecessorReleaseId !== existingState.current.releaseId
+        || verifiedArtifact.releaseId === existingState.current.releaseId
+      ) throw new Error('protected_overlay_predecessor_mismatch');
+      predecessorArtifact = readStoredArtifact(root, stateArtifactPins(existingState.current));
+      for (const realm of predecessorArtifact.realms) {
+        verifyRealmDirectory(resolve(root, ...realm.promoteTarget.split('/')), realm);
       }
     }
-  } else {
-    if (
-      expectedPredecessorReleaseId !== existingState.current.releaseId
-      || verifiedArtifact.releaseId === existingState.current.releaseId
-    ) throw new Error('protected_overlay_predecessor_mismatch');
-    predecessorArtifact = readStoredArtifact(root, stateArtifactPins(existingState.current));
-    for (const realm of predecessorArtifact.realms) {
-      verifyRealmDirectory(resolve(root, ...realm.promoteTarget.split('/')), realm);
-    }
-  }
 
-  const managedRoot = ensureDirectory(resolve(root, MANAGED_ROOT_NAME), 0o700);
-  const artifactsRoot = ensureDirectory(resolve(managedRoot, 'artifacts'), 0o700);
-  const candidatesRoot = ensureDirectory(resolve(managedRoot, 'candidates'), 0o700);
-  storeImmutableArtifact(artifactsRoot, verifiedArtifact);
-  const releaseCandidateRoot = resolve(candidatesRoot, verifiedArtifact.releaseId);
-  prepareEmptyDirectory(releaseCandidateRoot, 0o700, 'protected_overlay_candidate_collision');
-  for (const realm of verifiedArtifact.realms) {
-    materializeRealm(resolve(releaseCandidateRoot, realm.realm), realm);
-  }
-  const appsRoot = ensureDirectory(resolve(documentRoot, 'apps'), 0o755);
-  let predecessorRoot = null;
-  if (predecessorArtifact !== null) {
-    const predecessorsRoot = ensureDirectory(resolve(managedRoot, 'predecessors'), 0o700);
-    predecessorRoot = resolve(predecessorsRoot, verifiedArtifact.releaseId);
-    prepareEmptyDirectory(
-      predecessorRoot,
+    const artifactsRoot = ensureDurableDirectory(
+      resolve(managedRoot, 'artifacts'),
       0o700,
-      'protected_overlay_predecessor_store_collision',
+      'protected_overlay_artifact_store_invalid',
     );
-  }
-  storeImmutableTransition(managedRoot, verifiedArtifact, existingState);
-
-  const moved = [];
-  try {
+    const candidatesRoot = ensureDurableDirectory(
+      resolve(managedRoot, 'candidates'),
+      0o700,
+      'protected_overlay_candidate_collision',
+    );
+    storeImmutableArtifact(artifactsRoot, verifiedArtifact);
+    const releaseCandidateRoot = prepareReleaseCandidate(
+      managedRoot,
+      candidatesRoot,
+      verifiedArtifact,
+      token,
+    );
+    const appsRoot = ensureDurableDirectory(
+      resolve(documentRoot, 'apps'),
+      0o755,
+      'protected_overlay_live_target_invalid',
+    );
+    let predecessorRoot = null;
+    if (predecessorArtifact !== null) {
+      const predecessorsRoot = ensureDurableDirectory(
+        resolve(managedRoot, 'predecessors'),
+        0o700,
+        'protected_overlay_predecessor_store_invalid',
+      );
+      predecessorRoot = resolve(predecessorsRoot, verifiedArtifact.releaseId);
+      prepareEmptyDirectory(
+        predecessorRoot,
+        0o700,
+        'protected_overlay_predecessor_store_collision',
+      );
+    }
+    storeImmutableTransition(managedRoot, verifiedArtifact, existingState);
+    const afterState = Object.freeze({
+      schemaVersion: 1,
+      current: Object.freeze({
+        releaseId: verifiedArtifact.releaseId,
+        inventorySha256: verifiedArtifact.inventorySha256,
+        artifactSha256: verifiedArtifact.artifactSha256,
+        activationSha256: lockedActivation.activationSha256,
+        evidenceSha256: expectedEvidenceSha256,
+      }),
+      predecessorReleaseId: existingState?.current.releaseId ?? 'absent',
+    });
+    const moves = [];
     for (const realm of verifiedArtifact.realms) {
       const source = resolve(releaseCandidateRoot, realm.realm);
       const destination = resolve(root, ...realm.promoteTarget.split('/'));
@@ -812,46 +877,25 @@ export function promoteProtectedOverlays({
         throw new Error('protected_overlay_live_target_invalid');
       }
       if (predecessorArtifact !== null) {
-        const backup = resolve(predecessorRoot, realm.realm);
-        if (!existsSync(destination) || existsSync(backup)) {
-          throw new Error('protected_overlay_live_target_invalid');
-        }
-        renameSync(destination, backup);
-        moved.push({ destination: backup, source: destination });
-      } else if (existsSync(destination)) {
-        throw new Error('protected_overlay_live_target_invalid');
+        moves.push(moveRecord(root, destination, resolve(predecessorRoot, realm.realm)));
       }
-      renameSync(source, destination);
-      moved.push({ destination, source });
-      verifyRealmDirectory(destination, realm);
+      moves.push(moveRecord(root, source, destination));
     }
-    writeManagedState(root, Object.freeze({
-      schemaVersion: 1,
-      current: Object.freeze({
-        releaseId: verifiedArtifact.releaseId,
-        inventorySha256: verifiedArtifact.inventorySha256,
-        artifactSha256: verifiedArtifact.artifactSha256,
-        activationSha256: verifiedActivation.activationSha256,
-        evidenceSha256: expectedEvidenceSha256,
-      }),
+    executeDurableMoveTransaction({
+      ...callbacks,
+      afterState,
+      beforeState: existingState,
+      managedRoot,
+      moves: Object.freeze(moves),
+      operation: 'promote',
+      root,
+      token,
+    });
+    return Object.freeze({
+      status: 'promoted',
+      currentReleaseId: verifiedArtifact.releaseId,
       predecessorReleaseId: existingState?.current.releaseId ?? 'absent',
-    }));
-  } catch (error) {
-    let reversalFailed = false;
-    for (const move of moved.reverse()) {
-      try {
-        renameSync(move.destination, move.source);
-      } catch {
-        reversalFailed = true;
-      }
-    }
-    if (reversalFailed) throw new Error('protected_overlay_promotion_reversal_failed');
-    throw error;
-  }
-  return Object.freeze({
-    status: 'promoted',
-    currentReleaseId: verifiedArtifact.releaseId,
-    predecessorReleaseId: existingState?.current.releaseId ?? 'absent',
+    });
   });
 }
 
@@ -893,85 +937,93 @@ export function rollbackProtectedOverlays({
   });
   const root = realDirectory(deploymentRoot, 0o700, 0o755);
   const documentRoot = realDirectory(resolve(root, 'public_html'), 0o755);
-  const state = readManagedState(root);
-  if (
-    state === null
-    || state.current.releaseId !== expectedCurrentReleaseId
-    || state.predecessorReleaseId !== expectedPredecessorReleaseId
-    || !stateMatchesArtifactPins(state.current, currentPins)
-    || state.current.evidenceSha256 !== expectedCurrentEvidenceSha256
-  ) throw new Error('protected_overlay_predecessor_mismatch');
-  const currentArtifact = readStoredArtifact(root, currentPins);
-  const predecessorArtifact = readStoredArtifact(root, predecessorPins);
-  const transition = readImmutableTransition(root, expectedCurrentReleaseId);
-  if (
-    transition.releaseId !== expectedCurrentReleaseId
-    || transition.artifactSha256 !== currentArtifact.artifactSha256
-    || transition.predecessor === null
-    || transition.predecessor.current.releaseId !== expectedPredecessorReleaseId
-    || !stateMatchesArtifactPins(transition.predecessor.current, predecessorPins)
-    || transition.predecessor.current.activationSha256 !== verifiedActivation.activationSha256
-    || transition.predecessor.current.evidenceSha256 !== expectedPredecessorEvidenceSha256
-  ) throw new Error('protected_overlay_predecessor_mismatch');
-  for (const realm of currentArtifact.realms) {
-    verifyRealmDirectory(resolve(root, ...realm.promoteTarget.split('/')), realm);
-  }
   const managedRoot = realDirectory(resolve(root, MANAGED_ROOT_NAME), 0o700);
-  const predecessorRoot = realDirectory(
-    resolve(managedRoot, 'predecessors', expectedCurrentReleaseId),
-    0o700,
-  );
-  assertDirectoryNames(
-    predecessorRoot,
-    predecessorArtifact.realms.map(({ realm }) => realm),
-    'protected_overlay_predecessor_store_invalid',
-  );
-  for (const realm of predecessorArtifact.realms) {
-    verifyRealmDirectory(resolve(predecessorRoot, realm.realm), realm);
-  }
-  const removedRoot = resolve(
-    ensureDirectory(resolve(managedRoot, 'removed'), 0o700),
-    expectedCurrentReleaseId,
-  );
-  prepareEmptyDirectory(removedRoot, 0o700, 'protected_overlay_removed_store_collision');
-  const appsRoot = realDirectory(resolve(documentRoot, 'apps'), 0o755);
-
-  const moved = [];
-  try {
+  return withExclusiveOverlayLock(managedRoot, ({ token }) => {
+    const callbacks = managedTransactionCallbacks(root, managedRoot);
+    recoverDurableMoveTransaction({ ...callbacks, managedRoot, root, token });
+    const lockedActivation = verifyProtectedOverlayActivationPlan({
+      activation,
+      deploymentRoot,
+      expectedActivationSha256,
+      expectedTrustPolicySha256,
+      trustPolicy,
+    });
+    const state = readManagedState(root);
+    if (
+      state === null
+      || state.current.releaseId !== expectedCurrentReleaseId
+      || state.predecessorReleaseId !== expectedPredecessorReleaseId
+      || !stateMatchesArtifactPins(state.current, currentPins)
+      || state.current.evidenceSha256 !== expectedCurrentEvidenceSha256
+    ) throw new Error('protected_overlay_predecessor_mismatch');
+    const currentArtifact = readStoredArtifact(root, currentPins);
+    const predecessorArtifact = readStoredArtifact(root, predecessorPins);
+    const transition = readImmutableTransition(root, expectedCurrentReleaseId);
+    if (
+      transition.releaseId !== expectedCurrentReleaseId
+      || transition.artifactSha256 !== currentArtifact.artifactSha256
+      || transition.predecessor === null
+      || transition.predecessor.current.releaseId !== expectedPredecessorReleaseId
+      || !stateMatchesArtifactPins(transition.predecessor.current, predecessorPins)
+      || transition.predecessor.current.activationSha256 !== lockedActivation.activationSha256
+      || transition.predecessor.current.evidenceSha256 !== expectedPredecessorEvidenceSha256
+    ) throw new Error('protected_overlay_predecessor_mismatch');
+    for (const realm of currentArtifact.realms) {
+      verifyRealmDirectory(resolve(root, ...realm.promoteTarget.split('/')), realm);
+    }
+    const predecessorRoot = realDirectory(
+      resolve(managedRoot, 'predecessors', expectedCurrentReleaseId),
+      0o700,
+    );
+    assertDirectoryNames(
+      predecessorRoot,
+      predecessorArtifact.realms.map(({ realm }) => realm),
+      'protected_overlay_predecessor_store_invalid',
+    );
+    for (const realm of predecessorArtifact.realms) {
+      verifyRealmDirectory(resolve(predecessorRoot, realm.realm), realm);
+    }
+    const removedRoot = resolve(
+      ensureDurableDirectory(
+        resolve(managedRoot, 'removed'),
+        0o700,
+        'protected_overlay_removed_store_collision',
+      ),
+      expectedCurrentReleaseId,
+    );
+    prepareEmptyDirectory(removedRoot, 0o700, 'protected_overlay_removed_store_collision');
+    const appsRoot = realDirectory(resolve(documentRoot, 'apps'), 0o755);
+    const afterState = Object.freeze({
+      schemaVersion: 1,
+      current: transition.predecessor.current,
+      predecessorReleaseId: transition.predecessor.predecessorReleaseId,
+    });
+    const moves = [];
     for (const realm of predecessorArtifact.realms) {
       const destination = resolve(root, ...realm.promoteTarget.split('/'));
       const removed = resolve(removedRoot, realm.realm);
       const predecessor = resolve(predecessorRoot, realm.realm);
-      if (dirname(destination) !== appsRoot || existsSync(removed)) {
+      if (dirname(destination) !== appsRoot) {
         throw new Error('protected_overlay_live_target_invalid');
       }
-      renameSync(destination, removed);
-      moved.push({ destination: removed, source: destination });
-      renameSync(predecessor, destination);
-      moved.push({ destination, source: predecessor });
-      verifyRealmDirectory(destination, realm);
+      moves.push(moveRecord(root, destination, removed));
+      moves.push(moveRecord(root, predecessor, destination));
     }
-    writeManagedState(root, Object.freeze({
-      schemaVersion: 1,
-      current: transition.predecessor.current,
-      predecessorReleaseId: transition.predecessor.predecessorReleaseId,
-    }));
-  } catch (error) {
-    let reversalFailed = false;
-    for (const move of moved.reverse()) {
-      try {
-        renameSync(move.destination, move.source);
-      } catch {
-        reversalFailed = true;
-      }
-    }
-    if (reversalFailed) throw new Error('protected_overlay_rollback_reversal_failed');
-    throw error;
-  }
-  return Object.freeze({
-    status: 'rolled-back',
-    removedReleaseId: expectedCurrentReleaseId,
-    restoredReleaseId: expectedPredecessorReleaseId,
+    executeDurableMoveTransaction({
+      ...callbacks,
+      afterState,
+      beforeState: state,
+      managedRoot,
+      moves: Object.freeze(moves),
+      operation: 'rollback',
+      root,
+      token,
+    });
+    return Object.freeze({
+      status: 'rolled-back',
+      removedReleaseId: expectedCurrentReleaseId,
+      restoredReleaseId: expectedPredecessorReleaseId,
+    });
   });
 }
 
@@ -1016,24 +1068,50 @@ export function verifyProtectedOverlayDeployment({
     trustPolicy,
   });
   const root = realDirectory(deploymentRoot, 0o700, 0o755);
-  const state = readManagedState(root);
-  if (
-    state === null
-    || state.current.releaseId !== verifiedArtifact.releaseId
-    || state.current.inventorySha256 !== verifiedArtifact.inventorySha256
-    || state.current.artifactSha256 !== verifiedArtifact.artifactSha256
-    || state.current.activationSha256 !== verifiedActivation.activationSha256
-    || state.current.evidenceSha256 !== expectedEvidenceSha256
-  ) throw new Error('protected_overlay_deployment_state_invalid');
-  for (const realm of verifiedArtifact.realms) {
-    verifyRealmDirectory(resolve(root, ...realm.promoteTarget.split('/')), realm);
-  }
-  return Object.freeze({
-    status: 'verified',
-    releaseId: verifiedArtifact.releaseId,
-    artifactSha256: verifiedArtifact.artifactSha256,
-    activationSha256: verifiedActivation.activationSha256,
-    evidenceSha256: expectedEvidenceSha256,
+  const managedPath = resolve(root, MANAGED_ROOT_NAME);
+  if (!existsSync(managedPath)) throw new Error('protected_overlay_deployment_state_invalid');
+  const managedRoot = realDirectory(managedPath, 0o700);
+  return withExclusiveOverlayLock(managedRoot, ({ token }) => {
+    const callbacks = managedTransactionCallbacks(root, managedRoot);
+    recoverDurableMoveTransaction({ ...callbacks, managedRoot, root, token });
+    const lockedActivation = verifyProtectedOverlayActivationPlan({
+      activation,
+      deploymentRoot,
+      expectedActivationSha256,
+      expectedTrustPolicySha256,
+      trustPolicy,
+    });
+    const lockedEvidenceRequest = buildDeploymentEvidenceRequest(
+      verifiedArtifact,
+      lockedActivation,
+      expectedTrustPolicySha256,
+    );
+    verifyProtectedOverlayDeploymentEvidence({
+      evidence,
+      evidenceRequest: lockedEvidenceRequest,
+      expectedEvidenceSha256,
+      expectedTrustPolicySha256,
+      trustPolicy,
+    });
+    const state = readManagedState(root);
+    if (
+      state === null
+      || state.current.releaseId !== verifiedArtifact.releaseId
+      || state.current.inventorySha256 !== verifiedArtifact.inventorySha256
+      || state.current.artifactSha256 !== verifiedArtifact.artifactSha256
+      || state.current.activationSha256 !== lockedActivation.activationSha256
+      || state.current.evidenceSha256 !== expectedEvidenceSha256
+    ) throw new Error('protected_overlay_deployment_state_invalid');
+    for (const realm of verifiedArtifact.realms) {
+      verifyRealmDirectory(resolve(root, ...realm.promoteTarget.split('/')), realm);
+    }
+    return Object.freeze({
+      status: 'verified',
+      releaseId: verifiedArtifact.releaseId,
+      artifactSha256: verifiedArtifact.artifactSha256,
+      activationSha256: lockedActivation.activationSha256,
+      evidenceSha256: expectedEvidenceSha256,
+    });
   });
 }
 
@@ -1171,15 +1249,22 @@ function validateArtifactCapsule(artifact, pins) {
 }
 
 function materializeRealm(destination, realm) {
-  mkdirSync(destination, { mode: 0o755 });
+  ensureDurableDirectory(
+    destination,
+    0o755,
+    'protected_overlay_candidate_collision',
+  );
   for (const file of realm.files) {
     const path = resolve(destination, ...file.path.split('/'));
     ensureArtifactParents(destination, dirname(path));
-    writeFileSync(path, Buffer.from(file.bytesBase64, 'base64'), {
-      flag: 'wx',
-      mode: 0o644,
-    });
+    writeDurableExclusiveFile(
+      path,
+      Buffer.from(file.bytesBase64, 'base64'),
+      0o644,
+      'protected_overlay_candidate_collision',
+    );
   }
+  fsyncDirectory(destination, 'protected_overlay_candidate_collision');
   verifyRealmDirectory(destination, realm);
 }
 
@@ -1189,9 +1274,45 @@ function ensureArtifactParents(root, destination) {
   let current = root;
   for (const component of relativePath.split(sep)) {
     current = resolve(current, component);
-    if (!existsSync(current)) mkdirSync(current, { mode: 0o755 });
-    else realDirectory(current, 0o755);
+    ensureDurableDirectory(current, 0o755, 'protected_overlay_candidate_collision');
   }
+}
+
+function prepareReleaseCandidate(managedRoot, candidatesRoot, artifact, token) {
+  const destination = resolve(candidatesRoot, artifact.releaseId);
+  const buildingPrefix = `${artifact.releaseId}.building-`;
+  for (const entry of readdirSync(candidatesRoot, { withFileTypes: true })) {
+    if (!entry.name.startsWith(buildingPrefix)) continue;
+    const suffix = entry.name.slice(buildingPrefix.length);
+    if (!/^[a-f0-9]{32}$/u.test(suffix) || !entry.isDirectory() || entry.isSymbolicLink()) {
+      throw new Error('protected_overlay_candidate_collision');
+    }
+    removeDurableOwnedTree(
+      resolve(candidatesRoot, entry.name),
+      managedRoot,
+      'protected_overlay_candidate_collision',
+    );
+  }
+  if (existsSync(destination)) {
+    const candidate = realDirectory(destination, 0o700);
+    assertDirectoryNames(
+      candidate,
+      artifact.realms.map(({ realm }) => realm),
+      'protected_overlay_candidate_collision',
+    );
+    for (const realm of artifact.realms) {
+      verifyRealmDirectory(resolve(candidate, realm.realm), realm);
+    }
+    return candidate;
+  }
+  const building = resolve(candidatesRoot, `${buildingPrefix}${token}`);
+  prepareEmptyDirectory(building, 0o700, 'protected_overlay_candidate_collision');
+  for (const realm of artifact.realms) {
+    materializeRealm(resolve(building, realm.realm), realm);
+  }
+  fsyncDirectory(building, 'protected_overlay_candidate_collision');
+  durableRename(building, destination, 'protected_overlay_candidate_collision');
+  return realDirectory(destination, 0o700);
 }
 
 function verifyRealmDirectory(path, realm) {
@@ -1246,7 +1367,10 @@ function storeImmutableArtifact(artifactsRoot, artifact) {
     ) throw new Error('protected_overlay_artifact_store_collision');
     return;
   }
-  writeFileSync(path, bytes, { flag: 'wx', mode: 0o400 });
+  writeDurableCanonicalRecord(path, artifact, {
+    errorCode: 'protected_overlay_artifact_store_collision',
+    mode: 0o400,
+  });
 }
 
 function readStoredArtifact(root, pins) {
@@ -1277,7 +1401,11 @@ function readStoredArtifact(root, pins) {
 }
 
 function storeImmutableTransition(managedRoot, artifact, predecessor) {
-  const transitionsRoot = ensureDirectory(resolve(managedRoot, 'transitions'), 0o700);
+  const transitionsRoot = ensureDurableDirectory(
+    resolve(managedRoot, 'transitions'),
+    0o700,
+    'protected_overlay_transition_collision',
+  );
   const transition = Object.freeze({
     schemaVersion: 1,
     releaseId: artifact.releaseId,
@@ -1299,7 +1427,10 @@ function storeImmutableTransition(managedRoot, artifact, predecessor) {
     ) throw new Error('protected_overlay_transition_collision');
     return;
   }
-  writeFileSync(path, bytes, { flag: 'wx', mode: 0o400 });
+  writeDurableCanonicalRecord(path, transition, {
+    errorCode: 'protected_overlay_transition_collision',
+    mode: 0o400,
+  });
 }
 
 function readImmutableTransition(root, releaseId) {
@@ -1334,17 +1465,8 @@ function readImmutableTransition(root, releaseId) {
   return transition;
 }
 
-function ensureDirectory(path, mode) {
-  if (!existsSync(path)) mkdirSync(path, { mode });
-  return realDirectory(path, mode);
-}
-
 function prepareEmptyDirectory(path, mode, errorCode) {
-  if (!existsSync(path)) {
-    mkdirSync(path, { mode });
-    return path;
-  }
-  const root = realDirectory(path, mode);
+  const root = ensureDurableDirectory(path, mode, errorCode);
   if (readdirSync(root).length !== 0) throw new Error(errorCode);
   return root;
 }
@@ -1362,35 +1484,213 @@ function assertDirectoryNames(path, expectedNames, errorCode) {
 
 function readManagedState(root) {
   const path = resolve(root, MANAGED_ROOT_NAME, 'state.json');
-  if (!existsSync(path)) return null;
-  let state;
-  let source;
-  try {
-    source = readDescriptorBoundFile(path, {
-      allowedModes: [0o600],
-      errorCode: 'protected_overlay_deployment_state_invalid',
-      expectedParentModes: [0o700],
-      maximumSize: 64 * 1024,
-    }).bytes.toString('utf8');
-    state = JSON.parse(source);
-  } catch {
+  discardDurableCanonicalCandidate(path, {
+    errorCode: 'protected_overlay_deployment_state_invalid',
+    mode: 0o600,
+  });
+  const state = readDurableCanonicalRecord(path, {
+    errorCode: 'protected_overlay_deployment_state_invalid',
+    mode: 0o600,
+    maximumSize: 64 * 1024,
+  });
+  if (state !== null && !isValidManagedState(state)) {
     throw new Error('protected_overlay_deployment_state_invalid');
   }
-  if (
-    source !== `${canonical(state)}\n`
-    || !isValidManagedState(state)
-  ) throw new Error('protected_overlay_deployment_state_invalid');
   return state;
 }
 
 function writeManagedState(root, state) {
-  if (!isValidManagedState(state)) throw new Error('protected_overlay_deployment_state_invalid');
-  const managedRoot = ensureDirectory(resolve(root, MANAGED_ROOT_NAME), 0o700);
+  if (state !== null && !isValidManagedState(state)) {
+    throw new Error('protected_overlay_deployment_state_invalid');
+  }
+  const managedRoot = realDirectory(resolve(root, MANAGED_ROOT_NAME), 0o700);
   const destination = resolve(managedRoot, 'state.json');
-  const candidate = resolve(managedRoot, 'state.candidate.json');
-  if (existsSync(candidate)) throw new Error('protected_overlay_deployment_state_collision');
-  writeFileSync(candidate, `${canonical(state)}\n`, { flag: 'wx', mode: 0o600 });
-  renameSync(candidate, destination);
+  if (state === null) {
+    clearDurableCanonicalRecord(destination, {
+      errorCode: 'protected_overlay_deployment_state_invalid',
+      mode: 0o600,
+    });
+    return;
+  }
+  writeDurableCanonicalRecord(destination, state, {
+    errorCode: 'protected_overlay_deployment_state_invalid',
+    mode: 0o600,
+  });
+}
+
+function managedTransactionCallbacks(root, managedRoot) {
+  return Object.freeze({
+    readState: () => readManagedState(root),
+    writeState: (state) => writeManagedState(root, state),
+    validateState: (state) => state === null || isValidManagedState(state),
+    verifyLive: (state) => {
+      try {
+        verifyManagedLiveState(root, state);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    verifyTopology: (journal, appliedCount) => {
+      try {
+        verifyManagedTransactionTopology(root, managedRoot, journal, appliedCount);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  });
+}
+
+function verifyManagedLiveState(root, state) {
+  if (state === null) {
+    for (const definition of REALM_DEFINITIONS) {
+      if (existsSync(resolve(root, ...definition.promoteTarget.split('/')))) {
+        throw new Error('protected_overlay_transaction_live_invalid');
+      }
+    }
+    return;
+  }
+  if (!isValidManagedState(state)) {
+    throw new Error('protected_overlay_transaction_live_invalid');
+  }
+  const artifact = readStoredArtifact(root, stateArtifactPins(state.current));
+  for (const realm of artifact.realms) {
+    verifyRealmDirectory(resolve(root, ...realm.promoteTarget.split('/')), realm);
+  }
+}
+
+function verifyManagedTransactionTopology(root, managedRoot, journal, appliedCount) {
+  if (
+    !Number.isSafeInteger(appliedCount)
+    || appliedCount < 0
+    || appliedCount > journal.moves.length
+  ) throw new Error('protected_overlay_transaction_topology_invalid');
+  const topology = new Map();
+  const expectedMoves = [];
+  const register = (path, value) => {
+    const relativePath = transactionRelativePath(root, path);
+    if (topology.has(relativePath)) throw new Error('protected_overlay_transaction_topology_invalid');
+    topology.set(relativePath, value);
+    return relativePath;
+  };
+  const addMove = (source, destination) => {
+    expectedMoves.push(Object.freeze({
+      source: transactionRelativePath(root, source),
+      destination: transactionRelativePath(root, destination),
+    }));
+  };
+
+  if (journal.operation === 'promote') {
+    const afterArtifact = readStoredArtifact(
+      root,
+      stateArtifactPins(journal.afterState.current),
+    );
+    const beforeArtifact = journal.beforeState === null
+      ? null
+      : readStoredArtifact(root, stateArtifactPins(journal.beforeState.current));
+    if (
+      journal.afterState.predecessorReleaseId
+        !== (journal.beforeState?.current.releaseId ?? 'absent')
+    ) throw new Error('protected_overlay_transaction_topology_invalid');
+    const candidateRoot = resolve(managedRoot, 'candidates', journal.afterState.current.releaseId);
+    const predecessorRoot = resolve(
+      managedRoot,
+      'predecessors',
+      journal.afterState.current.releaseId,
+    );
+    for (const afterRealm of afterArtifact.realms) {
+      const beforeRealm = beforeArtifact?.realms.find(({ realm }) => realm === afterRealm.realm);
+      const candidate = resolve(candidateRoot, afterRealm.realm);
+      const live = resolve(root, ...afterRealm.promoteTarget.split('/'));
+      register(candidate, Object.freeze({ artifact: afterArtifact, realm: afterRealm }));
+      register(live, beforeRealm
+        ? Object.freeze({ artifact: beforeArtifact, realm: beforeRealm })
+        : null);
+      if (beforeRealm) {
+        const predecessor = resolve(predecessorRoot, afterRealm.realm);
+        register(predecessor, null);
+        addMove(live, predecessor);
+      }
+      addMove(candidate, live);
+    }
+  } else if (journal.operation === 'rollback') {
+    if (
+      journal.beforeState === null
+      || journal.afterState === null
+      || journal.beforeState.predecessorReleaseId !== journal.afterState.current.releaseId
+    ) throw new Error('protected_overlay_transaction_topology_invalid');
+    const beforeArtifact = readStoredArtifact(
+      root,
+      stateArtifactPins(journal.beforeState.current),
+    );
+    const afterArtifact = readStoredArtifact(
+      root,
+      stateArtifactPins(journal.afterState.current),
+    );
+    const predecessorRoot = resolve(
+      managedRoot,
+      'predecessors',
+      journal.beforeState.current.releaseId,
+    );
+    const removedRoot = resolve(
+      managedRoot,
+      'removed',
+      journal.beforeState.current.releaseId,
+    );
+    for (const beforeRealm of beforeArtifact.realms) {
+      const afterRealm = afterArtifact.realms.find(({ realm }) => realm === beforeRealm.realm);
+      if (!afterRealm) throw new Error('protected_overlay_transaction_topology_invalid');
+      const live = resolve(root, ...beforeRealm.promoteTarget.split('/'));
+      const predecessor = resolve(predecessorRoot, beforeRealm.realm);
+      const removed = resolve(removedRoot, beforeRealm.realm);
+      register(live, Object.freeze({ artifact: beforeArtifact, realm: beforeRealm }));
+      register(predecessor, Object.freeze({ artifact: afterArtifact, realm: afterRealm }));
+      register(removed, null);
+      addMove(live, removed);
+      addMove(predecessor, live);
+    }
+  } else {
+    throw new Error('protected_overlay_transaction_topology_invalid');
+  }
+
+  if (canonical(journal.moves) !== canonical(expectedMoves)) {
+    throw new Error('protected_overlay_transaction_topology_invalid');
+  }
+  for (let index = 0; index < appliedCount; index += 1) {
+    const move = expectedMoves[index];
+    const value = topology.get(move.source);
+    if (value === null || topology.get(move.destination) !== null) {
+      throw new Error('protected_overlay_transaction_topology_invalid');
+    }
+    topology.set(move.source, null);
+    topology.set(move.destination, value);
+  }
+  for (const [relativePath, expected] of topology) {
+    const path = resolve(root, ...relativePath.split('/'));
+    if (expected === null) {
+      if (existsSync(path)) throw new Error('protected_overlay_transaction_topology_invalid');
+    } else {
+      verifyRealmDirectory(path, expected.realm);
+    }
+  }
+}
+
+function moveRecord(root, source, destination) {
+  return Object.freeze({
+    source: transactionRelativePath(root, source),
+    destination: transactionRelativePath(root, destination),
+  });
+}
+
+function transactionRelativePath(root, path) {
+  const value = relative(root, path).split(sep).join('/');
+  if (
+    value === ''
+    || value.startsWith('../')
+    || value.split('/').some((component) => component === '' || component === '.' || component === '..')
+  ) throw new Error('protected_overlay_transaction_topology_invalid');
+  return value;
 }
 
 function isValidManagedState(state) {
