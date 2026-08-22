@@ -58,13 +58,22 @@ activated**. Deployment remains an explicit release gate.
   per-subject exception or malformed tombstone raises one aggregate operational
   error with counts only—never document IDs, Auth UIDs, or underlying error
   text.
+- Before either user-initiated deletion callable is invoked, the native app
+  generates a raw 256-bit deletion receipt, encodes it as exactly 43 unpadded
+  base64url characters, and persists it only in iOS SecureStore. The exact
+  production and review requests are respectively
+  `deleteClientAccount({installationId,deletionReceipt})` and
+  `deleteAppReviewAccount({installationId,deletionReceipt})`. The backend never
+  stores the raw receipt: separate production and review Firestore collections
+  are addressed only by separate versioned keyed-HMAC lookups derived with
+  separate receipt pepper rings.
 - The staff catalog workflow is draft-only. It stores opaque-ID candidates in
   `_private_catalog_drafts` with bilingual title/summary, a reviewed icon key,
   `public|clients` access, and a normalized HTTPS candidate URL. Revision
   checks are transactional. There is deliberately no publish callable and no
   draft write can modify `_private_client_resources` or a signed catalog.
 - App Review uses a separate synthetic `purpose: "app_review"` credential,
-  `review_*` Firebase Auth subjects, seven independent HMAC key rings, an
+  `review_*` Firebase Auth subjects, eight independent HMAC key rings, an
   independently named Firestore database, and a separate HTTP broker signing
   realm. It never reads the production catalog or code repositories, never
   consumes one of the four production slots, and can grant only one fixed,
@@ -85,9 +94,16 @@ a premium target URL.
 
 ## Callable Functions v2 contracts
 
-Every callable enforces a fresh, consumed Firebase App Check assertion and an
-exact deployment-configured app ID. Client callables accept only the configured
-iOS app; administrator callables accept only the configured staff web app.
+The implemented callable surface contains 11 staff-web callables and 11 iOS
+client callables. Every callable enforces a fresh, consumed limited-use Firebase
+App Check assertion and an exact deployment-configured app ID. Client callables
+accept only the exact `CLIENT_IOS_FIREBASE_APP_ID`; administrator callables
+accept only the exact `STAFF_WEB_FIREBASE_APP_ID`.
+
+The two receipt-status callables deliberately do not read or require Firebase
+Authentication, because the account may already be gone. They accept no UID or
+installation identifier, but they still consume the limited-use App Check token
+and require the exact configured iOS Firebase App ID.
 
 | Callable | Request | Response |
 | --- | --- | --- |
@@ -105,11 +121,32 @@ iOS app; administrator callables accept only the configured staff web app.
 | `redeemClientAccessCode` | `{code, installationId, requestId}` | `{customToken, grant}` |
 | `refreshClientAccess` | `{installationId}` | `{grant}` |
 | `removeClientAccess` | `{installationId}` | `{removed:true}` after revocation and deletion job are durable |
-| `deleteClientAccount` | `{installationId}` | `{status:'pending'\|'completed'}` |
+| `deleteClientAccount` | `{installationId,deletionReceipt}` | exact five-field deletion status below |
+| `getClientAccountDeletionStatus` | `{deletionReceipt}` | exact five-field deletion status below; no Firebase Auth required |
 | `createClientLaunch` | `{installationId, resourceId}` | fixed HTTPS POST URL, nonce, expiry |
 | `redeemAppReviewCredential` | `{credential,installationId,requestId}` | `{customToken,grant}` in the review realm only |
 | `refreshAppReviewAccess` | `{installationId}` | `{grant}` for the authenticated `review_*` subject |
+| `deleteAppReviewAccount` | `{installationId,deletionReceipt}` | exact five-field deletion status below after a durable review deletion job is accepted |
+| `getAppReviewAccountDeletionStatus` | `{deletionReceipt}` | exact five-field deletion status below; no Firebase Auth required |
 | `createAppReviewLaunch` | `{installationId}` | fixed review HTTPS POST URL, nonce, expiry |
+
+Both delete callables and both status callables return exactly these five fields
+and no others:
+
+```text
+{
+  schemaVersion: 1,
+  status: 'pending' | 'completed',
+  requestedAtMs: <integer>,
+  expectedCompletionByMs: <integer>,
+  completedAtMs: <integer> | null
+}
+```
+
+For `pending`, `completedAtMs` is exactly `null`. All other timestamps are
+integer epoch milliseconds; `expectedCompletionByMs` is exactly
+`requestedAtMs + 30 days`. It is an operational expectation, not a guarantee
+that physical deletion will complete by that instant.
 
 Admin operations additionally require all of the following server-side:
 
@@ -140,18 +177,42 @@ even if Firebase Auth or Firestore cleanup must finish in the scheduled worker.
 The native app may then clear its session. A later valid code creates a new
 client identity; removal does not preserve the prior account or grant.
 
-`deleteClientAccount` returns `pending` whenever Auth deletion, bounded artifact
-cleanup, or finalization has not durably completed. It never reports completion
-merely because authorization was revoked. While pending, all native and web
-authorization is already denied and the scheduled worker retries idempotently;
-an authenticated explicit-delete caller may also retry. `completed` means Auth is deleted (or
-was already absent), linked subject/code records are removed, and the tombstone
-is finalized. IP-only rate-limit and broker replay records are deliberately not
-treated as account data because they cannot be safely attributed to one client;
-they contain no subject/code and remain only until their short TTL. Sanitized
-audit event bodies omit Auth UID, installation ID, code plaintext, and health
-data, but may retain an opaque code ID; deletion event document names use a
-one-way subject-derived suffix. All expire after 30 days.
+`deleteClientAccount({installationId,deletionReceipt})` returns `pending`
+whenever Auth deletion, bounded artifact cleanup, or finalization has not
+durably completed. It never reports completion merely because authorization
+was revoked. While pending, all native and web authorization is already denied
+and the scheduled worker retries idempotently; an authenticated explicit-delete
+caller may also retry with the same receipt. `completed` means Auth is deleted
+(or was already absent), linked subject/code records are removed, and the
+tombstone is finalized.
+
+The native app persists and read-backs the raw receipt in SecureStore before
+the first delete request. If the request response is lost and the first status
+lookup is still missing, the app keeps access locked, retains the same receipt,
+and may re-submit only that same idempotent request while the authenticated
+installation remains available. A missing prepared status never restores the
+previous grant or discards the only recovery receipt.
+
+After Firebase Auth is unavailable, the client polls
+`getClientAccountDeletionStatus({deletionReceipt})`. Pending receipt records
+have no `expiresAtMs` field and no TTL, remain queryable after
+`expectedCompletionByMs`, and stay durable until cleanup completes. On
+completion, the UID-linked tombstone is removed and the receipt record is
+reduced to schema version, status, and timestamps. Its TTL deadline is exactly
+`expiresAtMs = completedAtMs + 30 days`; the Firestore adapter stores that field
+as a native Firestore `Timestamp`, despite its compatibility name. The status
+service stops resolving it at the exact logical boundary
+`nowMs >= completedAtMs + 30 days`, even if asynchronous physical TTL deletion
+has not yet run. Malformed, unknown, cross-realm, and logically expired receipts
+all reveal no status through the same generic `not-found/invalid_access`
+response.
+
+IP-only rate-limit and broker replay records are deliberately not treated as
+account data because they cannot be safely attributed to one client; they
+contain no subject/code and remain only until their short TTL. Sanitized audit
+event bodies omit Auth UID, installation ID, code plaintext, and health data,
+but may retain an opaque code ID; deletion event document names use a one-way
+subject-derived suffix. All expire after 30 days.
 
 ## Isolated App Review credential contract
 
@@ -285,18 +346,22 @@ requests through the production broker adapter.
 
 ## Secret Manager parameters
 
+The production realm requires these eight independently generated rings:
+
 - `CLIENT_CODE_PEPPER_RING`
 - `CLIENT_INSTALLATION_PEPPER_RING`
+- `CLIENT_DELETION_RECEIPT_PEPPER_RING`
 - `CLIENT_RATE_LIMIT_PEPPER_RING`
 - `CLIENT_LAUNCH_NONCE_PEPPER_RING`
 - `CLIENT_WEB_SESSION_PEPPER_RING`
 - `CLIENT_WEB_CSRF_PEPPER_RING`
 - `CLIENT_BROKER_HMAC_KEY_RING`
 
-The review realm requires seven additional, independently generated rings:
+The review realm requires eight additional, independently generated rings:
 
 - `APP_REVIEW_CREDENTIAL_PEPPER_RING`
 - `APP_REVIEW_INSTALLATION_PEPPER_RING`
+- `APP_REVIEW_DELETION_RECEIPT_PEPPER_RING`
 - `APP_REVIEW_RATE_LIMIT_PEPPER_RING`
 - `APP_REVIEW_LAUNCH_NONCE_PEPPER_RING`
 - `APP_REVIEW_WEB_SESSION_PEPPER_RING`
@@ -360,6 +425,8 @@ entitlement ID to bundled/server-controlled content.
 
 The committed Firestore configuration enables TTL on `expiresAtMs` for:
 
+- `_private_account_deletion_receipts` (completed receipts only, 30 days after
+  `completedAtMs`; pending receipts have no TTL field)
 - `_private_audit_events` (30-day sanitized retention)
 - `_private_rate_limits`
 - `_private_redemption_requests`
@@ -371,7 +438,8 @@ Expiry is already enforced in transactions; TTL is retention cleanup, not an
 authorization mechanism.
 
 The review database has a separate default-deny rules file and TTL overrides
-for `review_sandbox_rate_limits`, `review_sandbox_redemption_requests`,
+for `review_sandbox_account_deletion_receipts` (completed receipts only),
+`review_sandbox_rate_limits`, `review_sandbox_redemption_requests`,
 `review_sandbox_launch_nonces`, `review_sandbox_web_sessions`, and
 `review_sandbox_broker_requests`. Live-generation and active-grant validation,
 not asynchronous TTL deletion, revoke review authority. The separate
@@ -392,28 +460,46 @@ minutes and IP-only rate-limit records thirty minutes. Sanitized audit events
 have a 30-day expiry. Firestore TTL deletion is asynchronous, so staging must
 verify that every field override is active; authorization never depends on TTL.
 
+Before activating any TTL policy, inspect every TTL-enabled collection in both
+the production and review databases for historical documents whose
+`expiresAtMs` value is a numeric epoch. Firestore TTL ignores numeric values.
+Migrate each retained deadline to a native Firestore `Timestamp` representing
+the same instant (or remove an already-expired document under the approved
+retention procedure), then verify no historical numeric `expiresAtMs` values
+remain. New writes perform this conversion at the Firestore infrastructure
+boundary, and reads convert the timestamp back to integer epoch milliseconds
+for domain validation and callable responses.
+
 ## Release gates still open
 
 Do not call this Apple-ready or production-ready until all are complete:
 
 1. Create separate staging and production Firebase projects and explicit CLI
-   aliases; provision the seven independent secrets without exposing values.
+   aliases; provision the eight independent production secret rings without
+   exposing values.
 2. Enable App Check with App Attest for the production iOS bundle and verify
-   consumed-token replay behavior on a physical iPhone.
+   exact app-ID binding and consumed-token replay behavior across all 11 iOS
+   client callables on a physical iPhone.
 3. Bootstrap the owner Auth account, MFA, custom claim, and active private
    admin document through a separately controlled process.
-4. Deploy rules, TTL field overrides, and Functions to staging; seed the signed
-   fixed catalog and run Firebase Emulator and concurrency/failure tests.
-5. Integrate and test the native adapter, staff portal, and PHP broker adapter
-   end-to-end; verify remove/delete/revoke during active native and web sessions.
+4. Migrate or remove every historical numeric `expiresAtMs` value, deploy rules,
+   TTL field overrides, and Functions to staging, and verify every retained TTL
+   deadline is a Firestore `Timestamp`; seed the signed fixed catalog and run
+   Firebase Emulator and concurrency/failure tests.
+5. Integrate and test the native adapter against all six production client
+   callables—redeem, refresh, remove, delete, deletion status, and launch—plus
+   the staff portal and PHP broker adapter end-to-end. Verify the 256-bit
+   receipt remains only in SecureStore and exercise remove/delete/revoke during
+   active native and web sessions.
 6. Exercise the durable deletion worker with injected Auth/Firestore failures
    and malformed tombstones in staging; verify the sanitized aggregate alert,
    deployed TTL status, and that the native UI treats `pending` as pending
    rather than as completed erasure.
 7. Provision and verify the source-implemented App Review realm: the named
    Firestore database, its default-deny rules/TTL policy, least-privilege
-   runtime identity, seven separate key rings, fixed Hostinger sample, portal
-   status/rotation adapter, and native redeem/refresh/launch adapter. Run
+   runtime identity, eight separate key rings, fixed Hostinger sample, portal
+   status/rotation adapter, and all five review client callables—redeem,
+   refresh, delete, deletion status, and launch. Run
    cross-realm and rotation tests end-to-end; exercise stale-generation,
    30-day-inactivity, Auth-failure, and retry cleanup paths. Do not issue the
    credential until all of those checks pass.
