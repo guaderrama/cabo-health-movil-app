@@ -7,6 +7,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -138,6 +140,98 @@ test('a process killed while holding the deployment lock cannot deadlock recover
   });
   assert.equal(recovered.status, 0, recovered.stderr);
   assert.deepEqual(JSON.parse(recovered.stdout), { status: 'locked' });
+});
+
+test('two stale-lock recoverers cannot unlink a newly acquired lock', async (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-stale-lock-race-'));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const managedRoot = join(fixture, 'managed');
+  const staleUnlinkReady = join(fixture, 'stale-unlink.ready');
+  const staleUnlinkResume = join(fixture, 'stale-unlink.resume');
+  const preload = join(fixture, 'pause-stale-unlink.cjs');
+  mkdirSync(managedRoot, { mode: 0o700 });
+  writePauseBeforeUnlinkPreload(preload);
+
+  const crashed = spawnSync(process.execPath, [lockWorkerPath, managedRoot], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: { ...process.env, CABOHEALTH_TEST_CRASH_LOCK: '1' },
+  });
+  assert.equal(crashed.signal, 'SIGKILL');
+
+  const delayedRecoverer = spawn(process.execPath, [lockWorkerPath, managedRoot], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `--require=${preload}`,
+      CABOHEALTH_TEST_STALE_UNLINK_TARGET: join(realpathSync(managedRoot), 'transaction.lock'),
+      CABOHEALTH_TEST_STALE_UNLINK_READY_PATH: staleUnlinkReady,
+      CABOHEALTH_TEST_STALE_UNLINK_RESUME_PATH: staleUnlinkResume,
+    },
+  });
+  const delayedOutput = collectChildOutput(delayedRecoverer);
+  await waitForPathWhileRunning(staleUnlinkReady, delayedRecoverer, delayedOutput);
+
+  const contender = spawnSync(process.execPath, [lockWorkerPath, managedRoot], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  writeFileSync(staleUnlinkResume, 'resume\n', { flag: 'wx', mode: 0o600 });
+  const [delayedStatus] = await once(delayedRecoverer, 'exit');
+  const delayedResult = await delayedOutput;
+
+  assert.notEqual(contender.status, 0, contender.stdout);
+  assert.match(
+    contender.stderr,
+    /protected_overlay_transaction_(?:locked|lock_invalid|lock_recovery_required)/u,
+  );
+  assert.equal(delayedStatus, 0, delayedResult.stderr);
+  assert.deepEqual(JSON.parse(delayedResult.stdout), { status: 'locked' });
+});
+
+test('a killed stale-lock reclaimer fails closed without deleting or replacing the lock', (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-stale-claim-crash-'));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const managedRoot = join(fixture, 'managed');
+  const lockPath = join(managedRoot, 'transaction.lock');
+  mkdirSync(managedRoot, { mode: 0o700 });
+
+  const holder = spawnSync(process.execPath, [lockWorkerPath, managedRoot], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: { ...process.env, CABOHEALTH_TEST_CRASH_LOCK: '1' },
+  });
+  assert.equal(holder.signal, 'SIGKILL');
+  const originalLock = statSync(lockPath);
+
+  const reclaimer = spawnSync(process.execPath, [lockWorkerPath, managedRoot], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: 'stale-lock-claimed',
+    },
+  });
+  assert.equal(reclaimer.signal, 'SIGKILL');
+
+  const contender = spawnSync(process.execPath, [lockWorkerPath, managedRoot], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  assert.notEqual(contender.status, 0, contender.stdout);
+  assert.match(
+    contender.stderr,
+    /protected_overlay_transaction_lock_recovery_required/u,
+  );
+  const unchangedLock = statSync(lockPath);
+  assert.equal(unchangedLock.dev, originalLock.dev);
+  assert.equal(unchangedLock.ino, originalLock.ino);
+  assert.equal(
+    readdirSync(managedRoot).filter((name) => name.endsWith('.reclaim')).length,
+    1,
+  );
 });
 
 test('test-only transaction barrier holds a real process until explicitly resumed', async (context) => {
@@ -475,9 +569,50 @@ syncBuiltinESMExports();
 `);
 }
 
+function writePauseBeforeUnlinkPreload(path) {
+  writeFileSync(path, `'use strict';
+const fs = require('node:fs');
+const { syncBuiltinESMExports } = require('node:module');
+const pathModule = require('node:path');
+const originalUnlink = fs.unlinkSync;
+let paused = false;
+fs.unlinkSync = function guardedUnlink(path, ...args) {
+  if (
+    !paused
+    && pathModule.resolve(path) === pathModule.resolve(process.env.CABOHEALTH_TEST_STALE_UNLINK_TARGET)
+  ) {
+    paused = true;
+    fs.writeFileSync(
+      process.env.CABOHEALTH_TEST_STALE_UNLINK_READY_PATH,
+      'ready\\n',
+      { flag: 'wx', mode: 0o600 },
+    );
+    const waiter = new Int32Array(new SharedArrayBuffer(4));
+    while (!fs.existsSync(process.env.CABOHEALTH_TEST_STALE_UNLINK_RESUME_PATH)) {
+      Atomics.wait(waiter, 0, 0, 10);
+    }
+  }
+  return originalUnlink.call(this, path, ...args);
+};
+syncBuiltinESMExports();
+`);
+}
+
 async function waitForPath(path) {
   const deadline = Date.now() + 5_000;
   while (!existsSync(path)) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+  }
+}
+
+async function waitForPathWhileRunning(path, child, output) {
+  const deadline = Date.now() + 5_000;
+  while (!existsSync(path)) {
+    if (child.exitCode !== null) {
+      const result = await output;
+      throw new Error(`child exited before ${path}: ${result.stderr || result.stdout}`);
+    }
     if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
   }

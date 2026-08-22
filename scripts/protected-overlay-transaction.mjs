@@ -522,30 +522,62 @@ function readLock(root) {
 }
 
 function removeStaleLock(root, existing) {
+  const lockPath = resolve(root, LOCK_NAME);
+  const claimPath = staleLockClaimPath(root, existing.value);
+  try {
+    linkSync(lockPath, claimPath);
+    fsyncDirectory(root, 'protected_overlay_transaction_lock_invalid');
+  } catch (error) {
+    if (error && typeof error === 'object' && error.code === 'ENOENT') return;
+    if (error && typeof error === 'object' && error.code === 'EEXIST') {
+      assertStaleClaimRequiresManualRecovery(root, existing, claimPath);
+    }
+    throw new Error('protected_overlay_transaction_lock_invalid');
+  }
+  transactionCheckpoint('stale-lock-claimed');
+
+  const claim = readDescriptorBoundFile(claimPath, {
+    allowedLinkCounts: [2, 3],
+    allowedModes: [0o600],
+    errorCode: 'protected_overlay_transaction_lock_invalid',
+    expectedParentModes: [0o700],
+    maximumSize: 4096,
+  });
+  if (!sameInode(claim.identity, existing.identity)) {
+    durableUnlink(claimPath, 'protected_overlay_transaction_lock_invalid');
+    throw new Error('protected_overlay_transaction_lock_invalid');
+  }
+  const current = readLock(root);
+  if (
+    !sameInode(current.identity, existing.identity)
+    || current.value.pid !== existing.value.pid
+    || current.value.token !== existing.value.token
+  ) {
+    durableUnlink(claimPath, 'protected_overlay_transaction_lock_invalid');
+    throw new Error('protected_overlay_transaction_lock_invalid');
+  }
+
   const staleCandidatePath = lockCandidatePath(root, existing.value);
   let candidate = null;
   if (existsSync(staleCandidatePath)) {
     candidate = readDescriptorBoundFile(staleCandidatePath, {
-      allowedLinkCounts: [2],
+      allowedLinkCounts: [3],
       allowedModes: [0o600],
       errorCode: 'protected_overlay_transaction_lock_invalid',
       expectedParentModes: [0o700],
       maximumSize: 4096,
     });
     if (
-      candidate.identity.dev !== existing.identity.dev
-      || candidate.identity.ino !== existing.identity.ino
+      !sameInode(candidate.identity, existing.identity)
     ) throw new Error('protected_overlay_transaction_lock_invalid');
-  } else if (Number(existing.identity.nlink) !== 1) {
+  } else if (Number(existing.identity.nlink) !== 1 || Number(claim.identity.nlink) !== 2) {
     throw new Error('protected_overlay_transaction_lock_invalid');
   }
-  durableUnlink(
-    resolve(root, LOCK_NAME),
-    'protected_overlay_transaction_lock_invalid',
-  );
+  durableUnlink(lockPath, 'protected_overlay_transaction_lock_invalid');
   if (candidate !== null) {
     durableUnlink(staleCandidatePath, 'protected_overlay_transaction_lock_invalid');
   }
+  durableUnlink(claimPath, 'protected_overlay_transaction_lock_invalid');
 }
 
 function safeRemoveOwnCandidate(path) {
@@ -575,6 +607,32 @@ function removeOwnedFileIfPresent(path, mode, errorCode) {
 
 function lockCandidatePath(root, lock) {
   return resolve(root, `.${LOCK_NAME}.${lock.pid}.${lock.token}.candidate`);
+}
+
+function staleLockClaimPath(root, lock) {
+  return resolve(root, `.${LOCK_NAME}.${lock.pid}.${lock.token}.reclaim`);
+}
+
+function assertStaleClaimRequiresManualRecovery(root, existing, claimPath) {
+  const claim = readDescriptorBoundFile(claimPath, {
+    allowedLinkCounts: [2, 3],
+    allowedModes: [0o600],
+    errorCode: 'protected_overlay_transaction_lock_invalid',
+    expectedParentModes: [0o700],
+    maximumSize: 4096,
+  });
+  const current = readLock(root);
+  if (
+    !sameInode(claim.identity, existing.identity)
+    || !sameInode(current.identity, existing.identity)
+    || current.value.pid !== existing.value.pid
+    || current.value.token !== existing.value.token
+  ) throw new Error('protected_overlay_transaction_lock_invalid');
+  throw new Error('protected_overlay_transaction_lock_recovery_required');
+}
+
+function sameInode(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
 }
 
 function isProcessAlive(pid) {
