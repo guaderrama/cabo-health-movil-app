@@ -26,7 +26,11 @@
     "web:verify:check": "node scripts/verify-production.mjs --check",
     "web:test": "node --test tests/web-release-assembly.test.mjs tests/web-release-review-fixes.test.mjs tests/web-release-round2.test.mjs tests/production-verifier.test.mjs",
     "functions:build": "npm --prefix functions run build",
-    "functions:test": "npm --prefix functions test"
+    "functions:test": "npm --prefix functions test",
+    "staff:dev": "npm --prefix staff-portal run dev",
+    "staff:build": "npm --prefix staff-portal run build",
+    "staff:preview": "npm --prefix staff-portal run preview",
+    "staff:test": "npm --prefix staff-portal test"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

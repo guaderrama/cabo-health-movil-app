@@ -51,6 +51,7 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 .test-build/
+/staff-portal/.test-build/
 /.superpowers/qa/
 /functions/lib/
 /functions/test-build/

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "outDir": ".test-build",
+    "rootDir": "src",
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "files": [
+    "src/domain/staffGateway.ts",
+    "src/domain/codeAdminModel.ts",
+    "src/domain/catalogDrafts.ts",
+    "src/domain/auditLog.ts",
+    "src/domain/unavailableGateways.ts",
+    "src/firebase/staffFirebaseConfig.ts",
+    "src/i18n/messages.ts"
+  ]
+}

@@ -1,0 +1,185 @@
+import { useEffect, useMemo, useState } from 'react';
+
+import { AuditPanel } from './components/AuditPanel.js';
+import { CatalogDraftPanel } from './components/CatalogDraftPanel.js';
+import { CodeAdminPanel } from './components/CodeAdminPanel.js';
+import type { AuditGateway } from './domain/auditLog.js';
+import type { CatalogDraftGateway } from './domain/catalogDrafts.js';
+import type { ServerStaffSession, StaffGateway } from './domain/staffGateway.js';
+import type { FirebaseStaffServices } from './firebase/firebaseStaffServices.js';
+import {
+  STAFF_MESSAGES,
+  type StaffLanguage,
+  type StaffMessageKey,
+} from './i18n/messages.js';
+
+interface AppProps {
+  readonly services: FirebaseStaffServices;
+  readonly draftGateway: CatalogDraftGateway;
+  readonly auditGateway: AuditGateway;
+}
+
+type PortalTab = 'codes' | 'drafts' | 'audit';
+type Authenticated = Readonly<{ session: ServerStaffSession; gateway: StaffGateway }>;
+
+export function App({ services, draftGateway, auditGateway }: AppProps) {
+  const [language, setLanguage] = useState<StaffLanguage>('en');
+  const [stage, setStage] = useState<'restoring' | 'sign-in' | 'mfa' | 'authenticated'>('restoring');
+  const [authenticated, setAuthenticated] = useState<Authenticated | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [totp, setTotp] = useState('');
+  const [mfaLabel, setMfaLabel] = useState('Authenticator');
+  const [busy, setBusy] = useState(false);
+  const [authError, setAuthError] = useState(false);
+  const [tab, setTab] = useState<PortalTab>('codes');
+  const t = useMemo(() => (
+    (key: StaffMessageKey): string => STAFF_MESSAGES[language][key]
+  ), [language]);
+
+  useEffect(() => {
+    let active = true;
+    void services.restore().then((restored) => {
+      if (!active) return;
+      if (restored) {
+        setAuthenticated(restored);
+        setStage('authenticated');
+      } else {
+        setStage('sign-in');
+      }
+    });
+    return () => { active = false; };
+  }, [services]);
+
+  const submitCredentials = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setAuthError(false);
+    const submittedPassword = password;
+    setPassword('');
+    try {
+      const result = await services.signIn(email, submittedPassword);
+      if (result.kind === 'mfa-required') {
+        setMfaLabel(result.displayName);
+        setStage('mfa');
+      } else {
+        setAuthenticated(result);
+        setStage('authenticated');
+      }
+    } catch {
+      setAuthError(true);
+      setStage('sign-in');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitTotp = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setAuthError(false);
+    const submittedTotp = totp;
+    setTotp('');
+    try {
+      const result = await services.completeTotp(submittedTotp);
+      setAuthenticated(result);
+      setStage('authenticated');
+    } catch {
+      setAuthError(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const leave = async () => {
+    await services.signOut();
+    setAuthenticated(null);
+    setTab('codes');
+    setStage('sign-in');
+  };
+
+  if (stage === 'restoring') {
+    return <main className="auth-layout"><Brand /><p aria-live="polite">{t('common.loading')}</p></main>;
+  }
+
+  if (stage === 'sign-in' || stage === 'mfa') {
+    return (
+      <main className="auth-layout">
+        <div className="language-control">
+          <button aria-label="Portal language" className="text-button" type="button" onClick={() => setLanguage(language === 'en' ? 'es-MX' : 'en')}>
+            {t('common.language')}
+          </button>
+        </div>
+        <section className="auth-card" aria-labelledby="auth-title">
+          <Brand />
+          <p className="eyebrow">{t('portal.eyebrow')}</p>
+          <h1 id="auth-title">{stage === 'mfa' ? t('auth.mfaTitle') : t('auth.title')}</h1>
+          <p>{stage === 'mfa' ? t('auth.mfaRequired') : t('auth.subtitle')}</p>
+          {authError ? <div className="notice error" role="alert">{t('auth.failed')}</div> : null}
+          {stage === 'sign-in' ? (
+            <form className="auth-form" onSubmit={(event) => void submitCredentials(event)}>
+              <label className="field"><span>{t('auth.email')}</span><input autoComplete="username" inputMode="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+              <label className="field"><span>{t('auth.password')}</span><input autoComplete="current-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+              <button className="button primary full" disabled={busy} type="submit">{busy ? t('common.loading') : t('auth.signIn')}</button>
+            </form>
+          ) : (
+            <form className="auth-form" onSubmit={(event) => void submitTotp(event)}>
+              <label className="field"><span>{t('auth.mfaCode')} · {mfaLabel}</span><input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" required value={totp} onChange={(event) => setTotp(event.target.value.replace(/\D/gu, '').slice(0, 6))} /></label>
+              <button className="button primary full" disabled={busy || totp.length !== 6} type="submit">{busy ? t('common.loading') : t('auth.verify')}</button>
+            </form>
+          )}
+        </section>
+      </main>
+    );
+  }
+
+  if (!authenticated) return null;
+
+  return (
+    <div className="portal-shell">
+      <aside className="portal-sidebar">
+        <Brand />
+        <div className="sidebar-intro">
+          <p className="eyebrow">{t('portal.eyebrow')}</p>
+          <h1>{t('portal.title')}</h1>
+          <p>{t('portal.subtitle')}</p>
+        </div>
+        <nav aria-label="Staff workspace" className="portal-nav">
+          <NavButton active={tab === 'codes'} number="01" label={t('nav.codes')} onClick={() => setTab('codes')} />
+          <NavButton active={tab === 'drafts'} number="02" label={t('nav.drafts')} onClick={() => setTab('drafts')} />
+          <NavButton active={tab === 'audit'} number="03" label={t('nav.audit')} onClick={() => setTab('audit')} />
+        </nav>
+        <div className="sidebar-footer">
+          <div className="scope-block">
+            <span className={`scope-dot ${authenticated.session.scope}`} aria-hidden="true" />
+            <div>
+              <strong>{authenticated.session.scope === 'production' ? t('portal.production') : t('portal.reviewSandbox')}</strong>
+              <small>{t('portal.scopeHelp')}</small>
+            </div>
+          </div>
+          <div className="sidebar-actions">
+            <button aria-label="Portal language" className="text-button" type="button" onClick={() => setLanguage(language === 'en' ? 'es-MX' : 'en')}>{t('common.language')}</button>
+            <button className="text-button" type="button" onClick={() => void leave()}>{t('common.signOut')}</button>
+          </div>
+        </div>
+      </aside>
+      <main className="portal-main">
+        {tab === 'codes' ? <CodeAdminPanel gateway={authenticated.gateway} language={language} t={t} /> : null}
+        {tab === 'drafts' ? <CatalogDraftPanel gateway={draftGateway} language={language} t={t} /> : null}
+        {tab === 'audit' ? <AuditPanel gateway={auditGateway} language={language} t={t} /> : null}
+      </main>
+    </div>
+  );
+}
+
+function Brand() {
+  return <div aria-label="CaboHealth" className="brand-mark"><span>CABO</span><span>HEALTH</span></div>;
+}
+
+function NavButton(props: { active: boolean; number: string; label: string; onClick: () => void }) {
+  return (
+    <button aria-current={props.active ? 'page' : undefined} className={props.active ? 'nav-button active' : 'nav-button'} type="button" onClick={props.onClick}>
+      <span>{props.number}</span>{props.label}
+    </button>
+  );
+}

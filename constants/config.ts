@@ -37,6 +37,7 @@ export const config = {
     privacy: 'https://cabohealth.org/app/privacy/',
     terms: 'https://cabohealth.org/app/terms/',
     reportContent: 'https://cabohealth.org/app/report-content/',
+    staffPortal: 'https://cabohealth.org/staff/',
   },
 
   // Features flags
