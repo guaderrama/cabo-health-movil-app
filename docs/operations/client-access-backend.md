@@ -15,6 +15,11 @@ activated**. Deployment remains an explicit release gate.
 - Exactly four production slots exist (`1` through `4`). Create, list, and
   revoke reconcile expired slots transactionally. A fifth active code is
   rejected even when creates race.
+- The scheduled deletion worker runs every five minutes and reconciles natural
+  expiry before retrying cleanup. An expired redeemed code is revoked together
+  with its grant, and its durable deletion tombstone is created in the same
+  transaction; replacing that slot cannot bypass cleanup. An unredeemed expiry
+  has no Auth identity or grant, so it creates no account-deletion job.
 - A code has the fixed purpose `cabohealth_client`, fixed scope
   `production_client`, one installation binding, and only reviewed resource
   IDs. There is no master-code or caller-selected scope path.
@@ -65,6 +70,11 @@ activated**. Deployment remains an explicit release gate.
   consumes one of the four production slots, and can grant only one fixed,
   compiled non-clinical sample. The credential can be used on multiple review
   installations and remains valid until an authorized staff member rotates it.
+  A current App Review identity becomes eligible for scheduled physical cleanup
+  after 30 days of inactivity; any identity from a stale credential generation
+  is eligible immediately. Successful redeem, refresh, native launch, hosted
+  launch redemption, and hosted-session introspection move the inactivity
+  boundary forward.
 
 The deliberate response exceptions are: a one-time production code or App
 Review credential to the authorized administrator, a Firebase custom token
@@ -363,11 +373,17 @@ authorization mechanism.
 The review database has a separate default-deny rules file and TTL overrides
 for `review_sandbox_rate_limits`, `review_sandbox_redemption_requests`,
 `review_sandbox_launch_nonces`, `review_sandbox_web_sessions`, and
-`review_sandbox_broker_requests`. Live-generation validation, not asynchronous
-TTL deletion, revokes old review authority. Old pseudonymous grant documents
-are authorization-dead after rotation but are not yet physically purged by a
-background worker; define and verify their retention/purge procedure before
-activating the review credential.
+`review_sandbox_broker_requests`. Live-generation and active-grant validation,
+not asynchronous TTL deletion, revoke review authority. The separate
+`cleanupAppReviewData` worker runs every five minutes. It marks a current grant
+removed after 30 days of inactivity, or a stale credential generation
+immediately, and creates a durable `review_sandbox_account_deletions` job. Each
+bounded job removes linked review records, deletes its Firebase Auth user, and
+then removes the grant (including its installation digest) and job. A failure
+remains pending for the next run every five minutes; one subject cannot block
+the rest of the batch, and aggregate errors contain counts only. Review grants
+and deletion jobs deliberately have no Firestore TTL because they are cleanup
+authority and must not disappear before Auth deletion completes.
 
 Account deletion actively removes linked launch, web-session, redemption, and
 safely attributable installation-rate records before returning `completed`.
@@ -398,8 +414,9 @@ Do not call this Apple-ready or production-ready until all are complete:
    Firestore database, its default-deny rules/TTL policy, least-privilege
    runtime identity, seven separate key rings, fixed Hostinger sample, portal
    status/rotation adapter, and native redeem/refresh/launch adapter. Run
-   cross-realm and rotation tests end-to-end; define cleanup of stale review
-   grants. Do not issue the credential until all of those checks pass.
+   cross-realm and rotation tests end-to-end; exercise stale-generation,
+   30-day-inactivity, Auth-failure, and retry cleanup paths. Do not issue the
+   credential until all of those checks pass.
 8. Wire the staff portal adapters to the five documented draft/audit callables
    and verify optimistic-conflict/error handling in staging. Draft publication
    remains an intentionally separate, reviewed release process; do not add a

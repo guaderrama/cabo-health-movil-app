@@ -39,6 +39,7 @@ sample `review-sandbox-app-review-sample-v1`.
 | Guessing/brute force | 128-bit CSPRNG credential; IP-only and IP/installation HMAC rate buckets; generic errors |
 | One reviewer installation impersonates another | Installation-specific HMAC grant and derived `review_*` UID; refresh/launch revalidate both |
 | Old credential/session survives rotation | Every redeem, refresh, launch, nonce consume, and web introspection checks current generation |
+| Review identity persists indefinitely | Stale generations are immediately cleanup-eligible; a current identity is eligible after 30 days of inactivity; a five-minute bounded worker durably retries linked-record, Auth-user, installation-digest, and grant deletion |
 | Review Auth token reaches production | UID prefix and authority checks are exact and realm-disjoint |
 | Production broker request crosses into review | Separate export, secret, storage and canonical string `cabohealth-app-review-broker-v1` |
 | Replay or stolen launch URL | Signed S2S requests, stable realm-specific replay digest, 60-second one-use nonce, ≤1-hour HMAC-only web session |
@@ -69,9 +70,11 @@ production broker keys, a caller-selected realm, or a broad admin role.
    discriminated `review_sandbox` grant. Never retain the AR credential.
 6. Implement a separate fail-closed Hostinger adapter for
    `appReviewBrokerApi` and the fixed `/apps/app-review/launch/` page.
-7. Define and verify bounded physical cleanup for authorization-dead review
-   grant records after rotation. Current authorization does not depend on that
-   cleanup, but activation needs an explicit retention decision.
+7. Deploy and verify the bounded physical-cleanup worker: stale credential
+   generations become eligible immediately, current identities after 30 days
+   of inactivity, and durable jobs retry Auth or linked-record failures without
+   exposing identifiers. Authorization remains fail-closed while cleanup is
+   pending.
 8. Run staging tests on two clean physical iPhones, rotate during active native
    and web sessions, and prove both realms reject cross-use before production.
 9. Rotate immediately after Apple review or suspected disclosure. Do not use a

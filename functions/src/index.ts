@@ -34,6 +34,7 @@ import {
   AppReviewLaunchService,
   AppReviewSessionManager,
 } from './domain/appReviewAccess.js';
+import { AppReviewDataRetentionService } from './domain/appReviewDataRetention.js';
 import {
   CatalogDraftAdminService,
   CatalogDraftConflictError,
@@ -431,7 +432,20 @@ export const retryClientAccountDeletions = onSchedule({
   secrets: [INSTALLATION_PEPPER_RING],
   timeoutSeconds: 120,
 }, async () => {
-  await createAccountDeletionService().retryPending();
+  const nowMs = Date.now();
+  const store = createStore();
+  await store.reconcileExpiredClientAccess(nowMs);
+  await createAccountDeletionService(store).retryPending();
+});
+
+export const cleanupAppReviewData = onSchedule({
+  maxInstances: 1,
+  memory: '256MiB',
+  region: REGION,
+  schedule: 'every 5 minutes',
+  timeoutSeconds: 120,
+}, async () => {
+  await createAppReviewDataRetentionService().runScheduled();
 });
 
 export const createClientLaunch = onCall({
@@ -544,6 +558,22 @@ function createAppReviewStore(): FirestoreAppReviewSandboxStore {
   return new FirestoreAppReviewSandboxStore(
     new AdminFirestoreDocumentDatabase(getFirestore(requireAppReviewDatabaseId())),
   );
+}
+
+function createAppReviewDataRetentionService(): AppReviewDataRetentionService {
+  return new AppReviewDataRetentionService({
+    authAccounts: {
+      async deleteUser(subjectUid) {
+        try {
+          await getAuth().deleteUser(subjectUid);
+        } catch (error) {
+          if (isRecord(error) && error.code === 'auth/user-not-found') return;
+          throw error;
+        }
+      },
+    },
+    store: createAppReviewStore(),
+  });
 }
 
 function createAppReviewCredentialService(): AppReviewCredentialService {

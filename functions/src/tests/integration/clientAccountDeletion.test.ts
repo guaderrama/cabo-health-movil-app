@@ -246,6 +246,70 @@ test('a client can request deletion after the access code and grant expired', as
   }), { status: 'completed' });
 });
 
+test('natural expiry durably queues and completes cleanup for a redeemed client identity', async () => {
+  const harness = await createRedeemedHarness(nowMs + 1_000);
+
+  await harness.store.reconcileExpiredClientAccess(nowMs + 2_000);
+
+  const queuedState = harness.database.serializedState();
+  assert.match(queuedState, /_private_account_deletions/u);
+  assert.match(queuedState, /"status":"revoked"/u);
+
+  const deletedSubjects: string[] = [];
+  const deletion = new ClientAccountDeletionService({
+    authAccounts: {
+      async deleteUser(subjectUid) {
+        deletedSubjects.push(subjectUid);
+      },
+    },
+    installationHasher: hasher('installation'),
+    nowMs: () => nowMs + 2_001,
+    store: harness.store,
+  });
+  assert.deepEqual(await deletion.retryPending(), { completed: 1, pending: 0 });
+  assert.deepEqual(deletedSubjects, [harness.subjectUid]);
+  const completedState = harness.database.serializedState();
+  assert.equal(completedState.includes(harness.subjectUid), false);
+  assert.deepEqual(await harness.database.listCollection('_private_access_codes'), []);
+  assert.deepEqual(await harness.database.listCollection('_private_client_grants'), []);
+  assert.deepEqual(await harness.database.listCollection('_private_account_deletions'), []);
+});
+
+test('replacing an expired redeemed slot cannot bypass durable identity cleanup', async () => {
+  const harness = await createRedeemedHarness(nowMs + 1_000);
+
+  await new AccessCodeIssuer({
+    codeHasher: hasher('code'),
+    nowMs: () => nowMs + 2_000,
+    randomSource: () => Buffer.alloc(16, 2),
+    store: harness.store,
+  }).issue({
+    expiresAtMs: nowMs + 30 * 24 * 60 * 60 * 1_000,
+    resourceIds: [resourceId],
+    slot: 1,
+  });
+
+  const queued = await harness.database.listCollection('_private_account_deletions');
+  assert.equal(queued.length, 1);
+  assert.equal(queued[0]?.id, harness.subjectUid);
+});
+
+test('natural expiry of an unredeemed code creates no account-deletion job', async () => {
+  const database = new InMemoryDocumentDatabase({ [clientResourcePath(resourceId)]: resource });
+  const store = new FirestoreClientAccessStore(database);
+  await new AccessCodeIssuer({
+    codeHasher: hasher('code'),
+    nowMs: () => nowMs,
+    randomSource: () => Buffer.alloc(16, 3),
+    store,
+  }).issue({ expiresAtMs: nowMs + 1_000, resourceIds: [resourceId], slot: 1 });
+
+  await store.reconcileExpiredClientAccess(nowMs + 2_000);
+
+  assert.deepEqual(await database.listCollection('_private_account_deletions'), []);
+  assert.deepEqual(await database.listCollection('_private_client_grants'), []);
+});
+
 test('remove durably enqueues deletion and the worker completes after an Auth outage', async () => {
   const harness = await createRedeemedHarness(nowMs + 30 * 24 * 60 * 60 * 1_000);
   let authUnavailable = true;

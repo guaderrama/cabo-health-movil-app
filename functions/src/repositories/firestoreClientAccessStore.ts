@@ -184,14 +184,31 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       if (active.length >= maximumActive) return 'limit';
       const activeCodeIds = new Set(active.map(({ code }) => code.codeId));
       const stale = occupied.filter(({ code }) => !activeCodeIds.has(code.codeId));
-      const staleGrants = await Promise.all(stale.map(async ({ code }) => ({
-        code,
-        value: code.subjectUid
-          ? await transaction.get(`${CLIENT_GRANT_PREFIX}/${code.subjectUid}`)
-          : undefined,
-      })));
+      const staleGrants = await Promise.all(stale.map(async ({ code }) => {
+        const grantPath = code.subjectUid ? `${CLIENT_GRANT_PREFIX}/${code.subjectUid}` : null;
+        const deletionPath = code.subjectUid
+          ? `${ACCOUNT_DELETION_PREFIX}/${code.subjectUid}`
+          : null;
+        const [grant, deletion] = await Promise.all([
+          grantPath ? transaction.get(grantPath) : undefined,
+          deletionPath ? transaction.get(deletionPath) : undefined,
+        ]);
+        return Object.freeze({ code, deletion, deletionPath, grant, grantPath });
+      }));
 
-      for (const { code, value } of staleGrants) {
+      for (const { code, deletion, deletionPath, grant, grantPath } of staleGrants) {
+        const parsedGrant = parseStoredClientGrant(grant);
+        const parsedDeletion = parseStoredAccountDeletion(deletion);
+        if (code.subjectUid && (
+          !grantPath
+          || !deletionPath
+          || !parsedGrant
+          || parsedGrant.codeId !== code.codeId
+        )) throw new Error('invalid_client_grant_record');
+        if (deletion !== undefined && (!parsedDeletion
+          || parsedDeletion.subjectUid !== code.subjectUid
+          || parsedDeletion.codeId !== code.codeId
+        )) throw new Error('invalid_account_deletion_record');
         transaction.set(`${ACCESS_CODE_PREFIX}/${code.codeId}`, Object.freeze({
           ...code,
           status: 'revoked',
@@ -201,12 +218,31 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         if (code.slot !== record.slot) {
           transaction.delete(`${CLIENT_SLOT_PREFIX}/${code.slot}`);
         }
-        if (code.subjectUid && isRecord(value)) {
-          transaction.set(`${CLIENT_GRANT_PREFIX}/${code.subjectUid}`, Object.freeze({
-            ...value,
+        if (code.subjectUid && parsedGrant && grantPath && deletionPath) {
+          transaction.set(grantPath, Object.freeze({
+            ...parsedGrant,
             status: 'revoked',
             updatedAtMs: record.createdAtMs,
           }));
+          if (!parsedDeletion) {
+            transaction.create(deletionPath, Object.freeze({
+              attempts: 0,
+              cleanupCompletedAtMs: null,
+              codeId: code.codeId,
+              createdAtMs: record.createdAtMs,
+              installationLookupId: parsedGrant.installationLookupId,
+              lastAttemptAtMs: null,
+              rateLimitLookupIds: parsedGrant.rateLimitLookupIds,
+              schemaVersion: 1,
+              status: 'pending',
+              subjectUid: code.subjectUid,
+              updatedAtMs: record.createdAtMs,
+            } satisfies StoredAccountDeletion));
+            transaction.create(
+              `${AUDIT_EVENT_PREFIX}/delete_request_${subjectAuditId(code.subjectUid)}_${record.createdAtMs}`,
+              sanitizedAudit('client_account_deletion_requested', record.createdAtMs),
+            );
+          }
         }
         transaction.create(
           `${AUDIT_EVENT_PREFIX}/expire_${code.codeId}_${record.createdAtMs}`,
@@ -275,6 +311,13 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       })];
     });
     return Object.freeze(summaries.sort((left, right) => left.slot - right.slot));
+  }
+
+  async reconcileExpiredClientAccess(nowMs: number): Promise<void> {
+    if (!isNonnegativeSafeInteger(nowMs)) throw new Error('invalid_reconciliation_time');
+    await this.#database.runTransaction(async (transaction) => {
+      await reconcileExpiredSlots(transaction, nowMs);
+    });
   }
 
   revokeAccessCode(
@@ -1087,14 +1130,29 @@ async function reconcileExpiredSlots(
   ));
   const activeIds = new Set(active.map(({ code }) => code.codeId));
   const stale = occupied.filter(({ code }) => !activeIds.has(code.codeId));
-  const staleGrants = await Promise.all(stale.map(async ({ code }) => ({
-    code,
-    grant: code.subjectUid
-      ? await transaction.get(`${CLIENT_GRANT_PREFIX}/${code.subjectUid}`)
-      : undefined,
-  })));
+  const staleGrants = await Promise.all(stale.map(async ({ code }) => {
+    const grantPath = code.subjectUid ? `${CLIENT_GRANT_PREFIX}/${code.subjectUid}` : null;
+    const deletionPath = code.subjectUid ? `${ACCOUNT_DELETION_PREFIX}/${code.subjectUid}` : null;
+    const [grant, deletion] = await Promise.all([
+      grantPath ? transaction.get(grantPath) : undefined,
+      deletionPath ? transaction.get(deletionPath) : undefined,
+    ]);
+    return Object.freeze({ code, deletion, deletionPath, grant, grantPath });
+  }));
 
-  for (const { code, grant } of staleGrants) {
+  for (const { code, deletion, deletionPath, grant, grantPath } of staleGrants) {
+    const parsedGrant = parseStoredClientGrant(grant);
+    const parsedDeletion = parseStoredAccountDeletion(deletion);
+    if (code.subjectUid && (
+      !grantPath
+      || !deletionPath
+      || !parsedGrant
+      || parsedGrant.codeId !== code.codeId
+    )) throw new Error('invalid_client_grant_record');
+    if (deletion !== undefined && (!parsedDeletion
+      || parsedDeletion.subjectUid !== code.subjectUid
+      || parsedDeletion.codeId !== code.codeId
+    )) throw new Error('invalid_account_deletion_record');
     transaction.set(`${ACCESS_CODE_PREFIX}/${code.codeId}`, Object.freeze({
       ...code,
       status: 'revoked',
@@ -1102,12 +1160,31 @@ async function reconcileExpiredSlots(
     }));
     transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${code.lookupId}`);
     transaction.delete(`${CLIENT_SLOT_PREFIX}/${code.slot}`);
-    if (code.subjectUid && isRecord(grant)) {
-      transaction.set(`${CLIENT_GRANT_PREFIX}/${code.subjectUid}`, Object.freeze({
-        ...grant,
+    if (code.subjectUid && parsedGrant && grantPath && deletionPath) {
+      transaction.set(grantPath, Object.freeze({
+        ...parsedGrant,
         status: 'revoked',
         updatedAtMs: nowMs,
       }));
+      if (!parsedDeletion) {
+        transaction.create(deletionPath, Object.freeze({
+          attempts: 0,
+          cleanupCompletedAtMs: null,
+          codeId: code.codeId,
+          createdAtMs: nowMs,
+          installationLookupId: parsedGrant.installationLookupId,
+          lastAttemptAtMs: null,
+          rateLimitLookupIds: parsedGrant.rateLimitLookupIds,
+          schemaVersion: 1,
+          status: 'pending',
+          subjectUid: code.subjectUid,
+          updatedAtMs: nowMs,
+        } satisfies StoredAccountDeletion));
+        transaction.create(
+          `${AUDIT_EVENT_PREFIX}/delete_request_${subjectAuditId(code.subjectUid)}_${nowMs}`,
+          sanitizedAudit('client_account_deletion_requested', nowMs),
+        );
+      }
     }
     transaction.create(
       `${AUDIT_EVENT_PREFIX}/expire_${code.codeId}_${nowMs}`,

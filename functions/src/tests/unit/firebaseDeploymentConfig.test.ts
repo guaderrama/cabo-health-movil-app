@@ -57,6 +57,10 @@ test('App Review named-database rules and TTL policy are isolated and default-de
     'review_sandbox_redemption_requests',
     'review_sandbox_web_sessions',
   ]);
+  assert.doesNotMatch(
+    JSON.stringify(parsed),
+    /review_sandbox_(?:grants|account_deletions)/u,
+  );
   assert.doesNotMatch(JSON.stringify(parsed), /_private_|client_|cabohealth_apps/u);
 });
 

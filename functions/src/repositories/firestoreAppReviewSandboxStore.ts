@@ -11,6 +11,7 @@ import {
   type AppReviewRotateCommand,
   type AppReviewSandboxStore,
 } from '../domain/appReviewAccess.js';
+import type { AppReviewDataRetentionStore } from '../domain/appReviewDataRetention.js';
 import type { WebSessionStore } from '../domain/webSessionBroker.js';
 import type { HmacDigest } from '../security/versionedHmac.js';
 import type {
@@ -26,7 +27,9 @@ const REDEMPTION_PREFIX = 'review_sandbox_redemption_requests';
 const LAUNCH_NONCE_PREFIX = 'review_sandbox_launch_nonces';
 const WEB_SESSION_PREFIX = 'review_sandbox_web_sessions';
 const BROKER_REQUEST_PREFIX = 'review_sandbox_broker_requests';
+const DATA_DELETION_PREFIX = 'review_sandbox_account_deletions';
 const RATE_WINDOW_MS = 15 * 60 * 1_000;
+const DELETION_ARTIFACT_BATCH_LIMIT = 400;
 
 interface StoredCredential {
   readonly generation: number;
@@ -42,8 +45,23 @@ interface StoredCredential {
 interface StoredGrant {
   readonly credentialGeneration: number;
   readonly installationLookupId: string;
+  readonly rateLimitLookupIds: readonly string[];
   readonly schemaVersion: 1;
   readonly status: 'active' | 'removed';
+  readonly subjectUid: string;
+  readonly updatedAtMs: number;
+}
+
+interface StoredReviewDataDeletion {
+  readonly attempts: number;
+  readonly cleanupCompletedAtMs: number | null;
+  readonly credentialGeneration: number;
+  readonly createdAtMs: number;
+  readonly installationLookupId: string;
+  readonly lastAttemptAtMs: number | null;
+  readonly rateLimitLookupIds: readonly string[];
+  readonly schemaVersion: 1;
+  readonly status: 'pending';
   readonly subjectUid: string;
   readonly updatedAtMs: number;
 }
@@ -78,7 +96,7 @@ interface StoredReviewWebSession {
   readonly updatedAtMs: number;
 }
 
-export class FirestoreAppReviewSandboxStore implements AppReviewSandboxStore, WebSessionStore {
+export class FirestoreAppReviewSandboxStore implements AppReviewSandboxStore, AppReviewDataRetentionStore, WebSessionStore {
   readonly #database: DocumentDatabase;
 
   constructor(database: DocumentDatabase) {
@@ -115,13 +133,11 @@ export class FirestoreAppReviewSandboxStore implements AppReviewSandboxStore, We
       if (await transaction.get(noncePath) !== undefined) {
         throw new Error('app_review_launch_nonce_collision');
       }
-      if (grant.installationLookupId !== command.currentInstallationLookup.lookupId) {
-        transaction.set(grantPath, Object.freeze({
-          ...grant,
-          installationLookupId: command.currentInstallationLookup.lookupId,
-          updatedAtMs: command.nowMs,
-        }));
-      }
+      transaction.set(grantPath, Object.freeze({
+        ...grant,
+        installationLookupId: command.currentInstallationLookup.lookupId,
+        updatedAtMs: command.nowMs,
+      }));
       transaction.create(noncePath, Object.freeze({
         consumedAtMs: null,
         credentialGeneration: credential.generation,
@@ -222,22 +238,14 @@ export class FirestoreAppReviewSandboxStore implements AppReviewSandboxStore, We
       const grantPath = `${GRANT_PREFIX}/${subjectUid}`;
       const existingGrant = parseGrant(await transaction.get(grantPath));
       const acceptedInstallations = new Set(command.installationLookups.map(({ lookupId }) => lookupId));
-      if (existingGrant && (
+      if ((idempotent && !existingGrant) || (existingGrant && (
         existingGrant.credentialGeneration !== credential.generation
         || !acceptedInstallations.has(existingGrant.installationLookupId)
         || existingGrant.status !== 'active'
-      )) {
+      ))) {
         throw new Error('invalid_app_review_grant_record');
       }
       if (!idempotent) {
-        transaction.set(grantPath, Object.freeze({
-          credentialGeneration: credential.generation,
-          installationLookupId: command.currentInstallationLookup.lookupId,
-          schemaVersion: 1,
-          status: 'active',
-          subjectUid,
-          updatedAtMs: command.nowMs,
-        } satisfies StoredGrant));
         transaction.create(requestPath, Object.freeze({
           expiresAtMs: command.nowMs + 5 * 60 * 1_000,
           generation: credential.generation,
@@ -245,6 +253,17 @@ export class FirestoreAppReviewSandboxStore implements AppReviewSandboxStore, We
           subjectUid,
         }));
       }
+      transaction.set(grantPath, Object.freeze({
+        credentialGeneration: credential.generation,
+        installationLookupId: command.currentInstallationLookup.lookupId,
+        rateLimitLookupIds: Object.freeze(command.rateLimitBuckets
+          .filter(({ clearOnSuccess }) => clearOnSuccess)
+          .map(({ lookupId }) => lookupId)),
+        schemaVersion: 1,
+        status: 'active',
+        subjectUid,
+        updatedAtMs: command.nowMs,
+      } satisfies StoredGrant));
       for (const { bucket, path } of rateLimits) {
         if (bucket.clearOnSuccess) transaction.delete(path);
       }
@@ -272,13 +291,11 @@ export class FirestoreAppReviewSandboxStore implements AppReviewSandboxStore, We
         || grant.credentialGeneration !== credential.generation
         || !acceptedInstallations.has(grant.installationLookupId)
       ) return 'invalid';
-      if (grant.installationLookupId !== command.currentInstallationLookup.lookupId) {
-        transaction.set(grantPath, Object.freeze({
-          ...grant,
-          installationLookupId: command.currentInstallationLookup.lookupId,
-          updatedAtMs: command.nowMs,
-        }));
-      }
+      transaction.set(grantPath, Object.freeze({
+        ...grant,
+        installationLookupId: command.currentInstallationLookup.lookupId,
+        updatedAtMs: command.nowMs,
+      }));
       return grantView(credential.generation);
     });
   }
@@ -337,6 +354,10 @@ export class FirestoreAppReviewSandboxStore implements AppReviewSandboxStore, We
         subjectUid: nonce.subjectUid,
         updatedAtMs: command.nowMs,
       } satisfies StoredReviewWebSession));
+      transaction.set(`${GRANT_PREFIX}/${nonce.subjectUid}`, Object.freeze({
+        ...grant,
+        updatedAtMs: command.nowMs,
+      }));
       writeBrokerRequest(transaction, command.brokerRequestHash, command.nowMs);
       return Object.freeze({ expiresAtMs, kind: 'created' as const });
     });
@@ -391,6 +412,10 @@ export class FirestoreAppReviewSandboxStore implements AppReviewSandboxStore, We
         }));
         transaction.delete(`${WEB_SESSION_PREFIX}/${match.lookup.lookupId}`);
       }
+      transaction.set(`${GRANT_PREFIX}/${session.subjectUid}`, Object.freeze({
+        ...grant,
+        updatedAtMs: command.nowMs,
+      }));
       writeBrokerRequest(transaction, command.brokerRequestHash, command.nowMs);
       return Object.freeze({
         entitlements: Object.freeze([APP_REVIEW_SAMPLE_RESOURCE.id]),
@@ -421,6 +446,253 @@ export class FirestoreAppReviewSandboxStore implements AppReviewSandboxStore, We
       }));
       writeBrokerRequest(transaction, command.brokerRequestHash, command.nowMs);
       return 'revoked';
+    });
+  }
+
+  async listAppReviewRetentionCandidates(
+    cutoffMs: number,
+    limit: number,
+  ): Promise<Readonly<{ malformed: number; subjectUids: readonly string[] }>> {
+    assertRetentionArguments(cutoffMs, limit);
+    const currentGeneration = await this.#database.runTransaction(async (transaction) => {
+      const value = await transaction.get(CREDENTIAL_PATH);
+      if (value === undefined) return null;
+      const credential = parseCredential(value);
+      if (!credential) throw new Error('invalid_app_review_retention_state');
+      return credential.generation;
+    });
+    const [documents, deletionDocuments] = await Promise.all([
+      this.#database.listCollection(GRANT_PREFIX),
+      this.#database.listCollection(DATA_DELETION_PREFIX),
+    ]);
+    const queuedSubjectUids = new Set(deletionDocuments
+      .map(({ id }) => (/^review_[A-Za-z0-9_-]{32}$/u.test(id) ? id : null))
+      .filter((id): id is string => id !== null));
+    const parsed = documents.map(({ id, value }) => {
+      try {
+        const grant = parseGrant(value);
+        return grant?.subjectUid === id ? grant : null;
+      } catch {
+        return null;
+      }
+    });
+    const subjectUids = parsed
+      .filter((grant): grant is StoredGrant => grant !== null)
+      .filter((grant) => !queuedSubjectUids.has(grant.subjectUid))
+      .filter((grant) => (
+        grant.status === 'removed'
+        || currentGeneration === null
+        || grant.credentialGeneration !== currentGeneration
+        || grant.updatedAtMs <= cutoffMs
+      ))
+      .sort((left, right) => left.updatedAtMs - right.updatedAtMs)
+      .slice(0, limit)
+      .map(({ subjectUid }) => subjectUid);
+    return Object.freeze({
+      malformed: parsed.filter((grant) => grant === null).length,
+      subjectUids: Object.freeze(subjectUids),
+    });
+  }
+
+  beginAppReviewDataDeletion(command: Readonly<{
+    cutoffMs: number;
+    nowMs: number;
+    subjectUid: string;
+  }>): Promise<'already_queued' | 'not_due' | 'queued'> {
+    if (
+      !isNonnegativeSafeInteger(command.cutoffMs)
+      || !isNonnegativeSafeInteger(command.nowMs)
+      || !/^review_[A-Za-z0-9_-]{32}$/u.test(command.subjectUid)
+    ) throw new Error('invalid_app_review_retention_state');
+    return this.#database.runTransaction(async (transaction) => {
+      const credentialValue = await transaction.get(CREDENTIAL_PATH);
+      const credential = credentialValue === undefined ? null : parseCredential(credentialValue);
+      if (credentialValue !== undefined && !credential) {
+        throw new Error('invalid_app_review_retention_state');
+      }
+      const grantPath = `${GRANT_PREFIX}/${command.subjectUid}`;
+      const deletionPath = `${DATA_DELETION_PREFIX}/${command.subjectUid}`;
+      const [grantValue, deletionValue] = await Promise.all([
+        transaction.get(grantPath),
+        transaction.get(deletionPath),
+      ]);
+      const grant = parseGrant(grantValue);
+      const deletion = parseReviewDataDeletion(deletionValue);
+      if (!grant || grant.subjectUid !== command.subjectUid) {
+        throw new Error('invalid_app_review_retention_state');
+      }
+      if (deletionValue !== undefined && !deletion) {
+        throw new Error('invalid_app_review_retention_state');
+      }
+      if (deletion) {
+        if (
+          deletion.subjectUid !== grant.subjectUid
+          || deletion.credentialGeneration !== grant.credentialGeneration
+          || deletion.installationLookupId !== grant.installationLookupId
+        ) throw new Error('invalid_app_review_retention_state');
+        return 'already_queued';
+      }
+      const due = grant.status === 'removed'
+        || !credential
+        || grant.credentialGeneration !== credential.generation
+        || grant.updatedAtMs <= command.cutoffMs;
+      if (!due) return 'not_due';
+      transaction.set(grantPath, Object.freeze({
+        ...grant,
+        status: 'removed',
+        updatedAtMs: command.nowMs,
+      }));
+      transaction.create(deletionPath, Object.freeze({
+        attempts: 0,
+        cleanupCompletedAtMs: null,
+        credentialGeneration: grant.credentialGeneration,
+        createdAtMs: command.nowMs,
+        installationLookupId: grant.installationLookupId,
+        lastAttemptAtMs: null,
+        rateLimitLookupIds: grant.rateLimitLookupIds,
+        schemaVersion: 1,
+        status: 'pending',
+        subjectUid: command.subjectUid,
+        updatedAtMs: command.nowMs,
+      } satisfies StoredReviewDataDeletion));
+      return 'queued';
+    });
+  }
+
+  async listAppReviewDataDeletionJobs(limit: number): Promise<Readonly<{
+    malformed: number;
+    subjectUids: readonly string[];
+  }>> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error('invalid_app_review_retention_limit');
+    }
+    const documents = await this.#database.listCollection(DATA_DELETION_PREFIX);
+    const parsed = documents.map(({ id, value }) => {
+      const deletion = parseReviewDataDeletion(value);
+      return deletion?.subjectUid === id ? deletion : null;
+    });
+    return Object.freeze({
+      malformed: parsed.filter((deletion) => deletion === null).length,
+      subjectUids: Object.freeze(parsed
+        .filter((deletion): deletion is StoredReviewDataDeletion => deletion !== null)
+        .sort((left, right) => (
+          (left.lastAttemptAtMs ?? -1) - (right.lastAttemptAtMs ?? -1)
+          || left.createdAtMs - right.createdAtMs
+        ))
+        .slice(0, limit)
+        .map(({ subjectUid }) => subjectUid)),
+    });
+  }
+
+  async purgeAppReviewDataArtifacts(
+    subjectUid: string,
+    nowMs: number,
+  ): Promise<'missing' | 'more' | 'ready'> {
+    if (!/^review_[A-Za-z0-9_-]{32}$/u.test(subjectUid) || !isNonnegativeSafeInteger(nowMs)) {
+      return 'missing';
+    }
+    const deletionPath = `${DATA_DELETION_PREFIX}/${subjectUid}`;
+    const deletion = await this.#database.runTransaction(async (transaction) => {
+      const value = await transaction.get(deletionPath);
+      const parsed = parseReviewDataDeletion(value);
+      if (value !== undefined && !parsed) throw new Error('invalid_app_review_retention_state');
+      return parsed;
+    });
+    if (!deletion || deletion.subjectUid !== subjectUid) return 'missing';
+    const collections = await Promise.all([
+      this.#database.listCollection(LAUNCH_NONCE_PREFIX),
+      this.#database.listCollection(WEB_SESSION_PREFIX),
+      this.#database.listCollection(REDEMPTION_PREFIX),
+    ]);
+    const candidates = [
+      ...collections[0].flatMap(({ id, value }) => (
+        recordReferencesReviewSubject(value, deletion)
+          ? [`${LAUNCH_NONCE_PREFIX}/${id}`]
+          : []
+      )),
+      ...collections[1].flatMap(({ id, value }) => (
+        recordReferencesReviewSubject(value, deletion)
+          ? [`${WEB_SESSION_PREFIX}/${id}`]
+          : []
+      )),
+      ...collections[2].flatMap(({ id, value }) => (
+        recordReferencesReviewSubject(value, deletion)
+          ? [`${REDEMPTION_PREFIX}/${id}`]
+          : []
+      )),
+      ...deletion.rateLimitLookupIds.map((lookupId) => `${RATE_LIMIT_PREFIX}/${lookupId}`),
+    ];
+    const uniqueCandidates = [...new Set(candidates)];
+    const batch = uniqueCandidates.slice(0, DELETION_ARTIFACT_BATCH_LIMIT);
+    const hasMore = uniqueCandidates.length > batch.length;
+    return this.#database.runTransaction(async (transaction) => {
+      const value = await transaction.get(deletionPath);
+      const current = parseReviewDataDeletion(value);
+      if (value !== undefined && !current) throw new Error('invalid_app_review_retention_state');
+      if (!current || current.subjectUid !== subjectUid) return 'missing';
+      const artifacts = await Promise.all(batch.map(async (path) => Object.freeze({
+        path,
+        value: await transaction.get(path),
+      })));
+      for (const artifact of artifacts) {
+        if (reviewDeletionArtifactBelongsTo(artifact.path, artifact.value, current)) {
+          transaction.delete(artifact.path);
+        }
+      }
+      transaction.set(deletionPath, Object.freeze({
+        ...current,
+        cleanupCompletedAtMs: hasMore ? null : nowMs,
+        updatedAtMs: nowMs,
+      }));
+      return hasMore ? 'more' : 'ready';
+    });
+  }
+
+  markAppReviewDataDeletionFailed(subjectUid: string, nowMs: number): Promise<void> {
+    const deletionPath = `${DATA_DELETION_PREFIX}/${subjectUid}`;
+    return this.#database.runTransaction(async (transaction) => {
+      const value = await transaction.get(deletionPath);
+      const deletion = parseReviewDataDeletion(value);
+      if (value !== undefined && !deletion) throw new Error('invalid_app_review_retention_state');
+      if (!deletion || deletion.subjectUid !== subjectUid) return;
+      transaction.set(deletionPath, Object.freeze({
+        ...deletion,
+        attempts: deletion.attempts + 1,
+        lastAttemptAtMs: nowMs,
+        updatedAtMs: nowMs,
+      }));
+    });
+  }
+
+  completeAppReviewDataDeletion(
+    subjectUid: string,
+    nowMs: number,
+  ): Promise<'completed' | 'not_ready'> {
+    const deletionPath = `${DATA_DELETION_PREFIX}/${subjectUid}`;
+    return this.#database.runTransaction(async (transaction) => {
+      const deletionValue = await transaction.get(deletionPath);
+      const deletion = parseReviewDataDeletion(deletionValue);
+      if (deletionValue !== undefined && !deletion) {
+        throw new Error('invalid_app_review_retention_state');
+      }
+      if (
+        !deletion
+        || deletion.subjectUid !== subjectUid
+        || deletion.cleanupCompletedAtMs === null
+      ) return 'not_ready';
+      const grantPath = `${GRANT_PREFIX}/${subjectUid}`;
+      const grantValue = await transaction.get(grantPath);
+      const grant = parseGrant(grantValue);
+      if (grantValue !== undefined && !grant) throw new Error('invalid_app_review_retention_state');
+      if (grant && (
+        grant.subjectUid !== subjectUid
+        || grant.credentialGeneration !== deletion.credentialGeneration
+        || grant.installationLookupId !== deletion.installationLookupId
+        || grant.status !== 'removed'
+      )) throw new Error('invalid_app_review_retention_state');
+      if (grant) transaction.delete(grantPath);
+      transaction.delete(deletionPath);
+      return 'completed';
     });
   }
 }
@@ -485,12 +757,41 @@ function parseGrant(value: unknown): StoredGrant | null {
     value.schemaVersion !== 1
     || !Number.isSafeInteger(value.credentialGeneration)
     || typeof value.installationLookupId !== 'string'
+    || !(value.rateLimitLookupIds === undefined || (
+      Array.isArray(value.rateLimitLookupIds)
+      && value.rateLimitLookupIds.every((lookupId) => typeof lookupId === 'string')
+    ))
     || (value.status !== 'active' && value.status !== 'removed')
     || typeof value.subjectUid !== 'string'
     || !/^review_[A-Za-z0-9_-]{32}$/u.test(value.subjectUid)
     || !Number.isSafeInteger(value.updatedAtMs)
   ) throw new Error('invalid_app_review_grant_record');
-  return value as unknown as StoredGrant;
+  return Object.freeze({
+    ...(value as unknown as StoredGrant),
+    rateLimitLookupIds: Object.freeze(value.rateLimitLookupIds ?? []),
+  });
+}
+
+function parseReviewDataDeletion(value: unknown): StoredReviewDataDeletion | null {
+  if (!isRecord(value)) return null;
+  if (
+    value.schemaVersion !== 1
+    || value.status !== 'pending'
+    || !isNonnegativeSafeInteger(value.attempts)
+    || !(value.cleanupCompletedAtMs === null
+      || isNonnegativeSafeInteger(value.cleanupCompletedAtMs))
+    || !Number.isSafeInteger(value.credentialGeneration)
+    || (value.credentialGeneration as number) < 1
+    || !isNonnegativeSafeInteger(value.createdAtMs)
+    || typeof value.installationLookupId !== 'string'
+    || !(value.lastAttemptAtMs === null || isNonnegativeSafeInteger(value.lastAttemptAtMs))
+    || !Array.isArray(value.rateLimitLookupIds)
+    || value.rateLimitLookupIds.some((lookupId) => typeof lookupId !== 'string')
+    || typeof value.subjectUid !== 'string'
+    || !/^review_[A-Za-z0-9_-]{32}$/u.test(value.subjectUid)
+    || !isNonnegativeSafeInteger(value.updatedAtMs)
+  ) return null;
+  return value as unknown as StoredReviewDataDeletion;
 }
 
 function parseRedemptionRequest(value: unknown): Readonly<{
@@ -609,6 +910,39 @@ function createReviewSubject(generation: number, installationDigest: string): st
     .update(installationDigest, 'utf8')
     .digest('base64url');
   return `review_${digest.slice(0, 32)}`;
+}
+
+function assertRetentionArguments(cutoffMs: number, limit: number): void {
+  if (
+    !isNonnegativeSafeInteger(cutoffMs)
+    || !Number.isSafeInteger(limit)
+    || limit < 1
+    || limit > 100
+  ) throw new Error('invalid_app_review_retention_limit');
+}
+
+function recordReferencesReviewSubject(
+  value: unknown,
+  deletion: Readonly<StoredReviewDataDeletion>,
+): boolean {
+  return isRecord(value) && value.subjectUid === deletion.subjectUid;
+}
+
+function reviewDeletionArtifactBelongsTo(
+  path: string,
+  value: unknown,
+  deletion: Readonly<StoredReviewDataDeletion>,
+): boolean {
+  if (path.startsWith(`${RATE_LIMIT_PREFIX}/`)) {
+    return deletion.rateLimitLookupIds.some(
+      (lookupId) => path === `${RATE_LIMIT_PREFIX}/${lookupId}`,
+    );
+  }
+  return recordReferencesReviewSubject(value, deletion);
+}
+
+function isNonnegativeSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

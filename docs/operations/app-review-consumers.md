@@ -42,6 +42,15 @@ backend. A review UID, review grant, production UID, or production grant can
 never be substituted across realms. Review removal signs out locally; the
 production remove/delete callables are never invoked for review authority.
 
+The current review identity becomes eligible for scheduled physical cleanup
+after 30 days of inactivity. A successful redeem, refresh, native launch,
+hosted launch redemption, or hosted-session introspection resets that boundary.
+Rotation makes every stale credential generation eligible immediately. The
+five-minute cleanup worker first denies the grant, then durably retries linked
+record and Firebase Auth deletion; the 30-day boundary is an eligibility rule,
+not a guarantee that an unavailable dependency will finish deletion at that
+instant.
+
 Review launch must return exactly
 `{ launchUrl, method: 'POST', nonce, expiresAtMs }`, where `launchUrl` is
 `https://cabohealth.org/apps/app-review/launch/`, `nonce` is 32 base64url
@@ -75,6 +84,9 @@ policy.
    callable or resource is reached.
 5. Rotate the credential while both native and web sessions are active. Old
    redeem, refresh, nonce, and web-session operations must all fail generically.
+   Verify stale identities are physically removed, an injected Auth failure
+   leaves a retryable deletion job, and the following scheduled retry completes
+   without exposing an identifier.
 6. Verify a production signature, UID, grant, cookie, session, nonce, or route
    cannot authorize review, and perform the reciprocal review-to-production
    checks.
