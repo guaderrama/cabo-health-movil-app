@@ -36,10 +36,12 @@ final class ClientResourcesUnavailable extends RuntimeException
 
 final class ClientResourcesTransportResponse
 {
+    /** @param array<string, string> $headers */
     public function __construct(
         public readonly int $status,
         public readonly string $contentType,
         public readonly string $body,
+        public readonly array $headers = [],
     ) {
     }
 }
@@ -67,9 +69,37 @@ final class CurlClientResourcesHttpTransport implements ClientResourcesHttpTrans
         }
 
         $responseBody = '';
+        $responseHeaders = [];
+        $responseHeadersValid = true;
         curl_setopt_array($handle, [
             CURLOPT_CONNECTTIMEOUT_MS => self::CONNECT_TIMEOUT_MS,
             CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_HEADERFUNCTION => static function ($unused, string $line) use (&$responseHeaders, &$responseHeadersValid): int {
+                $length = strlen($line);
+                $separator = strpos($line, ':');
+                if ($separator === false) {
+                    return $length;
+                }
+                $name = strtolower(trim(substr($line, 0, $separator)));
+                if (!in_array($name, [
+                    'x-cabohealth-key-id',
+                    'x-cabohealth-request-id',
+                    'x-cabohealth-response-signature',
+                ], true)) {
+                    return $length;
+                }
+                $value = trim(substr($line, $separator + 1));
+                if (
+                    array_key_exists($name, $responseHeaders)
+                    || $value === ''
+                    || preg_match('/[[:cntrl:]]/u', $value) === 1
+                ) {
+                    $responseHeadersValid = false;
+                    return 0;
+                }
+                $responseHeaders[$name] = $value;
+                return $length;
+            },
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_MAXREDIRS => 0,
             CURLOPT_POST => true,
@@ -93,10 +123,10 @@ final class CurlClientResourcesHttpTransport implements ClientResourcesHttpTrans
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         $contentType = (string) (curl_getinfo($handle, CURLINFO_CONTENT_TYPE) ?: '');
         curl_close($handle);
-        if ($succeeded !== true || $status < 100) {
+        if ($succeeded !== true || $status < 100 || !$responseHeadersValid) {
             throw new ClientResourcesUnavailable('Secure HTTP request failed.');
         }
-        return new ClientResourcesTransportResponse($status, $contentType, $responseBody);
+        return new ClientResourcesTransportResponse($status, $contentType, $responseBody, $responseHeaders);
     }
 }
 
@@ -121,6 +151,7 @@ function client_resources_random_request_id(): string
 final class SignedFunctionsClientResourcesBackend implements ClientResourcesBackend
 {
     private const SIGNATURE_VERSION = 'cabohealth-broker-v1';
+    private const RESPONSE_SIGNATURE_VERSION = 'cabohealth-broker-response-v1';
     private const ALLOWED_PATHS = [
         '/v1/launch/redeem',
         '/v1/sessions/introspect',
@@ -346,6 +377,39 @@ final class SignedFunctionsClientResourcesBackend implements ClientResourcesBack
         }
         if ($response->status !== 200 || preg_match('/\Aapplication\/json(?:\s*;\s*charset=utf-8)?\z/ui', trim($response->contentType)) !== 1) {
             throw new ClientResourcesUnavailable('Broker response was not accepted.');
+        }
+        if (!$this->hasExactKeys($response->headers, [
+            'x-cabohealth-key-id',
+            'x-cabohealth-request-id',
+            'x-cabohealth-response-signature',
+        ])) {
+            throw new ClientResourcesUnavailable('Broker response authentication is missing.');
+        }
+        $responseKeyId = $response->headers['x-cabohealth-key-id'] ?? '';
+        $responseRequestId = $response->headers['x-cabohealth-request-id'] ?? '';
+        $responseSignature = $response->headers['x-cabohealth-response-signature'] ?? '';
+        if (
+            $responseKeyId !== $this->keyId
+            || $responseRequestId !== $requestId
+            || preg_match('/\A[A-Za-z0-9_-]{43}\z/u', $responseSignature) !== 1
+        ) {
+            throw new ClientResourcesUnavailable('Broker response authentication is invalid.');
+        }
+        $responseBodyDigest = client_resources_base64url(hash('sha256', $response->body, true));
+        $responseCanonical = self::RESPONSE_SIGNATURE_VERSION . "\n"
+            . "200\n"
+            . $path . "\n"
+            . $requestId . "\n"
+            . $this->keyId . "\n"
+            . $responseBodyDigest;
+        $expectedResponseSignature = client_resources_base64url(hash_hmac(
+            'sha256',
+            $responseCanonical,
+            $this->signingKey,
+            true,
+        ));
+        if (!hash_equals($expectedResponseSignature, $responseSignature)) {
+            throw new ClientResourcesUnavailable('Broker response authentication is invalid.');
         }
         try {
             $decoded = json_decode($response->body, true, 16, JSON_THROW_ON_ERROR);

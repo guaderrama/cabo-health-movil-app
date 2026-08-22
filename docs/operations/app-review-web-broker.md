@@ -49,6 +49,23 @@ The raw JSON body is signed with `X-CaboHealth-Key-Id`,
 cabohealth-app-review-broker-v1
 ```
 
+An HTTP 200 response is accepted only when Functions returns the same key ID
+and request ID plus `X-CaboHealth-Response-Signature`. The response HMAC covers
+these exact canonical bytes:
+
+```text
+cabohealth-app-review-broker-response-v1
+200
+<exact path>
+<requestId>
+<keyId>
+<base64url SHA-256 of the exact raw response body>
+```
+
+The response domain is different from production. Missing, duplicated,
+malformed, cross-realm, or body-mismatched response authentication fails
+closed before JSON parsing.
+
 The review signing key, cookie, session, CSRF token, base URL, environment
 variables, and private config are all distinct from production. Generate a new
 review key ring and never reuse production or staging key material. Canonical
@@ -77,7 +94,8 @@ Do not publish or enable the paths until every step is green:
    wrong cookie, wrong entitlement, wrong origin, wrong CSRF, live rotation,
    session expiry, cookie path, private-file denial, and sanitized errors.
 7. With independently generated test keys, prove a production broker signature
-   fails at the review broker and a review signature fails at production.
+   fails at the review broker and a review signature fails at production. Prove
+   the same cross-realm rejection for successful response signatures.
 8. Exercise the fixed sample on two clean physical iPhones, rotate while both a
    native and web session are active, and prove immediate denial before any
    reviewer credential is placed in App Store Connect.

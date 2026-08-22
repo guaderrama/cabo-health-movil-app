@@ -141,6 +141,25 @@ function findHeader(array $headers, string $name): string
     return '';
 }
 
+function signedClientResourcesTransportResponse(
+    string $path,
+    string $body,
+    string $keyId,
+    string $key,
+    string $requestId,
+    string $contentType = 'application/json',
+): ClientResourcesTransportResponse {
+    $bodyDigest = client_resources_base64url(hash('sha256', $body, true));
+    $canonical = "cabohealth-broker-response-v1\n200\n"
+        . $path . "\n" . $requestId . "\n" . $keyId . "\n" . $bodyDigest;
+    $signature = client_resources_base64url(hash_hmac('sha256', $canonical, $key, true));
+    return new ClientResourcesTransportResponse(200, $contentType, $body, [
+        'x-cabohealth-key-id' => $keyId,
+        'x-cabohealth-request-id' => $requestId,
+        'x-cabohealth-response-signature' => $signature,
+    ]);
+}
+
 $backend = new FakeClientResourcesBackend();
 $store = new FakeClientResourcesContentStore();
 $clock = static fn (): int => TEST_NOW;
@@ -354,17 +373,23 @@ $brokerKey = 'test-only-broker-key-with-at-least-32-bytes';
 $brokerRequestId = '123e4567-e89b-42d3-a456-426614174000';
 $adapterNonce = str_repeat('n', 32);
 $adapterTransport = new QueueClientResourcesTransport([
-    new ClientResourcesTransportResponse(200, 'application/json; charset=utf-8', json_encode([
+    signedClientResourcesTransportResponse('/v1/launch/redeem', json_encode([
         'sessionId' => TEST_SESSION,
         'expiresAtMs' => (TEST_NOW + 1800) * 1000,
-    ], JSON_THROW_ON_ERROR)),
-    new ClientResourcesTransportResponse(200, 'application/json', json_encode([
+    ], JSON_THROW_ON_ERROR), $brokerKeyId, $brokerKey, $brokerRequestId, 'application/json; charset=utf-8'),
+    signedClientResourcesTransportResponse('/v1/sessions/introspect', json_encode([
         'active' => true,
         'expiresAtMs' => (TEST_NOW + 1800) * 1000,
         'entitlements' => [CLIENT_RESOURCES_APP_ID],
         'csrfToken' => TEST_CSRF,
-    ], JSON_THROW_ON_ERROR)),
-    new ClientResourcesTransportResponse(200, 'application/json', '{"revoked":true}'),
+    ], JSON_THROW_ON_ERROR), $brokerKeyId, $brokerKey, $brokerRequestId),
+    signedClientResourcesTransportResponse(
+        '/v1/sessions/revoke',
+        '{"revoked":true}',
+        $brokerKeyId,
+        $brokerKey,
+        $brokerRequestId,
+    ),
 ]);
 $adapter = new SignedFunctionsClientResourcesBackend(
     $brokerBaseUrl,
@@ -456,7 +481,13 @@ $schemaDriftAdapter = new SignedFunctionsClientResourcesBackend(
     $brokerKeyId,
     $brokerKey,
     new QueueClientResourcesTransport([
-        new ClientResourcesTransportResponse(200, 'application/json', '{"sessionId":"' . TEST_SESSION . '","expiresAtMs":2000001800000,"extra":true}'),
+        signedClientResourcesTransportResponse(
+            '/v1/launch/redeem',
+            '{"sessionId":"' . TEST_SESSION . '","expiresAtMs":2000001800000,"extra":true}',
+            $brokerKeyId,
+            $brokerKey,
+            $brokerRequestId,
+        ),
     ]),
     static fn (): int => TEST_NOW,
     static fn (): string => $brokerRequestId,
@@ -465,6 +496,23 @@ expectThrows(
     static fn () => $schemaDriftAdapter->redeemLaunchNonce($adapterNonce),
     ClientResourcesUnavailable::class,
     'Unexpected backend fields must fail closed',
+);
+
+$unsignedAdapter = new SignedFunctionsClientResourcesBackend(
+    $brokerBaseUrl,
+    $brokerHost,
+    $brokerKeyId,
+    $brokerKey,
+    new QueueClientResourcesTransport([
+        new ClientResourcesTransportResponse(200, 'application/json', '{"sessionId":"' . TEST_SESSION . '","expiresAtMs":2000001800000}'),
+    ]),
+    static fn (): int => TEST_NOW,
+    static fn (): string => $brokerRequestId,
+);
+expectThrows(
+    static fn () => $unsignedAdapter->redeemLaunchNonce($adapterNonce),
+    ClientResourcesUnavailable::class,
+    'An unsigned successful broker response must never be accepted',
 );
 
 echo "client resource broker: ok\n";

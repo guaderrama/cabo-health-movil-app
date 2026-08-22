@@ -110,6 +110,26 @@ function review_find_header(array $headers, string $name): string
     return '';
 }
 
+function signedAppReviewTransportResponse(
+    string $path,
+    string $body,
+    string $keyId,
+    string $key,
+    string $requestId,
+    string $contentType = 'application/json',
+    string $domain = 'cabohealth-app-review-broker-response-v1',
+): AppReviewTransportResponse {
+    $bodyDigest = app_review_base64url(hash('sha256', $body, true));
+    $canonical = $domain . "\n200\n"
+        . $path . "\n" . $requestId . "\n" . $keyId . "\n" . $bodyDigest;
+    $signature = app_review_base64url(hash_hmac('sha256', $canonical, $key, true));
+    return new AppReviewTransportResponse(200, $contentType, $body, [
+        'x-cabohealth-key-id' => $keyId,
+        'x-cabohealth-request-id' => $requestId,
+        'x-cabohealth-response-signature' => $signature,
+    ]);
+}
+
 $projectRoot = dirname(__DIR__, 3);
 $documentRoot = $projectRoot . '/web-hosting/cabohealth.org';
 $privateContentRoot = $projectRoot . '/app-review-private/content';
@@ -237,17 +257,23 @@ $brokerKeyId = 'review-2026-08';
 $brokerKey = 'test-only-review-key-with-at-least-32-bytes';
 $brokerRequestId = '123e4567-e89b-42d3-a456-426614174000';
 $transport = new QueueAppReviewTransport([
-    new AppReviewTransportResponse(200, 'application/json', json_encode([
+    signedAppReviewTransportResponse('/v1/launch/redeem', json_encode([
         'sessionId' => REVIEW_TEST_SESSION,
         'expiresAtMs' => (REVIEW_TEST_NOW + 1800) * 1000,
-    ], JSON_THROW_ON_ERROR)),
-    new AppReviewTransportResponse(200, 'application/json; charset=utf-8', json_encode([
+    ], JSON_THROW_ON_ERROR), $brokerKeyId, $brokerKey, $brokerRequestId),
+    signedAppReviewTransportResponse('/v1/sessions/introspect', json_encode([
         'active' => true,
         'expiresAtMs' => (REVIEW_TEST_NOW + 1800) * 1000,
         'entitlements' => [APP_REVIEW_SAMPLE_ID],
         'csrfToken' => REVIEW_TEST_CSRF,
-    ], JSON_THROW_ON_ERROR)),
-    new AppReviewTransportResponse(200, 'application/json', '{"revoked":true}'),
+    ], JSON_THROW_ON_ERROR), $brokerKeyId, $brokerKey, $brokerRequestId, 'application/json; charset=utf-8'),
+    signedAppReviewTransportResponse(
+        '/v1/sessions/revoke',
+        '{"revoked":true}',
+        $brokerKeyId,
+        $brokerKey,
+        $brokerRequestId,
+    ),
 ]);
 $adapter = new SignedFunctionsAppReviewBackend(
     $brokerBaseUrl,
@@ -305,6 +331,33 @@ review_expect_throws(
     ),
     AppReviewUnavailable::class,
     'Review adapter must reject the production broker path',
+);
+
+$productionSignedResponse = signedAppReviewTransportResponse(
+    '/v1/launch/redeem',
+    json_encode([
+        'sessionId' => REVIEW_TEST_SESSION,
+        'expiresAtMs' => (REVIEW_TEST_NOW + 1800) * 1000,
+    ], JSON_THROW_ON_ERROR),
+    $brokerKeyId,
+    $brokerKey,
+    $brokerRequestId,
+    'application/json',
+    'cabohealth-broker-response-v1',
+);
+$crossRealmResponseAdapter = new SignedFunctionsAppReviewBackend(
+    $brokerBaseUrl,
+    $brokerHost,
+    $brokerKeyId,
+    $brokerKey,
+    new QueueAppReviewTransport([$productionSignedResponse]),
+    static fn (): int => REVIEW_TEST_NOW,
+    static fn (): string => $brokerRequestId,
+);
+review_expect_throws(
+    static fn () => $crossRealmResponseAdapter->redeemLaunchNonce(REVIEW_TEST_NONCE),
+    AppReviewUnavailable::class,
+    'A production-realm response signature must fail at the App Review adapter',
 );
 
 echo "app review broker: ok\n";

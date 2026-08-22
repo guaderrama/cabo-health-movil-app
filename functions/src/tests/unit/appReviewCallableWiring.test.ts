@@ -50,6 +50,22 @@ test('App Review uses a mandatory named database, separate secrets, store, broke
   assert.match(source, /appReviewBrokerApi[\s\S]{0,2200}?\}, createAppReviewWebSessionBroker\(\)\)/u);
 });
 
+test('both broker HTTP surfaces authenticate the exact successful response body', async () => {
+  const source = await readFile('src/index.ts', 'utf8');
+  for (const [callable, signer] of [
+    ['brokerApi', 'signBrokerResponse'],
+    ['appReviewBrokerApi', 'signAppReviewBrokerResponse'],
+  ]) {
+    const block = callableBlock(source, callable);
+    assert.match(block, new RegExp(`${signer}\\(`, 'u'));
+    assert.match(block, /X-CaboHealth-Response-Signature/u);
+    assert.match(block, /X-CaboHealth-Request-Id/u);
+    assert.match(block, /X-CaboHealth-Key-Id/u);
+    assert.match(block, /response\.status\(200\)\.type\('application\/json'\)\.send\(responseBody\)/u);
+    assert.doesNotMatch(block, /response\.status\(200\)\.json\(/u);
+  }
+});
+
 function callableBlock(source: string, name: string): string {
   const start = source.indexOf(`export const ${name} =`);
   assert.notEqual(start, -1, `${name} must exist`);

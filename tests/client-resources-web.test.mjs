@@ -178,6 +178,7 @@ test('the broker surface is POST-only and uses a valid path-scoped secure cookie
   assert.match(launch, /client_resources_launch_response/u);
   assert.match(runtime, /final class SignedFunctionsClientResourcesBackend/u);
   assert.match(runtime, /SIGNATURE_VERSION = 'cabohealth-broker-v1'/u);
+  assert.match(runtime, /RESPONSE_SIGNATURE_VERSION = 'cabohealth-broker-response-v1'/u);
   assert.match(runtime, /self::SIGNATURE_VERSION \. "\\n"/u);
   for (const header of [
     'X-CaboHealth-Key-Id',
@@ -185,6 +186,8 @@ test('the broker surface is POST-only and uses a valid path-scoped secure cookie
     'X-CaboHealth-Request-Id',
     'X-CaboHealth-Signature',
   ]) assert.match(runtime, new RegExp(header, 'u'));
+  assert.match(runtime, /x-cabohealth-response-signature/u);
+  assert.match(runtime, /hash_equals\(\$expectedResponseSignature, \$responseSignature\)/u);
   assert.match(runtime, /CURLOPT_FOLLOWLOCATION\s*=>\s*false/u);
   assert.doesNotMatch(runtime, /error_log\s*\(|trigger_error\s*\(/u);
   const apache = readFileSync('web-hosting/cabohealth.org/apps/client-resources/.htaccess', 'utf8');

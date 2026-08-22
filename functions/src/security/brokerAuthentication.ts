@@ -28,6 +28,14 @@ export interface BrokerAuthenticationInput {
   readonly timestamp: string;
 }
 
+export interface BrokerResponseSigningInput {
+  readonly body: Buffer;
+  readonly keyId: string;
+  readonly path: string;
+  readonly requestId: string;
+  readonly status: number;
+}
+
 /**
  * Authenticates a server-to-server request without retaining caller-provided
  * identifiers. Every failure is intentionally indistinguishable to callers.
@@ -54,6 +62,51 @@ export function authenticateAppReviewBrokerRequest(
     'cabohealth-app-review-broker-v1',
     'cabohealth/app-review-broker-request-id/v1\0',
   );
+}
+
+export function signBrokerResponse(
+  input: Readonly<BrokerResponseSigningInput>,
+  keyRing: PepperRing,
+): string {
+  return signResponseRealm(input, keyRing, 'cabohealth-broker-response-v1');
+}
+
+export function signAppReviewBrokerResponse(
+  input: Readonly<BrokerResponseSigningInput>,
+  keyRing: PepperRing,
+): string {
+  return signResponseRealm(input, keyRing, 'cabohealth-app-review-broker-response-v1');
+}
+
+function signResponseRealm(
+  input: Readonly<BrokerResponseSigningInput>,
+  keyRing: PepperRing,
+  signatureDomain: string,
+): string {
+  try {
+    if (
+      !Buffer.isBuffer(input.body)
+      || input.body.length > 16_384
+      || input.status !== 200
+      || !ALLOWED_PATHS.has(input.path)
+      || !REQUEST_ID_PATTERN.test(input.requestId)
+      || !keyRing.acceptedVersions().includes(input.keyId)
+    ) failResponseSigning();
+    const bodyHash = createHash('sha256').update(input.body).digest('base64url');
+    const canonical = [
+      signatureDomain,
+      String(input.status),
+      input.path,
+      input.requestId,
+      input.keyId,
+      bodyHash,
+    ].join('\n');
+    return createHmac('sha256', keyRing.keyFor(input.keyId))
+      .update(canonical, 'utf8')
+      .digest('base64url');
+  } catch {
+    failResponseSigning();
+  }
 }
 
 function authenticateRealm(
@@ -112,4 +165,8 @@ function authenticateRealm(
 
 function fail(): never {
   throw new Error('broker_authentication_failed');
+}
+
+function failResponseSigning(): never {
+  throw new Error('broker_response_signing_failed');
 }

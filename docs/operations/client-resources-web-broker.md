@@ -57,6 +57,25 @@ POST
 <base64url SHA-256 of the exact raw body>
 ```
 
+Every HTTP 200 response is authenticated before PHP parses or accepts its
+JSON. Functions sends the exact request key ID and request ID back in
+`X-CaboHealth-Key-Id` and `X-CaboHealth-Request-Id`, plus a base64url
+HMAC-SHA256 in `X-CaboHealth-Response-Signature`. The response canonical bytes
+are:
+
+```text
+cabohealth-broker-response-v1
+200
+<exact path>
+<requestId>
+<keyId>
+<base64url SHA-256 of the exact raw response body>
+```
+
+A missing, duplicated, malformed, wrong-realm, or body-mismatched response
+signature fails closed. Denial responses grant no authority and are never
+parsed as successful data.
+
 The PHP adapter accepts only an exact JSON success schema. Generic 401/403/404
 responses become access denial; redirects, schema drift, wrong content type,
 transport errors, and all other statuses fail closed. The adapter contains no
@@ -82,6 +101,8 @@ Do not activate the public endpoints until all steps below pass:
    directory. Never point this variable at `public_html` or a request value.
 6. Confirm PHP 8.2 and the cURL extension, then run
    `tools/hosting/tests/client-resource-broker.php` in a private staging copy.
+   The committed suite must prove that unsigned/tampered HTTP 200 responses
+   are rejected before their JSON schema is consumed.
 7. Against staging, verify valid launch, 60-second expiry, replay, GET/query
    rejection, wrong origin/CSRF, live revocation, session expiry, cookie path,
    clean 303 URL, bilingual content, and that direct private-file HTTPS access

@@ -89,11 +89,13 @@ test('one immutable artifact contains the exact public inventories for both isol
   assert.deepEqual(production.brokerIdentity, {
     functionName: 'brokerApi',
     signatureDomain: 'cabohealth-broker-v1',
+    responseSignatureDomain: 'cabohealth-broker-response-v1',
     cookieName: '__Secure-cabohealth_client',
   });
   assert.deepEqual(review.brokerIdentity, {
     functionName: 'appReviewBrokerApi',
     signatureDomain: 'cabohealth-app-review-broker-v1',
+    responseSignatureDomain: 'cabohealth-app-review-broker-response-v1',
     cookieName: '__Secure-cabohealth_app_review',
   });
   assert.notDeepEqual(production.brokerIdentity, review.brokerIdentity);

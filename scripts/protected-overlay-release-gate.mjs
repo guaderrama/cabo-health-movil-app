@@ -42,6 +42,7 @@ const REALM_DEFINITIONS = Object.freeze([
     brokerIdentity: Object.freeze({
       functionName: 'brokerApi',
       signatureDomain: 'cabohealth-broker-v1',
+      responseSignatureDomain: 'cabohealth-broker-response-v1',
       cookieName: '__Secure-cabohealth_client',
     }),
     headersSha256: '585014c18de9768b5aeb969834730be17e7c04491c97cb485496a8219a4efc73',
@@ -71,6 +72,7 @@ const REALM_DEFINITIONS = Object.freeze([
     brokerIdentity: Object.freeze({
       functionName: 'appReviewBrokerApi',
       signatureDomain: 'cabohealth-app-review-broker-v1',
+      responseSignatureDomain: 'cabohealth-app-review-broker-response-v1',
       cookieName: '__Secure-cabohealth_app_review',
     }),
     headersSha256: '4fb0587ae55d3b6a322663dae10b8710fa1e67f5fa6e4826e8b7a48be05b83ab',
@@ -1101,11 +1103,19 @@ function assertRealmSecurityBoundary(definition, files) {
     throw new Error('protected_overlay_headers_invalid');
   }
   const source = Buffer.from(runtime.bytesBase64, 'base64').toString('utf8');
-  const { cookieName, functionName, signatureDomain } = definition.brokerIdentity;
+  const {
+    cookieName,
+    functionName,
+    responseSignatureDomain,
+    signatureDomain,
+  } = definition.brokerIdentity;
   if (
     !source.includes(`'${cookieName}'`)
     || !source.includes(`'${signatureDomain}'`)
+    || !source.includes(`'${responseSignatureDomain}'`)
     || !source.includes(`'/${functionName}'`)
+    || !source.includes('x-cabohealth-response-signature')
+    || !source.includes('hash_equals($expectedResponseSignature, $responseSignature)')
   ) {
     throw new Error('protected_overlay_broker_identity_invalid');
   }
@@ -1113,6 +1123,7 @@ function assertRealmSecurityBoundary(definition, files) {
   if (
     source.includes(`'${otherDefinition.brokerIdentity.cookieName}'`)
     || source.includes(`'${otherDefinition.brokerIdentity.signatureDomain}'`)
+    || source.includes(`'${otherDefinition.brokerIdentity.responseSignatureDomain}'`)
     || source.includes(`'/${otherDefinition.brokerIdentity.functionName}'`)
   ) {
     throw new Error('protected_overlay_broker_identity_invalid');

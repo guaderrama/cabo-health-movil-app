@@ -38,6 +38,7 @@ test('Hostinger signs App Review broker calls in a separate realm', () => {
 
   assert.match(runtime, /final class SignedFunctionsAppReviewBackend/u);
   assert.match(runtime, /SIGNATURE_VERSION\s*=\s*'cabohealth-app-review-broker-v1'/u);
+  assert.match(runtime, /RESPONSE_SIGNATURE_VERSION\s*=\s*'cabohealth-app-review-broker-response-v1'/u);
   assert.match(runtime, /path\s*!==\s*'\/appReviewBrokerApi'/u);
   for (const header of [
     'X-CaboHealth-Key-Id',
@@ -45,6 +46,8 @@ test('Hostinger signs App Review broker calls in a separate realm', () => {
     'X-CaboHealth-Request-Id',
     'X-CaboHealth-Signature',
   ]) assert.match(runtime, new RegExp(header, 'u'));
+  assert.match(runtime, /x-cabohealth-response-signature/u);
+  assert.match(runtime, /hash_equals\(\$expectedResponseSignature, \$responseSignature\)/u);
 
   assert.match(factory, /CABOHEALTH_APP_REVIEW_SIGNING_CONFIG/u);
   assert.match(runtime, /Private App Review backend factory must use mode 0600/u);
@@ -145,6 +148,7 @@ test('the PHP harness covers review-session lifecycle and cross-realm denial', (
   assert.match(harness, /Launch must render the fixed sample without navigating away/u);
   assert.match(harness, /Review adapter must reject the production broker path/u);
   assert.match(harness, /Production and review signatures must remain cross-realm incompatible/u);
+  assert.match(harness, /production-realm response signature must fail/iu);
 });
 
 test('App Review web activation is fail-closed and separate from the public release', () => {

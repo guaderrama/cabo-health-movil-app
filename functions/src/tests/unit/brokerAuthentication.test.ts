@@ -5,6 +5,8 @@ import { test } from 'node:test';
 import {
   authenticateAppReviewBrokerRequest,
   authenticateBrokerRequest,
+  signAppReviewBrokerResponse,
+  signBrokerResponse,
 } from '../../security/brokerAuthentication.js';
 import { parsePepperRingSecret } from '../../security/versionedHmac.js';
 
@@ -135,6 +137,39 @@ test('production and App Review broker signatures cannot cross realms even with 
     () => authenticateBrokerRequest(input(reviewSignature), ring),
     /broker_authentication_failed/u,
   );
+});
+
+test('broker response signatures authenticate exact response bytes and remain realm isolated', () => {
+  const ring = parsePepperRingSecret(JSON.stringify({
+    currentVersion: keyId,
+    keys: { [keyId]: key.toString('base64') },
+  }));
+  const responseBody = Buffer.from('{"expiresAtMs":123,"sessionId":"opaque"}', 'utf8');
+  const production = signBrokerResponse({
+    body: responseBody,
+    keyId,
+    path,
+    requestId,
+    status: 200,
+  }, ring);
+  const review = signAppReviewBrokerResponse({
+    body: responseBody,
+    keyId,
+    path,
+    requestId,
+    status: 200,
+  }, ring);
+
+  assert.match(production, /^[A-Za-z0-9_-]{43}$/u);
+  assert.match(review, /^[A-Za-z0-9_-]{43}$/u);
+  assert.notEqual(production, review);
+  assert.notEqual(production, signBrokerResponse({
+    body: Buffer.from('{"expiresAtMs":124,"sessionId":"opaque"}', 'utf8'),
+    keyId,
+    path,
+    requestId,
+    status: 200,
+  }, ring));
 });
 
 function sign(

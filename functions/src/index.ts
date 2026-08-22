@@ -64,6 +64,8 @@ import {
 import {
   authenticateAppReviewBrokerRequest,
   authenticateBrokerRequest,
+  signAppReviewBrokerResponse,
+  signBrokerResponse,
 } from './security/brokerAuthentication.js';
 import { authorizeAppCheckSurface } from './security/appCheckAuthorization.js';
 
@@ -546,22 +548,35 @@ export const brokerApi = onRequest({
     if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/iu.test(contentType)) {
       throw new Error('broker_authentication_failed');
     }
+    const keyId = requiredHeader(request.get('x-cabohealth-key-id'));
+    const requestId = requiredHeader(request.get('x-cabohealth-request-id'));
+    const keyRing = parsePepperRingSecret(BROKER_HMAC_KEY_RING.value());
     const authenticated = authenticateBrokerRequest({
       body: rawBody,
-      keyId: requiredHeader(request.get('x-cabohealth-key-id')),
+      keyId,
       method: request.method,
       nowMs: Date.now(),
       path: request.path,
-      requestId: requiredHeader(request.get('x-cabohealth-request-id')),
+      requestId,
       signature: requiredHeader(request.get('x-cabohealth-signature')),
       timestamp: requiredHeader(request.get('x-cabohealth-timestamp')),
-    }, parsePepperRingSecret(BROKER_HMAC_KEY_RING.value()));
+    }, keyRing);
     const result = await dispatchBrokerCommand({
       path: request.path,
       rawBody,
       requestHash: authenticated.requestHash,
     }, createWebSessionBroker());
-    response.status(200).json(result);
+    const responseBody = Buffer.from(JSON.stringify(result), 'utf8');
+    response.set('X-CaboHealth-Key-Id', keyId);
+    response.set('X-CaboHealth-Request-Id', requestId);
+    response.set('X-CaboHealth-Response-Signature', signBrokerResponse({
+      body: responseBody,
+      keyId,
+      path: request.path,
+      requestId,
+      status: 200,
+    }, keyRing));
+    response.status(200).type('application/json').send(responseBody);
   } catch {
     response.status(403).json(Object.freeze({ error: 'invalid_access' }));
   }
@@ -589,22 +604,35 @@ export const appReviewBrokerApi = onRequest({
     if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/iu.test(contentType)) {
       throw new Error('broker_authentication_failed');
     }
+    const keyId = requiredHeader(request.get('x-cabohealth-key-id'));
+    const requestId = requiredHeader(request.get('x-cabohealth-request-id'));
+    const keyRing = parsePepperRingSecret(APP_REVIEW_BROKER_HMAC_KEY_RING.value());
     const authenticated = authenticateAppReviewBrokerRequest({
       body: rawBody,
-      keyId: requiredHeader(request.get('x-cabohealth-key-id')),
+      keyId,
       method: request.method,
       nowMs: Date.now(),
       path: request.path,
-      requestId: requiredHeader(request.get('x-cabohealth-request-id')),
+      requestId,
       signature: requiredHeader(request.get('x-cabohealth-signature')),
       timestamp: requiredHeader(request.get('x-cabohealth-timestamp')),
-    }, parsePepperRingSecret(APP_REVIEW_BROKER_HMAC_KEY_RING.value()));
+    }, keyRing);
     const result = await dispatchBrokerCommand({
       path: request.path,
       rawBody,
       requestHash: authenticated.requestHash,
     }, createAppReviewWebSessionBroker());
-    response.status(200).json(result);
+    const responseBody = Buffer.from(JSON.stringify(result), 'utf8');
+    response.set('X-CaboHealth-Key-Id', keyId);
+    response.set('X-CaboHealth-Request-Id', requestId);
+    response.set('X-CaboHealth-Response-Signature', signAppReviewBrokerResponse({
+      body: responseBody,
+      keyId,
+      path: request.path,
+      requestId,
+      status: 200,
+    }, keyRing));
+    response.status(200).type('application/json').send(responseBody);
   } catch {
     response.status(403).json(Object.freeze({ error: 'invalid_access' }));
   }
