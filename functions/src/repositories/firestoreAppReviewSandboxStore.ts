@@ -11,6 +11,7 @@ import {
   type AppReviewRotateCommand,
   type AppReviewSandboxStore,
 } from '../domain/appReviewAccess.js';
+import type { AppReviewAccountDeletionStore } from '../domain/appReviewAccountDeletion.js';
 import type { AppReviewDataRetentionStore } from '../domain/appReviewDataRetention.js';
 import type { WebSessionStore } from '../domain/webSessionBroker.js';
 import type { HmacDigest } from '../security/versionedHmac.js';
@@ -96,7 +97,11 @@ interface StoredReviewWebSession {
   readonly updatedAtMs: number;
 }
 
-export class FirestoreAppReviewSandboxStore implements AppReviewSandboxStore, AppReviewDataRetentionStore, WebSessionStore {
+export class FirestoreAppReviewSandboxStore implements
+  AppReviewSandboxStore,
+  AppReviewAccountDeletionStore,
+  AppReviewDataRetentionStore,
+  WebSessionStore {
   readonly #database: DocumentDatabase;
 
   constructor(database: DocumentDatabase) {
@@ -556,6 +561,66 @@ export class FirestoreAppReviewSandboxStore implements AppReviewSandboxStore, Ap
         updatedAtMs: command.nowMs,
       } satisfies StoredReviewDataDeletion));
       return 'queued';
+    });
+  }
+
+  beginRequestedAppReviewDataDeletion(command: Readonly<{
+    installationLookups: readonly Readonly<HmacDigest>[];
+    nowMs: number;
+    subjectUid: string;
+  }>): Promise<'accepted' | 'invalid'> {
+    if (
+      !isNonnegativeSafeInteger(command.nowMs)
+      || !/^review_[A-Za-z0-9_-]{32}$/u.test(command.subjectUid)
+      || command.installationLookups.length < 1
+    ) return Promise.resolve('invalid');
+    const acceptedInstallations = new Set(
+      command.installationLookups.map(({ lookupId }) => lookupId),
+    );
+    return this.#database.runTransaction(async (transaction) => {
+      const grantPath = `${GRANT_PREFIX}/${command.subjectUid}`;
+      const deletionPath = `${DATA_DELETION_PREFIX}/${command.subjectUid}`;
+      const [grantValue, deletionValue] = await Promise.all([
+        transaction.get(grantPath),
+        transaction.get(deletionPath),
+      ]);
+      const grant = parseGrant(grantValue);
+      const deletion = parseReviewDataDeletion(deletionValue);
+      if (deletionValue !== undefined && !deletion) {
+        throw new Error('invalid_app_review_retention_state');
+      }
+      if (
+        !grant
+        || grant.subjectUid !== command.subjectUid
+        || !acceptedInstallations.has(grant.installationLookupId)
+      ) return 'invalid';
+      if (deletion) {
+        if (
+          deletion.subjectUid !== grant.subjectUid
+          || deletion.credentialGeneration !== grant.credentialGeneration
+          || deletion.installationLookupId !== grant.installationLookupId
+        ) throw new Error('invalid_app_review_retention_state');
+        return 'accepted';
+      }
+      transaction.set(grantPath, Object.freeze({
+        ...grant,
+        status: 'removed',
+        updatedAtMs: command.nowMs,
+      }));
+      transaction.create(deletionPath, Object.freeze({
+        attempts: 0,
+        cleanupCompletedAtMs: null,
+        credentialGeneration: grant.credentialGeneration,
+        createdAtMs: command.nowMs,
+        installationLookupId: grant.installationLookupId,
+        lastAttemptAtMs: null,
+        rateLimitLookupIds: grant.rateLimitLookupIds,
+        schemaVersion: 1,
+        status: 'pending',
+        subjectUid: command.subjectUid,
+        updatedAtMs: command.nowMs,
+      } satisfies StoredReviewDataDeletion));
+      return 'accepted';
     });
   }
 

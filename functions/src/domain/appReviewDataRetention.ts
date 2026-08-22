@@ -97,7 +97,7 @@ export class AppReviewDataRetentionService {
     let pending = 0;
     for (const subjectUid of jobs.subjectUids) {
       try {
-        const result = await this.#processPending(subjectUid);
+        const result = await this.processPending(subjectUid);
         if (result === 'completed') completed += 1;
         else pending += 1;
       } catch {
@@ -122,7 +122,7 @@ export class AppReviewDataRetentionService {
     return summary;
   }
 
-  async #processPending(subjectUid: string): Promise<'completed' | 'pending'> {
+  async processPending(subjectUid: string): Promise<'completed' | 'pending'> {
     if (!REVIEW_SUBJECT_PATTERN.test(subjectUid)) return 'pending';
     const nowMs = this.#nowMs();
     const purge = await this.#store.purgeAppReviewDataArtifacts(subjectUid, nowMs);

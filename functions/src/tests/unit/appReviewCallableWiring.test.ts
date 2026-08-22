@@ -20,6 +20,10 @@ test('App Review callables have exact realm-specific auth and fixed contracts', 
   }
   const launchBlock = callableBlock(source, 'createAppReviewLaunch');
   assert.doesNotMatch(launchBlock, /resourceId/u);
+  const deletionBlock = callableBlock(source, 'deleteAppReviewAccount');
+  assert.match(deletionBlock, /assertClientAppCheck\(request\)/u);
+  assert.match(deletionBlock, /assertAppReviewDeletionAuth\(request\)/u);
+  assert.match(deletionBlock, /installationId: parseInstallationId\(request\.data\)/u);
   assert.match(source, /function assertAppReviewAuth[\s\S]{0,500}?authority !== 'app_review'/u);
   assert.match(source, /function assertClientAuth[\s\S]{0,300}?\^client_/u);
 });

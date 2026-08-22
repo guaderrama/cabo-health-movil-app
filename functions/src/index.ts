@@ -37,6 +37,7 @@ import {
   AppReviewLaunchService,
   AppReviewSessionManager,
 } from './domain/appReviewAccess.js';
+import { AppReviewAccountDeletionService } from './domain/appReviewAccountDeletion.js';
 import { AppReviewDataRetentionService } from './domain/appReviewDataRetention.js';
 import {
   CatalogDraftAdminService,
@@ -341,6 +342,22 @@ export const createAppReviewLaunch = onCall({
   }
 });
 
+export const deleteAppReviewAccount = onCall({
+  ...baseCallableOptions,
+  secrets: [APP_REVIEW_INSTALLATION_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  const subjectUid = assertAppReviewDeletionAuth(request);
+  try {
+    return await createAppReviewAccountDeletionService().request({
+      installationId: parseInstallationId(request.data),
+      subjectUid,
+    });
+  } catch (error) {
+    throw mapAppReviewAccountDeletionError(error);
+  }
+});
+
 export const redeemClientAccessCode = onCall({
   ...baseCallableOptions,
   secrets: [CODE_PEPPER_RING, INSTALLATION_PEPPER_RING, RATE_LIMIT_PEPPER_RING],
@@ -561,7 +578,9 @@ function createAppReviewStore(): FirestoreAppReviewSandboxStore {
   );
 }
 
-function createAppReviewDataRetentionService(): AppReviewDataRetentionService {
+function createAppReviewDataRetentionService(
+  store: FirestoreAppReviewSandboxStore = createAppReviewStore(),
+): AppReviewDataRetentionService {
   return new AppReviewDataRetentionService({
     authAccounts: {
       async deleteUser(subjectUid) {
@@ -573,7 +592,19 @@ function createAppReviewDataRetentionService(): AppReviewDataRetentionService {
         }
       },
     },
-    store: createAppReviewStore(),
+    store,
+  });
+}
+
+function createAppReviewAccountDeletionService(): AppReviewAccountDeletionService {
+  const store = createAppReviewStore();
+  return new AppReviewAccountDeletionService({
+    installationHasher: hasherFromSecret(
+      APP_REVIEW_INSTALLATION_PEPPER_RING,
+      'cabohealth/app-review/installation/v1',
+    ),
+    retention: createAppReviewDataRetentionService(store),
+    store,
   });
 }
 
@@ -789,6 +820,14 @@ function assertAppReviewAuth(request: CallableRequest<unknown>): string {
   return request.auth.uid;
 }
 
+function assertAppReviewDeletionAuth(request: CallableRequest<unknown>): string {
+  try {
+    return assertAppReviewAuth(request);
+  } catch {
+    throw new HttpsError('permission-denied', 'invalid_access');
+  }
+}
+
 function requireAppReviewDatabaseId(): string {
   const databaseId = APP_REVIEW_FIRESTORE_DATABASE_ID.value();
   if (!/^cabohealth-review-[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/u.test(databaseId)) {
@@ -979,6 +1018,13 @@ function mapAppReviewClientError(error: unknown): HttpsError {
         retryAfterSeconds: error.retryAfterSeconds,
       });
     }
+    return new HttpsError('permission-denied', 'invalid_access');
+  }
+  return new HttpsError('internal', 'app_review_operation_failed');
+}
+
+function mapAppReviewAccountDeletionError(error: unknown): HttpsError {
+  if (error instanceof AppReviewInputError || error instanceof HttpsError) {
     return new HttpsError('permission-denied', 'invalid_access');
   }
   return new HttpsError('internal', 'app_review_operation_failed');

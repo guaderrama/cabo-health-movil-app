@@ -12,11 +12,11 @@ test('App Review retention runs in its isolated named database every five minute
   assert.match(scheduled, /createAppReviewDataRetentionService\(\)\.runScheduled\(\)/u);
   assert.match(
     source,
-    /function createAppReviewDataRetentionService\(\)[\s\S]{0,900}?store: createAppReviewStore\(\)/u,
+    /function createAppReviewDataRetentionService\([\s\S]{0,200}?store: FirestoreAppReviewSandboxStore = createAppReviewStore\(\)[\s\S]{0,900}?store,/u,
   );
   assert.match(
     source,
-    /function createAppReviewDataRetentionService\(\)[\s\S]{0,900}?getAuth\(\)\.deleteUser\(subjectUid\)/u,
+    /function createAppReviewDataRetentionService\([\s\S]{0,900}?getAuth\(\)\.deleteUser\(subjectUid\)/u,
   );
   assert.match(
     source,
