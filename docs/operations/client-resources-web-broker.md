@@ -139,9 +139,14 @@ The release gate does not trust a typed `status: passed`. Before activation:
    two distinct Ed25519 SPKI public keys, and, for each realm, the exact
    `runtimeIdentity.documentRoot` returned by the serving web runtime and its
    exact `runtimeIdentity.phpSapi` (`fpm-fcgi` or `apache2handler`, never
-   `cli`). Include the pinned attestor
+   `cli`). Also pin `phpCliPath`, `phpCliSha256`, `phpCliSize`,
+   `phpCliMode: "0755"`, `phpCliOwnerUid`, and the exact numeric
+   `phpCliVersionId` for a real PHP 8.2+ CLI binary
+   outside the docroot. [Hostinger documents the versioned CLI pattern](https://www.hostinger.com/support/5792082-how-to-solve-common-composer-issues-at-hostinger/)
+   `/opt/alt/[php-version]/usr/bin/php`; discover and measure the actual binary
+   for this account rather than hard-coding that example. Include the pinned attestor
    `tools/hosting/protected-overlay-attestor.php` with SHA-256
-   `bfe8eb02df77d328b6698cd3eb9a14dee0653533c0b126b435870998b5adf8a9`.
+   `c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68`.
    Obtain its SHA-256 independently and have Ivan approve/record that pin in
    the secured release record **outside** the activation/evidence capsule.
 3. Run `protected-overlays:release create-activation` with the external
@@ -163,12 +168,20 @@ The release gate does not trust a typed `status: passed`. Before activation:
    an empty HTTPS `POST` and no query string, first for production and then for
    review, changing the server-side realm/output mapping between calls. The
    normal six factory/config/content environment variables and two key-path
-   variables must be inherited from that same effective web runtime.
+   variables must be inherited from that same effective web runtime. Set
+   `CABOHEALTH_PROTECTED_OVERLAY_PHP_CLI` there to the exact canonical
+   `phpCliPath`; it must not come from the HTTP request.
 6. The attestor obtains `PHP_SAPI` and `DOCUMENT_ROOT` from the executing web
    runtime, reads each configured path from real `getenv` values, opens every
    request/config/factory/key file before measuring it, compares descriptor
    identity and metadata before and after the bounded read, re-hashes private
-   content, and runs the pinned PHP 8.2 harness. Environment B for request A,
+   content, requires the pinned CLI's numeric `PHP_VERSION_ID` to equal the
+   independently approved `phpCliVersionId`, and runs
+   the harness through the still-open measured descriptor
+   (`/proc/self/fd/3`), so a path swap cannot select different bytes. It never invokes the FPM/CGI
+   `PHP_BINARY`. Both child processes receive only `LANG=C` and `LC_ALL=C`;
+   they never inherit attestation-key, broker-HMAC, path, or server variables
+   from the web process. Environment B for request A,
    `cli`, document-root drift, a decoy or swapped file, failed harness, wrong
    realm key, or missing Sodium/`proc_open` fails without an attestation. An
    SSH command such as `php ...` with manually exported values is only a

@@ -61,10 +61,10 @@ const REALM_DEFINITIONS = Object.freeze([
       configSchemaPath: 'client-resources-private/config/broker-config.schema.json',
       configSchemaSha256: 'dbb8fc7c0a4b440865de8cfd91e41d30493e2fd57e3b6fbdb5103b7c36bbb6d7',
       phpHarnessPath: 'tools/hosting/tests/client-resource-broker.php',
-      phpHarnessSha256: '2f400b61473bf634da2474f0332e56cc79ac6d853353873f08e7674a386a0f8d',
+      phpHarnessSha256: 'c8977a71d740ac7be0a745548e0a0c3fc3904028a19fe4b460bdb2755a67ca21',
       phpHarnessOutput: 'client resource broker: ok\n',
       attestorPath: 'tools/hosting/protected-overlay-attestor.php',
-      attestorSha256: 'bfe8eb02df77d328b6698cd3eb9a14dee0653533c0b126b435870998b5adf8a9',
+      attestorSha256: 'c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68',
       attestationKeyEnvironmentVariable: 'CABOHEALTH_CLIENT_RESOURCES_ATTESTATION_KEY',
       contentFiles: Object.freeze(['en.json', 'es-MX.json']),
       factoryClass: 'SignedFunctionsClientResourcesBackend',
@@ -96,10 +96,10 @@ const REALM_DEFINITIONS = Object.freeze([
       configSchemaPath: 'app-review-private/config/broker-config.schema.json',
       configSchemaSha256: '1e6f9cc3c57416df864161d13e4d3dcc1ea10fb1a5369e65a4f706f75a66c7b5',
       phpHarnessPath: 'tools/hosting/tests/app-review-broker.php',
-      phpHarnessSha256: '4b7bf67e1a97334995e3033e541f02c282197a17f581dcc2ea47c61b5c28b10a',
+      phpHarnessSha256: 'd30b39aa480a02897868ec33ca7f434adec8e833bce4e53e33c889095edf171b',
       phpHarnessOutput: 'app review broker: ok\n',
       attestorPath: 'tools/hosting/protected-overlay-attestor.php',
-      attestorSha256: 'bfe8eb02df77d328b6698cd3eb9a14dee0653533c0b126b435870998b5adf8a9',
+      attestorSha256: 'c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68',
       attestationKeyEnvironmentVariable: 'CABOHEALTH_APP_REVIEW_ATTESTATION_KEY',
       contentFiles: Object.freeze(['sample.json']),
       factoryClass: 'SignedFunctionsAppReviewBackend',
@@ -456,7 +456,8 @@ export function verifyProtectedOverlayDeploymentEvidence({
       || attestation.result.phpHarness.outputSha256 !== request.phpHarness.expectedOutputSha256
       || attestation.result.phpHarness.status !== 'passed'
       || !Number.isSafeInteger(attestation.result.phpHarness.phpVersionId)
-      || attestation.result.phpHarness.phpVersionId < request.phpHarness.minimumVersionId
+      || attestation.result.phpHarness.phpVersionId
+        !== request.runtimeIdentity.phpCliVersionId
       || typeof attestation.signatureBase64 !== 'string'
     ) throw new Error('protected_overlay_evidence_invalid');
     const signature = Buffer.from(attestation.signatureBase64, 'base64');
@@ -664,7 +665,16 @@ function validateEvidenceRequest(request, expectedTrustPolicySha256, verifiedTru
         definition.externalInputs.privateContentEnvironmentVariable,
       ])
       || !isRecord(realm.runtimeIdentity)
-      || !hasExactKeys(realm.runtimeIdentity, ['documentRoot', 'phpSapi'])
+      || !hasExactKeys(realm.runtimeIdentity, [
+        'documentRoot',
+        'phpCliMode',
+        'phpCliOwnerUid',
+        'phpCliPath',
+        'phpCliSha256',
+        'phpCliSize',
+        'phpCliVersionId',
+        'phpSapi',
+      ])
       || canonical(realm.runtimeIdentity) !== canonical(trustedRealm.runtimeIdentity)
       || !isRecord(realm.inputs)
       || !hasExactKeys(realm.inputs, ['backendFactory', 'brokerConfig', 'privateContent'])
@@ -1476,11 +1486,35 @@ function validateTrustPolicy(policy, expectedTrustPolicySha256) {
       || typeof realm.brokerBaseUrl !== 'string'
       || realm.brokerBaseUrl !== `https://us-central1-${realm.firebaseProjectId}.cloudfunctions.net/${definition.brokerIdentity.functionName}`
       || !isRecord(realm.runtimeIdentity)
-      || !hasExactKeys(realm.runtimeIdentity, ['documentRoot', 'phpSapi'])
+      || !hasExactKeys(realm.runtimeIdentity, [
+        'documentRoot',
+        'phpCliMode',
+        'phpCliOwnerUid',
+        'phpCliPath',
+        'phpCliSha256',
+        'phpCliSize',
+        'phpCliVersionId',
+        'phpSapi',
+      ])
       || typeof realm.runtimeIdentity.documentRoot !== 'string'
       || realm.runtimeIdentity.documentRoot === '/'
       || !realm.runtimeIdentity.documentRoot.startsWith('/')
       || resolve(realm.runtimeIdentity.documentRoot) !== realm.runtimeIdentity.documentRoot
+      || realm.runtimeIdentity.phpCliMode !== '0755'
+      || !Number.isSafeInteger(realm.runtimeIdentity.phpCliOwnerUid)
+      || realm.runtimeIdentity.phpCliOwnerUid < 0
+      || typeof realm.runtimeIdentity.phpCliPath !== 'string'
+      || !realm.runtimeIdentity.phpCliPath.startsWith('/')
+      || resolve(realm.runtimeIdentity.phpCliPath) !== realm.runtimeIdentity.phpCliPath
+      || !isOutsideDirectory(
+        realm.runtimeIdentity.phpCliPath,
+        realm.runtimeIdentity.documentRoot,
+      )
+      || !HASH_PATTERN.test(realm.runtimeIdentity.phpCliSha256)
+      || !Number.isSafeInteger(realm.runtimeIdentity.phpCliSize)
+      || realm.runtimeIdentity.phpCliSize < 1
+      || !Number.isSafeInteger(realm.runtimeIdentity.phpCliVersionId)
+      || realm.runtimeIdentity.phpCliVersionId < 80200
       || !['fpm-fcgi', 'apache2handler'].includes(realm.runtimeIdentity.phpSapi)
       || typeof realm.attestationPublicKeyDerBase64 !== 'string'
       || realm.attestorPath !== definition.externalInputs.attestorPath
@@ -1509,6 +1543,12 @@ function validateTrustPolicy(policy, expectedTrustPolicySha256) {
       expectedHost: `us-central1-${realm.firebaseProjectId}.cloudfunctions.net`,
       runtimeIdentity: Object.freeze({
         documentRoot: realm.runtimeIdentity.documentRoot,
+        phpCliMode: realm.runtimeIdentity.phpCliMode,
+        phpCliOwnerUid: realm.runtimeIdentity.phpCliOwnerUid,
+        phpCliPath: realm.runtimeIdentity.phpCliPath,
+        phpCliSha256: realm.runtimeIdentity.phpCliSha256,
+        phpCliSize: realm.runtimeIdentity.phpCliSize,
+        phpCliVersionId: realm.runtimeIdentity.phpCliVersionId,
         phpSapi: realm.runtimeIdentity.phpSapi,
       }),
       publicKey,

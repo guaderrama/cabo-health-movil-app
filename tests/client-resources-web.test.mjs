@@ -230,8 +230,12 @@ test('production activation remains fail closed until private broker configurati
   assert.match(runbook, /CLIENT_DELETION_RECEIPT_PEPPER_RING/u);
   assert.match(runbook, /CLIENT_BROKER_HMAC_KEY_RING/u);
   assert.match(runbook, /protected-overlay-attestor\.php/u);
-  assert.match(runbook, /bfe8eb02df77d328b6698cd3eb9a14dee0653533c0b126b435870998b5adf8a9/u);
+  assert.match(runbook, /c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68/u);
   assert.match(runbook, /same PHP-FPM pool or Apache handler/iu);
+  assert.match(runbook, /phpCliPath/u);
+  assert.match(runbook, /phpCliVersionId/u);
+  assert.match(runbook, /never invokes[\s\S]*PHP_BINARY/iu);
+  assert.match(runbook, /never inherit attestation-key, broker-HMAC/iu);
   assert.match(runbook, /SSH command[\s\S]*negative test/iu);
   assert.match(runbook, /Current external gate:\s*\*\*BLOCKED\*\*/u);
   assert.match(gitignore, /^\/client-resources-private\/config\/broker-config\.json$/mu);

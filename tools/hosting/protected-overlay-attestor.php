@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 const PROTECTED_OVERLAY_ATTESTATION_DOMAIN = 'cabohealth-protected-overlay-hostinger-attestation-v1';
 const PROTECTED_OVERLAY_ATTESTATION_KIND = 'cabohealth-protected-overlay-hostinger-attestation-v1';
+const PROTECTED_OVERLAY_CHILD_ENVIRONMENT = ['LANG' => 'C', 'LC_ALL' => 'C'];
+const PROTECTED_OVERLAY_PINNED_PHP_CLI = '/proc/self/fd/3';
 
 /** @return never */
 function attestor_fail(string $code): void
@@ -67,19 +69,20 @@ function attestor_runtime_arguments(array $values): array
 /** @param array<string, int> $left @param array<string, int> $right */
 function attestor_same_file_stat(array $left, array $right): bool
 {
-    foreach (['dev', 'ino', 'mode', 'nlink', 'size', 'mtime', 'ctime'] as $name) {
+    foreach (['dev', 'ino', 'mode', 'nlink', 'uid', 'gid', 'size', 'mtime', 'ctime'] as $name) {
         if (!isset($left[$name], $right[$name]) || $left[$name] !== $right[$name]) return false;
     }
     return true;
 }
 
-/** @return array{bytes:string,path:string,size:int,sha256:string,stat:array<string, int>} */
+/** @return array<string, mixed> */
 function attestor_read_regular_file(
     string $path,
     int $mode,
     int $minimumBytes,
     int $maximumBytes,
     string $failureCode,
+    bool $keepOpen = false,
 ): array {
     $lexicalStat = @lstat($path);
     $resolved = @realpath($path);
@@ -114,7 +117,7 @@ function attestor_read_regular_file(
     }
     $overflow = fread($handle, 1);
     $after = fstat($handle);
-    $closed = fclose($handle);
+    $closed = $keepOpen || fclose($handle);
     if (
         $overflow !== ''
         || !is_array($after)
@@ -122,13 +125,15 @@ function attestor_read_regular_file(
         || strlen($bytes) !== $before['size']
         || !$closed
     ) attestor_fail($failureCode);
-    return [
+    $result = [
         'bytes' => $bytes,
         'path' => $resolved,
         'size' => strlen($bytes),
         'sha256' => hash('sha256', $bytes),
         'stat' => $after,
     ];
+    if ($keepOpen) $result['handle'] = $handle;
+    return $result;
 }
 
 /** @return array<string, mixed> */
@@ -153,7 +158,7 @@ function attestor_read_canonical_json(string $path, int $mode, int $maximumBytes
     return $value;
 }
 
-/** @return array{bytes:string,path:string,size:int,sha256:string} */
+/** @return array{bytes:string,path:string,size:int,sha256:string,stat:array<string,int>} */
 function attestor_measure_file(string $path, int $mode, int $maximumBytes): array
 {
     return attestor_read_regular_file(
@@ -162,6 +167,19 @@ function attestor_measure_file(string $path, int $mode, int $maximumBytes): arra
         1,
         $maximumBytes,
         'protected_overlay_attestor_measurement_invalid',
+    );
+}
+
+/** @return array<string,mixed> */
+function attestor_open_pinned_executable(string $path): array
+{
+    return attestor_read_regular_file(
+        $path,
+        0755,
+        1,
+        134217728,
+        'protected_overlay_attestor_measurement_invalid',
+        true,
     );
 }
 
@@ -242,21 +260,58 @@ function attestor_verify_environment(array $requestRealm, array $definition, str
     return $observed;
 }
 
-/** @param array<string, mixed> $requestRealm @return array{documentRoot:string,phpSapi:string} */
+/** @param array<string, mixed> $requestRealm @return array{identity:array<string,mixed>,phpCli:array<string,mixed>} */
 function attestor_verify_runtime(array $requestRealm, string $documentRoot): array
 {
     $expected = $requestRealm['runtimeIdentity'] ?? null;
-    $observed = ['documentRoot' => $documentRoot, 'phpSapi' => PHP_SAPI];
+    $configuredPhpCli = getenv('CABOHEALTH_PROTECTED_OVERLAY_PHP_CLI');
+    $resolvedPhpCli = is_string($configuredPhpCli) ? realpath($configuredPhpCli) : false;
     if (
         !is_array($expected)
-        || array_keys($expected) !== ['documentRoot', 'phpSapi']
-        || $expected !== $observed
+        || array_keys($expected) !== [
+            'documentRoot',
+            'phpCliMode',
+            'phpCliOwnerUid',
+            'phpCliPath',
+            'phpCliSha256',
+            'phpCliSize',
+            'phpCliVersionId',
+            'phpSapi',
+        ]
+        || !is_string($configuredPhpCli)
+        || $configuredPhpCli === ''
+        || $resolvedPhpCli === false
+        || $configuredPhpCli !== $resolvedPhpCli
+        || PHP_OS_FAMILY !== 'Linux'
+        || !is_dir('/proc/self/fd')
+        || ($expected['phpCliPath'] ?? null) !== $resolvedPhpCli
+        || !is_int($expected['phpCliVersionId'] ?? null)
+        || $expected['phpCliVersionId'] < 80200
+        || $resolvedPhpCli === $documentRoot
+        || str_starts_with($resolvedPhpCli, $documentRoot . DIRECTORY_SEPARATOR)
     ) attestor_fail('protected_overlay_attestor_runtime_mismatch');
-    return $observed;
+    $phpCli = attestor_open_pinned_executable($resolvedPhpCli);
+    $observed = [
+        'documentRoot' => $documentRoot,
+        'phpCliMode' => '0755',
+        'phpCliOwnerUid' => $phpCli['stat']['uid'],
+        'phpCliPath' => $phpCli['path'],
+        'phpCliSha256' => $phpCli['sha256'],
+        'phpCliSize' => $phpCli['size'],
+        'phpCliVersionId' => $expected['phpCliVersionId'],
+        'phpSapi' => PHP_SAPI,
+    ];
+    if ($expected !== $observed) attestor_fail('protected_overlay_attestor_runtime_mismatch');
+    return ['identity' => $observed, 'phpCli' => $phpCli];
 }
 
 /** @param array<string, mixed> $requestRealm */
-function attestor_run_harness(array $requestRealm, array $definition, string $projectRoot): array
+function attestor_run_harness(
+    array $requestRealm,
+    array $definition,
+    string $projectRoot,
+    array $phpCli,
+): array
 {
     $expected = $requestRealm['phpHarness'] ?? null;
     if (!is_array($expected) || array_is_list($expected)) {
@@ -277,16 +332,45 @@ function attestor_run_harness(array $requestRealm, array $definition, string $pr
         || $attestorSource['sha256'] !== ($requestRealm['attestor']['sha256'] ?? null)
         || $harnessSource['sha256'] !== ($expected['sourceSha256'] ?? null)
         || ($expected['sourceSha256'] ?? null) !== $definition['harnessSha256']
-        || PHP_VERSION_ID < ($expected['minimumVersionId'] ?? PHP_INT_MAX)
         || !function_exists('proc_open')
     ) attestor_fail('protected_overlay_attestor_harness_invalid');
+    $versionPipes = [];
+    $versionProcess = proc_open(
+        [PROTECTED_OVERLAY_PINNED_PHP_CLI, '-r', 'echo PHP_VERSION_ID;'],
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => $phpCli['handle']],
+        $versionPipes,
+        $projectRoot,
+        PROTECTED_OVERLAY_CHILD_ENVIRONMENT,
+        ['bypass_shell' => true],
+    );
+    if (!is_resource($versionProcess)) attestor_fail('protected_overlay_attestor_php_cli_invalid');
+    fclose($versionPipes[0]);
+    $versionStdout = stream_get_contents($versionPipes[1], 16);
+    $versionStderr = stream_get_contents($versionPipes[2], 1025);
+    fclose($versionPipes[1]);
+    fclose($versionPipes[2]);
+    $versionStatus = proc_close($versionProcess);
+    if (
+        !is_string($versionStdout)
+        || !preg_match('/\A[0-9]{5,6}\z/D', $versionStdout)
+        || !is_string($versionStderr)
+        || $versionStderr !== ''
+        || $versionStatus !== 0
+    ) attestor_fail('protected_overlay_attestor_php_cli_invalid');
+    $phpVersionId = (int) $versionStdout;
+    if (
+        $phpVersionId < ($expected['minimumVersionId'] ?? PHP_INT_MAX)
+        || $phpVersionId !== ($requestRealm['runtimeIdentity']['phpCliVersionId'] ?? null)
+    ) {
+        attestor_fail('protected_overlay_attestor_php_cli_invalid');
+    }
     $pipes = [];
     $process = proc_open(
-        [PHP_BINARY, $harnessPath],
-        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        [PROTECTED_OVERLAY_PINNED_PHP_CLI, $harnessPath],
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => $phpCli['handle']],
         $pipes,
         $projectRoot,
-        null,
+        PROTECTED_OVERLAY_CHILD_ENVIRONMENT,
         ['bypass_shell' => true],
     );
     if (!is_resource($process)) attestor_fail('protected_overlay_attestor_harness_invalid');
@@ -297,6 +381,9 @@ function attestor_run_harness(array $requestRealm, array $definition, string $pr
     fclose($pipes[2]);
     $status = proc_close($process);
     $harnessAfter = attestor_measure_file($harnessPath, 0644, 262144);
+    $phpCliAfter = attestor_measure_file($phpCli['path'], 0755, 134217728);
+    $pinnedPhpCliAfter = fstat($phpCli['handle']);
+    $pinnedPhpCliClosed = fclose($phpCli['handle']);
     if (
         !is_string($stdout)
         || !is_string($stderr)
@@ -306,12 +393,17 @@ function attestor_run_harness(array $requestRealm, array $definition, string $pr
         || hash('sha256', $stdout) !== ($expected['expectedOutputSha256'] ?? null)
         || $harnessAfter['sha256'] !== $harnessSource['sha256']
         || !attestor_same_file_stat($harnessAfter['stat'], $harnessSource['stat'])
+        || !is_array($pinnedPhpCliAfter)
+        || !attestor_same_file_stat($pinnedPhpCliAfter, $phpCli['stat'])
+        || !$pinnedPhpCliClosed
+        || $phpCliAfter['sha256'] !== $phpCli['sha256']
+        || !attestor_same_file_stat($phpCliAfter['stat'], $phpCli['stat'])
     ) attestor_fail('protected_overlay_attestor_harness_failed');
     return [
         'outputBase64' => base64_encode($stdout),
         'outputSha256' => hash('sha256', $stdout),
         'path' => $definition['harnessPath'],
-        'phpVersionId' => PHP_VERSION_ID,
+        'phpVersionId' => $phpVersionId,
         'sourceSha256' => $definition['harnessSha256'],
         'status' => 'passed',
     ];
@@ -335,7 +427,7 @@ $definitions = [
         'contentEnvironment' => 'CABOHEALTH_CLIENT_RESOURCES_PRIVATE_CONTENT_ROOT',
         'keyEnvironment' => 'CABOHEALTH_CLIENT_RESOURCES_ATTESTATION_KEY',
         'harnessPath' => 'tools/hosting/tests/client-resource-broker.php',
-        'harnessSha256' => '2f400b61473bf634da2474f0332e56cc79ac6d853353873f08e7674a386a0f8d',
+        'harnessSha256' => 'c8977a71d740ac7be0a745548e0a0c3fc3904028a19fe4b460bdb2755a67ca21',
         'contentFiles' => ['en.json', 'es-MX.json'],
     ],
     'review' => [
@@ -344,7 +436,7 @@ $definitions = [
         'contentEnvironment' => 'CABOHEALTH_APP_REVIEW_PRIVATE_CONTENT_ROOT',
         'keyEnvironment' => 'CABOHEALTH_APP_REVIEW_ATTESTATION_KEY',
         'harnessPath' => 'tools/hosting/tests/app-review-broker.php',
-        'harnessSha256' => '4b7bf67e1a97334995e3033e541f02c282197a17f581dcc2ea47c61b5c28b10a',
+        'harnessSha256' => 'd30b39aa480a02897868ec33ca7f434adec8e833bce4e53e33c889095edf171b',
         'contentFiles' => ['sample.json'],
     ],
 ];
@@ -386,9 +478,9 @@ foreach ($requestRealms as $candidate) {
     if (is_array($candidate) && ($candidate['realm'] ?? null) === $realm) $requestRealm = $candidate;
 }
 if (!is_array($requestRealm)) attestor_fail('protected_overlay_attestor_request_invalid');
-$runtimeIdentity = attestor_verify_runtime($requestRealm, $documentRoot);
+$runtime = attestor_verify_runtime($requestRealm, $documentRoot);
 $configuredEnvironment = attestor_verify_environment($requestRealm, $definition, $documentRoot);
-$phpHarness = attestor_run_harness($requestRealm, $definition, $projectRoot);
+$phpHarness = attestor_run_harness($requestRealm, $definition, $projectRoot, $runtime['phpCli']);
 $keyPath = getenv($definition['keyEnvironment']);
 if (!is_string($keyPath) || $keyPath === '') attestor_fail('protected_overlay_attestor_key_invalid');
 $resolvedKeyPath = realpath($keyPath);
@@ -425,7 +517,7 @@ if (
 $result = [
     'configuredEnvironment' => $configuredEnvironment,
     'phpHarness' => $phpHarness,
-    'runtimeIdentity' => $runtimeIdentity,
+    'runtimeIdentity' => $runtime['identity'],
     'status' => 'passed',
 ];
 $signed = [

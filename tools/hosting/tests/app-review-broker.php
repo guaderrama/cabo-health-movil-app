@@ -16,6 +16,11 @@ function review_expect(bool $condition, string $message): void
     }
 }
 
+review_expect(
+    getenv('CABOHEALTH_ATTESTOR_SENTINEL_SECRET') === false,
+    'The attestor must not pass its parent secret environment into the review harness',
+);
+
 function review_expect_same(mixed $actual, mixed $expected, string $message): void
 {
     if ($actual !== $expected) {

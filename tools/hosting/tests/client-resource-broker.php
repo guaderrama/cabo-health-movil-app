@@ -18,6 +18,11 @@ function expect(bool $condition, string $message): void
     }
 }
 
+expect(
+    getenv('CABOHEALTH_ATTESTOR_SENTINEL_SECRET') === false,
+    'The attestor must not pass its parent secret environment into the harness',
+);
+
 function expectSame(mixed $actual, mixed $expected, string $message): void
 {
     if ($actual !== $expected) {

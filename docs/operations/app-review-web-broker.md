@@ -128,9 +128,11 @@ real, externally pinned Hostinger evidence:
 2. Create a canonical read-only trust policy with the two distinct public
    keys, exact production/review Firebase Function URLs, and each realm's exact
    serving `runtimeIdentity`: canonical `DOCUMENT_ROOT` plus `PHP_SAPI`
-   (`fpm-fcgi` or `apache2handler`, never `cli`). Pin
+   (`fpm-fcgi` or `apache2handler`, never `cli`), plus the exact absolute
+   `phpCliPath`, SHA-256, size, owner UID, mode `0755`, and exact numeric
+   `phpCliVersionId` for a real PHP 8.2+ CLI outside the docroot. Pin
    `tools/hosting/protected-overlay-attestor.php` at SHA-256
-   `bfe8eb02df77d328b6698cd3eb9a14dee0653533c0b126b435870998b5adf8a9`.
+   `c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68`.
    Compute and approve the trust-policy SHA outside the activation/evidence
    capsule, then pass that independent pin to `create-activation` and
    `create-evidence-request`.
@@ -140,13 +142,21 @@ real, externally pinned Hostinger evidence:
    `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_REQUEST`,
    `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_REALM`,
    `CABOHEALTH_PROTECTED_OVERLAY_PROJECT_ROOT`, and
-   `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_OUTPUT`. Invoke an empty HTTPS
+   `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_OUTPUT`. The same server config
+   sets `CABOHEALTH_PROTECTED_OVERLAY_PHP_CLI` to the pinned `phpCliPath`.
+   Invoke an empty HTTPS
    `POST` with no query/body once per realm. Headers, query parameters, body
    fields, or manually exported SSH/CLI environment values are not evidence of
    the serving runtime.
 4. The attestor derives `PHP_SAPI`, `DOCUMENT_ROOT`, and the real factory,
    config, content, and key paths from that effective web runtime. It performs
-   bounded descriptor-bound reads, exact hashes, and the pinned PHP harness.
+   bounded descriptor-bound reads, exact hashes, probes the pinned CLI's
+   numeric `PHP_VERSION_ID`, requires it to equal the pinned `phpCliVersionId`,
+   and uses the still-open measured Linux descriptor (`/proc/self/fd/3`)—not
+   the swappable path or FPM/CGI `PHP_BINARY`—for
+   the pinned PHP harness. Its child environment is exactly `LANG=C` and
+   `LC_ALL=C`; no attestation-key, broker-HMAC, path, or server variables are
+   inherited.
    `cli`, runtime drift, environment B for request A, a changed byte, wrong
    realm key, or failed harness produces no acceptable attestation. Store both
    one-shot outputs outside the docroot, then immediately disable/delete the

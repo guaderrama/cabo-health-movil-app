@@ -170,8 +170,12 @@ test('App Review web activation is fail-closed and separate from the public rele
   assert.match(runbook, /APP_REVIEW_DELETION_RECEIPT_PEPPER_RING/u);
   assert.match(runbook, /APP_REVIEW_BROKER_HMAC_KEY_RING/u);
   assert.match(runbook, /protected-overlay-attestor\.php/u);
-  assert.match(runbook, /bfe8eb02df77d328b6698cd3eb9a14dee0653533c0b126b435870998b5adf8a9/u);
+  assert.match(runbook, /c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68/u);
   assert.match(runbook, /same PHP-FPM pool or Apache handler/iu);
+  assert.match(runbook, /phpCliPath/u);
+  assert.match(runbook, /phpCliVersionId/u);
+  assert.match(runbook, /not[\s\S]{0,80}FPM\/CGI `PHP_BINARY`/iu);
+  assert.match(runbook, /no attestation-key, broker-HMAC/iu);
   assert.match(runbook, /manually exported SSH\/CLI/iu);
   assert.match(runbook, /Current external gate:\s*\*\*BLOCKED\*\*/u);
 

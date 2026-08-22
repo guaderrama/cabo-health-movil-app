@@ -192,8 +192,8 @@ test('activation pins distinct external private inputs without copying their byt
   assert.match(activation.activationSha256, /^[a-f0-9]{64}$/u);
   assert.deepEqual(activation.realms.map(({ realm }) => realm), ['production', 'review']);
   assert.deepEqual(activation.realms.map(({ runtimeIdentity }) => runtimeIdentity), [
-    { documentRoot: realpathSync(join(fixture.root, 'public_html')), phpSapi: 'fpm-fcgi' },
-    { documentRoot: realpathSync(join(fixture.root, 'public_html')), phpSapi: 'fpm-fcgi' },
+    fixture.trustPolicy.realms[0].runtimeIdentity,
+    fixture.trustPolicy.realms[1].runtimeIdentity,
   ]);
   assert.notEqual(
     fixture.trustPolicy.realms[0].attestationPublicKeyDerBase64,
@@ -276,7 +276,7 @@ test('activation rejects an otherwise valid Functions host outside the pinned re
   assert.throws(() => createActivation(fixture), /protected_overlay_config_invalid/u);
 });
 
-test('activation rejects unapproved CLI and document-root runtime identities', (context) => {
+test('activation rejects unapproved web and PHP CLI runtime identities', (context) => {
   const fixture = makeDeploymentFixture();
   context.after(() => rmSync(fixture.root, { recursive: true, force: true }));
 
@@ -285,6 +285,11 @@ test('activation rejects unapproved CLI and document-root runtime identities', (
   assert.throws(() => createActivation(fixture), /protected_overlay_trust_policy_invalid/u);
 
   fixture.trustPolicy.realms[0].runtimeIdentity.phpSapi = 'fpm-fcgi';
+  fixture.trustPolicy.realms[0].runtimeIdentity.phpCliVersionId = 80199;
+  fixture.trustPolicySha256 = sha256Json(fixture.trustPolicy);
+  assert.throws(() => createActivation(fixture), /protected_overlay_trust_policy_invalid/u);
+
+  fixture.trustPolicy.realms[0].runtimeIdentity.phpCliVersionId = 80301;
   fixture.trustPolicy.realms[0].runtimeIdentity.documentRoot = join(fixture.root, 'decoy-html');
   fixture.trustPolicySha256 = sha256Json(fixture.trustPolicy);
   assert.throws(() => createActivation(fixture), /protected_overlay_runtime_identity_invalid/u);
@@ -295,7 +300,7 @@ test('the pinned Hostinger attestor derives signed evidence from runtime measure
   const source = readFileSync(path);
   assert.equal(
     createHash('sha256').update(source).digest('hex'),
-    'bfe8eb02df77d328b6698cd3eb9a14dee0653533c0b126b435870998b5adf8a9',
+    'c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68',
   );
   const text = source.toString('utf8');
   assert.match(text, /getenv\(\$name\)/u);
@@ -304,23 +309,40 @@ test('the pinned Hostinger attestor derives signed evidence from runtime measure
   assert.match(text, /fstat/u);
   assert.match(text, /proc_open/u);
   assert.match(text, /sodium_crypto_sign_detached/u);
+  assert.match(text, /CABOHEALTH_PROTECTED_OVERLAY_PHP_CLI/u);
+  assert.match(text, /PROTECTED_OVERLAY_PINNED_PHP_CLI\s*=\s*'\/proc\/self\/fd\/3'/u);
+  assert.equal((text.match(/3\s*=>\s*\$phpCli\['handle'\]/gu) ?? []).length, 2);
+  assert.doesNotMatch(text, /proc_open\(\s*\[PHP_BINARY/u);
+  assert.equal((text.match(/PROTECTED_OVERLAY_CHILD_ENVIRONMENT/gu) ?? []).length, 3);
+  assert.match(text, /\['LANG'\s*=>\s*'C',\s*'LC_ALL'\s*=>\s*'C'\]/u);
   assert.doesNotMatch(text, /file_get_contents/u);
   assert.doesNotMatch(text, /hash_file/u);
   assert.doesNotMatch(text, /--result/u);
 });
 
-test('Hostinger attestor measures getenv and rejects environment B for request A', (context) => {
+test('Hostinger attestor rejects environment B, a non-PHP CLI, and cross-realm CLI drift', (context) => {
+  if (process.platform !== 'linux') {
+    context.skip('The Hostinger descriptor-bound CLI proof requires Linux /proc/self/fd.');
+    return;
+  }
   const version = spawnSync('php', ['-r', 'echo PHP_VERSION_ID;'], { encoding: 'utf8' });
   if (version.error?.code === 'ENOENT') {
     context.skip('PHP is not installed; CI and Hostinger must execute the attestor mismatch proof.');
     return;
   }
   assert.equal(version.status, 0, version.stderr);
+  const sodium = spawnSync('php', ['-r', 'echo extension_loaded("sodium") ? "yes" : "no";'], {
+    encoding: 'utf8',
+  });
+  if (sodium.status !== 0 || sodium.stdout !== 'yes') {
+    context.skip('PHP Sodium is unavailable; CI and Hostinger must execute the attestor proofs.');
+    return;
+  }
   const fixture = makeDeploymentFixture();
   context.after(() => rmSync(fixture.root, { recursive: true, force: true }));
   const artifact = createProtectedOverlayArtifact({ projectRoot });
   const activation = createActivation(fixture);
-  const request = createDeploymentEvidence(fixture, artifact, activation).request;
+  const request = structuredClone(createDeploymentEvidence(fixture, artifact, activation).request);
   request.realms[0].runtimeIdentity.phpSapi = 'cli';
   const requestPath = join(fixture.root, 'attestor-request.json');
   const outputPath = join(fixture.root, 'must-not-exist.json');
@@ -344,14 +366,106 @@ test('Hostinger attestor measures getenv and rejects environment B for request A
         fixture.realms.production.brokerConfigPath,
       CABOHEALTH_CLIENT_RESOURCES_PRIVATE_CONTENT_ROOT:
         fixture.realms.production.privateContentRoot,
+      CABOHEALTH_PROTECTED_OVERLAY_PHP_CLI:
+        request.realms[0].runtimeIdentity.phpCliPath,
     },
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /protected_overlay_attestor_environment_mismatch/u);
   assert.equal(existsSync(outputPath), false);
+
+  const nonPhp = spawnSync('php', [
+    join(projectRoot, 'tools/hosting/protected-overlay-attestor.php'),
+    '--request', requestPath,
+    '--realm', 'production',
+    '--project-root', projectRoot,
+    '--out', outputPath,
+  ], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      DOCUMENT_ROOT: join(fixture.root, 'public_html'),
+      CABOHEALTH_CLIENT_RESOURCES_BACKEND_FACTORY:
+        fixture.realms.production.backendFactoryPath,
+      CABOHEALTH_CLIENT_RESOURCES_SIGNING_CONFIG:
+        fixture.realms.production.brokerConfigPath,
+      CABOHEALTH_CLIENT_RESOURCES_PRIVATE_CONTENT_ROOT:
+        fixture.realms.production.privateContentRoot,
+      CABOHEALTH_PROTECTED_OVERLAY_PHP_CLI:
+        request.realms[0].runtimeIdentity.phpCliPath,
+    },
+  });
+  assert.notEqual(nonPhp.status, 0);
+  assert.match(nonPhp.stderr, /protected_overlay_attestor_php_cli_invalid/u);
+  assert.equal(existsSync(outputPath), false);
+
+  const crossRealmCli = spawnSync('php', [
+    join(projectRoot, 'tools/hosting/protected-overlay-attestor.php'),
+    '--request', requestPath,
+    '--realm', 'production',
+    '--project-root', projectRoot,
+    '--out', outputPath,
+  ], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      DOCUMENT_ROOT: join(fixture.root, 'public_html'),
+      CABOHEALTH_PROTECTED_OVERLAY_PHP_CLI:
+        request.realms[1].runtimeIdentity.phpCliPath,
+    },
+  });
+  assert.notEqual(crossRealmCli.status, 0);
+  assert.match(crossRealmCli.stderr, /protected_overlay_attestor_runtime_mismatch/u);
+  assert.equal(existsSync(outputPath), false);
+
+  const phpBinary = spawnSync('php', ['-r', 'echo realpath(PHP_BINARY);'], { encoding: 'utf8' });
+  assert.equal(phpBinary.status, 0, phpBinary.stderr);
+  const phpBinaryPath = phpBinary.stdout;
+  const phpBinaryStat = statSync(phpBinaryPath);
+  if ((phpBinaryStat.mode & 0o777) !== 0o755 || phpBinaryStat.nlink !== 1) {
+    context.skip('The local PHP CLI is not an exact mode-0755 single-link binary.');
+    return;
+  }
+  const phpBinaryBytes = readFileSync(phpBinaryPath);
+  Object.assign(request.realms[0].runtimeIdentity, {
+    phpCliMode: '0755',
+    phpCliOwnerUid: phpBinaryStat.uid,
+    phpCliPath: phpBinaryPath,
+    phpCliSha256: createHash('sha256').update(phpBinaryBytes).digest('hex'),
+    phpCliSize: phpBinaryBytes.length,
+    phpCliVersionId: Number(version.stdout),
+  });
+  chmodSync(requestPath, 0o600);
+  writeFileSync(requestPath, `${JSON.stringify(request)}\n`);
+  chmodSync(requestPath, 0o400);
+  const sanitizedChild = spawnSync('php', [
+    join(projectRoot, 'tools/hosting/protected-overlay-attestor.php'),
+    '--request', requestPath,
+    '--realm', 'production',
+    '--project-root', projectRoot,
+    '--out', outputPath,
+  ], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      DOCUMENT_ROOT: join(fixture.root, 'public_html'),
+      CABOHEALTH_ATTESTOR_SENTINEL_SECRET: 'must-not-reach-child',
+      CABOHEALTH_CLIENT_RESOURCES_BACKEND_FACTORY:
+        fixture.realms.production.backendFactoryPath,
+      CABOHEALTH_CLIENT_RESOURCES_SIGNING_CONFIG:
+        fixture.realms.production.brokerConfigPath,
+      CABOHEALTH_CLIENT_RESOURCES_PRIVATE_CONTENT_ROOT:
+        fixture.realms.production.privateContentRoot,
+      CABOHEALTH_PROTECTED_OVERLAY_PHP_CLI: phpBinaryPath,
+    },
+  });
+  assert.notEqual(sanitizedChild.status, 0);
+  assert.match(sanitizedChild.stderr, /protected_overlay_attestor_key_invalid/u);
+  assert.doesNotMatch(sanitizedChild.stderr, /protected_overlay_attestor_harness_failed/u);
+  assert.equal(existsSync(outputPath), false);
 });
 
-test('signed evidence rejects CLI and document-root drift even with the right realm key', (context) => {
+test('signed evidence rejects SAPI, document-root, PHP CLI, version, and cross-realm drift', (context) => {
   const fixture = makeDeploymentFixture();
   context.after(() => rmSync(fixture.root, { recursive: true, force: true }));
   const artifact = createProtectedOverlayArtifact({ projectRoot });
@@ -359,8 +473,14 @@ test('signed evidence rejects CLI and document-root drift even with the right re
   const { request } = createDeploymentEvidence(fixture, artifact, activation);
 
   for (const runtimeIdentity of [
-    { documentRoot: realpathSync(join(fixture.root, 'public_html')), phpSapi: 'cli' },
-    { documentRoot: join(fixture.root, 'decoy-html'), phpSapi: 'fpm-fcgi' },
+    { ...request.realms[0].runtimeIdentity, phpSapi: 'cli' },
+    { ...request.realms[0].runtimeIdentity, documentRoot: join(fixture.root, 'decoy-html') },
+    {
+      ...request.realms[0].runtimeIdentity,
+      phpCliPath: join(fixture.root, 'private', 'wrong-php-cli'),
+    },
+    { ...request.realms[0].runtimeIdentity, phpCliVersionId: 80499 },
+    request.realms[1].runtimeIdentity,
   ]) {
     const realm = request.realms[0];
     const result = deploymentEvidenceResult(realm, runtimeIdentity);
@@ -908,12 +1028,30 @@ function makeDeploymentFixture() {
   const realms = {};
   const secrets = {};
   const attestationKeys = {};
+  const phpCliPins = {};
   for (const [realm, definition] of Object.entries(definitions)) {
     attestationKeys[realm] = generateKeyPairSync('ed25519');
     const realmRoot = join(privateRoot, realm);
     const contentRoot = join(realmRoot, 'content');
     mkdirSync(realmRoot, { mode: 0o700 });
     mkdirSync(contentRoot, { mode: 0o700 });
+    const phpCliPath = join(realmRoot, 'php-cli');
+    writeFileSync(
+      phpCliPath,
+      `#!/bin/sh\nexit ${realm === 'production' ? 97 : 98}\n`,
+      { mode: 0o755 },
+    );
+    chmodSync(phpCliPath, 0o755);
+    const phpCliBytes = readFileSync(phpCliPath);
+    const phpCliStat = statSync(phpCliPath);
+    phpCliPins[realm] = {
+      phpCliMode: '0755',
+      phpCliOwnerUid: phpCliStat.uid,
+      phpCliPath: realpathSync(phpCliPath),
+      phpCliSha256: createHash('sha256').update(phpCliBytes).digest('hex'),
+      phpCliSize: phpCliBytes.length,
+      phpCliVersionId: realm === 'production' ? 80301 : 80402,
+    };
     const secret = Buffer.alloc(32, definition.keyByte).toString('base64');
     secrets[realm] = secret;
     const brokerConfigPath = join(realmRoot, 'broker-config.json');
@@ -949,12 +1087,13 @@ function makeDeploymentFixture() {
       brokerBaseUrl: `https://us-central1-${firebaseProjectId}.cloudfunctions.net/${definition.functionName}`,
       runtimeIdentity: {
         documentRoot: realpathSync(join(root, 'public_html')),
+        ...phpCliPins[realm],
         phpSapi: 'fpm-fcgi',
       },
       attestationPublicKeyDerBase64: attestationKeys[realm].publicKey
         .export({ format: 'der', type: 'spki' }).toString('base64'),
       attestorPath: 'tools/hosting/protected-overlay-attestor.php',
-      attestorSha256: 'bfe8eb02df77d328b6698cd3eb9a14dee0653533c0b126b435870998b5adf8a9',
+      attestorSha256: 'c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68',
     })),
   };
   return {
@@ -1007,7 +1146,7 @@ function deploymentEvidenceResult(realm, runtimeIdentity = realm.runtimeIdentity
       outputBase64: realm.phpHarness.expectedOutputBase64,
       outputSha256: realm.phpHarness.expectedOutputSha256,
       path: realm.phpHarness.path,
-      phpVersionId: 80200,
+      phpVersionId: runtimeIdentity.phpCliVersionId,
       sourceSha256: realm.phpHarness.sourceSha256,
       status: 'passed',
     },
