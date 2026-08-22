@@ -222,6 +222,26 @@ p { color: var(--muted); line-height: 1.55; }
 .notice.error { background: #fff2f2; border-color: var(--danger); }
 .notice.warning { background: #fff9ed; border-color: var(--warning); }
 .review-gate { margin-bottom: 1.5rem; }
+.review-freeze { align-items: flex-start; margin-bottom: 1.5rem; }
+
+.review-status-card {
+  align-items: center;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--bronze);
+  box-shadow: 0 12px 32px rgb(8 42 60 / 5%);
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 1fr) auto;
+  padding: 1.5rem;
+}
+
+.review-status-card h3 { margin-bottom: 0; }
+.review-facts { display: grid; gap: .5rem; margin: 0; }
+.review-facts div { display: flex; gap: .65rem; justify-content: space-between; }
+.review-facts dt { color: var(--muted); }
+.review-facts dd { color: var(--ink); margin: 0; text-align: right; }
+.review-one-time { margin-top: 1.5rem; }
 
 .code-slot-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .code-slot {
@@ -299,6 +319,7 @@ td { color: var(--ink); font-size: .88rem; }
   .portal-sidebar { padding: 1.6rem 1.35rem; }
   .portal-main { padding: 2rem 1.3rem; }
   .code-slot-grid { grid-template-columns: 1fr; }
+  .review-status-card { align-items: start; grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
@@ -306,7 +327,7 @@ td { color: var(--ink); font-size: .88rem; }
   .portal-sidebar { min-height: auto; padding: 1.25rem; position: static; }
   .portal-sidebar .brand-mark { margin-bottom: 1.4rem; }
   .sidebar-intro { display: none; }
-  .portal-nav { grid-template-columns: repeat(3, 1fr); margin: .8rem 0; }
+  .portal-nav { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); margin: .8rem 0; }
   .nav-button { border-bottom: 2px solid transparent; border-left: 0; display: flex; flex-direction: column; gap: .25rem; justify-content: center; min-width: 0; text-align: center; }
   .nav-button.active { border-bottom-color: var(--bronze); border-left-color: transparent; }
   .sidebar-footer { align-items: end; display: flex; gap: 1rem; justify-content: space-between; }

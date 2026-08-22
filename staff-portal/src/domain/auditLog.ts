@@ -1,17 +1,22 @@
+import type {
+  CallableTransport,
+  ServerStaffSession,
+} from './staffGateway.js';
+
 export type StaffAuditAction =
   | 'client_code.created'
   | 'client_code.revoked'
-  | 'catalog_draft.created'
-  | 'catalog_draft.updated'
-  | 'catalog_draft.archived';
+  | 'draft.created'
+  | 'draft.updated'
+  | 'draft.archived';
 
 export interface StaffAuditEvent {
   readonly eventId: string;
   readonly action: StaffAuditAction;
-  readonly actorLabel: 'Staff' | 'App Review';
+  readonly actorLabel: 'Staff';
   readonly targetSuffix: string;
   readonly occurredAtMs: number;
-  readonly outcome: 'success' | 'denied';
+  readonly outcome: 'success';
 }
 
 export interface AuditGateway {
@@ -21,6 +26,21 @@ export interface AuditGateway {
 export interface AuditModel {
   getSnapshot(): Readonly<{ events: readonly StaffAuditEvent[] }>;
   load(): Promise<void>;
+}
+
+export function createAuditGateway(input: Readonly<{
+  session: ServerStaffSession;
+  transport: CallableTransport;
+}>): AuditGateway {
+  return Object.freeze({
+    list: async () => {
+      if (input.session.scope !== 'production'
+        || !input.session.permissions.includes('client_resource_drafts')) {
+        throw new Error('staff_capability_unavailable');
+      }
+      return parseAuditEvents(await input.transport('adminListAudit', {}));
+    },
+  });
 }
 
 const EVENT_FIELDS = Object.freeze([
@@ -56,11 +76,11 @@ function parseAuditEvent(value: unknown): StaffAuditEvent {
   if (!hasExactKeys(value, EVENT_FIELDS)
     || typeof value.eventId !== 'string'
     || !isAuditAction(value.action)
-    || (value.actorLabel !== 'Staff' && value.actorLabel !== 'App Review')
+    || value.actorLabel !== 'Staff'
     || typeof value.targetSuffix !== 'string'
     || !/^[A-Za-z0-9_-]{1,12}$/u.test(value.targetSuffix)
     || !Number.isSafeInteger(value.occurredAtMs)
-    || (value.outcome !== 'success' && value.outcome !== 'denied')) {
+    || value.outcome !== 'success') {
     throw new Error('audit_response_invalid');
   }
   return Object.freeze({
@@ -76,9 +96,9 @@ function parseAuditEvent(value: unknown): StaffAuditEvent {
 function isAuditAction(value: unknown): value is StaffAuditAction {
   return value === 'client_code.created'
     || value === 'client_code.revoked'
-    || value === 'catalog_draft.created'
-    || value === 'catalog_draft.updated'
-    || value === 'catalog_draft.archived';
+    || value === 'draft.created'
+    || value === 'draft.updated'
+    || value === 'draft.archived';
 }
 
 function hasExactKeys(value: unknown, fields: readonly string[]): value is Record<string, unknown> {

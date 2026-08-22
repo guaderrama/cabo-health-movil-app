@@ -1,3 +1,8 @@
+import type {
+  CallableTransport,
+  ServerStaffSession,
+} from './staffGateway.js';
+
 export const STAFF_DRAFT_ICONS = Object.freeze([
   'laboratory',
   'guide',
@@ -45,6 +50,42 @@ export interface CatalogDraftModel {
   create(input: CatalogDraftInput): Promise<void>;
   update(draftId: string, revision: number, input: CatalogDraftInput): Promise<void>;
   archive(draftId: string, revision: number): Promise<void>;
+}
+
+export function createCatalogDraftGateway(input: Readonly<{
+  session: ServerStaffSession;
+  transport: CallableTransport;
+}>): CatalogDraftGateway {
+  const assertAllowed = () => assertDraftAdministrationAllowed(input.session);
+  return Object.freeze({
+    list: async () => {
+      assertAllowed();
+      return parseCatalogDraftList(await input.transport('adminListCatalogDrafts', {}));
+    },
+    create: async (draftInput: CatalogDraftInput) => {
+      assertAllowed();
+      const normalized = validateDraftInput(draftInput);
+      parseCatalogDraftMutation(await input.transport('adminCreateCatalogDraft', { ...normalized }));
+    },
+    update: async (draftId: string, revision: number, draftInput: CatalogDraftInput) => {
+      assertAllowed();
+      assertDraftMutationIdentity(draftId, revision);
+      const normalized = validateDraftInput(draftInput);
+      parseCatalogDraftMutation(await input.transport('adminUpdateCatalogDraft', {
+        draftId,
+        revision,
+        ...normalized,
+      }));
+    },
+    archive: async (draftId: string, revision: number) => {
+      assertAllowed();
+      assertDraftMutationIdentity(draftId, revision);
+      parseCatalogDraftMutation(await input.transport('adminArchiveCatalogDraft', {
+        draftId,
+        revision,
+      }), true);
+    },
+  });
 }
 
 const DRAFT_FIELDS = Object.freeze(['access', 'icon', 'summary', 'title', 'url']);
@@ -110,12 +151,86 @@ function normalizeHttpsUrl(value: unknown): string {
       || parsed.hostname === ''
       || parsed.username !== ''
       || parsed.password !== ''
-      || parsed.port !== '') {
+      || parsed.port !== ''
+      || parsed.search !== ''
+      || parsed.hash !== '') {
       throw new Error('draft_url_invalid');
     }
     return parsed.toString();
   } catch {
     throw new Error('draft_url_invalid');
+  }
+}
+
+function parseCatalogDraftList(value: unknown): readonly CatalogDraft[] {
+  if (!hasExactKeys(value, ['drafts']) || !Array.isArray(value.drafts)) {
+    throw new Error('catalog_draft_response_invalid');
+  }
+  return Object.freeze(value.drafts.map(parseCatalogDraft));
+}
+
+function parseCatalogDraftMutation(value: unknown, archived = false): CatalogDraft {
+  const expectedFields = archived ? ['archived', 'draft'] : ['draft'];
+  if (!hasExactKeys(value, expectedFields)
+    || (archived && value.archived !== true)) {
+    throw new Error('catalog_draft_response_invalid');
+  }
+  return parseCatalogDraft(value.draft);
+}
+
+function parseCatalogDraft(value: unknown): CatalogDraft {
+  if (!hasExactKeys(value, [
+    'access',
+    'draftId',
+    'icon',
+    'revision',
+    'status',
+    'summary',
+    'title',
+    'updatedAtMs',
+    'url',
+  ])
+    || typeof value.draftId !== 'string'
+    || !/^dr_[A-Za-z0-9_-]{32}$/u.test(value.draftId)
+    || !Number.isSafeInteger(value.revision)
+    || (value.revision as number) < 1
+    || (value.status !== 'draft' && value.status !== 'archived')
+    || !Number.isSafeInteger(value.updatedAtMs)
+    || (value.updatedAtMs as number) < 0) {
+    throw new Error('catalog_draft_response_invalid');
+  }
+  try {
+    const draft = validateDraftInput({
+      access: value.access,
+      icon: value.icon,
+      summary: value.summary,
+      title: value.title,
+      url: value.url,
+    });
+    return Object.freeze({
+      ...draft,
+      draftId: value.draftId,
+      revision: value.revision as number,
+      status: value.status,
+      updatedAtMs: value.updatedAtMs as number,
+    });
+  } catch {
+    throw new Error('catalog_draft_response_invalid');
+  }
+}
+
+function assertDraftAdministrationAllowed(session: ServerStaffSession): void {
+  if (session.scope !== 'production'
+    || !session.permissions.includes('client_resource_drafts')) {
+    throw new Error('staff_capability_unavailable');
+  }
+}
+
+function assertDraftMutationIdentity(draftId: string, revision: number): void {
+  if (!/^dr_[A-Za-z0-9_-]{32}$/u.test(draftId)
+    || !Number.isSafeInteger(revision)
+    || revision < 1) {
+    throw new Error('draft_identity_invalid');
   }
 }
 

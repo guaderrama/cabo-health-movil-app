@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { AppReviewCredentialPanel } from './components/AppReviewCredentialPanel.js';
 import { AuditPanel } from './components/AuditPanel.js';
 import { CatalogDraftPanel } from './components/CatalogDraftPanel.js';
 import { CodeAdminPanel } from './components/CodeAdminPanel.js';
-import type { AuditGateway } from './domain/auditLog.js';
-import type { CatalogDraftGateway } from './domain/catalogDrafts.js';
-import type { ServerStaffSession, StaffGateway } from './domain/staffGateway.js';
-import type { FirebaseStaffServices } from './firebase/firebaseStaffServices.js';
+import type {
+  FirebaseStaffServices,
+  StaffSignInResult,
+} from './firebase/firebaseStaffServices.js';
 import {
   STAFF_MESSAGES,
   type StaffLanguage,
@@ -15,14 +16,12 @@ import {
 
 interface AppProps {
   readonly services: FirebaseStaffServices;
-  readonly draftGateway: CatalogDraftGateway;
-  readonly auditGateway: AuditGateway;
 }
 
-type PortalTab = 'codes' | 'drafts' | 'audit';
-type Authenticated = Readonly<{ session: ServerStaffSession; gateway: StaffGateway }>;
+type PortalTab = 'codes' | 'drafts' | 'audit' | 'app-review';
+type Authenticated = Extract<StaffSignInResult, { kind: 'authenticated' }>;
 
-export function App({ services, draftGateway, auditGateway }: AppProps) {
+export function App({ services }: AppProps) {
   const [language, setLanguage] = useState<StaffLanguage>('en');
   const [stage, setStage] = useState<'restoring' | 'sign-in' | 'mfa' | 'authenticated'>('restoring');
   const [authenticated, setAuthenticated] = useState<Authenticated | null>(null);
@@ -61,6 +60,7 @@ export function App({ services, draftGateway, auditGateway }: AppProps) {
       if (!active) return;
       if (restored) {
         setAuthenticated(restored);
+        setTab(firstPortalTab(restored));
         setStage('authenticated');
       } else {
         setStage('sign-in');
@@ -82,6 +82,7 @@ export function App({ services, draftGateway, auditGateway }: AppProps) {
         setStage('mfa');
       } else {
         setAuthenticated(result);
+        setTab(firstPortalTab(result));
         setStage('authenticated');
       }
     } catch {
@@ -101,6 +102,7 @@ export function App({ services, draftGateway, auditGateway }: AppProps) {
     try {
       const result = await services.completeTotp(submittedTotp);
       setAuthenticated(result);
+      setTab(firstPortalTab(result));
       setStage('authenticated');
     } catch {
       setAuthError(true);
@@ -158,6 +160,12 @@ export function App({ services, draftGateway, auditGateway }: AppProps) {
 
   if (!authenticated) return null;
 
+  const canManageCodes = authenticated.session.permissions.includes('client_codes');
+  const canManageDrafts = authenticated.session.scope === 'production'
+    && authenticated.session.permissions.includes('client_resource_drafts');
+  const canManageAppReview = authenticated.session.scope === 'production'
+    && authenticated.session.permissions.includes('app_review_credential');
+
   return (
     <div className="portal-shell">
       <aside className="portal-sidebar">
@@ -168,9 +176,10 @@ export function App({ services, draftGateway, auditGateway }: AppProps) {
           <p>{t('portal.subtitle')}</p>
         </div>
         <nav aria-label="Staff workspace" className="portal-nav">
-          <NavButton active={tab === 'codes'} number="01" label={t('nav.codes')} onClick={() => setTab('codes')} />
-          <NavButton active={tab === 'drafts'} number="02" label={t('nav.drafts')} onClick={() => setTab('drafts')} />
-          <NavButton active={tab === 'audit'} number="03" label={t('nav.audit')} onClick={() => setTab('audit')} />
+          {canManageCodes ? <NavButton active={tab === 'codes'} number="01" label={t('nav.codes')} onClick={() => setTab('codes')} /> : null}
+          {canManageDrafts ? <NavButton active={tab === 'drafts'} number="02" label={t('nav.drafts')} onClick={() => setTab('drafts')} /> : null}
+          {canManageDrafts ? <NavButton active={tab === 'audit'} number="03" label={t('nav.audit')} onClick={() => setTab('audit')} /> : null}
+          {canManageAppReview ? <NavButton active={tab === 'app-review'} number="04" label={t('nav.review')} onClick={() => setTab('app-review')} /> : null}
         </nav>
         <div className="sidebar-footer">
           <div className="scope-block">
@@ -187,12 +196,22 @@ export function App({ services, draftGateway, auditGateway }: AppProps) {
         </div>
       </aside>
       <main className="portal-main">
-        {tab === 'codes' ? <CodeAdminPanel gateway={authenticated.gateway} language={language} t={t} /> : null}
-        {tab === 'drafts' ? <CatalogDraftPanel gateway={draftGateway} language={language} t={t} /> : null}
-        {tab === 'audit' ? <AuditPanel gateway={auditGateway} language={language} t={t} /> : null}
+        {tab === 'codes' && canManageCodes ? <CodeAdminPanel gateway={authenticated.gateway} language={language} t={t} /> : null}
+        {tab === 'drafts' && canManageDrafts ? <CatalogDraftPanel gateway={authenticated.draftGateway} language={language} t={t} /> : null}
+        {tab === 'audit' && canManageDrafts ? <AuditPanel gateway={authenticated.auditGateway} language={language} t={t} /> : null}
+        {tab === 'app-review' && canManageAppReview ? <AppReviewCredentialPanel gateway={authenticated.appReviewGateway} language={language} t={t} /> : null}
       </main>
     </div>
   );
+}
+
+function firstPortalTab(authenticated: Authenticated): PortalTab {
+  if (authenticated.session.permissions.includes('client_codes')) return 'codes';
+  if (authenticated.session.scope === 'production'
+    && authenticated.session.permissions.includes('client_resource_drafts')) return 'drafts';
+  if (authenticated.session.scope === 'production'
+    && authenticated.session.permissions.includes('app_review_credential')) return 'app-review';
+  return 'codes';
 }
 
 function Brand() {

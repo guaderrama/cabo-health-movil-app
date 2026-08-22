@@ -20,6 +20,8 @@ test('catalog entries are validated as drafts and cannot request publication or 
   assert.throws(() => validateDraftInput({ ...valid, publish: true }), /draft_fields_invalid/u);
   assert.throws(() => validateDraftInput({ ...valid, active: true }), /draft_fields_invalid/u);
   assert.throws(() => validateDraftInput({ ...valid, url: 'http://example.org' }), /draft_url_invalid/u);
+  assert.throws(() => validateDraftInput({ ...valid, url: 'https://example.org/guide?publish=true' }), /draft_url_invalid/u);
+  assert.throws(() => validateDraftInput({ ...valid, url: 'https://example.org/guide#release' }), /draft_url_invalid/u);
 });
 
 test('staff can add, edit, and archive drafts without a publication operation', async () => {

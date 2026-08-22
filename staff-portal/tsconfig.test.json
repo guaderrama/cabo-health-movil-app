@@ -10,11 +10,11 @@
   },
   "files": [
     "src/domain/authBoundary.ts",
+    "src/domain/appReviewCredential.ts",
     "src/domain/staffGateway.ts",
     "src/domain/codeAdminModel.ts",
     "src/domain/catalogDrafts.ts",
     "src/domain/auditLog.ts",
-    "src/domain/unavailableGateways.ts",
     "src/firebase/staffFirebaseConfig.ts",
     "src/i18n/messages.ts"
   ]

@@ -24,6 +24,18 @@ import {
   createAuthorizationBoundTransport,
 } from '../domain/authBoundary.js';
 import {
+  createAppReviewCredentialGateway,
+  type AppReviewCredentialGateway,
+} from '../domain/appReviewCredential.js';
+import {
+  createAuditGateway,
+  type AuditGateway,
+} from '../domain/auditLog.js';
+import {
+  createCatalogDraftGateway,
+  type CatalogDraftGateway,
+} from '../domain/catalogDrafts.js';
+import {
   createScopedStaffGateway,
   parseServerStaffSession,
   type CallableTransport,
@@ -34,7 +46,14 @@ import type { StaffFirebaseConfig } from './staffFirebaseConfig.js';
 
 export type StaffSignInResult =
   | Readonly<{ kind: 'mfa-required'; enrollmentId: string; displayName: string }>
-  | Readonly<{ kind: 'authenticated'; session: ServerStaffSession; gateway: StaffGateway }>;
+  | Readonly<{
+    kind: 'authenticated';
+    session: ServerStaffSession;
+    gateway: StaffGateway;
+    draftGateway: CatalogDraftGateway;
+    auditGateway: AuditGateway;
+    appReviewGateway: AppReviewCredentialGateway;
+  }>;
 
 export interface FirebaseStaffServices {
   signIn(email: string, password: string): Promise<StaffSignInResult>;
@@ -111,6 +130,9 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
       kind: 'authenticated',
       session,
       gateway: createScopedStaffGateway({ production, review, session }),
+      draftGateway: createCatalogDraftGateway({ session, transport: production }),
+      auditGateway: createAuditGateway({ session, transport: production }),
+      appReviewGateway: createAppReviewCredentialGateway({ session, transport: production }),
     });
   };
 

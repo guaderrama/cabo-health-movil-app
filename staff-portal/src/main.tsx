@@ -3,10 +3,6 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from './App.js';
 import {
-  createUnavailableAuditGateway,
-  createUnavailableCatalogDraftGateway,
-} from './domain/unavailableGateways.js';
-import {
   createFirebaseStaffServices,
 } from './firebase/firebaseStaffServices.js';
 import {
@@ -35,11 +31,7 @@ try {
   const services = createFirebaseStaffServices(config);
   root.render(
     <StrictMode>
-      <App
-        services={services}
-        draftGateway={createUnavailableCatalogDraftGateway()}
-        auditGateway={createUnavailableAuditGateway()}
-      />
+      <App services={services} />
     </StrictMode>,
   );
 } catch {

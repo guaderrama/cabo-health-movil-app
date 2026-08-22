@@ -44,7 +44,7 @@ test('the activity surface is read-only, sanitized, and visibly fail-closed', ()
   assert.doesNotMatch(source, /<form|<input|create\(|delete\(/iu);
 });
 
-test('the portal has visible sign-in, TOTP, scope, language, and three explicit work areas', () => {
+test('the portal has visible sign-in, TOTP, scope, language, and four explicit work areas', () => {
   const app = read('src/App.tsx');
 
   assert.match(app, /services\.signIn/u);
@@ -79,4 +79,25 @@ test('confirmation dialogs close on Escape, trap focus, and restore the invoking
   assert.match(dialog, /document\.addEventListener\('keydown'/u);
   assert.match(dialog, /document\.removeEventListener\('keydown'/u);
   assert.match(dialog, /aria-modal="true"/u);
+});
+
+test('App Review is a visible production-only workspace with verified one-time copy and hide confirmation', () => {
+  const panel = read('src/components/AppReviewCredentialPanel.tsx');
+  const app = read('src/App.tsx');
+  const services = read('src/firebase/firebaseStaffServices.ts');
+  const domain = read('src/domain/appReviewCredential.ts');
+
+  assert.match(app, /AppReviewCredentialPanel/u);
+  assert.match(app, /app_review_credential/u);
+  assert.match(app, /session\.scope === 'production'/u);
+  assert.match(services, /createAppReviewCredentialGateway/u);
+  assert.match(panel, /navigator\.clipboard\.writeText/u);
+  assert.match(panel, /model\.markCopied\(\)/u);
+  assert.match(panel, /disabled=\{!snapshot\.copied/u);
+  assert.match(panel, /model\.acknowledgeHidden\(\)/u);
+  assert.match(panel, /ConfirmDialog/u);
+  assert.match(panel, /t\('review\.freezeWarning'\)/u);
+  assert.match(panel, /snapshot\.oneTimeCredential !== null/u);
+  assert.doesNotMatch(panel, /localStorage|sessionStorage|indexedDB|console\./iu);
+  assert.doesNotMatch(domain, /localStorage|sessionStorage|indexedDB|console\./iu);
 });

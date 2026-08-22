@@ -100,3 +100,17 @@ Retain the manifest, all three pins, build logs, local verification result, and
 live verification result together. A rollback must restore a previously pinned
 Staff Portal artifact and repeat the same live verification; it must not alter
 the public capsule or any mini-app path.
+
+## 4. Operational App Review freeze
+
+Before entering an App Review credential in App Store Connect, record only its
+generation and rotation timestamp in the approved release evidence. Never put
+the plaintext credential in logs, source control, screenshots, or this
+manifest. Copy it through the approved submission workflow while it is visible
+once in the portal, verify the Clipboard operation succeeded, and explicitly
+acknowledge hiding it.
+
+Freeze rotation from submission until Apple finishes review. Rotation uses the
+displayed generation as a compare-and-swap precondition and immediately
+invalidates the previous credential. A conflict or uncertain result requires a
+fresh status read; do not retry from a stale generation.
