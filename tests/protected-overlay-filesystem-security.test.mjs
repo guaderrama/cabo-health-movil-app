@@ -289,6 +289,44 @@ test('SIGKILL during journal recovery is itself idempotently recoverable', (cont
   }
 });
 
+test('first promotion recovers to truly absent state before an idempotent retry', (context) => {
+  const fixture = makeAbsentMoveTransactionFixture();
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const environment = {
+    ...process.env,
+    CABOHEALTH_TEST_STARTS_ABSENT: '1',
+  };
+  const crashed = spawnSync(process.execPath, [journalWorkerPath, 'execute', fixture], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...environment,
+      NODE_ENV: 'test',
+      CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: 'move-1',
+    },
+  });
+  assert.equal(crashed.signal, 'SIGKILL');
+
+  const recovered = spawnSync(process.execPath, [journalWorkerPath, 'recover', fixture], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: environment,
+  });
+  assert.equal(recovered.status, 0, recovered.stderr);
+  assert.equal(existsSync(join(fixture, 'state.json')), false);
+  assert.equal(existsSync(join(fixture, 'live')), false);
+  assert.equal(readFileSync(join(fixture, 'candidate/release.txt'), 'utf8'), 'B\n');
+
+  const retried = spawnSync(process.execPath, [journalWorkerPath, 'execute', fixture], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: environment,
+  });
+  assert.equal(retried.status, 0, retried.stderr);
+  assert.equal(readFileSync(join(fixture, 'live/release.txt'), 'utf8'), 'B\n');
+  assert.equal(readFileSync(join(fixture, 'state.json'), 'utf8'), '{"release":"B"}\n');
+});
+
 test('artifact creation rejects a reviewed source inode swapped after inventory validation', (context) => {
   const fixture = makeProjectFixture();
   context.after(() => rmSync(fixture, { recursive: true, force: true }));
@@ -354,6 +392,14 @@ function makeMoveTransactionFixture() {
     mode: 0o600,
   });
   chmodSync(join(fixture, 'state.json'), 0o600);
+  return fixture;
+}
+
+function makeAbsentMoveTransactionFixture() {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-absent-journal-'));
+  mkdirSync(join(fixture, 'managed'), { mode: 0o700 });
+  mkdirSync(join(fixture, 'candidate'), { mode: 0o755 });
+  writeFileSync(join(fixture, 'candidate/release.txt'), 'B\n', { mode: 0o644 });
   return fixture;
 }
 

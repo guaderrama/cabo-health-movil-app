@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  clearDurableCanonicalRecord,
   executeDurableMoveTransaction,
   readDurableCanonicalRecord,
   recoverDurableMoveTransaction,
@@ -12,12 +13,15 @@ import {
 const [command, root] = process.argv.slice(2);
 const managedRoot = join(root, 'managed');
 const statePath = join(root, 'state.json');
-const beforeState = Object.freeze({ release: 'A' });
+const startsAbsent = process.env.CABOHEALTH_TEST_STARTS_ABSENT === '1';
+const beforeState = startsAbsent ? null : Object.freeze({ release: 'A' });
 const afterState = Object.freeze({ release: 'B' });
-const moves = Object.freeze([
-  Object.freeze({ source: 'live', destination: 'backup' }),
-  Object.freeze({ source: 'candidate', destination: 'live' }),
-]);
+const moves = startsAbsent
+  ? Object.freeze([Object.freeze({ source: 'candidate', destination: 'live' })])
+  : Object.freeze([
+    Object.freeze({ source: 'live', destination: 'backup' }),
+    Object.freeze({ source: 'candidate', destination: 'live' }),
+  ]);
 
 const callbacks = {
   readState() {
@@ -27,6 +31,13 @@ const callbacks = {
     });
   },
   writeState(state) {
+    if (state === null) {
+      clearDurableCanonicalRecord(statePath, {
+        errorCode: 'test_state_invalid',
+        mode: 0o600,
+      });
+      return;
+    }
     writeDurableCanonicalRecord(statePath, state, {
       errorCode: 'test_state_invalid',
       mode: 0o600,
