@@ -55,7 +55,7 @@ test('both broker HTTP surfaces authenticate the exact successful response body'
   for (const [callable, signer] of [
     ['brokerApi', 'signBrokerResponse'],
     ['appReviewBrokerApi', 'signAppReviewBrokerResponse'],
-  ]) {
+  ] as const) {
     const block = callableBlock(source, callable);
     assert.match(block, new RegExp(`${signer}\\(`, 'u'));
     assert.match(block, /X-CaboHealth-Response-Signature/u);
