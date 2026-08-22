@@ -110,6 +110,84 @@ Do not activate the public endpoints until all steps below pass:
 8. Rotate the staging key before production. Production must use its own key
    ID and signing key; never reuse staging material.
 
+The production Secret Manager inventory is exactly eight rings:
+`CLIENT_CODE_PEPPER_RING`, `CLIENT_INSTALLATION_PEPPER_RING`,
+`CLIENT_DELETION_RECEIPT_PEPPER_RING`, `CLIENT_RATE_LIMIT_PEPPER_RING`,
+`CLIENT_LAUNCH_NONCE_PEPPER_RING`, `CLIENT_WEB_SESSION_PEPPER_RING`,
+`CLIENT_WEB_CSRF_PEPPER_RING`, and `CLIENT_BROKER_HMAC_KEY_RING`. Authenticated
+responses reuse `CLIENT_BROKER_HMAC_KEY_RING`; they do not introduce a ninth
+secret. During rotation, Functions may retain the explicitly named previous
+broker key ID only for the bounded overlap. Hostinger must send and require the
+same exact key ID on the response. Run both realm harnesses with the retained
+and current IDs, prove each works only with its own realm/domain, prove a
+production ID/signature never falls back to App Review, then remove the old ID.
+
+## Signed Hostinger activation evidence
+
+The release gate does not trust a typed `status: passed`. Before activation:
+
+1. Generate two independent Ed25519 keypairs outside Git and outside
+   `public_html`. Production uses
+   `CABOHEALTH_CLIENT_RESOURCES_ATTESTATION_KEY`; App Review uses
+   `CABOHEALTH_APP_REVIEW_ATTESTATION_KEY`. Each private key document is
+   canonical JSON with exact keys `schemaVersion`, `algorithm`, and
+   `secretKeyBase64`, directory mode `0700`, file mode `0600`. Never put a
+   private key, signing-config bytes, or HMAC value in the trust policy,
+   evidence, command line, screenshot, chat, or repository.
+2. Create one canonical read-only trust-policy JSON containing the exact
+   production Firebase project URL and the exact App Review project URL, their
+   two distinct Ed25519 SPKI public keys, and, for each realm, the exact
+   `runtimeIdentity.documentRoot` returned by the serving web runtime and its
+   exact `runtimeIdentity.phpSapi` (`fpm-fcgi` or `apache2handler`, never
+   `cli`). Include the pinned attestor
+   `tools/hosting/protected-overlay-attestor.php` with SHA-256
+   `bfe8eb02df77d328b6698cd3eb9a14dee0653533c0b126b435870998b5adf8a9`.
+   Obtain its SHA-256 independently and have Ivan approve/record that pin in
+   the secured release record **outside** the activation/evidence capsule.
+3. Run `protected-overlays:release create-activation` with the external
+   `--trust-policy` and independently recorded `--trust-policy-sha256`. A URL
+   is accepted only when it is exactly
+   `https://us-central1-<approved-project>.cloudfunctions.net/brokerApi` (or
+   the separately pinned `appReviewBrokerApi` URL), never merely because its
+   hostname ends in `cloudfunctions.net` or `run.app`.
+4. Run `create-evidence-request` for the exact artifact and activation pins.
+   Copy that read-only request to Hostinger without editing it.
+5. Have Hostinger create an authenticated, internal-only, one-shot mapping to
+   the pinned attestor in the **same PHP-FPM pool or Apache handler** that
+   serves the protected endpoints. The mapping supplies
+   `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_REQUEST`,
+   `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_REALM`,
+   `CABOHEALTH_PROTECTED_OVERLAY_PROJECT_ROOT`, and
+   `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_OUTPUT` as server configuration,
+   never as request headers, query parameters, or body fields. Invoke it with
+   an empty HTTPS `POST` and no query string, first for production and then for
+   review, changing the server-side realm/output mapping between calls. The
+   normal six factory/config/content environment variables and two key-path
+   variables must be inherited from that same effective web runtime.
+6. The attestor obtains `PHP_SAPI` and `DOCUMENT_ROOT` from the executing web
+   runtime, reads each configured path from real `getenv` values, opens every
+   request/config/factory/key file before measuring it, compares descriptor
+   identity and metadata before and after the bounded read, re-hashes private
+   content, and runs the pinned PHP 8.2 harness. Environment B for request A,
+   `cli`, document-root drift, a decoy or swapped file, failed harness, wrong
+   realm key, or missing Sodium/`proc_open` fails without an attestation. An
+   SSH command such as `php ...` with manually exported values is only a
+   negative test and can never satisfy the pinned web runtime identity.
+7. Confirm both read-only attestation files were created outside the docroot,
+   then immediately disable and remove the one-shot mapping and its server
+   control variables. Keep the private Ed25519 keys outside the docroot; do
+   not copy them back to the release machine.
+8. Back on the controlled release machine, run `assemble-evidence` with the
+   two read-only attestation files and the pinned trust policy. Record its
+   `evidenceSha256` independently, then pass that exact evidence file and pin
+   to `promote` and `verify-deployment`. Never derive the expected pin from the
+   same capsule inside the promotion command.
+
+Current external gate: **BLOCKED** until Hostinger demonstrates the internal
+mapping, the exact effective `PHP_SAPI`/`DOCUMENT_ROOT`, and both attestations
+from the serving pool. If Hostinger cannot provide that binding, do not create
+or accept deployment evidence and do not activate either overlay.
+
 If any variable, file, permission, host, key, content release, response schema,
 or PHP dependency is missing, the entry points return a sanitized 503 and no
 protected content. An interface or example factory alone is not a functioning

@@ -8,6 +8,8 @@ import { resolve } from 'node:path';
 import {
   createProtectedOverlayActivationPlan,
   createProtectedOverlayArtifact,
+  createProtectedOverlayDeploymentEvidence,
+  createProtectedOverlayDeploymentEvidenceRequest,
   promoteProtectedOverlays,
   rollbackProtectedOverlays,
   verifyProtectedOverlayDeployment,
@@ -61,6 +63,8 @@ switch (command) {
       '--deployment-root',
       '--inputs',
       '--out',
+      '--trust-policy',
+      '--trust-policy-sha256',
     ]);
     const inputs = readCanonicalJson(arguments_['--inputs'], 0o400);
     if (!isRecord(inputs) || !hasExactKeys(inputs, ['realms'])) {
@@ -69,11 +73,53 @@ switch (command) {
     const activation = createProtectedOverlayActivationPlan({
       deploymentRoot: arguments_['--deployment-root'],
       realms: inputs.realms,
+      trustPolicy: readCanonicalJson(arguments_['--trust-policy'], 0o400),
+      expectedTrustPolicySha256: arguments_['--trust-policy-sha256'],
     });
     writeImmutableJson(arguments_['--out'], activation);
     print({
       status: 'created',
       activationSha256: activation.activationSha256,
+    });
+    break;
+  }
+  case 'create-evidence-request': {
+    assertExactArguments(arguments_, [
+      ...deploymentArgumentNames({ includeEvidence: false }),
+      '--out',
+    ]);
+    const request = createProtectedOverlayDeploymentEvidenceRequest(
+      readDeploymentArguments(arguments_, { includeEvidence: false }),
+    );
+    writeImmutableJson(arguments_['--out'], request);
+    print({
+      status: 'created',
+      requestSha256: request.requestSha256,
+    });
+    break;
+  }
+  case 'assemble-evidence': {
+    assertExactArguments(arguments_, [
+      '--request',
+      '--production-attestation',
+      '--review-attestation',
+      '--trust-policy',
+      '--trust-policy-sha256',
+      '--out',
+    ]);
+    const evidence = createProtectedOverlayDeploymentEvidence({
+      attestations: {
+        production: readCanonicalJson(arguments_['--production-attestation'], 0o400),
+        review: readCanonicalJson(arguments_['--review-attestation'], 0o400),
+      },
+      evidenceRequest: readCanonicalJson(arguments_['--request'], 0o400),
+      expectedTrustPolicySha256: arguments_['--trust-policy-sha256'],
+      trustPolicy: readCanonicalJson(arguments_['--trust-policy'], 0o400),
+    });
+    writeImmutableJson(arguments_['--out'], evidence);
+    print({
+      status: 'created',
+      evidenceSha256: evidence.evidenceSha256,
     });
     break;
   }
@@ -98,19 +144,27 @@ switch (command) {
       '--deployment-root',
       '--activation',
       '--activation-sha256',
+      '--current-evidence-sha256',
       '--current-release-id',
       '--current-inventory-sha256',
       '--current-artifact-sha256',
       '--predecessor-release-id',
       '--predecessor-inventory-sha256',
       '--predecessor-artifact-sha256',
+      '--predecessor-evidence-sha256',
+      '--trust-policy',
+      '--trust-policy-sha256',
     ]);
     print(rollbackProtectedOverlays({
       deploymentRoot: arguments_['--deployment-root'],
       activation: readCanonicalJson(arguments_['--activation'], 0o400),
       expectedActivationSha256: arguments_['--activation-sha256'],
       expectedCurrentReleaseId: arguments_['--current-release-id'],
+      expectedCurrentEvidenceSha256: arguments_['--current-evidence-sha256'],
       expectedPredecessorReleaseId: arguments_['--predecessor-release-id'],
+      expectedPredecessorEvidenceSha256: arguments_['--predecessor-evidence-sha256'],
+      expectedTrustPolicySha256: arguments_['--trust-policy-sha256'],
+      trustPolicy: readCanonicalJson(arguments_['--trust-policy'], 0o400),
       currentPins: {
         expectedReleaseId: arguments_['--current-release-id'],
         expectedInventorySha256: arguments_['--current-inventory-sha256'],
@@ -180,8 +234,8 @@ function readCanonicalJson(path, expectedMode) {
   return value;
 }
 
-function deploymentArgumentNames() {
-  return [
+function deploymentArgumentNames({ includeEvidence = true } = {}) {
+  const names = [
     '--project-root',
     '--deployment-root',
     '--artifact',
@@ -190,11 +244,15 @@ function deploymentArgumentNames() {
     '--inventory-sha256',
     '--artifact-sha256',
     '--activation-sha256',
+    '--trust-policy',
+    '--trust-policy-sha256',
   ];
+  if (includeEvidence) names.push('--evidence', '--evidence-sha256');
+  return names;
 }
 
-function readDeploymentArguments(arguments_) {
-  return {
+function readDeploymentArguments(arguments_, { includeEvidence = true } = {}) {
+  const deployment = {
     projectRoot: arguments_['--project-root'],
     deploymentRoot: arguments_['--deployment-root'],
     artifact: readCanonicalJson(arguments_['--artifact'], 0o400),
@@ -203,7 +261,14 @@ function readDeploymentArguments(arguments_) {
     expectedInventorySha256: arguments_['--inventory-sha256'],
     expectedArtifactSha256: arguments_['--artifact-sha256'],
     expectedActivationSha256: arguments_['--activation-sha256'],
+    expectedTrustPolicySha256: arguments_['--trust-policy-sha256'],
+    trustPolicy: readCanonicalJson(arguments_['--trust-policy'], 0o400),
   };
+  if (includeEvidence) {
+    deployment.evidence = readCanonicalJson(arguments_['--evidence'], 0o400);
+    deployment.expectedEvidenceSha256 = arguments_['--evidence-sha256'];
+  }
+  return deployment;
 }
 
 function isRecord(value) {

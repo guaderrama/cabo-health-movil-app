@@ -172,6 +172,36 @@ test('broker response signatures authenticate exact response bytes and remain re
   }, ring));
 });
 
+test('response key rotation accepts an explicitly retained key id without cross-realm fallback', () => {
+  const nextKeyId = '2026-09';
+  const nextKey = Buffer.alloc(32, 72);
+  const ring = parsePepperRingSecret(JSON.stringify({
+    currentVersion: nextKeyId,
+    keys: {
+      [keyId]: key.toString('base64'),
+      [nextKeyId]: nextKey.toString('base64'),
+    },
+  }));
+  const responseBody = Buffer.from('{"revoked":true}', 'utf8');
+  const input = (selectedKeyId: string) => ({
+    body: responseBody,
+    keyId: selectedKeyId,
+    path: '/v1/sessions/revoke',
+    requestId,
+    status: 200,
+  });
+
+  const retainedProduction = signBrokerResponse(input(keyId), ring);
+  const currentProduction = signBrokerResponse(input(nextKeyId), ring);
+  const retainedReview = signAppReviewBrokerResponse(input(keyId), ring);
+  assert.notEqual(retainedProduction, currentProduction);
+  assert.notEqual(retainedProduction, retainedReview);
+  assert.throws(
+    () => signBrokerResponse(input('removed-key'), ring),
+    /broker_response_signing_failed/u,
+  );
+});
+
 function sign(
   method: string,
   route: string,

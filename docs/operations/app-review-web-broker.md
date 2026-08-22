@@ -76,7 +76,7 @@ realm separation remains required even when operators follow this rule.
 Do not publish or enable the paths until every step is green:
 
 1. Deploy and freeze the matching backend `appReviewBrokerApi` only after its
-   named review Firestore database, IAM, rules, TTL policies, and seven review
+   named review Firestore database, IAM, rules, TTL policies, and eight review
    secret rings have passed staging review.
 2. Create the Hostinger signing JSON matching
    `app-review-private/config/broker-config.schema.json`. Store it outside the
@@ -99,6 +99,67 @@ Do not publish or enable the paths until every step is green:
 8. Exercise the fixed sample on two clean physical iPhones, rotate while both a
    native and web session are active, and prove immediate denial before any
    reviewer credential is placed in App Store Connect.
+
+The App Review Secret Manager inventory is exactly eight rings:
+`APP_REVIEW_CREDENTIAL_PEPPER_RING`, `APP_REVIEW_INSTALLATION_PEPPER_RING`,
+`APP_REVIEW_DELETION_RECEIPT_PEPPER_RING`,
+`APP_REVIEW_RATE_LIMIT_PEPPER_RING`, `APP_REVIEW_LAUNCH_NONCE_PEPPER_RING`,
+`APP_REVIEW_WEB_SESSION_PEPPER_RING`, `APP_REVIEW_WEB_CSRF_PEPPER_RING`, and
+`APP_REVIEW_BROKER_HMAC_KEY_RING`. Successful response authentication reuses
+`APP_REVIEW_BROKER_HMAC_KEY_RING`; it does not add a ninth secret. During a
+bounded rotation overlap, Functions may accept only the explicitly named
+retained and current review key IDs. Hostinger must require the exact response
+key ID it sent. Both IDs must pass in the review response domain, a removed ID
+must fail, and neither ID nor signature may fall back to the production ring or
+domain.
+
+## Signed Hostinger activation evidence
+
+The web realm remains inactive until the shared protected-overlay gate has
+real, externally pinned Hostinger evidence:
+
+1. Generate distinct production and App Review Ed25519 keypairs outside Git
+   and outside `public_html`. Keep the review private-key document at the path
+   supplied only by `CABOHEALTH_APP_REVIEW_ATTESTATION_KEY`, under a `0700`
+   directory with mode `0600`. Its canonical JSON has exact keys
+   `schemaVersion`, `algorithm`, and `secretKeyBase64`. Never store either
+   private key in the repository, trust policy, evidence, command line, or
+   release capsule.
+2. Create a canonical read-only trust policy with the two distinct public
+   keys, exact production/review Firebase Function URLs, and each realm's exact
+   serving `runtimeIdentity`: canonical `DOCUMENT_ROOT` plus `PHP_SAPI`
+   (`fpm-fcgi` or `apache2handler`, never `cli`). Pin
+   `tools/hosting/protected-overlay-attestor.php` at SHA-256
+   `bfe8eb02df77d328b6698cd3eb9a14dee0653533c0b126b435870998b5adf8a9`.
+   Compute and approve the trust-policy SHA outside the activation/evidence
+   capsule, then pass that independent pin to `create-activation` and
+   `create-evidence-request`.
+3. Have Hostinger map the pinned attestor through an authenticated,
+   internal-only, one-shot route in the **same PHP-FPM pool or Apache handler**
+   as the protected endpoints. Server configuration—not request input—sets
+   `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_REQUEST`,
+   `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_REALM`,
+   `CABOHEALTH_PROTECTED_OVERLAY_PROJECT_ROOT`, and
+   `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_OUTPUT`. Invoke an empty HTTPS
+   `POST` with no query/body once per realm. Headers, query parameters, body
+   fields, or manually exported SSH/CLI environment values are not evidence of
+   the serving runtime.
+4. The attestor derives `PHP_SAPI`, `DOCUMENT_ROOT`, and the real factory,
+   config, content, and key paths from that effective web runtime. It performs
+   bounded descriptor-bound reads, exact hashes, and the pinned PHP harness.
+   `cli`, runtime drift, environment B for request A, a changed byte, wrong
+   realm key, or failed harness produces no acceptable attestation. Store both
+   one-shot outputs outside the docroot, then immediately disable/delete the
+   route and server control variables.
+5. On the controlled release machine, run `assemble-evidence`, independently
+   record the resulting `evidenceSha256`, and supply that exact external pin to
+   `promote` and `verify-deployment`. Do not derive the expected digest from
+   the capsule being accepted.
+
+Current external gate: **BLOCKED** until Hostinger proves the internal mapping,
+exact effective `PHP_SAPI`/`DOCUMENT_ROOT`, and both realm attestations from the
+serving pool. If that binding is unavailable, App Review activation remains
+forbidden.
 
 Missing variables, files, permissions, PHP/cURL, host mismatch, response drift,
 or an unconfigured backend must return a generic unavailable/denied response.
