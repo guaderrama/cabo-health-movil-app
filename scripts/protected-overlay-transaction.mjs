@@ -6,11 +6,17 @@ import {
   fstatSync,
   fsyncSync,
   linkSync,
+  lstatSync,
+  mkdirSync,
   openSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  rmdirSync,
   unlinkSync,
   writeSync,
 } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 
 import {
   inspectDescriptorBoundDirectory,
@@ -97,6 +103,139 @@ export function durableUnlink(path, errorCode = 'protected_overlay_unlink_failed
     if (error instanceof Error && error.message === errorCode) throw error;
     throw new Error(errorCode);
   }
+}
+
+export function writeDurableCanonicalRecord(path, value, {
+  errorCode = 'protected_overlay_journal_invalid',
+  mode = 0o600,
+} = {}) {
+  if (![0o400, 0o600].includes(mode)) throw new Error(errorCode);
+  let source;
+  try {
+    source = `${JSON.stringify(value)}\n`;
+  } catch {
+    throw new Error(errorCode);
+  }
+  const destination = resolve(path);
+  const candidate = `${destination}.candidate`;
+  removeOwnedFileIfPresent(candidate, mode, errorCode);
+  if (existsSync(destination)) {
+    readDescriptorBoundFile(destination, {
+      allowedModes: [mode],
+      errorCode,
+      expectedParentModes: [0o700, 0o755],
+      maximumSize: 16 * 1024 * 1024,
+      minimumSize: 0,
+    });
+  }
+  writeDurableExclusiveFile(candidate, source, mode, errorCode);
+  durableRename(candidate, destination, errorCode);
+}
+
+export function readDurableCanonicalRecord(path, {
+  errorCode = 'protected_overlay_journal_invalid',
+  mode = 0o600,
+  maximumSize = 16 * 1024 * 1024,
+} = {}) {
+  const target = resolve(path);
+  if (!existsSync(target)) return null;
+  const file = readDescriptorBoundFile(target, {
+    allowedModes: [mode],
+    errorCode,
+    expectedParentModes: [0o700, 0o755],
+    maximumSize,
+  });
+  const source = file.bytes.toString('utf8');
+  let value;
+  try {
+    value = JSON.parse(source);
+  } catch {
+    throw new Error(errorCode);
+  }
+  if (source !== `${JSON.stringify(value)}\n`) throw new Error(errorCode);
+  return value;
+}
+
+export function clearDurableCanonicalRecord(path, {
+  errorCode = 'protected_overlay_journal_invalid',
+  mode = 0o600,
+} = {}) {
+  const target = resolve(path);
+  removeOwnedFileIfPresent(`${target}.candidate`, mode, errorCode);
+  removeOwnedFileIfPresent(target, mode, errorCode);
+}
+
+export function durableRename(source, destination, errorCode = 'protected_overlay_rename_failed') {
+  const sourcePath = resolve(source);
+  const destinationPath = resolve(destination);
+  const sourceParent = dirname(sourcePath);
+  const destinationParent = dirname(destinationPath);
+  inspectDescriptorBoundDirectory(sourceParent, {
+    allowedModes: [0o700, 0o755],
+    errorCode,
+  });
+  inspectDescriptorBoundDirectory(destinationParent, {
+    allowedModes: [0o700, 0o755],
+    errorCode,
+  });
+  try {
+    renameSync(sourcePath, destinationPath);
+    fsyncDirectory(sourceParent, errorCode);
+    if (destinationParent !== sourceParent) fsyncDirectory(destinationParent, errorCode);
+  } catch (error) {
+    if (error instanceof Error && error.message === errorCode) throw error;
+    throw new Error(errorCode);
+  }
+}
+
+export function ensureDurableDirectory(path, mode, errorCode = 'protected_overlay_directory_invalid') {
+  const target = resolve(path);
+  const parent = dirname(target);
+  inspectDescriptorBoundDirectory(parent, {
+    allowedModes: [0o700, 0o755],
+    errorCode,
+  });
+  let created = false;
+  try {
+    mkdirSync(target, { mode });
+    created = true;
+  } catch (error) {
+    if (!(error && typeof error === 'object' && error.code === 'EEXIST')) {
+      throw new Error(errorCode);
+    }
+  }
+  const directory = inspectDescriptorBoundDirectory(target, {
+    allowedModes: [mode],
+    errorCode,
+  });
+  if (created) {
+    fsyncDirectory(directory.path, errorCode);
+    fsyncDirectory(parent, errorCode);
+  }
+  return directory.path;
+}
+
+export function removeDurableOwnedTree(
+  path,
+  managedRoot,
+  errorCode = 'protected_overlay_staging_invalid',
+) {
+  const root = inspectDescriptorBoundDirectory(managedRoot, {
+    allowedModes: [0o700],
+    errorCode,
+  }).path;
+  const lexicalTarget = resolve(path);
+  if (!existsSync(lexicalTarget)) return;
+  let target;
+  try {
+    const lexicalStat = lstatSync(lexicalTarget, { bigint: true });
+    if (lexicalStat.isSymbolicLink()) throw new Error(errorCode);
+    target = realpathSync(lexicalTarget);
+  } catch {
+    throw new Error(errorCode);
+  }
+  if (target === root || !target.startsWith(`${root}${sep}`)) throw new Error(errorCode);
+  removeDirectoryRecursively(target, errorCode);
 }
 
 function acquireExclusiveLock(root) {
@@ -219,6 +358,19 @@ function safeRemoveOwnCandidate(path) {
   durableUnlink(path, 'protected_overlay_transaction_lock_invalid');
 }
 
+function removeOwnedFileIfPresent(path, mode, errorCode) {
+  if (!existsSync(path)) return;
+  readDescriptorBoundFile(path, {
+    allowedLinkCounts: [1],
+    allowedModes: [mode],
+    errorCode,
+    expectedParentModes: [0o700, 0o755],
+    maximumSize: 16 * 1024 * 1024,
+    minimumSize: 0,
+  });
+  durableUnlink(path, errorCode);
+}
+
 function lockCandidatePath(root, lock) {
   return resolve(root, `.${LOCK_NAME}.${lock.pid}.${lock.token}.candidate`);
 }
@@ -229,5 +381,41 @@ function isProcessAlive(pid) {
     return true;
   } catch (error) {
     return error && typeof error === 'object' && error.code !== 'ESRCH';
+  }
+}
+
+function removeDirectoryRecursively(path, errorCode) {
+  const directory = inspectDescriptorBoundDirectory(path, {
+    allowedModes: [0o700, 0o755],
+    errorCode,
+  });
+  const entries = readdirSync(directory.path, { withFileTypes: true });
+  for (const entry of entries) {
+    const child = resolve(directory.path, entry.name);
+    const stat = lstatSync(child, { bigint: true });
+    if (stat.isSymbolicLink()) throw new Error(errorCode);
+    if (stat.isDirectory()) {
+      removeDirectoryRecursively(child, errorCode);
+    } else if (stat.isFile()) {
+      readDescriptorBoundFile(child, {
+        allowedLinkCounts: [1],
+        allowedModes: [0o400, 0o600, 0o644],
+        errorCode,
+        expectedParentModes: [0o700, 0o755],
+        maximumSize: 16 * 1024 * 1024,
+        minimumSize: 0,
+      });
+      durableUnlink(child, errorCode);
+    } else {
+      throw new Error(errorCode);
+    }
+  }
+  if (readdirSync(directory.path).length !== 0) throw new Error(errorCode);
+  try {
+    rmdirSync(directory.path);
+    fsyncDirectory(dirname(directory.path), errorCode);
+  } catch (error) {
+    if (error instanceof Error && error.message === errorCode) throw error;
+    throw new Error(errorCode);
   }
 }

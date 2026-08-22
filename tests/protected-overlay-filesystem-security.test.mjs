@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -132,6 +133,65 @@ test('a process killed while holding the deployment lock cannot deadlock recover
   });
   assert.equal(recovered.status, 0, recovered.stderr);
   assert.deepEqual(JSON.parse(recovered.stdout), { status: 'locked' });
+});
+
+test('durable journal records replace atomically and clear without a stale candidate', async (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-journal-'));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const journalPath = join(fixture, 'transaction.json');
+  const transaction = await import('../scripts/protected-overlay-transaction.mjs');
+
+  transaction.writeDurableCanonicalRecord(journalPath, { phase: 'prepared' }, {
+    errorCode: 'test_journal_invalid',
+    mode: 0o600,
+  });
+  assert.deepEqual(transaction.readDurableCanonicalRecord(journalPath, {
+    errorCode: 'test_journal_invalid',
+    mode: 0o600,
+  }), { phase: 'prepared' });
+
+  transaction.writeDurableCanonicalRecord(journalPath, { phase: 'committed' }, {
+    errorCode: 'test_journal_invalid',
+    mode: 0o600,
+  });
+  assert.deepEqual(transaction.readDurableCanonicalRecord(journalPath, {
+    errorCode: 'test_journal_invalid',
+    mode: 0o600,
+  }), { phase: 'committed' });
+  assert.equal(statSync(journalPath).mode & 0o777, 0o600);
+  assert.equal(existsSync(`${journalPath}.candidate`), false);
+
+  transaction.clearDurableCanonicalRecord(journalPath, {
+    errorCode: 'test_journal_invalid',
+    mode: 0o600,
+  });
+  assert.equal(transaction.readDurableCanonicalRecord(journalPath, {
+    errorCode: 'test_journal_invalid',
+    mode: 0o600,
+  }), null);
+});
+
+test('durable staging cleanup removes only an owned tree below its managed root', async (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-staging-'));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const managedRoot = join(fixture, 'managed');
+  mkdirSync(managedRoot, { mode: 0o700 });
+  const transaction = await import('../scripts/protected-overlay-transaction.mjs');
+  const stagingRoot = join(managedRoot, 'staging');
+  const realmRoot = join(stagingRoot, 'production');
+
+  transaction.ensureDurableDirectory(stagingRoot, 0o700, 'test_staging_invalid');
+  transaction.ensureDurableDirectory(realmRoot, 0o755, 'test_staging_invalid');
+  transaction.writeDurableExclusiveFile(
+    join(realmRoot, 'index.html'),
+    '<!doctype html>\n',
+    0o644,
+    'test_staging_invalid',
+  );
+  transaction.removeDurableOwnedTree(stagingRoot, managedRoot, 'test_staging_invalid');
+
+  assert.equal(existsSync(stagingRoot), false);
+  assert.equal(existsSync(managedRoot), true);
 });
 
 test('artifact creation rejects a reviewed source inode swapped after inventory validation', (context) => {
