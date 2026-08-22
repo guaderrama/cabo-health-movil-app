@@ -17,6 +17,8 @@
     "features/catalog/catalogPresentation.ts",
     "features/devMiniapps/devMiniappCatalog.ts",
     "features/devMiniapps/devMiniappStore.ts",
+    "features/clientAccess/clientAccessController.ts",
+    "features/clientAccess/clientResourceNavigation.ts",
     "features/home/premiumHomePresentation.ts",
     "features/motion/editorialTileMotion.ts",
     "features/motion/moleculeMotionPolicy.ts",

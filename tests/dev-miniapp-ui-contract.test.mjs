@@ -32,7 +32,7 @@ test('the test panel contains no legacy PIN, Firebase authority, or client-code 
     read('features/devMiniapps/devMiniappStore.ts'),
   ].join('\n');
   assert.doesNotMatch(sources, /ADMIN_PIN|master.?code|firebase|firestore|access_codes/iu);
-  assert.match(read('i18n/messages.ts'), /Client codes and server protection are not active yet\./u);
+  assert.match(read('i18n/messages.ts'), /Production client access is managed separately through verified codes\./u);
 });
 
 test('the test panel offers a reviewed icon picker and cards render the stored choice', () => {

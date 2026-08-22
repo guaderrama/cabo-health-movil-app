@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -73,6 +72,7 @@ export function DevMiniappPanel({
   const insets = useSafeAreaInsets();
   const [form, setForm] = useState<DevMiniappInput>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
+  const [removeCandidate, setRemoveCandidate] = useState<Readonly<DevMiniapp> | null>(null);
 
   if (!isDevMiniappPanelEnabled(__DEV__)) return null;
 
@@ -104,15 +104,10 @@ export function DevMiniappPanel({
     setFormError(null);
   };
 
-  const confirmRemove = (miniapp: Readonly<DevMiniapp>) => {
-    Alert.alert(
-      t('devPanel.remove'),
-      t('devPanel.removeConfirm'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        { text: t('devPanel.remove'), style: 'destructive', onPress: () => { void onRemove(miniapp.id); } },
-      ],
-    );
+  const removeSelected = async () => {
+    if (!removeCandidate) return;
+    const removed = await onRemove(removeCandidate.id);
+    if (removed) setRemoveCandidate(null);
   };
 
   const displayTitle = (miniapp: Readonly<DevMiniapp>) => (
@@ -217,7 +212,7 @@ export function DevMiniappPanel({
                   accessibilityRole="button"
                   accessibilityLabel={`${t('devPanel.remove')}: ${displayTitle(miniapp)}`}
                   disabled={saving}
-                  onPress={() => confirmRemove(miniapp)}
+                  onPress={() => setRemoveCandidate(miniapp)}
                   style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
                 >
                   <Ionicons name="trash-outline" size={20} color={colors.error} />
@@ -322,6 +317,39 @@ export function DevMiniappPanel({
             </Pressable>
           </View>
         </ScrollView>
+
+        {removeCandidate && (
+          <View style={styles.confirmOverlay}>
+            <View
+              accessibilityRole="alert"
+              style={[
+                styles.confirmCard,
+                { backgroundColor: colors.cardBackground, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[styles.confirmTitle, { color: colors.text }]}>{t('devPanel.remove')}</Text>
+              <Text style={[styles.confirmCopy, { color: colors.textSecondary }]}>{t('devPanel.removeConfirm')}</Text>
+              <View style={styles.confirmActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={saving}
+                  onPress={() => setRemoveCandidate(null)}
+                  style={({ pressed }) => [styles.confirmButton, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.confirmButtonText, { color: colors.primary }]}>{t('common.cancel')}</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={saving}
+                  onPress={() => { void removeSelected(); }}
+                  style={({ pressed }) => [styles.confirmButton, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.confirmButtonText, { color: colors.error }]}>{t('devPanel.remove')}</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -457,4 +485,11 @@ const styles = StyleSheet.create({
   addButtonText: { fontSize: 15, lineHeight: 20, fontWeight: '800' },
   pressed: { opacity: 0.72 },
   disabled: { opacity: 0.55 },
+  confirmOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 20, backgroundColor: 'rgba(3, 25, 37, 0.56)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  confirmCard: { width: '100%', maxWidth: 360, borderWidth: 1, borderRadius: 20, padding: 20 },
+  confirmTitle: { fontFamily: 'Georgia', fontSize: 20, lineHeight: 26, fontWeight: '600' },
+  confirmCopy: { marginTop: 8, fontSize: 14, lineHeight: 20 },
+  confirmActions: { marginTop: 18, flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
+  confirmButton: { minHeight: 44, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  confirmButtonText: { fontSize: 13, lineHeight: 18, fontWeight: '800' },
 });

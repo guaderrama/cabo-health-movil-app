@@ -23,6 +23,8 @@ import { DevMiniappPreview } from '../../features/devMiniapps/DevMiniappPreview'
 import { DevMiniappTile } from '../../features/devMiniapps/DevMiniappTile';
 import { type DevMiniapp } from '../../features/devMiniapps/devMiniappCatalog';
 import { useDevMiniapps } from '../../features/devMiniapps/useDevMiniapps';
+import { ClientAccessFolio } from '../../features/clientAccess/ClientAccessFolio';
+import { ClientAccessModal } from '../../features/clientAccess/ClientAccessModal';
 import { useFavorites, useTheme, useTranslations, useWebApps } from '../../hooks';
 
 export default function HomeScreen() {
@@ -36,6 +38,7 @@ export default function HomeScreen() {
   const model = useMemo(() => buildPremiumHomeModel(PUBLIC_MINIAPPS), []);
   const devCatalog = useDevMiniapps();
   const [devPanelVisible, setDevPanelVisible] = useState(false);
+  const [clientAccessVisible, setClientAccessVisible] = useState(false);
   const [previewMiniapp, setPreviewMiniapp] = useState<Readonly<DevMiniapp> | null>(null);
   const logoTapCount = useRef(0);
   const columns = resolveCatalogCardColumns({ width, fontScale });
@@ -137,6 +140,18 @@ export default function HomeScreen() {
             ))}
           </View>
 
+          <View style={styles.clientSection}>
+            <SectionLabel label={t('clientAccess.sectionTitle')} color={colors.primary} />
+            <View style={styles.miniappGrid}>
+              <View style={columns === 2 ? styles.halfTile : styles.fullTile}>
+                <ClientAccessFolio
+                  index={model.resources.length}
+                  onPress={() => setClientAccessVisible(true)}
+                />
+              </View>
+            </View>
+          </View>
+
           {devCatalog.enabled && devCatalog.visibleMiniapps.length > 0 && (
             <View style={styles.testSection}>
               <SectionLabel label={t('home.testMiniapps')} color={colors.primary} />
@@ -209,6 +224,10 @@ export default function HomeScreen() {
         onAdd={devCatalog.addMiniapp}
         onToggle={devCatalog.toggleMiniapp}
         onRemove={devCatalog.deleteMiniapp}
+      />
+      <ClientAccessModal
+        visible={clientAccessVisible}
+        onClose={() => setClientAccessVisible(false)}
       />
       <DevMiniappPreview
         miniapp={previewMiniapp}
@@ -318,6 +337,7 @@ const styles = StyleSheet.create({
   halfTile: { width: '48.2%' },
   fullTile: { width: '100%' },
   toolsSection: { marginTop: 34 },
+  clientSection: { marginTop: 24 },
   testSection: { marginTop: 17 },
   toolsSurface: { marginTop: 0 },
   toolRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 9 },
