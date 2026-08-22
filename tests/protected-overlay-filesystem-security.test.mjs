@@ -11,6 +11,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -32,6 +33,10 @@ const lockWorkerPath = join(
 const journalWorkerPath = join(
   projectRoot,
   'tests/fixtures/protected-overlay-journal-worker.mjs',
+);
+const durableRenameWorkerPath = join(
+  projectRoot,
+  'tests/fixtures/protected-overlay-durable-rename-worker.mjs',
 );
 
 test('CLI rejects an inode substituted between metadata validation and reading', (context) => {
@@ -322,6 +327,41 @@ test('durable staging cleanup removes only an owned tree below its managed root'
   assert.equal(existsSync(managedRoot), true);
 });
 
+test('cross-directory durable rename syncs destination before source', (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-rename-order-'));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const sourceRoot = join(fixture, 'source');
+  const destinationRoot = join(fixture, 'destination');
+  const source = join(sourceRoot, 'release');
+  const destination = join(destinationRoot, 'release');
+  const logPath = join(fixture, 'fsync-order.txt');
+  const preload = join(fixture, 'record-directory-fsync.cjs');
+  mkdirSync(sourceRoot, { mode: 0o755 });
+  mkdirSync(destinationRoot, { mode: 0o755 });
+  mkdirSync(source, { mode: 0o755 });
+  writeFileSync(join(source, 'release.txt'), 'B\n', { mode: 0o644 });
+  writeDirectoryFsyncPreload(preload);
+
+  const result = spawnSync(process.execPath, [
+    durableRenameWorkerPath,
+    source,
+    destination,
+  ], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `--require=${preload}`,
+      CABOHEALTH_TEST_FSYNC_LOG: logPath,
+      CABOHEALTH_TEST_FSYNC_SOURCE_INO: String(statSync(sourceRoot).ino),
+      CABOHEALTH_TEST_FSYNC_DESTINATION_INO: String(statSync(destinationRoot).ino),
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(logPath, 'utf8'), 'DS');
+});
+
 test('SIGKILL at every durable move phase recovers one coherent release', (context) => {
   const crashSteps = [
     'journal-prepared',
@@ -365,6 +405,36 @@ test('SIGKILL at every durable move phase recovers one coherent release', (conte
       assert.equal(readFileSync(join(fixture, 'live/release.txt'), 'utf8'), 'B\n');
     }
   }
+});
+
+test('SIGKILL between destination and source fsync recovers a cross-directory move', (context) => {
+  const fixture = makeCrossDirectoryMoveTransactionFixture();
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const environment = {
+    ...process.env,
+    CABOHEALTH_TEST_CROSS_DIRECTORY: '1',
+  };
+  const crashed = spawnSync(process.execPath, [journalWorkerPath, 'execute', fixture], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...environment,
+      NODE_ENV: 'test',
+      CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: 'rename-destination-synced',
+    },
+  });
+  assert.equal(crashed.signal, 'SIGKILL');
+
+  const recovered = spawnSync(process.execPath, [journalWorkerPath, 'recover', fixture], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: environment,
+  });
+  assert.equal(recovered.status, 0, recovered.stderr);
+  assert.equal(readFileSync(join(fixture, 'state.json'), 'utf8'), '{"release":"A"}\n');
+  assert.equal(readFileSync(join(fixture, 'public/live/release.txt'), 'utf8'), 'A\n');
+  assert.equal(readFileSync(join(fixture, 'stage/candidate/release.txt'), 'utf8'), 'B\n');
+  assert.equal(existsSync(join(fixture, 'managed/transaction.json')), false);
 });
 
 test('SIGKILL during journal recovery is itself idempotently recoverable', (context) => {
@@ -474,6 +544,133 @@ test('recovery will not clear a committed journal when archived topology is miss
   assert.equal(existsSync(join(fixture, 'managed/transaction.json')), true);
 });
 
+test('recovery will not clear a committed journal when archived bytes were replaced', (context) => {
+  const fixture = makeMoveTransactionFixture();
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const crashed = spawnSync(process.execPath, [journalWorkerPath, 'execute', fixture], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: 'state-committed',
+    },
+  });
+  assert.equal(crashed.signal, 'SIGKILL');
+  writeFileSync(join(fixture, 'backup/release.txt'), 'ATTACKER\n');
+
+  const recovery = spawnSync(process.execPath, [journalWorkerPath, 'recover', fixture], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  assert.notEqual(recovery.status, 0, recovery.stdout);
+  assert.match(recovery.stderr, /protected_overlay_transaction_recovery_failed/u);
+  assert.equal(existsSync(join(fixture, 'managed/transaction.json')), true);
+});
+
+test('move transactions reject a symlinked parent that escapes the deployment root', async (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-move-escape-'));
+  const outside = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-move-outside-'));
+  context.after(() => {
+    rmSync(fixture, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+  mkdirSync(join(fixture, 'managed'), { mode: 0o700 });
+  mkdirSync(join(outside, 'slot'), { mode: 0o755 });
+  writeFileSync(join(outside, 'slot/source.txt'), 'outside\n', { mode: 0o644 });
+  symlinkSync(outside, join(fixture, 'escape'));
+  let state = Object.freeze({ release: 'A' });
+  const transaction = await import('../scripts/protected-overlay-transaction.mjs');
+
+  assert.throws(() => transaction.withExclusiveOverlayLock(
+    join(fixture, 'managed'),
+    ({ token }) => transaction.executeDurableMoveTransaction({
+      afterState: Object.freeze({ release: 'B' }),
+      beforeState: state,
+      managedRoot: join(fixture, 'managed'),
+      moves: [Object.freeze({
+        source: 'escape/slot/source.txt',
+        destination: 'escape/slot/destination.txt',
+      })],
+      operation: 'promote',
+      readState: () => state,
+      root: fixture,
+      token,
+      validateState: (value) => value?.release === 'A' || value?.release === 'B',
+      verifyLive: () => true,
+      verifyTopology: () => true,
+      writeState: (value) => { state = value; },
+    }),
+  ), /protected_overlay_transaction_(?:invalid|root_invalid)/u);
+  assert.equal(readFileSync(join(outside, 'slot/source.txt'), 'utf8'), 'outside\n');
+  assert.equal(existsSync(join(outside, 'slot/destination.txt')), false);
+});
+
+test('move transactions enforce initial state and live CAS before journaling', async (context) => {
+  const fixture = makeMoveTransactionFixture();
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const transaction = await import('../scripts/protected-overlay-transaction.mjs');
+  const beforeState = Object.freeze({ release: 'A' });
+  const afterState = Object.freeze({ release: 'B' });
+
+  assert.throws(() => transaction.withExclusiveOverlayLock(
+    join(fixture, 'managed'),
+    ({ token }) => transaction.executeDurableMoveTransaction({
+      afterState,
+      beforeState,
+      managedRoot: join(fixture, 'managed'),
+      moves: [
+        Object.freeze({ source: 'live', destination: 'backup' }),
+        Object.freeze({ source: 'candidate', destination: 'live' }),
+      ],
+      operation: 'promote',
+      readState: () => afterState,
+      root: fixture,
+      token,
+      validateState: (value) => value?.release === 'A' || value?.release === 'B',
+      verifyLive: () => true,
+      verifyTopology: () => true,
+      writeState: () => {},
+    }),
+  ), /protected_overlay_transaction_state_invalid/u);
+  assert.equal(existsSync(join(fixture, 'managed/transaction.json')), false);
+  assert.equal(existsSync(join(fixture, 'backup')), false);
+});
+
+test('move transactions reject cyclic topology that cannot identify a crash prefix', async (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-move-cycle-'));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  mkdirSync(join(fixture, 'managed'), { mode: 0o700 });
+  for (const name of ['a', 'b', 'temporary']) {
+    writeFileSync(join(fixture, name), `${name}\n`, { mode: 0o644 });
+  }
+  let state = Object.freeze({ release: 'A' });
+  const transaction = await import('../scripts/protected-overlay-transaction.mjs');
+
+  assert.throws(() => transaction.withExclusiveOverlayLock(
+    join(fixture, 'managed'),
+    ({ token }) => transaction.executeDurableMoveTransaction({
+      afterState: Object.freeze({ release: 'B' }),
+      beforeState: state,
+      managedRoot: join(fixture, 'managed'),
+      moves: [
+        Object.freeze({ source: 'a', destination: 'slot' }),
+        Object.freeze({ source: 'b', destination: 'a' }),
+        Object.freeze({ source: 'slot', destination: 'b' }),
+      ],
+      operation: 'promote',
+      readState: () => state,
+      root: fixture,
+      token,
+      validateState: (value) => value?.release === 'A' || value?.release === 'B',
+      verifyLive: () => true,
+      verifyTopology: () => true,
+      writeState: (value) => { state = value; },
+    }),
+  ), /protected_overlay_transaction_invalid/u);
+  assert.equal(existsSync(join(fixture, 'managed/transaction.json')), false);
+});
+
 test('artifact creation rejects a reviewed source inode swapped after inventory validation', (context) => {
   const fixture = makeProjectFixture();
   context.after(() => rmSync(fixture, { recursive: true, force: true }));
@@ -550,6 +747,20 @@ function makeAbsentMoveTransactionFixture() {
   return fixture;
 }
 
+function makeCrossDirectoryMoveTransactionFixture() {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-cross-directory-journal-'));
+  for (const path of ['managed', 'public', 'archive', 'stage']) {
+    mkdirSync(join(fixture, path), { mode: path === 'managed' ? 0o700 : 0o755 });
+  }
+  mkdirSync(join(fixture, 'public/live'), { mode: 0o755 });
+  mkdirSync(join(fixture, 'stage/candidate'), { mode: 0o755 });
+  writeFileSync(join(fixture, 'public/live/release.txt'), 'A\n', { mode: 0o644 });
+  writeFileSync(join(fixture, 'stage/candidate/release.txt'), 'B\n', { mode: 0o644 });
+  writeFileSync(join(fixture, 'state.json'), '{"release":"A"}\n', { mode: 0o600 });
+  chmodSync(join(fixture, 'state.json'), 0o600);
+  return fixture;
+}
+
 function writeSwapAfterLstatPreload(path) {
   writeFileSync(path, `'use strict';
 const fs = require('node:fs');
@@ -593,6 +804,24 @@ fs.unlinkSync = function guardedUnlink(path, ...args) {
     }
   }
   return originalUnlink.call(this, path, ...args);
+};
+syncBuiltinESMExports();
+`);
+}
+
+function writeDirectoryFsyncPreload(path) {
+  writeFileSync(path, `'use strict';
+const fs = require('node:fs');
+const { syncBuiltinESMExports } = require('node:module');
+const originalFsync = fs.fsyncSync;
+fs.fsyncSync = function recordedFsync(descriptor) {
+  const stat = fs.fstatSync(descriptor);
+  if (String(stat.ino) === process.env.CABOHEALTH_TEST_FSYNC_SOURCE_INO) {
+    fs.writeFileSync(process.env.CABOHEALTH_TEST_FSYNC_LOG, 'S', { flag: 'a' });
+  } else if (String(stat.ino) === process.env.CABOHEALTH_TEST_FSYNC_DESTINATION_INO) {
+    fs.writeFileSync(process.env.CABOHEALTH_TEST_FSYNC_LOG, 'D', { flag: 'a' });
+  }
+  return originalFsync.call(this, descriptor);
 };
 syncBuiltinESMExports();
 `);

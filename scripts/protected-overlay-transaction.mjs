@@ -181,8 +181,11 @@ export function durableRename(source, destination, errorCode = 'protected_overla
   });
   try {
     renameSync(sourcePath, destinationPath);
-    fsyncDirectory(sourceParent, errorCode);
-    if (destinationParent !== sourceParent) fsyncDirectory(destinationParent, errorCode);
+    fsyncDirectory(destinationParent, errorCode);
+    if (destinationParent !== sourceParent) {
+      transactionCheckpoint('rename-destination-synced');
+      fsyncDirectory(sourceParent, errorCode);
+    }
   } catch (error) {
     if (error instanceof Error && error.message === errorCode) throw error;
     throw new Error(errorCode);
@@ -250,6 +253,7 @@ export function executeDurableMoveTransaction({
   token,
   validateState,
   verifyLive,
+  verifyTopology,
   writeState,
 }) {
   const context = validateMoveTransactionContext({
@@ -263,13 +267,21 @@ export function executeDurableMoveTransaction({
     token,
     validateState,
     verifyLive,
+    verifyTopology,
     writeState,
   });
+  assertExclusiveOverlayLock(context.managedRoot, context.token);
   const journalPath = resolve(context.managedRoot, 'transaction.json');
   if (readDurableCanonicalRecord(journalPath, {
     errorCode: 'protected_overlay_transaction_journal_invalid',
     mode: 0o600,
   }) !== null) throw new Error('protected_overlay_transaction_journal_exists');
+  if (!statesEqual(context.readState(), context.beforeState)) {
+    throw new Error('protected_overlay_transaction_state_invalid');
+  }
+  if (!context.verifyLive(context.beforeState)) {
+    throw new Error('protected_overlay_transaction_live_invalid');
+  }
   assertMovePlanTopology(context.root, context.moves);
   let journal = Object.freeze({
     schemaVersion: 1,
@@ -282,6 +294,9 @@ export function executeDurableMoveTransaction({
     afterState,
     moves: context.moves,
   });
+  if (!context.verifyTopology(journal, 0)) {
+    throw new Error('protected_overlay_transaction_topology_invalid');
+  }
   writeTransactionJournal(journalPath, journal);
   transactionCheckpoint('journal-prepared');
 
@@ -296,6 +311,9 @@ export function executeDurableMoveTransaction({
         move.destination,
         'protected_overlay_transaction_move_failed',
       );
+      if (!context.verifyTopology(journal, index + 1)) {
+        throw new Error('protected_overlay_transaction_topology_invalid');
+      }
       journal = Object.freeze({
         ...journal,
         phase: 'applying',
@@ -334,8 +352,10 @@ export function recoverDurableMoveTransaction({
   managedRoot,
   readState,
   root,
+  token,
   validateState,
   verifyLive,
+  verifyTopology,
   writeState,
 }) {
   const context = validateMoveTransactionContext({
@@ -346,11 +366,13 @@ export function recoverDurableMoveTransaction({
     operation: 'recover',
     readState,
     root,
-    token: '0'.repeat(32),
+    token,
     validateState,
     verifyLive,
+    verifyTopology,
     writeState,
   }, { allowPlaceholderPlan: true });
+  assertExclusiveOverlayLock(context.managedRoot, context.token);
   const journalPath = resolve(context.managedRoot, 'transaction.json');
   removeOwnedFileIfPresent(
     `${journalPath}.candidate`,
@@ -373,6 +395,9 @@ export function recoverDurableMoveTransaction({
     journal.moves,
     journal.appliedCount,
   );
+  if (!context.verifyTopology(journal, appliedCount)) {
+    throw new Error('protected_overlay_transaction_recovery_failed');
+  }
   if (
     statesEqual(currentState, journal.afterState)
     && appliedCount === journal.moves.length
@@ -390,6 +415,7 @@ export function recoverDurableMoveTransaction({
     context.root,
     journal.moves,
     appliedCount,
+    (remainingCount) => context.verifyTopology(journal, remainingCount),
   );
   if (!statesEqual(currentState, journal.beforeState)) writeState(journal.beforeState);
   if (
@@ -519,6 +545,15 @@ function readLock(root) {
     || !TOKEN_PATTERN.test(value.token)
   ) throw new Error('protected_overlay_transaction_lock_invalid');
   return Object.freeze({ identity: file.identity, value: Object.freeze(value) });
+}
+
+function assertExclusiveOverlayLock(root, token) {
+  const lock = readLock(root);
+  if (
+    lock.value.pid !== process.pid
+    || lock.value.token !== token
+    || Number(lock.identity.nlink) !== 1
+  ) throw new Error('protected_overlay_transaction_lock_lost');
 }
 
 function removeStaleLock(root, existing) {
@@ -652,6 +687,9 @@ function validateMoveTransactionContext(input, { allowPlaceholderPlan = false } 
     || typeof input.writeState !== 'function'
     || typeof input.validateState !== 'function'
     || typeof input.verifyLive !== 'function'
+    || typeof input.verifyTopology !== 'function'
+    || typeof input.token !== 'string'
+    || !TOKEN_PATTERN.test(input.token)
   ) throw new Error('protected_overlay_transaction_invalid');
   const root = inspectDescriptorBoundDirectory(input.root, {
     allowedModes: [0o700, 0o755],
@@ -665,8 +703,6 @@ function validateMoveTransactionContext(input, { allowPlaceholderPlan = false } 
   if (!allowPlaceholderPlan) {
     if (
       !['promote', 'rollback'].includes(input.operation)
-      || typeof input.token !== 'string'
-      || !TOKEN_PATTERN.test(input.token)
       || !input.validateState(input.beforeState)
       || !input.validateState(input.afterState)
       || statesEqual(input.beforeState, input.afterState)
@@ -726,12 +762,16 @@ function validateMovePlan(moves, root) {
     ) throw new Error('protected_overlay_transaction_invalid');
     resolveMove(root, move);
   }
+  assertNonOverlappingMovePaths(moves, root);
+  assertUniqueMovePrefixes(moves, root);
 }
 
 function resolveMove(root, move) {
   const source = resolveTransactionPath(root, move.source);
   const destination = resolveTransactionPath(root, move.destination);
   if (source === destination) throw new Error('protected_overlay_transaction_invalid');
+  assertTransactionParent(root, source);
+  assertTransactionParent(root, destination);
   return Object.freeze({ destination, source });
 }
 
@@ -752,6 +792,52 @@ function resolveTransactionPath(root, value) {
   return absolute;
 }
 
+function assertTransactionParent(root, path) {
+  const lexicalParent = dirname(path);
+  const parent = inspectDescriptorBoundDirectory(lexicalParent, {
+    allowedModes: [0o700, 0o755],
+    errorCode: 'protected_overlay_transaction_invalid',
+    ...(lexicalParent === root ? {} : { mustBeInside: root }),
+  });
+  if (parent.path !== lexicalParent) {
+    throw new Error('protected_overlay_transaction_invalid');
+  }
+}
+
+function assertNonOverlappingMovePaths(moves, root) {
+  const paths = [...new Set(moves.flatMap((move) => {
+    const resolved = resolveMove(root, move);
+    return [resolved.source, resolved.destination];
+  }))];
+  for (let left = 0; left < paths.length; left += 1) {
+    for (let right = left + 1; right < paths.length; right += 1) {
+      if (
+        paths[left].startsWith(`${paths[right]}${sep}`)
+        || paths[right].startsWith(`${paths[left]}${sep}`)
+      ) throw new Error('protected_overlay_transaction_invalid');
+    }
+  }
+}
+
+function assertUniqueMovePrefixes(moves, root) {
+  const occupancy = inferInitialMoveTopology(root, moves);
+  const seen = new Set([moveOccupancyKey(occupancy)]);
+  for (const rawMove of moves) {
+    const move = resolveMove(root, rawMove);
+    occupancy.set(move.source, false);
+    occupancy.set(move.destination, true);
+    const key = moveOccupancyKey(occupancy);
+    if (seen.has(key)) throw new Error('protected_overlay_transaction_invalid');
+    seen.add(key);
+  }
+}
+
+function moveOccupancyKey(occupancy) {
+  return JSON.stringify([...occupancy]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([path, exists]) => [path, exists]));
+}
+
 function assertMovePlanTopology(root, moves) {
   const occupied = new Map();
   const pathExists = (path) => {
@@ -768,7 +854,7 @@ function assertMovePlanTopology(root, moves) {
   }
 }
 
-function reverseMovePlan(root, moves, appliedCount) {
+function reverseMovePlan(root, moves, appliedCount, verifyTopology) {
   for (let index = appliedCount - 1; index >= 0; index -= 1) {
     const move = resolveMove(root, moves[index]);
     const sourceExists = existsSync(move.source);
@@ -781,6 +867,9 @@ function reverseMovePlan(root, moves, appliedCount) {
       );
       transactionCheckpoint(`recovery-move-${index + 1}`);
     } else if (!(sourceExists && !destinationExists)) {
+      throw new Error('protected_overlay_transaction_recovery_failed');
+    }
+    if (!verifyTopology(index)) {
       throw new Error('protected_overlay_transaction_recovery_failed');
     }
   }
