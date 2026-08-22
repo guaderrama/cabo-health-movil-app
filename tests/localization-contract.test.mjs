@@ -72,6 +72,11 @@ test('approved simplified home has matching English and Spanish copy', () => {
   );
 });
 
+test('the folio action is explicit and localized', () => {
+  assert.equal(MESSAGES.en['catalog.openResource'], 'Open resource');
+  assert.equal(MESSAGES['es-MX']['catalog.openResource'], 'Abrir recurso');
+});
+
 test('main navigation is exactly Home, Saved, and Settings in both languages', () => {
   assert.deepEqual(
     MAIN_NAV_ITEMS.map(({ id, route }) => ({ id, route })),
@@ -137,6 +142,8 @@ test('editorial dates and utility tab ancestry are deliberate for both locales',
 
 test('catalog stacks cards for narrow widths or large Dynamic Type only', () => {
   assert.equal(resolveCatalogCardColumns({ width: 390, fontScale: 1 }), 2);
+  assert.equal(resolveCatalogCardColumns({ width: 390, fontScale: 1.19 }), 2);
+  assert.equal(resolveCatalogCardColumns({ width: 390, fontScale: 1.2 }), 1);
   assert.equal(resolveCatalogCardColumns({ width: 320, fontScale: 1 }), 1);
   assert.equal(resolveCatalogCardColumns({ width: 430, fontScale: 1.8 }), 1);
 });

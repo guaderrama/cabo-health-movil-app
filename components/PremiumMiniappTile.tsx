@@ -29,10 +29,12 @@ export function PremiumMiniappTile({
       eyebrow={t('catalog.publicBadge')}
       title={title}
       summary={summary}
+      actionLabel={t('catalog.openResource')}
       icon={clinic ? 'sparkles-outline' : 'restaurant-outline'}
+      folioIcon={clinic ? 'stethoscope' : 'bowl-mix-outline'}
       badgeIcon="globe-outline"
       accessibilityLabel={buildCatalogCardAccessibilityLabel(miniapp, language, t)}
-      accessibilityHint={t('catalog.open')}
+      accessibilityHint={t('catalog.openResource')}
       index={index}
       favorite={{
         selected: favorite,

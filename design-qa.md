@@ -215,3 +215,37 @@ final result: blocked
 The Home miniapp grid has **passed** scoped browser design QA with no actionable P0/P1/P2 finding. The overall release remains blocked by the pre-existing real-iPhone WKWebView/safe-area and motion-feel gate documented earlier in this file.
 
 final result: blocked
+
+## Layered miniapp folio QA — 2026-08-21
+
+### Selected visual target and normalization
+
+- Final user-selected reference: `/var/folders/zd/tys1mb_s1yb31y4gjh_y6sxm0000gn/T/codex-clipboard-d9c8ed41-a95b-49f7-8491-6386f0498c79.png` (760 × 1494, with a 699 px useful app canvas after excluding the black desktop margin).
+- The reference was measured before implementation and normalized to a 390 px mobile width. Public fronts resolve to approximately 168 × 260 points plus a 23-point access tab; client/test fronts resolve to approximately 168 × 221 points plus the tab. Public medallions normalize to 58 points and compact medallions to 52 points.
+- The implemented structure follows the selected folio direction: one opaque paper front, three offset sheets, a protruding access tab, circular icon medallion, separate favorite control, bronze rule, editorial title/summary, and a quiet text action.
+
+### Direct browser comparison
+
+- The final Home was inspected in the in-app browser at `https://5sdkah4-anonymous-8081.exp.direct/` against the selected reference after the geometry and color pass.
+- Light English showed two public aqua-backed folios with sea tabs, medical iconography, ivory fronts, gold favorite treatment, and complete text actions. The molecular field remains visible around the cards without bleeding through their paper fronts.
+- Dark `es-MX` showed complete Spanish titles and summaries with no clipping. Client/test folios remain shorter and warmer, with bronze tabs, bronze icon treatment, and accessible light-bronze actions.
+- The responsive boundary was also exercised through the presentation contract: the two-column grid remains available below a 1.2 font scale and switches to one column at 1.2 so `Guía de Clínica CaboHealth` and equivalent Dynamic Type content are not truncated.
+
+### Interaction, accessibility, and motion
+
+- Each folio remains one labeled full-card action. Save/Remove Saved remains a separate 44 × 44 control with selected state; decorative sheets, tab shape, medallion, divider, and arrow are hidden from assistive technology and do not intercept touches.
+- Visible and accessible action language is reconciled as `Open resource` / `Abrir recurso`.
+- Public and client access are communicated by text, icon, palette, and geometry rather than color alone. Light/dark contrast corrections cover the client action, selected favorite, tab labels, medallion boundaries, and icon treatment.
+- Existing press and reduced-motion behavior remains intact; the folio rewrite adds no new autonomous animation or network behavior.
+
+### Verification and review
+
+- Focused folio, localization, development-card, and presentation contracts: 23 passed, 0 failed.
+- Complete repository suite after the final contrast, localization, and Dynamic Type corrections: 650 passed, 0 failed.
+- App and node-test TypeScript checks, syntax/diff checks, and independent final review: passed. The review found no P0/P1 issue; the only optional nuance is that the small access tab reads as a slight parallelogram rather than the reference's primarily one-sided diagonal cut.
+
+### Result
+
+The selected layered miniapp folios have **passed** scoped direct-browser design QA. The overall release remains blocked by the existing real-iPhone composite WKWebView/safe-area and motion-feel check; no production deployment is implied by this visual pass.
+
+final result: blocked

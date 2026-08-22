@@ -122,16 +122,22 @@ export function CaboHealthMiniappIcon({
   name,
   size = 28,
   inverted = false,
+  primaryColor,
+  secondaryColor,
+  accentColor,
 }: {
   name: CaboHealthMiniappIconName;
   size?: number;
   inverted?: boolean;
+  primaryColor?: string;
+  secondaryColor?: string;
+  accentColor?: string;
 }) {
   const { colors } = useTheme();
   const Drawing = drawings[name];
-  const primary = inverted ? colors.onPrimary : colors.primary;
-  const secondary = inverted ? colors.accentLight : colors.primaryLight;
-  const accent = inverted ? colors.accentLight : colors.accent;
+  const primary = primaryColor ?? (inverted ? colors.onPrimary : colors.primary);
+  const secondary = secondaryColor ?? (inverted ? colors.accentLight : colors.primaryLight);
+  const accent = accentColor ?? (inverted ? colors.accentLight : colors.accent);
 
   return (
     <Svg

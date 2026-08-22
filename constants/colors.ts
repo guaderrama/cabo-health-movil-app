@@ -81,18 +81,21 @@ export const lightColors = {
   editorialIconSurface: 'rgba(251, 250, 247, 0.94)',
   editorialBorder: 'rgba(8, 42, 60, 0.22)',
 
-  // Opaque miniapp covers stay visually separate from the moving network.
-  miniappCardSurface: '#FFFFFF',
+  // Layered editorial folios stay visually separate from the moving network.
+  miniappCardSurface: '#FFFEFA',
   miniappCardSurfaceClient: '#FFFCF5',
-  miniappCardHeader: introColors.sea,
-  miniappCardHeaderWarm: '#7A562F',
-  miniappCardHeaderTest: '#397A90',
-  miniappCardHeaderClient: introColors.ink,
-  miniappCardHeaderText: '#FFFFFF',
-  miniappCardBorder: '#527887',
-  miniappCardBorderClient: '#8A633A',
+  miniappCardBorder: '#C7D4D8',
+  miniappCardBorderClient: '#D5C3A8',
   miniappCardIconSurface: introColors.paper,
-  miniappCardIconBorder: '#6D8C97',
+  miniappCardIconBorder: '#C9D8DC',
+  miniappFolioLayerNear: '#EDF6F7',
+  miniappFolioLayerFar: '#DDECEF',
+  miniappFolioLayerNearClient: '#F5EBDD',
+  miniappFolioLayerFarClient: '#EAD9BE',
+  miniappFolioTabPublic: '#0E657E',
+  miniappFolioTabClient: '#7A562F',
+  miniappFolioTabText: '#FFFFFF',
+  miniappFolioFavorite: '#92672F',
 } as const;
 
 // Dark Mode Colors - Premium Aesthetic
@@ -162,18 +165,21 @@ export const darkColors = {
   editorialIconSurface: 'rgba(8, 42, 60, 0.88)',
   editorialBorder: 'rgba(251, 250, 247, 0.24)',
 
-  // Opaque miniapp covers stay visually separate from the moving network.
+  // Layered editorial folios stay visually separate from the moving network.
   miniappCardSurface: '#123B4C',
   miniappCardSurfaceClient: '#173747',
-  miniappCardHeader: '#236A80',
-  miniappCardHeaderWarm: '#6B5136',
-  miniappCardHeaderTest: '#315F6F',
-  miniappCardHeaderClient: '#061F2D',
-  miniappCardHeaderText: introColors.paper,
   miniappCardBorder: '#8BC7D2',
   miniappCardBorderClient: '#DEC9AA',
   miniappCardIconSurface: '#0B3042',
   miniappCardIconBorder: '#8BC7D2',
+  miniappFolioLayerNear: '#174A5C',
+  miniappFolioLayerFar: '#0F4052',
+  miniappFolioLayerNearClient: '#4B4031',
+  miniappFolioLayerFarClient: '#3C342A',
+  miniappFolioTabPublic: '#236A80',
+  miniappFolioTabClient: '#6B5136',
+  miniappFolioTabText: introColors.paper,
+  miniappFolioFavorite: '#DEC08E',
 } as const;
 
 // Default export para compatibilidad (Light Mode)

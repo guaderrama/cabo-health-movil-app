@@ -24,7 +24,7 @@ test('public miniapps render as editorial covers with full-card navigation and a
 
   assert.match(tile, /EditorialMiniappCover/u);
   assert.match(tile, /buildCatalogCardAccessibilityLabel/u);
-  assert.match(tile, /accessibilityHint=\{t\('catalog\.open'\)\}/u);
+  assert.match(tile, /accessibilityHint=\{t\('catalog\.openResource'\)\}/u);
   assert.match(cover, /accessibilityState=\{\{ selected: favorite\.selected \}\}/u);
   assert.match(cover, /width: 44/u);
   assert.match(cover, /height: 44/u);
@@ -32,16 +32,31 @@ test('public miniapps render as editorial covers with full-card navigation and a
   assert.match(tile, /catalog\.publicBadge/u);
   assert.match(cover, /useEditorialTileMotion/u);
   assert.match(cover, /fontFamily: 'Georgia'/u);
-  assert.match(cover, /miniappCardHeader/u);
+  assert.match(cover, /styles\.accessTab/u);
+  assert.match(cover, /styles\.accessTabShape/u);
+  assert.match(cover, /styles\.backLayerNear/u);
+  assert.match(cover, /styles\.backLayerMid/u);
+  assert.match(cover, /styles\.backLayerFar/u);
+  assert.match(cover, /pointerEvents="none"/u);
+  assert.match(cover, /importantForAccessibility="no-hide-descendants"/u);
   assert.match(cover, /miniappCardSurface/u);
+  assert.match(cover, /actionLabel/u);
   assert.match(cover, /boxShadow/u);
   assert.match(cover, /badgeIcon/u);
   assert.doesNotMatch(cover, /EditorialCoverArt|LinearGradient/u);
+  assert.doesNotMatch(cover, /styles\.cover|styles\.openAction/u);
   assert.doesNotMatch(cover, /borderStyle:\s*'dashed'/u);
-  assert.match(colors, /miniappCardHeaderClient/u);
+  assert.match(colors, /miniappFolioLayerNear/u);
+  assert.match(colors, /miniappFolioLayerFar/u);
+  assert.match(colors, /miniappFolioTabClient/u);
   assert.match(colors, /miniappCardBorderClient/u);
-  assert.match(cover, /styles\.openAction/u);
-  assert.match(cover, /colors\.onPrimary/u);
+  assert.match(tile, /catalog\.openResource/u);
+  assert.match(tile, /accessibilityHint=\{t\('catalog\.openResource'\)\}/u);
+  assert.match(cover, /accessibilityRole="button"/u);
+  assert.match(cover, /accessibilityLabel=\{accessibilityLabel\}/u);
+  assert.match(cover, /accessibilityHint=\{accessibilityHint\}/u);
+  assert.match(cover, /onPressIn=\{motion\.onPressIn\}/u);
+  assert.match(cover, /onPressOut=\{motion\.onPressOut\}/u);
 });
 
 test('test miniapps reuse the editorial cover but remain visually subordinate while Tools stay quiet rows', () => {
@@ -55,6 +70,8 @@ test('test miniapps reuse the editorial cover but remain visually subordinate wh
   assert.match(tile, /miniapp\.access === 'client' \? 'client' : 'test'/u);
   assert.match(tile, /lock-closed-outline/u);
   assert.match(tile, /globe-outline/u);
+  assert.match(tile, /catalog\.openResource/u);
+  assert.doesNotMatch(tile, /favorite=/u);
   assert.match(read('components/EditorialMiniappCover.tsx'), /numberOfLines=\{2\}/u);
   assert.match(home, /<ToolRow/u);
   assert.match(home, /styles\.toolsSurface/u);

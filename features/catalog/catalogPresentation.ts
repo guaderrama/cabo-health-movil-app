@@ -36,5 +36,5 @@ export function buildCatalogCardAccessibilityLabel(
 }
 
 export function resolveCatalogCardColumns(input: { width: number; fontScale: number }): 1 | 2 {
-  return input.width >= 375 && input.fontScale < 1.35 ? 2 : 1;
+  return input.width >= 375 && input.fontScale < 1.2 ? 2 : 1;
 }

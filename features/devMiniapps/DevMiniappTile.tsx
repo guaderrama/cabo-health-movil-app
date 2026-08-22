@@ -25,10 +25,11 @@ export function DevMiniappTile({
       eyebrow={access}
       title={title}
       summary={summary}
+      actionLabel={t('catalog.openResource')}
       icon={miniapp.icon}
       badgeIcon={miniapp.access === 'client' ? 'lock-closed-outline' : 'globe-outline'}
       accessibilityLabel={label}
-      accessibilityHint={t('catalog.open')}
+      accessibilityHint={t('catalog.openResource')}
       index={index}
       onPress={onPress}
     />
