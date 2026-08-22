@@ -14,6 +14,8 @@ expo-env.d.ts
 # Private immutable build evidence; never a deployment source.
 /miniapps/.dist-artifact-*.capsule
 /release/web-bundles/
+# Exact RC evidence and one-time release authorizations are local-only.
+/release/private/
 
 # Native
 .kotlin/

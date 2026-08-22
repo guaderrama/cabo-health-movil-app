@@ -1,20 +1,28 @@
 {
-  "schemaVersion": 1,
-  "status": "saved-app-store-calculated",
-  "calculatedRating": "9+",
+  "schemaVersion": 3,
+  "status": "reconfirmation-required",
+  "previousSavedRating": "9+",
+  "calculatedRating": null,
   "projectedRating": "9+",
+  "basis": "The previously saved 9+ result must be recalculated with Apple's current questionnaire after adding protected Client Resources and an eligibility-code flow.",
+  "questionnaireReference": {
+    "provider": "Apple",
+    "url": "https://developer.apple.com/help/app-store-connect/manage-app-information/set-an-app-age-rating/",
+    "verifiedDate": "2026-08-22",
+    "frequencyScale": ["NONE", "INFREQUENT", "FREQUENT"]
+  },
   "conditions": {
     "unrestrictedWebAccess": {
       "requiredAnswer": false,
-      "basis": "The final binary must keep the exact two-domain/path navigation policy and must not expose arbitrary browsing."
+      "basis": "Every public and protected resource remains restricted to reviewed CaboHealth paths; arbitrary browsing is prohibited."
     },
     "medicalOrTreatmentInformation": {
-      "requiredAnswer": "None",
-      "basis": "The exact two-module content must remain general recipes and visit preparation without personalized medical or treatment content."
+      "requiredAnswer": "NONE",
+      "basis": "The release remains educational and general-wellness content without diagnosis, treatment, or personalized medical advice."
     },
     "healthOrWellnessTopics": {
-      "requiredAnswer": "Yes",
-      "basis": "Both public resources contain general health-and-wellness information."
+      "requiredAnswer": true,
+      "basis": "The reviewed resources contain general health-and-wellness information."
     }
   },
   "otherSupportedAnswers": {
@@ -22,10 +30,31 @@
     "ageAssurance": false,
     "userGeneratedContent": false,
     "socialMedia": false,
-    "socialMediaDisabledUnder13": false,
-    "messagingOrChat": false,
-    "advertising": false
+    "socialMediaAgeRestricted": false,
+    "messagingAndChat": false,
+    "advertising": false,
+    "profanityOrCrudeHumor": "NONE",
+    "horrorOrFearThemes": "NONE",
+    "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+    "matureOrSuggestiveThemes": "NONE",
+    "sexualContentOrNudity": "NONE",
+    "sexualContentGraphicAndNudity": "NONE",
+    "violenceCartoonOrFantasy": "NONE",
+    "violenceRealistic": "NONE",
+    "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+    "gunsOrOtherWeapons": "NONE",
+    "gamblingSimulated": "NONE",
+    "contests": "NONE",
+    "gambling": false,
+    "lootBox": false
   },
-  "ownerConfirmationRequired": false,
-  "appStoreCalculationRequired": false
+  "ageCategoryAndOverride": {
+    "kidsAgeBand": null,
+    "ageRatingOverrideV2": "NONE",
+    "koreaAgeRatingOverride": "NONE",
+    "developerAgeRatingInfoUrl": null,
+    "status": "pending-app-store-confirmation"
+  },
+  "ownerConfirmationRequired": true,
+  "appStoreCalculationRequired": true
 }

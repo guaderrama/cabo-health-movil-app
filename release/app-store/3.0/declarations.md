@@ -8,7 +8,7 @@ Owner-confirmed answer: **No.** The app is educational only and does not diagnos
 
 Basis to verify on the exact RC:
 
-- two general educational public resources: recipes and clinic-visit preparation;
+- two general educational public resources plus the reviewed protected Client Resources content and fixed non-client App Review sample;
 - no measurement, patient input, personalized calculation, diagnosis, dosage, treatment selection, clinical decision support, sensor/camera use, or connection to a regulated device;
 - clear food-safety/emergency limitations and direction to seek qualified/local emergency help when appropriate.
 
@@ -27,11 +27,11 @@ Before answering:
 
 ## Content rights
 
-Recommended answer: **Yes — uses third-party material**. Ivan confirmed ownership or authorization for the Cabo Health logo, domain, texts, recipes, and images used by public v1. Do not reuse the legacy “No third-party content” answer. The itemized evidence schedule and third-party sources, maps/contact references, brand relationship, and `content-rights-and-brand.md` still require final reconciliation.
+Recommended answer: **Yes — uses third-party material**. Ivan confirmed ownership or authorization for the Cabo Health logo, domain, texts, recipes, and images already used by the public resources. Protected Client Resources, the fixed App Review sample, Staff Access assets, third-party sources, maps/contact references, and the final brand relationship schedule still require itemized reconciliation. Do not reuse the legacy “No third-party content” answer.
 
 ## Pricing, availability, and release mode
 
-Candidate direction is free, no in-app purchase, no subscription, and manual release. Initial territories are exactly Mexico (`MEX`) and United States (`USA`), with automatic future territories disabled, Mac Apple Silicon availability off, and Vision Pro availability off. All remain `pending-save` until verified in App Store Connect.
+Candidate direction is free, no in-app purchase, no subscription, and manual release. Client Resources is complimentary for a maximum of four eligible existing in-person clients and is not sold separately; there is no price, checkout, or paid digital tier. Initial territories are exactly Mexico (`MEX`) and United States (`USA`), with automatic future territories disabled, Mac Apple Silicon availability off, and Vision Pro availability off. All remain `pending-save` until verified in App Store Connect and the eligibility model receives written Apple direction.
 
 ## Digital Services Act
 

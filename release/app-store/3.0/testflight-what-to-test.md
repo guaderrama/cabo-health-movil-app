@@ -2,21 +2,23 @@
 
 Candidate: CaboHealth 3.0 (build 4)
 
-Status: Draft; paste only after App Store Connect shows this exact processed build.
+Status: Draft; use only after App Store Connect shows this exact processed build.
 
-Please test a clean install and an update from the last distributed build:
-
-1. First launch: CaboHealth introduction is readable immediately; Enter works once; automatic continuation occurs near 1.6 seconds; replay works from Settings.
-2. Apps: exactly Healthy Recipes and CaboHealth Clinic Guide appear, both public. Save/remove each and confirm Saved persists after force quit.
-3. Built-in tools: search/filter/read all bundled recipes; use/reset the visit checklist; confirm useful content remains available in airplane mode.
-4. Hosted resources: open both canonical pages, use back/forward/refresh/share and retry after an error. Confirm external contact/legal actions leave the WebView only after a tap.
-5. Navigation security: an unknown slug, cross-resource route, arbitrary host, popup, and non-HTTPS URL must not load inside the WebView.
-6. Universal Links: open both exact URLs from Notes, Messages, and Safari:
+1. First launch: the approved introduction is readable immediately and remains until “Enter CaboHealth” is tapped. Confirm it returns after every fresh app launch.
+2. Home: exactly Healthy Recipes and CaboHealth Clinic Guide are public; Client Resources is visibly protected. Save/remove public resources and force-quit.
+3. Native tools: search/filter/read recipes; use/reset the visit checklist; verify offline behavior.
+4. Public hosting: open both canonical pages; test back, retry, sharing, localization, no-JS, Reduce Motion, and network-loss recovery.
+5. Production client access: redeem one valid `CH-` eligibility code, verify one-installation binding, refresh/foreground behavior, resource launch, revoke, expiry, remove access, and durable account deletion. Verify invalid/rate-limited/offline cases fail closed and no code is persisted.
+6. App Review access: on two physical iPhones redeem the dedicated `AR-` credential; both must open only the fixed bilingual non-client sample. Rotate it and verify the previous generation stops working. Production `CH-` and review `AR-` realms must cross-reject.
+7. Protected WebView: require exact POST nonce launch, cabohealth.org host and path; reject launch/API navigation, query, fragment, alternate host, port, user-info, traversal, popup, JavaScript bridge, DOM storage, and arbitrary URL.
+8. Staff Access: Settings visibly opens `https://cabohealth.org/staff/`. Staff QA must use a non-production owner/test account with email/password, TOTP, and App Check; verify exactly four code slots, one-time copy, revoke, draft create/edit/archive, sanitized 30-day audit, App Review status/rotation, and no publish action. Do not give App Review production-owner access; create isolated reviewer access or obtain written Apple direction before submission.
+9. Universal Links from Notes, Messages, and Safari:
    - https://cabohealth.org/apps/healthy-recipes/
    - https://cabohealth.org/apps/clinic-guide/
-7. Localization and appearance: English, Spanish (Mexico), light, dark, system, Reduce Motion, and in-app reduced effects.
-8. Accessibility: VoiceOver reading/order/actions, larger text without clipping, visible focus/selected states, contrast, color-independent meaning, and 44-point controls.
-9. Reliability: background/foreground, force quit, temporary network loss, hosted HTTP error, retry, and WebView process recovery.
-10. Scope audit: no third resource, account screen, purchase prompt, data-entry form, unexpected permission prompt, or unexpected network host.
+   - https://cabohealth.org/apps/client-resources/
+   Launch/API/staff paths must not deep-link into protected content.
+10. EN/es-MX, light/dark/system, Dynamic Type, Reduce Motion, in-app reduced effects, VoiceOver order/actions, contrast, focus, and 44-point targets.
+11. Verify App Attest entitlement/provider, limited-use App Check tokens, signed identifiers/entitlements, SDK privacy report, Firestore rules/IAM/TTL, and expected-only network hosts.
+12. Scope audit: no price, checkout, IAP, subscription, paid tier, arbitrary runtime link, patient/health form, unexpected permission, plaintext code, client identity, or secret in logs.
 
-Record device, iOS version, TestFlight build ID, date, result, and evidence reference for every row. Any functional change requires a new build and complete retest.
+Record device, iOS, TestFlight build ID, source SHA, date, result, and evidence for every row. Any functional or hosted-content change invalidates affected evidence and may require a new build.

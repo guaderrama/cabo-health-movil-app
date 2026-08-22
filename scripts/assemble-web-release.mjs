@@ -16,7 +16,7 @@ import {
 } from './build-miniapps.mjs';
 import { canonicalAasaBytes } from './generate-aasa.mjs';
 import { assertStaticWebPolicy } from './web-release-policy.mjs';
-import { verifyCapturedMinimalV1 } from './verify-minimal-v1.mjs';
+import { verifyCapturedReleaseV3 } from './verify-release-v3.mjs';
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const APP_ID = 'DQ8PH2DZ3R.com.cabohealth.app';
@@ -68,6 +68,9 @@ export const FINAL_LEGAL_SHA256 = Object.freeze({
   support: 'e1fd847e6f8495f7dd4391989046845d5fa7c4bd3a8900ed3295ef956d9a875c',
   terms: '2de6286af27e9f4547c58b1204f29bada4ceb7ff7b9597fbb5894279baee06d8',
 });
+// Set only after the final legal/AASA/Firebase/Hostinger staging evidence receives
+// a separate byte review. A null pin makes every materialization path fail closed.
+export const WEB_DEPLOYMENT_READINESS_SHA256 = null;
 export const WEB_RELEASE_PATHS = Object.freeze([
   '.well-known/apple-app-site-association',
   'app/privacy/index.html',
@@ -105,6 +108,29 @@ function sha256(bytes) {
 
 function canonicalJson(value) {
   return `${JSON.stringify(value)}\n`;
+}
+
+function assertWebDeploymentReadiness(complianceBuffers) {
+  if (typeof WEB_DEPLOYMENT_READINESS_SHA256 !== 'string'
+    || !/^[a-f0-9]{64}$/u.test(WEB_DEPLOYMENT_READINESS_SHA256)) {
+    throw new Error('WEB_DEPLOYMENT_GATES_INCOMPLETE');
+  }
+  const bytes = complianceBuffers.get('release/web-deployment-readiness.json');
+  if (!Buffer.isBuffer(bytes) || sha256(bytes) !== WEB_DEPLOYMENT_READINESS_SHA256) {
+    throw new Error('WEB_DEPLOYMENT_GATES_INCOMPLETE');
+  }
+  let readiness;
+  try {
+    readiness = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    throw new Error('WEB_DEPLOYMENT_GATES_INCOMPLETE');
+  }
+  assertExactKeys(readiness, ['schemaVersion', 'artifactKind', 'status'], 'WEB_DEPLOYMENT_READINESS');
+  if (readiness.schemaVersion !== 1
+    || readiness.artifactKind !== 'cabohealth-web-deployment-readiness-v1'
+    || readiness.status !== 'ready') {
+    throw new Error('WEB_DEPLOYMENT_GATES_INCOMPLETE');
+  }
 }
 
 function mediaTypeFor(path) {
@@ -512,10 +538,11 @@ function runMutationHelper(arguments_, root, input, rootIdentity) {
 export function assembleWebRelease({ root = projectRoot, mode = 'check' } = {}) {
   if (!['check', 'assemble'].includes(mode)) throw new Error('WEB_RELEASE_MODE_INVALID');
   const snapshot = captureBoundAssemblySnapshot(root);
-  const complianceErrors = verifyCapturedMinimalV1(snapshot.complianceBuffers);
+  const complianceErrors = verifyCapturedReleaseV3(snapshot.complianceBuffers);
   if (complianceErrors.length > 0) throw new Error('COMPLIANCE_FACTS_INCOMPLETE');
   const plan = planWebRelease(snapshot, FINAL_LEGAL_SHA256);
   if (mode === 'check') return plan;
+  assertWebDeploymentReadiness(snapshot.complianceBuffers);
   runMutationHelper(
     ['materialize-release', root],
     root,

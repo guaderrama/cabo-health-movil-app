@@ -9,9 +9,9 @@ This declaration concerns:
 - Apple ID `6758285327`;
 - bundle ID `com.cabohealth.app`;
 - the Cabo Health name, wordmark, logo, and `cabohealth.org` domain;
-- exactly two free public general-wellness/editorial resources: Healthy Recipes and CaboHealth Clinic Guide;
+- exactly two public general-wellness/editorial resources (Healthy Recipes and CaboHealth Clinic Guide), one server-protected Client Resources area for eligible existing in-person clients, and one isolated non-client App Review sample;
 - initial App Store availability in Mexico and United States only; and
-- submission, distribution, screenshots, metadata, updates, and supporting brand/logo/content rights schedules for that scope.
+- the visible CaboHealth Staff Access portal, submission, distribution, screenshots, metadata, updates, and supporting brand/logo/content rights schedules for that scope.
 
 Before signing, I will inspect the final brand/logo/content rights schedule and domain-control evidence, confirm that the declaration is accurate, and add the date and my signature outside Git. Self-declaration and domain proof materially answer Apple’s Guideline 4.1 relationship question, but do not guarantee acceptance and do not replace trademark registration.
 

@@ -1,5 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
+import { captureReleaseV3, verifyCapturedReleaseV3 } from './verify-release-v3.mjs';
 
 const root = resolve(process.argv[2] ?? process.cwd());
 const releaseRoot = join(root, 'release/app-store/3.0');
@@ -18,12 +20,29 @@ const approvedMiniapps = Object.freeze([
   }),
 ]);
 
+const protectedClientResource = Object.freeze({
+  id: 'client-resources',
+  title: 'Client Resources',
+  url: 'https://cabohealth.org/apps/client-resources/',
+});
+
+const expectedAasaComponents = Object.freeze([
+  Object.freeze({ '/': '/apps/client-resources/launch/', exclude: true }),
+  Object.freeze({ '/': '/apps/client-resources/launch/*', exclude: true }),
+  Object.freeze({ '/': '/apps/client-resources/api/', exclude: true }),
+  Object.freeze({ '/': '/apps/client-resources/api/*', exclude: true }),
+  Object.freeze({ '/': '/apps/healthy-recipes/' }),
+  Object.freeze({ '/': '/apps/clinic-guide/' }),
+  Object.freeze({ '/': '/apps/client-resources/' }),
+]);
+
 const expectedUrls = Object.freeze({
   support: 'https://cabohealth.org/app/support/',
   privacy: 'https://cabohealth.org/app/privacy/',
   terms: 'https://cabohealth.org/app/terms/',
   reportContent: 'https://cabohealth.org/app/report-content/',
   marketing: 'https://cabohealth.org/',
+  staff: 'https://cabohealth.org/staff/',
 });
 
 const expectedGateStates = Object.freeze({
@@ -32,18 +51,28 @@ const expectedGateStates = Object.freeze({
   sellerRelationship: 'owner-confirmed-trade-brand',
   brandAuthorization: 'owner-confirmed-pending-signed-declaration',
   contentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
-  hostedRoutes: 'pending-deployment',
   hostingLogTypes: 'owner-authorized-disclosure',
   hostingLogRetention: 'owner-authorized-disclosure',
   hostingLogDeletion: 'owner-authorized-disclosure',
   supportResponseSla: 'owner-confirmed',
   phiRemediation: 'verified-owner-authorized',
-  ageRating: 'saved-app-store-calculation-9-plus',
   medicalDevice: 'owner-confirmed-pending-exact-rc-review',
   exportCompliance: 'owner-confirmed-pending-exact-rc-review',
-  exactReleaseCandidate: 'pending-build-and-qa',
+  firebaseAndHosting: 'pending-external-configuration',
+  hostedLegalClientAccess: 'pending-reviewed-update-and-deployment',
+  aasa: 'pending-reviewed-update-and-deployment',
+  appReviewCredential: 'pending-activation-and-staging-e2e',
+  staffReviewAccess: 'pending-isolated-review-access-or-written-apple-direction',
+  clientAccessModel: 'pending-apple-review-determination',
+  ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
+  privacyMapping: 'pending-final-linkage-category-review-and-save',
+  brandAndContentRights: 'pending-signed-owner-declaration-and-third-party-inventory',
+  exactReleaseCandidate: 'pending-version-bump-build-and-qa',
+  testFlight: 'pending-build-upload-selection-and-physical-iphone-qa',
   accessibilityLabels: 'pending-exact-rc-evidence',
   screenshots: 'pending-exact-rc-capture',
+  appStoreConnect: 'pending-final-save',
+  submission: 'blocked-pending-explicit-owner-confirmation',
 });
 
 const expectedOwnerSeller = Object.freeze({
@@ -55,41 +84,56 @@ const expectedOwnerSeller = Object.freeze({
   dunsApplicable: false,
   dunsNumber: null,
   relationship: 'trade brand owned and operated by Ivan Guaderrama',
+  releaseTerritories: ['MEX', 'USA'],
 });
 
 const expectedReviewRisk = Object.freeze({
-  level: 'medium',
-  basis: 'general-wellness/editorial-only',
+  level: 'high',
+  basis: 'general-wellness/editorial content plus complimentary eligibility-gated resources for existing in-person clients',
   appleApprovalGuaranteed: false,
-  fallback: 'If Apple determines the app provides healthcare services, obtain written Apple direction or later migrate to a registered organization.',
+  fallback: 'Obtain written Apple direction before submission; if Apple treats the app as a healthcare-service or digital-unlock product, revise the model or later migrate to an eligible registered organization.',
+  healthcareSellerEntityRisk: 'requires-honest-review-note-and-apple-determination',
+  externalEligibilityCredentialRisk: 'complimentary-existing-client-model-requires-apple-determination',
 });
 
 const expectedUnresolvedExternalGates = Object.freeze({
   regulatedMedicalDevice: 'owner-confirmed-pending-exact-rc-review',
   exportCompliance: 'owner-confirmed-pending-exact-rc-review',
-  finalPrivacyDisclosure: 'owner-authorized-pending-linkage-and-exact-rc-review',
+  finalPrivacyDisclosure: 'pending-final-linkage-category-review-and-save',
   hostingLogRetention: 'owner-authorized-disclosure',
   hostingLogDeletion: 'owner-authorized-disclosure',
   supportResponseSla: 'owner-confirmed',
-  ageRating: 'saved-app-store-calculation-9-plus',
+  ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
   allContentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
   brandEvidenceAttachment: 'pending-signed-owner-declaration',
-  exactReleaseCandidate: 'pending-build-and-qa',
+  firebaseAndHosting: 'pending-external-configuration',
+  hostedLegalClientAccess: 'pending-reviewed-update-and-deployment',
+  aasa: 'pending-reviewed-update-and-deployment',
+  appReviewCredential: 'pending-activation-and-staging-e2e',
+  staffReviewAccess: 'pending-isolated-review-access-or-written-apple-direction',
+  clientAccessModel: 'pending-apple-review-determination',
+  exactReleaseCandidate: 'pending-version-bump-build-and-qa',
   screenshots: 'pending-exact-rc-capture',
-  appStoreConnectSave: 'pending-save',
+  appStoreConnectSave: 'pending-final-save',
 });
 
 const expectedSceneIds = Object.freeze([
-  '01-curated-catalog',
-  '02-native-recipe-browser',
+  '01-launch',
+  '02-resource-catalog',
   '03-healthy-recipes',
-  '04-native-visit-checklist',
-  '05-clinic-guide',
-  '06-saved',
-  '07-settings-and-legal',
+  '04-clinic-guide',
+  '05-client-resources-locked',
+  '06-eligibility-code-entry',
+  '07-saved',
+  '08-settings-and-legal',
 ]);
 
-const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmetic Scan|Client Resources|Staff Sign In|admin(?:istrative)? panel|panel administrativo)\b/iu;
+const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmetic Scan)\b/iu;
+
+const EXACT_REVIEWED_PROSE_SHA256 = Object.freeze({
+  'age-rating.md': 'a6f11c4ab2005ec58498931571a2212b3804db2dcfb081d91aa8e40ce07bd023',
+  'app-privacy.md': 'fb3692d04d1473023171eb1b93cd178f4f9e937634766e1866726d20c7f2b285',
+});
 
 function read(relativePath) {
   const absolutePath = join(releaseRoot, relativePath);
@@ -97,7 +141,9 @@ function read(relativePath) {
     errors.push(`Missing App Store metadata artifact: ${relativePath}`);
     return '';
   }
-  return readFileSync(absolutePath, 'utf8');
+  const source = readFileSync(absolutePath, 'utf8');
+  if (source.length === 0) errors.push(`App Store metadata artifact must not be empty: ${relativePath}`);
+  return source;
 }
 
 function readProject(relativePath) {
@@ -106,14 +152,21 @@ function readProject(relativePath) {
     errors.push(`Missing authoritative project artifact: ${relativePath}`);
     return '';
   }
-  return readFileSync(absolutePath, 'utf8');
+  const source = readFileSync(absolutePath, 'utf8');
+  if (source.length === 0) errors.push(`Authoritative project artifact must not be empty: ${relativePath}`);
+  return source;
 }
 
 function readJson(relativePath) {
   const source = read(relativePath);
   if (!source) return undefined;
   try {
-    return JSON.parse(source);
+    const value = JSON.parse(source);
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      errors.push(`${relativePath} must be a JSON object`);
+      return undefined;
+    }
+    return value;
   } catch (error) {
     errors.push(`Invalid JSON in ${relativePath}: ${error.message}`);
     return undefined;
@@ -124,7 +177,12 @@ function readProjectJson(relativePath) {
   const source = readProject(relativePath);
   if (!source) return undefined;
   try {
-    return JSON.parse(source);
+    const value = JSON.parse(source);
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      errors.push(`Authoritative ${relativePath} must be a JSON object`);
+      return undefined;
+    }
+    return value;
   } catch (error) {
     errors.push(`Invalid JSON in authoritative ${relativePath}: ${error.message}`);
     return undefined;
@@ -153,6 +211,14 @@ function countCharacters(value) {
   return [...value].length;
 }
 
+function readExactReviewedProse(relativePath) {
+  const source = read(relativePath);
+  const expected = EXACT_REVIEWED_PROSE_SHA256[relativePath];
+  const actual = createHash('sha256').update(source, 'utf8').digest('hex');
+  if (actual !== expected) errors.push(`${relativePath} must retain the exact reviewed prose`);
+  return source;
+}
+
 function requireText(source, pattern, message) {
   if (!pattern.test(source)) errors.push(message);
 }
@@ -164,8 +230,31 @@ function hasExactKeys(value, expected) {
     && equalJson(Object.keys(value).sort(), [...expected].sort());
 }
 
+function containsCanonicalAccessCode(source) {
+  return /\b(?:CH|AR)(?:[\s\p{Pd}_]*[A-F0-9]){32}\b/iu.test(source);
+}
+
+function verifyNoVersionedAccessCodes(directory = join(root, 'release'), relativeRoot = 'release') {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const relativePath = relativeRoot ? `${relativeRoot}/${entry.name}` : entry.name;
+    const absolutePath = join(directory, entry.name);
+    if (entry.isSymbolicLink()) {
+      errors.push(`App Store metadata artifact must not be a symbolic link: ${relativePath}`);
+    } else if (entry.isDirectory()) {
+      verifyNoVersionedAccessCodes(absolutePath, relativePath);
+    } else if (/\.(?:json|md|txt)$/iu.test(entry.name)) {
+      if (containsCanonicalAccessCode(readFileSync(absolutePath, 'utf8'))) {
+        errors.push(`${relativePath} appears to contain a CH or AR credential`);
+      }
+    }
+  }
+}
+
 function rejectUnapprovedHostedResourceUrls(source, label) {
-  const approvedSlugs = new Set(approvedMiniapps.map((miniapp) => miniapp.slug));
+  const approvedSlugs = new Set([
+    ...approvedMiniapps.map((miniapp) => miniapp.slug),
+    protectedClientResource.id,
+  ]);
   for (const match of source.matchAll(/https:\/\/cabohealth\.org\/apps\/([a-z0-9-]+)\//gu)) {
     if (!approvedSlugs.has(match[1])) {
       errors.push(`${label} contain an unapproved hosted-resource URL: ${match[0]}`);
@@ -189,12 +278,33 @@ function rejectContradictoryCaboHealthEntityClaims(source, label) {
     `\\bCabo\\s+Health\\b\\s+${entityQualifiers}(?:company|organization|corporation)\\b`,
     'iu',
   );
+  const spanishEntityTerms = '(?:entidad(?:\\s+legal)?|empresa|organizaci[oó]n|corporaci[oó]n|compa[ñn][ií]a|sociedad|persona\\s+moral)';
+  const spanishEntityQualifiers = '(?:(?:separada|registrada|legal)\\s+){0,2}';
+  const spanishPredicateClaim = new RegExp(
+    `\\bCabo\\s+Health\\b\\s+(?:es|act[uú]a|opera|funciona|sirve|constituye|representa|existe|ha\\s+sido\\s+registrada|fue\\s+registrada)\\s+(?:como\\s+)?(?:un(?:a)?\\s+|la\\s+)?${spanishEntityQualifiers}${spanishEntityTerms}\\b`,
+    'iu',
+  );
+  const spanishAppositiveClaim = new RegExp(
+    `\\bCabo\\s+Health\\b\\s*,\\s*(?:un(?:a)?\\s+|la\\s+)?${spanishEntityQualifiers}${spanishEntityTerms}\\b`,
+    'iu',
+  );
   if (
     predicateClaim.test(normalized)
     || appositiveClaim.test(normalized)
     || nameAsEntityClaim.test(normalized)
+    || spanishPredicateClaim.test(normalized)
+    || spanishAppositiveClaim.test(normalized)
   ) {
     errors.push(`${label} contradicts the individual trade-brand disclosure by claiming Cabo Health is a legal entity, company, or organization`);
+  }
+}
+
+function rejectContradictoryCommercialClaims(source, label) {
+  const normalized = source.replace(/[`*_]/gu, '');
+  const paidAccessClaim = /\b(?:clinic|client|protected|premium|digital|app)\s+(?:access|resources?|tier|subscription)?\s*(?:costs?|is\s+(?:sold|priced)|requires?\s+(?:payment|a\s+fee)|has\s+a\s+price)\b/iu;
+  const explicitPriceClaim = /\b(?:price|cost|fee)\s*(?:is|:|of)?\s*(?:USD|MXN|US\$|MX\$|\$)\s*\d/iu;
+  if (paidAccessClaim.test(normalized) || explicitPriceClaim.test(normalized)) {
+    errors.push(`${label} contradicts the complimentary no-sale model`);
   }
 }
 
@@ -208,6 +318,8 @@ function verifyManifest() {
     ownerSeller,
     reviewRisk,
     scope,
+    reviewCredential,
+    aasaPlan,
     urls,
     copyright,
     appStoreDraft,
@@ -219,16 +331,18 @@ function verifyManifest() {
     'candidate',
     'ascEvidence',
     'ownerSeller',
-    'reviewRisk',
     'scope',
+    'reviewCredential',
+    'aasaPlan',
     'urls',
     'copyright',
     'appStoreDraft',
     'gates',
+    'reviewRisk',
   ])) {
     errors.push('Release manifest must contain the exact versioned App Store draft schema');
   }
-  if (manifest.schemaVersion !== 1 || manifest.artifactKind !== 'app-store-metadata-candidate') {
+  if (manifest.schemaVersion !== 2 || manifest.artifactKind !== 'app-store-metadata-candidate') {
     errors.push('Release manifest schema or artifact kind is invalid');
   }
   if (
@@ -271,8 +385,11 @@ function verifyManifest() {
   if (ownerSeller?.relationship !== expectedOwnerSeller.relationship) {
     errors.push('Brand relationship must remain the owner-confirmed trade-brand relationship');
   }
+  if (!equalJson(ownerSeller?.releaseTerritories, ['MEX', 'USA'])) {
+    errors.push('Owner release territories must be exactly MEX and USA');
+  }
   if (!equalJson(reviewRisk, expectedReviewRisk)) {
-    errors.push('Seller gate must remain a documented medium review risk with the Apple-direction/organization fallback and no approval guarantee');
+    errors.push('Seller gate must remain a documented high review risk with the Apple-direction/organization fallback and no approval guarantee');
   }
 
   if (!Array.isArray(scope?.miniapps) || scope.miniapps.length !== 2) {
@@ -289,10 +406,31 @@ function verifyManifest() {
       errors.push('Release scope must contain exactly two approved miniapps with canonical URLs and Universal Links');
     }
   }
+  if (!equalJson(scope?.publicMiniapps, scope?.miniapps)) {
+    errors.push('Release public miniapp aliases must remain byte-semantically identical');
+  }
+  const protectedResource = scope?.protectedResources?.[0];
   if (
-    scope?.access !== 'public'
-    || scope?.accountRequired !== false
-    || scope?.demoCredentialRequired !== false
+    !Array.isArray(scope?.protectedResources)
+    || scope.protectedResources.length !== 1
+    || protectedResource?.id !== 'client-resources'
+    || protectedResource?.title !== 'Client Resources'
+    || protectedResource?.canonicalUrl !== protectedClientResource.url
+    || protectedResource?.access !== 'existing-client-eligibility'
+    || protectedResource?.serverProtectionRequired !== true
+    || protectedResource?.arbitraryExternalLinksPublished !== false
+  ) {
+    errors.push('Release scope must contain exactly one protected Client Resources entry');
+  }
+  if (
+    scope?.access !== 'mixed-public-and-existing-client-eligibility'
+    || !equalJson(scope?.accountRequired, {
+      publicResources: false,
+      protectedClientResources: true,
+      staffPortal: true,
+      appReviewSandbox: true,
+    })
+    || scope?.demoCredentialRequired !== true
     || scope?.purchases !== false
     || scope?.userGeneratedContent !== false
     || scope?.nativeWebBridge !== false
@@ -300,7 +438,55 @@ function verifyManifest() {
     || !Array.isArray(scope?.sensitivePermissions)
     || scope.sensitivePermissions.length !== 0
   ) {
-    errors.push('Release scope access, data, and platform capabilities do not match the exact public MVP');
+    errors.push('Release scope access, data, and platform capabilities do not match the exact v3 candidate');
+  }
+  const commercial = scope?.commercialModel;
+  if (
+    commercial?.complimentary !== true
+    || commercial?.existingInPersonClientsOnly !== true
+    || commercial?.maximumActiveClientCodes !== 4
+    || commercial?.separatelySold !== false
+    || commercial?.sale !== false
+    || commercial?.price !== null
+    || commercial?.checkout !== false
+    || commercial?.inAppPurchase !== false
+    || commercial?.purchaseCta !== null
+    || commercial?.digitalTier !== null
+  ) errors.push('Commercial model must remain complimentary, limited to four existing clients, and contain no digital sale mechanism');
+  if (
+    scope?.staffAdministration?.visibleSettingsEntry !== true
+    || scope?.staffAdministration?.draftOnlyCatalogChanges !== true
+    || scope?.staffAdministration?.directPublishing !== false
+    || scope?.staffAdministration?.arbitraryRuntimeCatalog !== false
+  ) errors.push('Staff administration must remain visible, draft-only, and unable to publish the runtime catalog');
+  if (
+    !hasExactKeys(reviewCredential, [
+      'namespace',
+      'purpose',
+      'credentialPrefix',
+      'uidRealm',
+      'multiDevice',
+      'credentialInRepository',
+      'status',
+      'fixedReviewedResourceId',
+      'launchMethod',
+      'launchPath',
+    ])
+    || reviewCredential?.namespace !== 'review_sandbox'
+    || reviewCredential?.purpose !== 'app_review'
+    || reviewCredential?.credentialPrefix !== 'AR'
+    || reviewCredential?.uidRealm !== 'review_*'
+    || reviewCredential?.multiDevice !== true
+    || reviewCredential?.credentialInRepository !== false
+    || reviewCredential?.status !== 'pending-activation'
+    || reviewCredential?.fixedReviewedResourceId !== 'review-sandbox-app-review-sample-v1'
+    || reviewCredential?.launchMethod !== 'POST'
+    || reviewCredential?.launchPath !== '/apps/app-review/launch/'
+  ) errors.push('App Review credential must remain isolated and pending activation');
+  if (!hasExactKeys(aasaPlan, ['components', 'status'])
+    || !equalJson(aasaPlan?.components, expectedAasaComponents)
+    || aasaPlan?.status !== 'pending-reviewed-update-and-deployment') {
+    errors.push('AASA plan must retain the ordered launch/api exclusions and three exact app roots');
   }
   if (!equalJson(urls, expectedUrls)) errors.push('Release manifest URLs do not match the exact canonical URLs');
   if (
@@ -564,6 +750,11 @@ function verifyAuthoritativeProjectState() {
       errors.push(`Authoritative ${relativePath} no longer matches this pending metadata draft`);
     }
   }
+  const inventory = readProject('release/data-inventory.md');
+  if (!/fixed `actorLabel: Staff`/u.test(inventory)
+    || !/no actor UID, codes, client names, or resource URLs/iu.test(inventory)) {
+    errors.push('Authoritative data inventory must describe the sanitized fixed Staff actor label without an actor UID');
+  }
 }
 
 function verifyLocalization(locale) {
@@ -614,7 +805,7 @@ function verifyLocalization(locale) {
   if (marketplaceFraming.test(publicCopy)) {
     errors.push(`${locale} public metadata contains forbidden marketplace framing`);
   }
-  const excludedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmetic Scan|Client Resources|Staff Sign In|admin(?:istrative)? panel|panel administrativo|login|access code|c[oó]digo de acceso|patient records?|expedientes? de pacientes|analytics|anal[ií]tica)\b/iu;
+  const excludedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmetic Scan|patient records?|expedientes? de pacientes|analytics|anal[ií]tica)\b/iu;
   if (excludedScope.test(publicCopy)) errors.push(`${locale} public metadata names excluded release scope`);
 }
 
@@ -630,16 +821,21 @@ function verifyReviewNotes() {
   const body = notes.slice(markerIndex + marker.length).trim();
   if (countCharacters(body) > 4000) errors.push('Review Notes paste-ready body exceeds 4,000 characters');
   rejectUnapprovedHostedResourceUrls(body, 'Review Notes');
-  const resourceList = body.match(/GUIDELINE 4\.7 — HOSTED RESOURCES\n([\s\S]*?)\n\nThose are also the only Universal Links\./u)?.[1]?.trim();
-  const expectedResourceList = approvedMiniapps
-    .map((miniapp, index) => `${index + 1}. ${miniapp.title} — public — ${miniapp.url}`)
-    .join('\n');
+  const resourceList = body.match(/GUIDELINE 4\.7 — HOSTED RESOURCES\n([\s\S]*?)\n\nThese are the only Universal Link entry points\./u)?.[1]?.trim();
+  const expectedResourceList = [
+    ...approvedMiniapps.map((miniapp, index) => `${index + 1}. ${miniapp.title} — public — ${miniapp.url}`),
+    `3. ${protectedClientResource.title} — protected existing-client eligibility — ${protectedClientResource.url}`,
+  ].join('\n');
   if (resourceList !== expectedResourceList) {
-    errors.push('Guideline 4.7 resource list must contain exactly the two approved entries');
+    errors.push('Guideline 4.7 resource list must contain exactly two public entries and one protected Client Resources entry');
   }
   if (excludedNamedScope.test(body)) errors.push('Review Notes name excluded release scope');
-  rejectContradictoryCaboHealthEntityClaims(body, 'Review Notes');
-  if (/(?:password|passcode|secret|api[-_ ]?key|token|contrase[ñn]a|clave|access code|demo code|reviewer code)\s*[:=]\s*\S+/iu.test(body)) {
+  rejectContradictoryCaboHealthEntityClaims(notes, 'Review Notes');
+  rejectContradictoryCommercialClaims(notes, 'Review Notes');
+  if (
+    /(?:password|passcode|secret|api[-_ ]?key|token|contrase[ñn]a|clave|access code|demo code|reviewer code|credential)\s*[:=]\s*\S+/iu.test(notes)
+    || containsCanonicalAccessCode(notes)
+  ) {
     errors.push('Review Notes appear to contain a credential');
   }
   if (/\[INSERT VERIFIED HOSTINGER REQUEST-LOG FIELDS/iu.test(body)) {
@@ -654,29 +850,40 @@ function verifyReviewNotes() {
       errors.push(`Review Notes missing canonical URL/Universal Link for ${miniapp.slug}`);
     }
   }
+  if (body.split(protectedClientResource.url).length - 1 !== 1) {
+    errors.push('Review Notes missing canonical URL/Universal Link for client-resources');
+  }
   for (const [name, url] of Object.entries(expectedUrls)) {
     if (name !== 'marketing' && !body.includes(url)) errors.push(`Review Notes missing ${name} URL`);
   }
   const requiredPatterns = [
     [/CaboHealth 3\.0 \(build 4\)/u, 'Review Notes missing exact version/build'],
-    [/exactly two free public general-wellness\/editorial resources/u, 'Review Notes must describe exactly two free public general-wellness/editorial resources'],
+    [/exactly two public general-wellness\/editorial resources and one server-protected Client Resources area/u, 'Review Notes must describe the exact public and protected resource scope'],
     [/This app is submitted by Ivan Guaderrama, an individual Apple Developer Program member\. Cabo Health is a trade brand owned and operated by Ivan Guaderrama and is not represented as a separate legal entity\./u, 'Review Notes missing the individual seller and trade-brand disclosure'],
     [/GUIDELINE 4\.2/u, 'Review Notes missing Guideline 4.2 native value'],
     [/GUIDELINE 4\.7/u, 'Review Notes missing Guideline 4.7 hosted-resource disclosure'],
-    [/no account/iu, 'Review Notes missing no-account disclosure'],
-    [/demo credential/iu, 'Review Notes missing demo-credential disclosure'],
-    [/purchase/iu, 'Review Notes missing monetization disclosure'],
+    [/does not ask clients for a name, email address, phone number, or profile registration/iu, 'Review Notes missing pseudonymous client-account disclosure'],
+    [/separate multi-device App Review credential/iu, 'Review Notes missing isolated App Review credential disclosure'],
+    [/complimentary.*existing in-person clients/isu, 'Review Notes missing complimentary existing-client eligibility disclosure'],
+    [/no price, checkout, in-app purchase, subscription, or paid digital tier/iu, 'Review Notes missing monetization disclosure'],
+    [/maximum of four active production eligibility codes/iu, 'Review Notes missing four-code production limit'],
     [/user-generated content/iu, 'Review Notes missing UGC disclosure'],
     [/native message bridge/iu, 'Review Notes missing native-bridge disclosure'],
-    [/no server setting can add another resource/iu, 'Review Notes missing immutable-catalog disclosure'],
+    [/drafts cannot publish or change the submitted runtime catalog/iu, 'Review Notes missing draft-only Staff Access disclosure'],
+    [/Staff Access is an owner[/]operator surface; reviewer access, if required, is supplied separately in App Store Connect/iu, 'Review Notes must retain the Staff Access review-access disclosure'],
     [/sensitive permission/iu, 'Review Notes missing permission disclosure'],
     [/remains on the introduction until the reviewer taps “Enter CaboHealth”/iu, 'Review Notes missing current manual-entry behavior'],
     [/Prior technical verification observed Hostinger access-log fields for IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency/iu, 'Review Notes missing observed Hostinger log fields'],
     [/IP address, browser or user-agent, requested URL, and technical errors/iu, 'Review Notes missing owner-authorized Hostinger log fields'],
-    [/to deliver, secure, and troubleshoot the public pages/iu, 'Review Notes missing Hostinger log purpose'],
+    [/to deliver, secure, and troubleshoot the hosted pages/iu, 'Review Notes missing Hostinger log purpose'],
     [/visible in hPanel for up to 7 days/iu, 'Review Notes missing owner-authorized hPanel visibility'],
     [/additional retention and deletion are controlled by Hostinger/iu, 'Review Notes missing owner-authorized retention/deletion disclosure'],
     [/not used for tracking/iu, 'Review Notes missing non-tracking disclosure'],
+    [/pseudonymous Firebase UID/iu, 'Review Notes missing pseudonymous Firebase identifier disclosure'],
+    [/SecureStore/iu, 'Review Notes missing SecureStore installation disclosure'],
+    [/App Check/iu, 'Review Notes missing App Check disclosure'],
+    [/durable deletion/iu, 'Review Notes missing durable deletion disclosure'],
+    [/30 days/iu, 'Review Notes missing audit retention disclosure'],
   ];
   for (const [pattern, message] of requiredPatterns) requireText(body, pattern, message);
 }
@@ -691,8 +898,16 @@ function verifyPrivacy() {
     hasExactKeys(privacy, [
       'schemaVersion',
       'status',
+      'architectureStatus',
       'recommendedAppPrivacyAnswer',
       'nativeBehavior',
+      'clientAccount',
+      'installation',
+      'appCheck',
+      'backend',
+      'deletion',
+      'applicationAudit',
+      'reviewSandbox',
       'hostedTechnicalRequestLogs',
       'conditionalRecommendation',
     ])
@@ -716,6 +931,38 @@ function verifyPrivacy() {
       'linkedToIdentity',
       'tracking',
     ])
+    && hasExactKeys(privacy.clientAccount, [
+      'provider',
+      'pseudonymous',
+      'nameEmailPhoneRequestedFromClient',
+      'purpose',
+      'status',
+    ])
+    && hasExactKeys(privacy.installation, ['identifier', 'storage', 'deviceBound', 'purpose'])
+    && hasExactKeys(privacy.appCheck, ['required', 'providers', 'purpose'])
+    && hasExactKeys(privacy.backend, [
+      'providers',
+      'codesStoredPlaintext',
+      'codeDigests',
+      'clientNamesStored',
+      'resourceUrlsReturnedToNative',
+    ])
+    && hasExactKeys(privacy.deletion, ['durable', 'mechanism', 'availableAfterGrantRevocationOrExpiry'])
+    && hasExactKeys(privacy.applicationAudit, [
+      'retentionDays',
+      'actorLabel',
+      'containsActorUid',
+      'containsCodes',
+      'containsResourceUrls',
+      'containsClientNames',
+    ])
+    && hasExactKeys(privacy.reviewSandbox, [
+      'separateNamespace',
+      'multiDevice',
+      'fixedNonClientSample',
+      'productionClientRecordsExposed',
+      'status',
+    ])
     && hasExactKeys(conditionalRecommendation, [
       'dataNotCollectedPath',
       'dataCollectedPath',
@@ -728,29 +975,53 @@ function verifyPrivacy() {
     errors.push('App Privacy schemas and hosting purposes must be exact');
   }
   if (
-    privacy.schemaVersion !== 1
-    || privacy.status !== 'owner-authorized-pending-linkage-and-exact-rc-review'
-    || privacy.recommendedAppPrivacyAnswer !== null
+    privacy.schemaVersion !== 2
+    || privacy.status !== 'pending-final-linkage-category-review-and-save'
+    || privacy.architectureStatus !== 'implemented-locally-pending-external-configuration-and-e2e'
+    || privacy.recommendedAppPrivacyAnswer !== 'Yes, we collect data from this app'
   ) {
-    errors.push('App Privacy recommendation must remain conditional with owner authorization while linkage and exact-RC review remain pending');
+    errors.push('App Privacy collection answer must remain Yes, we collect data from this app while linkage, categories, and exact-RC review remain pending');
   }
   if (
-    nativeBehavior?.account !== false
+    nativeBehavior?.account !== true
     || nativeBehavior?.healthInformationRequested !== false
-    || nativeBehavior?.appGeneratedIdentifier !== false
+    || nativeBehavior?.appGeneratedIdentifier !== true
     || nativeBehavior?.analytics !== false
     || nativeBehavior?.advertising !== false
     || nativeBehavior?.tracking !== false
     || !equalJson(nativeBehavior?.sensitivePermissions, [])
     || !equalJson(nativeBehavior?.localOnlyState, [
-      'saved public-module slugs and order',
+      'saved public-resource slugs and order',
       'language, appearance, haptics, and effects preferences',
       'recipe favorite keys',
       'visit-checklist completion state',
     ])
   ) {
-    errors.push('App Privacy native behavior does not match the exact MVP');
+    errors.push('App Privacy native behavior does not match the exact v3 candidate');
   }
+  if (
+    privacy.clientAccount?.provider !== 'Firebase Authentication'
+    || privacy.clientAccount?.pseudonymous !== true
+    || privacy.clientAccount?.nameEmailPhoneRequestedFromClient !== false
+    || privacy.installation?.storage !== 'SecureStore'
+    || privacy.installation?.deviceBound !== true
+    || privacy.appCheck?.required !== true
+    || privacy.backend?.codesStoredPlaintext !== false
+    || privacy.backend?.clientNamesStored !== false
+    || privacy.deletion?.durable !== true
+    || privacy.deletion?.availableAfterGrantRevocationOrExpiry !== true
+    || privacy.applicationAudit?.retentionDays !== 30
+    || privacy.applicationAudit?.actorLabel !== 'Staff'
+    || privacy.applicationAudit?.containsActorUid !== false
+    || privacy.applicationAudit?.containsCodes !== false
+    || privacy.applicationAudit?.containsResourceUrls !== false
+    || privacy.applicationAudit?.containsClientNames !== false
+    || privacy.reviewSandbox?.separateNamespace !== true
+    || privacy.reviewSandbox?.multiDevice !== true
+    || privacy.reviewSandbox?.fixedNonClientSample !== true
+    || privacy.reviewSandbox?.productionClientRecordsExposed !== false
+    || privacy.reviewSandbox?.status !== 'pending-activation-and-staging-e2e'
+  ) errors.push('App Privacy client-access architecture must remain pseudonymous, device-bound, App-Check protected, durably deletable, and sanitized');
   if (
     logs?.provider !== 'Hostinger'
     || !equalJson(logs.observedFields, [
@@ -777,12 +1048,24 @@ function verifyPrivacy() {
     errors.push('Hosting request-log facts must retain the owner-authorized retention/deletion disclosure, unresolved linkage, and non-tracking status');
   }
   if (
-    typeof conditionalRecommendation?.dataNotCollectedPath !== 'string'
-    || typeof conditionalRecommendation?.dataCollectedPath !== 'string'
+    conditionalRecommendation?.dataNotCollectedPath !== 'Not applicable to this v3 architecture: pseudonymous identifiers and hosted request records are retained off device beyond real-time request servicing.'
+    || conditionalRecommendation?.dataCollectedPath !== 'Required. Map the final verified production data types, purposes, linkage, and retention in App Store Connect after the exact RC and hosting configuration are tested.'
+    || !equalJson(conditionalRecommendation?.provisionalPurpose, [
+      'App Functionality',
+    ])
+    || !equalJson(conditionalRecommendation?.provisionalCategoryMapping, [
+      'User ID, if the pseudonymous Firebase UID is retained and disclosure is required',
+      'Device ID, if the app-installation identifier is retained off device and disclosure is required',
+      'Coarse Location, if retained country derived from an IP address is in disclosure scope',
+      'Product Interaction, if retained requested-resource activity is in disclosure scope',
+      'Performance Data, if retained latency or response-byte measurements are in disclosure scope',
+      'Other Diagnostic Data, if retained HTTP method, user-agent, or technical-error records are in disclosure scope',
+      'Other Data Types, only if a retained field cannot be accurately mapped to another Apple data type',
+    ])
   ) {
-    errors.push('App Privacy draft must retain both conditional recommendation paths');
+    errors.push('App Privacy draft must retain the exact conditional App Privacy mapping');
   }
-  const privacyDraft = read('app-privacy.md');
+  const privacyDraft = readExactReviewedProse('app-privacy.md');
   rejectContradictoryCaboHealthEntityClaims(privacyDraft, 'App Privacy draft');
 }
 
@@ -799,41 +1082,119 @@ function verifyAgeRating() {
     ageAssurance: false,
     userGeneratedContent: false,
     socialMedia: false,
-    socialMediaDisabledUnder13: false,
-    messagingOrChat: false,
+    socialMediaAgeRestricted: false,
+    messagingAndChat: false,
     advertising: false,
+    profanityOrCrudeHumor: 'NONE',
+    horrorOrFearThemes: 'NONE',
+    alcoholTobaccoOrDrugUseOrReferences: 'NONE',
+    matureOrSuggestiveThemes: 'NONE',
+    sexualContentOrNudity: 'NONE',
+    sexualContentGraphicAndNudity: 'NONE',
+    violenceCartoonOrFantasy: 'NONE',
+    violenceRealistic: 'NONE',
+    violenceRealisticProlongedGraphicOrSadistic: 'NONE',
+    gunsOrOtherWeapons: 'NONE',
+    gamblingSimulated: 'NONE',
+    contests: 'NONE',
+    gambling: false,
+    lootBox: false,
   };
   if (
-    !hasExactKeys(age.conditions, expectedConditionKeys)
+    !hasExactKeys(age, [
+      'schemaVersion',
+      'status',
+      'previousSavedRating',
+      'calculatedRating',
+      'projectedRating',
+      'basis',
+      'questionnaireReference',
+      'conditions',
+      'otherSupportedAnswers',
+      'ageCategoryAndOverride',
+      'ownerConfirmationRequired',
+      'appStoreCalculationRequired',
+    ])
+    || !hasExactKeys(age.questionnaireReference, [
+      'provider',
+      'url',
+      'verifiedDate',
+      'frequencyScale',
+    ])
+    || !hasExactKeys(age.conditions, expectedConditionKeys)
+    || !Object.values(age.conditions ?? {}).every((condition) => hasExactKeys(condition, [
+      'requiredAnswer',
+      'basis',
+    ]))
     || !equalJson(age.otherSupportedAnswers, expectedOtherAnswers)
+    || !hasExactKeys(age.ageCategoryAndOverride, [
+      'kidsAgeBand',
+      'ageRatingOverrideV2',
+      'koreaAgeRatingOverride',
+      'developerAgeRatingInfoUrl',
+      'status',
+    ])
   ) {
     errors.push('Age-rating condition and supported-answer schemas must be exact');
   }
   if (
-    age.status !== 'saved-app-store-calculated'
-    || age.calculatedRating !== '9+'
+    age.schemaVersion !== 3
+    || age.status !== 'reconfirmation-required'
+    || age.previousSavedRating !== '9+'
+    || age.calculatedRating !== null
     || age.projectedRating !== '9+'
-    || age.ownerConfirmationRequired !== false
-    || age.appStoreCalculationRequired !== false
+    || age.ownerConfirmationRequired !== true
+    || age.appStoreCalculationRequired !== true
+    || age.questionnaireReference?.provider !== 'Apple'
+    || age.questionnaireReference?.url !== 'https://developer.apple.com/help/app-store-connect/manage-app-information/set-an-app-age-rating/'
+    || age.questionnaireReference?.verifiedDate !== '2026-08-22'
+    || !equalJson(age.questionnaireReference?.frequencyScale, ['NONE', 'INFREQUENT', 'FREQUENT'])
+    || age.ageCategoryAndOverride?.kidsAgeBand !== null
+    || age.ageCategoryAndOverride?.ageRatingOverrideV2 !== 'NONE'
+    || age.ageCategoryAndOverride?.koreaAgeRatingOverride !== 'NONE'
+    || age.ageCategoryAndOverride?.developerAgeRatingInfoUrl !== null
+    || age.ageCategoryAndOverride?.status !== 'pending-app-store-confirmation'
   ) {
-    errors.push('Age rating must retain the saved App Store Connect 9+ calculation');
+    errors.push('Age rating must remain projected 9+ with owner reconfirmation and App Store recalculation required');
   }
   if (age.conditions?.unrestrictedWebAccess?.requiredAnswer !== false) {
-    errors.push('Saved 9+ rating requires unrestrictedWebAccess=false');
+    errors.push('Projected 9+ rating requires unrestrictedWebAccess=false');
   }
-  if (age.conditions?.medicalOrTreatmentInformation?.requiredAnswer !== 'None') {
-    errors.push('Saved 9+ rating requires medicalOrTreatmentInformation=None');
+  if (age.conditions?.medicalOrTreatmentInformation?.requiredAnswer !== 'NONE') {
+    errors.push('Projected 9+ rating requires medicalOrTreatmentInformation=NONE');
   }
-  if (age.conditions?.healthOrWellnessTopics?.requiredAnswer !== 'Yes') {
-    errors.push('Saved 9+ rating requires healthOrWellnessTopics=Yes');
+  if (age.conditions?.healthOrWellnessTopics?.requiredAnswer !== true) {
+    errors.push('Projected 9+ rating requires healthOrWellnessTopics=true');
   }
-  const ageRatingDraft = read('age-rating.md');
+  const ageRatingDraft = readExactReviewedProse('age-rating.md');
   rejectContradictoryCaboHealthEntityClaims(ageRatingDraft, 'age-rating draft');
 }
 
 function verifyScreenshots() {
   const screenshots = readJson('screenshots-manifest.json');
   if (!screenshots) return;
+  const requiredEvidenceKeys = [
+    'testFlightBuildId',
+    'sourceSha',
+    'imageHashes',
+    'ocrExcludedScopeCheck',
+    'humanVisualSignOff',
+  ];
+  if (
+    !hasExactKeys(screenshots, [
+      'schemaVersion',
+      'status',
+      'marketingVersion',
+      'buildNumber',
+      'deviceClass',
+      'locales',
+      'sceneIds',
+      'captures',
+      'requiredEvidence',
+    ])
+    || !hasExactKeys(screenshots.requiredEvidence, requiredEvidenceKeys)
+    || screenshots.schemaVersion !== 2
+  ) errors.push('Screenshot manifest must retain the exact authority schema');
   if (
     screenshots.status !== 'pending-exact-rc-capture'
     || screenshots.marketingVersion !== '3.0'
@@ -843,7 +1204,7 @@ function verifyScreenshots() {
     errors.push('Screenshot manifest must target 3.0 build 4 on the 6.9-inch iPhone class');
   }
   if (!equalJson(screenshots.locales, ['en-US', 'es-MX'])) errors.push('Screenshot locales must be exactly en-US and es-MX');
-  if (!equalJson(screenshots.sceneIds, expectedSceneIds)) errors.push('Screenshot storyboard must contain the exact seven approved scenes');
+  if (!equalJson(screenshots.sceneIds, expectedSceneIds)) errors.push('Screenshot storyboard must contain the exact eight approved scenes');
   if (!Array.isArray(screenshots.captures) || screenshots.captures.length !== 0) {
     errors.push('Screenshot captures must remain empty before exact-RC capture');
   }
@@ -906,12 +1267,22 @@ function verifyHumanChecklists() {
   requireText(declarations, /Encryption and export compliance/u, 'Export declaration checklist missing');
   const gates = read('submission-gates.md');
   requireText(gates, /Individual/u, 'Seller/legal-entity external gate is missing');
-  requireText(gates, /medium review risk/iu, 'Seller gate must document medium review risk');
+  requireText(gates, /high review risk/iu, 'Seller gate must document high review risk');
   requireText(gates, /does not resolve or guarantee Apple approval/iu, 'Seller gate must not claim the wellness scope guarantees approval');
-  requireText(gates, /written Apple direction or later migrate to a registered organization/iu, 'Seller gate missing the required fallback');
+  requireText(gates, /written Apple direction[\s\S]*later migrate to a registered organization/iu, 'Seller gate missing the required fallback');
   requireText(gates, /blocked/iu, 'Submission gates must remain blocked');
 }
 
+function verifyReleaseV3Package() {
+  try {
+    errors.push(...verifyCapturedReleaseV3(captureReleaseV3(root)));
+  } catch (error) {
+    errors.push(`Release v3 authority could not be captured: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+verifyReleaseV3Package();
+verifyNoVersionedAccessCodes();
 verifyManifest();
 verifyAuthoritativeProjectState();
 verifyLocalization('en-US');

@@ -146,6 +146,9 @@ FINAL_LEGAL_SHA256: dict[str, str | None] = {
     "support": "e1fd847e6f8495f7dd4391989046845d5fa7c4bd3a8900ed3295ef956d9a875c",
     "terms": "2de6286af27e9f4547c58b1204f29bada4ceb7ff7b9597fbb5894279baee06d8",
 }
+# This remains unset until an independently reviewed legal/AASA/Firebase/
+# Hostinger readiness record is pinned in both release authorities.
+WEB_DEPLOYMENT_READINESS_SHA256: str | None = None
 MINIAPP_FILE_PINS = (
     ("apps/.htaccess", 568, "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"),
     ("apps/clinic-guide/app.js", 3868, "f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7"),
@@ -1613,6 +1616,7 @@ def capture_assembly_snapshot(root_path: str) -> bytes:
             fsync_rename_directories(parent_fd, parent_fd)
             exchanged = True
         compliance_files: list[dict[str, Any]] = []
+        compliance_files.append(captured_file("app.json", read_fixed_file(root_fd, "app.json")))
         for directory in ("app", "components", "constants", "context", "hooks", "features"):
             compliance_files.extend(capture_tree_files(root_fd, directory, lambda _path: True))
         compliance_files.extend(capture_tree_files(root_fd, "release", lambda path: path.endswith(".json")))
@@ -4213,6 +4217,28 @@ def assert_final_legal_pins() -> None:
             fail("FINAL_LEGAL_PINS_INCOMPLETE")
 
 
+def validate_web_deployment_readiness_bound(root_fd: int) -> None:
+    if (
+        not isinstance(WEB_DEPLOYMENT_READINESS_SHA256, str)
+        or SHA256.fullmatch(WEB_DEPLOYMENT_READINESS_SHA256) is None
+    ):
+        fail("WEB_DEPLOYMENT_GATES_INCOMPLETE")
+    try:
+        raw = read_fixed_file(root_fd, "release/web-deployment-readiness.json")
+        readiness = json.loads(raw.decode("utf-8"), object_pairs_hook=reject_duplicate_keys)
+    except (UnicodeDecodeError, json.JSONDecodeError, ReleaseError) as error:
+        raise ReleaseError("WEB_DEPLOYMENT_GATES_INCOMPLETE") from error
+    if hashlib.sha256(raw).hexdigest() != WEB_DEPLOYMENT_READINESS_SHA256:
+        fail("WEB_DEPLOYMENT_GATES_INCOMPLETE")
+    exact_key_set(readiness, ("schemaVersion", "artifactKind", "status"), "WEB_DEPLOYMENT_READINESS")
+    if readiness != {
+        "schemaVersion": 1,
+        "artifactKind": "cabohealth-web-deployment-readiness-v1",
+        "status": "ready",
+    }:
+        fail("WEB_DEPLOYMENT_GATES_INCOMPLETE")
+
+
 def canonical_aasa_bytes() -> bytes:
     return (json.dumps({
         "applinks": {
@@ -4364,6 +4390,7 @@ def materialize_release(root_path: str, raw: bytes) -> str:
         manifest = json.loads(manifest_bytes.decode("utf-8"), object_pairs_hook=reject_duplicate_keys)
         if manifest["inputs"] != input_entries:
             fail("WEB_ARTIFACT_MANIFEST_PROVENANCE_MISMATCH")
+        validate_web_deployment_readiness_bound(root_fd)
         materialized = materialize_local_bound(root_fd, transport_bytes, transport, buffers)
         published = publish_manifest_bound(root_fd, transport, buffers, manifest_bytes)
         return f"{materialized};{published}"

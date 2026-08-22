@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "status": "pending-exact-rc-capture",
   "marketingVersion": "3.0",
   "buildNumber": "4",
@@ -9,13 +9,14 @@
     "es-MX"
   ],
   "sceneIds": [
-    "01-curated-catalog",
-    "02-native-recipe-browser",
+    "01-launch",
+    "02-resource-catalog",
     "03-healthy-recipes",
-    "04-native-visit-checklist",
-    "05-clinic-guide",
-    "06-saved",
-    "07-settings-and-legal"
+    "04-clinic-guide",
+    "05-client-resources-locked",
+    "06-eligibility-code-entry",
+    "07-saved",
+    "08-settings-and-legal"
   ],
   "captures": [],
   "requiredEvidence": {

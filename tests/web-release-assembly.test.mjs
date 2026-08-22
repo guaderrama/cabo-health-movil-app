@@ -359,6 +359,22 @@ test('the real assembler validates the saved age and release-ready compliance wi
   assert.equal(existsSync(join(projectRoot, 'release/production-urls.json')), false);
 });
 
+test('the real assembler refuses materialization until independently reviewed deployment readiness is pinned', () => {
+  const artifactPath = join(projectRoot, 'release/web-artifacts.json');
+  const bundleRoot = join(projectRoot, 'release/web-bundles');
+  const artifactBefore = existsSync(artifactPath) ? readFileSync(artifactPath) : null;
+  const bundlesBefore = existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null;
+  const result = spawnSync(process.execPath, [assemblerPath, '--assemble'], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 1, result.stdout || result.stderr);
+  assert.match(result.stderr, /WEB_DEPLOYMENT_GATES_INCOMPLETE/u);
+  assert.deepEqual(existsSync(artifactPath) ? readFileSync(artifactPath) : null, artifactBefore);
+  assert.deepEqual(existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null, bundlesBefore);
+});
+
 test('descriptor-relative staging creates the exact private 16-file tree', () => {
   const { result, root, transport } = materializeFixture();
   assert.equal(result.status, 0, result.stderr || result.stdout);

@@ -1,21 +1,76 @@
 {
-  "schemaVersion": 1,
-  "status": "owner-authorized-pending-linkage-and-exact-rc-review",
-  "recommendedAppPrivacyAnswer": null,
+  "schemaVersion": 2,
+  "status": "pending-final-linkage-category-review-and-save",
+  "architectureStatus": "implemented-locally-pending-external-configuration-and-e2e",
+  "recommendedAppPrivacyAnswer": "Yes, we collect data from this app",
   "nativeBehavior": {
-    "account": false,
+    "account": true,
     "healthInformationRequested": false,
-    "appGeneratedIdentifier": false,
+    "appGeneratedIdentifier": true,
     "analytics": false,
     "advertising": false,
     "tracking": false,
     "sensitivePermissions": [],
     "localOnlyState": [
-      "saved public-module slugs and order",
+      "saved public-resource slugs and order",
       "language, appearance, haptics, and effects preferences",
       "recipe favorite keys",
       "visit-checklist completion state"
     ]
+  },
+  "clientAccount": {
+    "provider": "Firebase Authentication",
+    "pseudonymous": true,
+    "nameEmailPhoneRequestedFromClient": false,
+    "purpose": "verify eligibility for complimentary existing-client resources",
+    "status": "pending-final-apple-linkage-mapping"
+  },
+  "installation": {
+    "identifier": "random app-installation identifier",
+    "storage": "SecureStore",
+    "deviceBound": true,
+    "purpose": "bind an eligibility grant to one installation and prevent code sharing"
+  },
+  "appCheck": {
+    "required": true,
+    "providers": [
+      "App Attest",
+      "DeviceCheck fallback"
+    ],
+    "purpose": "protect backend access from unauthorized clients"
+  },
+  "backend": {
+    "providers": [
+      "Firebase Authentication",
+      "Cloud Functions",
+      "Cloud Firestore",
+      "Firebase App Check",
+      "Hostinger"
+    ],
+    "codesStoredPlaintext": false,
+    "codeDigests": "versioned HMAC digest",
+    "clientNamesStored": false,
+    "resourceUrlsReturnedToNative": false
+  },
+  "deletion": {
+    "durable": true,
+    "mechanism": "transactional deletion tombstone plus idempotent retry worker",
+    "availableAfterGrantRevocationOrExpiry": true
+  },
+  "applicationAudit": {
+    "retentionDays": 30,
+    "actorLabel": "Staff",
+    "containsActorUid": false,
+    "containsCodes": false,
+    "containsResourceUrls": false,
+    "containsClientNames": false
+  },
+  "reviewSandbox": {
+    "separateNamespace": true,
+    "multiDevice": true,
+    "fixedNonClientSample": true,
+    "productionClientRecordsExposed": false,
+    "status": "pending-activation-and-staging-e2e"
   },
   "hostedTechnicalRequestLogs": {
     "provider": "Hostinger",
@@ -45,16 +100,19 @@
     "tracking": false
   },
   "conditionalRecommendation": {
-    "dataNotCollectedPath": "Use only if the final provider facts and Apple's current definitions/exceptions establish that no hosted request-log field must be declared, and owner/legal approves that conclusion.",
-    "dataCollectedPath": "If technical request-log fields are retained and fall within Apple's collection definition, disclose only the matching current categories, purposes, linkage, and retention facts; do not infer a category from this draft.",
+    "dataNotCollectedPath": "Not applicable to this v3 architecture: pseudonymous identifiers and hosted request records are retained off device beyond real-time request servicing.",
+    "dataCollectedPath": "Required. Map the final verified production data types, purposes, linkage, and retention in App Store Connect after the exact RC and hosting configuration are tested.",
     "provisionalPurpose": [
-      "App Functionality",
-      "Fraud Prevention, Security, and Compliance"
+      "App Functionality"
     ],
     "provisionalCategoryMapping": [
-      "Diagnostics — Other Diagnostic Data, if supported by Apple's current definitions",
-      "Other Data, if required for retained access-log fields under Apple's current definitions",
-      "Identifiers — Device ID only if a persistent device-level identifier is actually present"
+      "User ID, if the pseudonymous Firebase UID is retained and disclosure is required",
+      "Device ID, if the app-installation identifier is retained off device and disclosure is required",
+      "Coarse Location, if retained country derived from an IP address is in disclosure scope",
+      "Product Interaction, if retained requested-resource activity is in disclosure scope",
+      "Performance Data, if retained latency or response-byte measurements are in disclosure scope",
+      "Other Diagnostic Data, if retained HTTP method, user-agent, or technical-error records are in disclosure scope",
+      "Other Data Types, only if a retained field cannot be accurately mapped to another Apple data type"
     ]
   }
 }

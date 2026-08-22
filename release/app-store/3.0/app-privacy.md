@@ -1,31 +1,45 @@
-# App Privacy recommendation — conditional draft
+# App Privacy recommendation — conditional v3 draft
 
-Status: **OWNER-AUTHORIZED DISCLOSURE; FINAL ANSWER PENDING.** This is not an App Privacy questionnaire answer and must not be represented as one. Linkage, Apple category mapping, and exact-RC reconciliation remain unresolved.
+Status: **DATA COLLECTED; FINAL DATA TYPES AND LINKAGE PENDING.** The retained pseudonymous identifiers and hosted request records make “Data Not Collected” inapplicable to this v3 architecture. Exact data types, linkage, and retention must still be reconciled against the signed RC and production configuration before saving App Store Connect.
 
-## Supported native facts
+## Supported native and account facts
 
-- The exact MVP has no account, advertising, tracking, analytics, app-generated identifier, health-information input, or sensitive device permission.
-- Saved module choices, interface preferences, recipe favorite keys, and visit-checklist completion remain on the device.
-- The WebView sends none of that local state through a native message bridge.
-- Opening either public resource creates normal HTTPS requests to CaboHealth hosting.
+- Public resources request no account, health information, advertising identifier, analytics permission, or sensitive device permission.
+- Client Resources uses a pseudonymous Firebase UID. The app asks for no client name, email, phone number, profile, diagnosis, or treatment information.
+- A random installation identifier is generated locally and held in iOS SecureStore to bind a grant to one installation and limit code sharing.
+- Firebase App Check protects callable access. Production iOS uses App Attest with DeviceCheck fallback.
+- Eligibility codes are 128-bit secrets. The backend stores keyed versioned digests, not plaintext codes or client names.
+- Local favorites, language, appearance, haptics, effects, recipe favorite keys, and checklist state remain on-device.
+- Hosted JavaScript has no native message bridge.
 
-## Observed hosting behavior, owner-authorized disclosure, and unresolved facts
+## Backend, deletion, and staff audit
 
-Prior technical verification observed Hostinger access-log fields for IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency. Separately, on 2026-08-17, Ivan Guaderrama authorized disclosure that Hostinger logs IP address, browser/user-agent, requested URL, and technical errors; hPanel visibility is up to 7 days, and any additional retention and deletion are controlled by Hostinger. Current production configuration, access controls, and whether those records are linked to an identity remain unresolved release facts.
+Firebase Authentication, Cloud Functions, Cloud Firestore, Firebase App Check, and Hostinger process the minimum pseudonymous and technical records required for eligibility, abuse prevention, session launch, and page delivery.
+
+Account removal creates a durable transactional deletion record. Cleanup is idempotent and remains retryable after a grant is revoked or expires. Sanitized staff audit events contain no plaintext code, client name, or resource URL and are scheduled for deletion after 30 days. Actual TTL, IAM, App Check enforcement, and deletion behavior remain production-verification gates.
+
+## Observed Hostinger behavior
+
+Prior technical verification observed IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency. Separately, Ivan Guaderrama authorized disclosure that Hostinger logs IP address, browser/user-agent, requested URL, and technical errors for page delivery, security, and troubleshooting. hPanel visibility is up to 7 days; any additional retention and deletion are controlled by Hostinger. Tracking is not supported.
 
 ## Recommendation decision
 
-Do **not** choose “Data Not Collected” merely because the native app has no form. First resolve linkage/access behavior, reconcile the exact RC, and map the retained hosting fields to Apple’s current definitions.
+Select **Yes, we collect data from this app**. Before saving the exact App Privacy data types:
 
-- If the verified provider behavior and Apple’s current exceptions establish that no request-log field must be declared, “Data Not Collected” may be supportable only after owner/legal approval and signed-RC reconciliation.
-- If retained request logs meet Apple’s collection definition, disclose only the matching categories. The likely purposes are App Functionality and Fraud Prevention, Security, and Compliance; tracking is not supported by the current build. Do not state “not linked to the user” until the provider’s linkage behavior is verified.
-- Do not select Device ID unless a persistent device-level identifier actually exists. An IP address by itself is not assumed here to be a Device ID.
+- inspect the exact signed build’s SDK privacy report and network trace;
+- verify production Firebase/Hostinger fields, retention, linkage, access, TTL, and deletion;
+- map only the current fields to Apple’s current definitions and purposes;
+- use only Apple’s selectable purpose **App Functionality**, which includes authentication, fraud prevention, and security for this scope;
+- evaluate **User ID**, **Device ID**, **Coarse Location**, **Product Interaction**, **Performance Data**, **Other Diagnostic Data**, and **Other Data Types** against the exact retained production fields;
+- disclose only the data types whose verified retention and Apple definitions require disclosure;
+- never describe a pseudonymous record as unlinked without evidence; and
+- obtain the account holder’s final approval before saving.
 
-## Evidence required before answering
+## Evidence required
 
-- [ ] Exact signed build SDK/privacy report contains no unexpected collection or tracking declaration.
-- [ ] Network trace for both public resources contains only the expected CaboHealth host plus explicit external actions after a tap.
-- [x] Owner authorized the Hostinger log, hPanel visibility, additional-retention, and deletion disclosure recorded above.
-- [ ] Linkage/access behavior for request logs is confirmed.
-- [ ] Hosted Privacy copy matches the final questionnaire answer word-for-word on material facts.
-- [ ] Account holder approves the final Apple category answer after the remaining evidence is reconciled; the underlying hosting disclosure is already owner-authorized.
+- [ ] Exact signed RC privacy report and dependency inventory reviewed.
+- [ ] iPhone network trace contains only reviewed CaboHealth/Firebase endpoints and explicit external actions.
+- [ ] App Check enforcement, Firestore rules/IAM, rate limits, TTL, deletion worker, and 30-day audit verified in staging and production.
+- [ ] Hostinger broker/session/log behavior verified with no credential or health-data exposure.
+- [ ] Hosted Privacy copy and App Store Connect answers agree on every material field.
+- [ ] Account holder approves the final category, purpose, linkage, and retention answers.

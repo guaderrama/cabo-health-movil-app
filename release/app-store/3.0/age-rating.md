@@ -1,13 +1,25 @@
 # Age-rating questionnaire record
 
-Status: **SAVED IN APP STORE CONNECT ON 2026-08-20.** Apple calculated **9+** for the app from the recorded answers below. The authoritative host and both approved miniapp catalog values are frozen at `9`.
+Status: **9+ RECONFIRMATION REQUIRED.** App Store Connect previously calculated 9+, but the scope now includes protected Client Resources and an eligibility-code flow. Do not reuse the saved result without opening, reviewing, and saving the questionnaire again against the exact RC.
 
-The saved result depends on all three conditions remaining true in the exact RC:
+The projected answers for Apple's current questionnaire remain:
 
-1. Unrestricted Web Access: **No**. The WebView must remain restricted to the selected `cabohealth.org/apps/{approved-slug}/` path, with no arbitrary browser, popup, cross-module path, or remote catalog.
-2. Medical or Treatment Information: **None**. The content must remain general food ideas and visit preparation, with no personalized recommendation, calculation, diagnosis, dosage, or treatment content.
-3. Health or Wellness Topics: **Yes**. This accurately describes the two public resources.
+1. Unrestricted Web Access: **No**. Public and protected WebViews must remain restricted to exact reviewed CaboHealth paths. Arbitrary browsing, popups, cross-resource paths, launch/API paths, query/fragment bypasses, and server-published arbitrary links are prohibited.
+2. Medical or Treatment Information: **NONE**. All reviewed content must remain educational/general wellness with no personalized recommendation, diagnosis, dosage, or treatment.
+3. Health or Wellness Topics: **Yes** because wellness is the app's recurring subject. Apple's current API represents this field as a presence value, not a frequency.
 
-Other saved answers from the exact scope are No for parental controls, age assurance, user-generated content, social media, social media-disabled-under-13, messaging/chat, advertising, profanity/crude humor, horror/fear, alcohol/tobacco/drugs, sexuality/nudity, violence/weapons, gambling, contests, and loot boxes.
+Other projected presence answers remain **No** for parental controls, age assurance, user-generated content, social media, age-restricted social media, messaging/chat, advertising, gambling, and loot boxes.
 
-Apple displayed the regional equivalents after saving: **9+** in 172 countries or regions, **12+** in Vietnam, **10+** in Brazil, and **All Ages** in Korea. If the app content or navigation policy changes, repeat the questionnaire and use Apple’s new result; never preserve 9+ by overriding a changed scope.
+Other projected frequency answers remain **NONE** for profanity or crude humor; horror/fear themes; alcohol, tobacco, or drug use or references; mature or suggestive themes; sexual content or nudity; graphic sexual content and nudity; cartoon or fantasy violence; realistic violence; prolonged graphic or sadistic realistic violence; guns or other weapons; simulated gambling; and contests.
+
+The projected override values are `kidsAgeBand=null`, `ageRatingOverrideV2=NONE`, `koreaAgeRatingOverride=NONE`, and no developer age-rating information URL. They remain pending confirmation in App Store Connect.
+
+Before release:
+
+- [ ] verify the fixed App Review sample and every production Client Resources page contain no disallowed medical/treatment content;
+- [ ] verify the submitted binary cannot browse or publish arbitrary external links;
+- [ ] open the current App Store Connect questionnaire and confirm every answer;
+- [ ] save and record Apple’s newly calculated result; and
+- [ ] update the manifest/compliance evidence only from that saved result.
+
+The expected result is still 9+, but this draft does not claim Apple will preserve it.

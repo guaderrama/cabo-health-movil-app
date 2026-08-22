@@ -1153,6 +1153,7 @@ test('bound assembly snapshot ignores a transient root exchange and returns orig
   mkdirSync(alternate, { mode: 0o755 });
   mkdirSync(join(root, 'release'));
   mkdirSync(join(alternate, 'release'));
+  copyFileSync(join(projectRoot, 'app.json'), join(root, 'app.json'));
   writeFileSync(join(root, 'release/compliance-facts.json'), '{"source":"original-pending"}\n', { flag: 'wx' });
   writeFileSync(join(alternate, 'release/compliance-facts.json'), '{"source":"alternate-ready"}\n', { flag: 'wx' });
   for (const [path] of inputPolicy.slice(1)) {

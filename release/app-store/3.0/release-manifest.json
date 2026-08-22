@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "artifactKind": "app-store-metadata-candidate",
   "candidate": {
     "appleId": "6758285327",
@@ -26,15 +26,27 @@
     "registeredOrganization": false,
     "dunsApplicable": false,
     "dunsNumber": null,
-    "relationship": "trade brand owned and operated by Ivan Guaderrama"
-  },
-  "reviewRisk": {
-    "level": "medium",
-    "basis": "general-wellness/editorial-only",
-    "appleApprovalGuaranteed": false,
-    "fallback": "If Apple determines the app provides healthcare services, obtain written Apple direction or later migrate to a registered organization."
+    "relationship": "trade brand owned and operated by Ivan Guaderrama",
+    "releaseTerritories": [
+      "MEX",
+      "USA"
+    ]
   },
   "scope": {
+    "publicMiniapps": [
+      {
+        "slug": "healthy-recipes",
+        "title": "Healthy Recipes",
+        "canonicalUrl": "https://cabohealth.org/apps/healthy-recipes/",
+        "universalLink": "https://cabohealth.org/apps/healthy-recipes/"
+      },
+      {
+        "slug": "clinic-guide",
+        "title": "CaboHealth Clinic Guide",
+        "canonicalUrl": "https://cabohealth.org/apps/clinic-guide/",
+        "universalLink": "https://cabohealth.org/apps/clinic-guide/"
+      }
+    ],
     "miniapps": [
       {
         "slug": "healthy-recipes",
@@ -49,21 +61,79 @@
         "universalLink": "https://cabohealth.org/apps/clinic-guide/"
       }
     ],
-    "access": "public",
-    "accountRequired": false,
-    "demoCredentialRequired": false,
+    "protectedResources": [
+      {
+        "id": "client-resources",
+        "title": "Client Resources",
+        "canonicalUrl": "https://cabohealth.org/apps/client-resources/",
+        "access": "existing-client-eligibility",
+        "serverProtectionRequired": true,
+        "arbitraryExternalLinksPublished": false
+      }
+    ],
+    "commercialModel": {
+      "complimentary": true,
+      "existingInPersonClientsOnly": true,
+      "maximumActiveClientCodes": 4,
+      "separatelySold": false,
+      "sale": false,
+      "price": null,
+      "checkout": false,
+      "inAppPurchase": false,
+      "purchaseCta": null,
+      "digitalTier": null
+    },
+    "staffAdministration": {
+      "visibleSettingsEntry": true,
+      "draftOnlyCatalogChanges": true,
+      "directPublishing": false,
+      "arbitraryRuntimeCatalog": false
+    },
+    "access": "mixed-public-and-existing-client-eligibility",
+    "accountRequired": {
+      "publicResources": false,
+      "protectedClientResources": true,
+      "staffPortal": true,
+      "appReviewSandbox": true
+    },
+    "demoCredentialRequired": true,
     "purchases": false,
     "userGeneratedContent": false,
     "nativeWebBridge": false,
     "remoteCatalog": false,
     "sensitivePermissions": []
   },
+  "reviewCredential": {
+    "namespace": "review_sandbox",
+    "purpose": "app_review",
+    "credentialPrefix": "AR",
+    "uidRealm": "review_*",
+    "multiDevice": true,
+    "credentialInRepository": false,
+    "status": "pending-activation",
+    "fixedReviewedResourceId": "review-sandbox-app-review-sample-v1",
+    "launchMethod": "POST",
+    "launchPath": "/apps/app-review/launch/"
+  },
+  "aasaPlan": {
+    "components": [
+      { "/": "/apps/client-resources/launch/", "exclude": true },
+      { "/": "/apps/client-resources/launch/*", "exclude": true },
+      { "/": "/apps/client-resources/api/", "exclude": true },
+      { "/": "/apps/client-resources/api/*", "exclude": true },
+      { "/": "/apps/healthy-recipes/" },
+      { "/": "/apps/clinic-guide/" },
+      { "/": "/apps/client-resources/" }
+    ],
+    "status": "pending-reviewed-update-and-deployment"
+  },
   "urls": {
     "support": "https://cabohealth.org/app/support/",
     "privacy": "https://cabohealth.org/app/privacy/",
     "terms": "https://cabohealth.org/app/terms/",
     "reportContent": "https://cabohealth.org/app/report-content/",
-    "marketing": "https://cabohealth.org/"
+    "marketing": "https://cabohealth.org/",
+    "staff": "https://cabohealth.org/staff/"
   },
   "copyright": {
     "value": "2026 Ivan Guaderrama",
@@ -107,16 +177,22 @@
     "unresolvedExternalGates": {
       "regulatedMedicalDevice": "owner-confirmed-pending-exact-rc-review",
       "exportCompliance": "owner-confirmed-pending-exact-rc-review",
-      "finalPrivacyDisclosure": "owner-authorized-pending-linkage-and-exact-rc-review",
+      "finalPrivacyDisclosure": "pending-final-linkage-category-review-and-save",
       "hostingLogRetention": "owner-authorized-disclosure",
       "hostingLogDeletion": "owner-authorized-disclosure",
       "supportResponseSla": "owner-confirmed",
-      "ageRating": "saved-app-store-calculation-9-plus",
+      "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
       "allContentRights": "owner-confirmed-scoped-pending-third-party-inventory",
       "brandEvidenceAttachment": "pending-signed-owner-declaration",
-      "exactReleaseCandidate": "pending-build-and-qa",
+      "firebaseAndHosting": "pending-external-configuration",
+      "hostedLegalClientAccess": "pending-reviewed-update-and-deployment",
+      "aasa": "pending-reviewed-update-and-deployment",
+      "appReviewCredential": "pending-activation-and-staging-e2e",
+      "staffReviewAccess": "pending-isolated-review-access-or-written-apple-direction",
+      "clientAccessModel": "pending-apple-review-determination",
+      "exactReleaseCandidate": "pending-version-bump-build-and-qa",
       "screenshots": "pending-exact-rc-capture",
-      "appStoreConnectSave": "pending-save"
+      "appStoreConnectSave": "pending-final-save"
     }
   },
   "gates": {
@@ -125,17 +201,35 @@
     "sellerRelationship": "owner-confirmed-trade-brand",
     "brandAuthorization": "owner-confirmed-pending-signed-declaration",
     "contentRights": "owner-confirmed-scoped-pending-third-party-inventory",
-    "hostedRoutes": "pending-deployment",
     "hostingLogTypes": "owner-authorized-disclosure",
     "hostingLogRetention": "owner-authorized-disclosure",
     "hostingLogDeletion": "owner-authorized-disclosure",
     "supportResponseSla": "owner-confirmed",
     "phiRemediation": "verified-owner-authorized",
-    "ageRating": "saved-app-store-calculation-9-plus",
     "medicalDevice": "owner-confirmed-pending-exact-rc-review",
     "exportCompliance": "owner-confirmed-pending-exact-rc-review",
-    "exactReleaseCandidate": "pending-build-and-qa",
+    "firebaseAndHosting": "pending-external-configuration",
+    "hostedLegalClientAccess": "pending-reviewed-update-and-deployment",
+    "aasa": "pending-reviewed-update-and-deployment",
+    "appReviewCredential": "pending-activation-and-staging-e2e",
+    "staffReviewAccess": "pending-isolated-review-access-or-written-apple-direction",
+    "clientAccessModel": "pending-apple-review-determination",
+    "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
+    "privacyMapping": "pending-final-linkage-category-review-and-save",
+    "brandAndContentRights": "pending-signed-owner-declaration-and-third-party-inventory",
+    "exactReleaseCandidate": "pending-version-bump-build-and-qa",
+    "testFlight": "pending-build-upload-selection-and-physical-iphone-qa",
+    "screenshots": "pending-exact-rc-capture",
     "accessibilityLabels": "pending-exact-rc-evidence",
-    "screenshots": "pending-exact-rc-capture"
+    "appStoreConnect": "pending-final-save",
+    "submission": "blocked-pending-explicit-owner-confirmation"
+  },
+  "reviewRisk": {
+    "level": "high",
+    "basis": "general-wellness/editorial content plus complimentary eligibility-gated resources for existing in-person clients",
+    "appleApprovalGuaranteed": false,
+    "fallback": "Obtain written Apple direction before submission; if Apple treats the app as a healthcare-service or digital-unlock product, revise the model or later migrate to an eligible registered organization.",
+    "healthcareSellerEntityRisk": "requires-honest-review-note-and-apple-determination",
+    "externalEligibilityCredentialRisk": "complimentary-existing-client-model-requires-apple-determination"
   }
 }

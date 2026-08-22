@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
-const verifierPath = join(projectRoot, 'scripts/verify-minimal-v1.mjs');
+const verifierPath = join(projectRoot, 'scripts/verify-release-v3.mjs');
 const legalUrls = Object.freeze({
   privacy: 'https://cabohealth.org/app/privacy/',
   terms: 'https://cabohealth.org/app/terms/',
@@ -766,20 +766,10 @@ test('compliance facts preserve every owner-confirmed fact and the saved Apple a
   }
 });
 
-test('release verification accepts the owner-approved facts and saved Apple age rating', () => {
+test('release v3 verification accepts reconciled owner facts while keeping the changed scope blocked', () => {
   const result = spawnSync(process.execPath, [verifierPath, projectRoot], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stdout || result.stderr);
-  for (const resolvedGate of [
-    'legalEntity.legalSignOffStatus',
-    'hosting.logTypes',
-    'hosting.retention',
-    'hosting.deletionProcess',
-    'support.responseSla',
-    'contentRights',
-    'exportCompliance',
-    'medicalDevice',
-  ]) assert.doesNotMatch(result.stderr, new RegExp(`Pending release gate: ${resolvedGate.replaceAll('.', '\\.')}`));
-  assert.doesNotMatch(result.stderr, /Release compliance facts are not marked ready/i);
+  assert.match(result.stdout, /verified.*draft-blocked/iu);
 });
 
 test('operational and inventory drafts identify unverified controls without claiming completion', () => {

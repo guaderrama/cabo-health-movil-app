@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -40,147 +41,12 @@ function mutateJson(root, relativePath, mutate) {
   writeFileSync(absolutePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function recordOwnerConfirmations(root) {
-  mutateJson(root, 'release/compliance-facts.json', (facts) => {
-    facts.slice = 'task-7f-age-rating-saved';
-    facts.legalEntity.legalSignOffStatus = 'approved';
-    facts.hosting.logTypes = {
-      value: ['IP address', 'browser or user-agent', 'requested URL', 'technical errors'],
-      status: 'verified',
-    };
-    facts.hosting.retention = {
-      value: {
-        description: 'Owner authorized 2026-08-17: hPanel visibility is up to 7 days; any additional retention is controlled by Hostinger.',
-      },
-      status: 'verified',
-    };
-    facts.hosting.deletionProcess = {
-      value: {
-        description: 'Owner authorized 2026-08-17: deletion beyond hPanel visibility is controlled by Hostinger.',
-      },
-      status: 'verified',
-    };
-    facts.support.responseSla = {
-      value: {
-        description: 'Owner confirmed 2026-08-17: respond within 2 business days, Monday-Friday, 10:00 AM-4:00 PM.',
-      },
-      status: 'verified',
-    };
-    facts.contentRights = {
-      value: {
-        approved: true,
-        scope: 'Owner confirmed 2026-08-17: ownership or authorization for the Cabo Health logo, domain, texts, recipes, and images used by public v1.',
-      },
-      status: 'verified',
-    };
-    facts.exportCompliance = {
-      value: {
-        approved: true,
-        determination: 'Owner confirmed 2026-08-17: standard iOS platform encryption and HTTPS only; no proprietary or custom cryptography.',
-      },
-      status: 'verified',
-    };
-    facts.medicalDevice = {
-      value: {
-        isMedicalDevice: false,
-        basis: 'Owner confirmed 2026-08-17: educational only; no diagnosis, treatment, or medical-device function.',
-      },
-      status: 'verified',
-    };
-  });
-
-  mutateJson(root, `${releasePath}/release-manifest.json`, (manifest) => {
-    manifest.appStoreDraft.contentRights.status = 'owner-confirmed-scoped-pending-third-party-inventory';
-    Object.assign(manifest.appStoreDraft.unresolvedExternalGates, {
-      regulatedMedicalDevice: 'owner-confirmed-pending-exact-rc-review',
-      exportCompliance: 'owner-confirmed-pending-exact-rc-review',
-      finalPrivacyDisclosure: 'owner-authorized-pending-linkage-and-exact-rc-review',
-      hostingLogRetention: 'owner-authorized-disclosure',
-      hostingLogDeletion: 'owner-authorized-disclosure',
-      supportResponseSla: 'owner-confirmed',
-      allContentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
-    });
-    Object.assign(manifest.gates, {
-      legalEntitySignOff: 'owner-approved',
-      brandAuthorization: 'owner-confirmed-pending-signed-declaration',
-      contentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
-      hostingLogTypes: 'owner-authorized-disclosure',
-      hostingLogRetention: 'owner-authorized-disclosure',
-      hostingLogDeletion: 'owner-authorized-disclosure',
-      supportResponseSla: 'owner-confirmed',
-      medicalDevice: 'owner-confirmed-pending-exact-rc-review',
-      exportCompliance: 'owner-confirmed-pending-exact-rc-review',
-    });
-  });
-
-  mutateJson(root, `${releasePath}/app-privacy.json`, (privacy) => {
-    privacy.status = 'owner-authorized-pending-linkage-and-exact-rc-review';
-    privacy.hostedTechnicalRequestLogs.retention = 'hPanel visibility up to 7 days; any additional retention is controlled by Hostinger.';
-    privacy.hostedTechnicalRequestLogs.deletionProcess = 'Deletion beyond hPanel visibility is controlled by Hostinger.';
-  });
+function recordOwnerConfirmations() {
+  // The canonical v3 fixture already contains the five verified owner facts.
 }
 
-function addOwnerSellerDraft(manifest) {
-  manifest.ownerSeller = {
-    sellerType: 'individual',
-    legalSeller: 'Ivan Guaderrama',
-    publicBrand: 'Cabo Health',
-    brandIsSeparateLegalEntity: false,
-    registeredOrganization: false,
-    dunsApplicable: false,
-    dunsNumber: null,
-    relationship: 'trade brand owned and operated by Ivan Guaderrama',
-  };
-  manifest.reviewRisk = {
-    level: 'medium',
-    basis: 'general-wellness/editorial-only',
-    appleApprovalGuaranteed: false,
-    fallback: 'If Apple determines the app provides healthcare services, obtain written Apple direction or later migrate to a registered organization.',
-  };
-  manifest.appStoreDraft = {
-    status: 'pending-save',
-    categories: {
-      primary: 'Health & Fitness',
-      secondary: 'Food & Drink',
-      legacyPrimary: 'Medical',
-      legacyPrimaryAction: 'replace',
-    },
-    copyright: '2026 Ivan Guaderrama',
-    availability: {
-      territories: ['MEX', 'USA'],
-      automaticFutureTerritories: false,
-      macAppleSiliconAvailable: false,
-      visionProAvailable: false,
-      status: 'pending-save',
-    },
-    dsa: {
-      scope: 'app-level',
-      traderStatus: 'non-trader/outside-EU-scope',
-      releaseTerritories: ['MEX', 'USA'],
-      reassessBeforeAddingEuTerritory: true,
-      globalAccountState: 'unchanged',
-      status: 'pending-save',
-    },
-    contentRights: {
-      recommendedAnswer: 'Yes',
-      usesThirdPartyMaterial: true,
-      status: 'owner-confirmed-scoped-pending-third-party-inventory',
-    },
-    unresolvedExternalGates: {
-      regulatedMedicalDevice: 'owner-confirmed-pending-exact-rc-review',
-      exportCompliance: 'owner-confirmed-pending-exact-rc-review',
-      finalPrivacyDisclosure: 'owner-authorized-pending-linkage-and-exact-rc-review',
-      hostingLogRetention: 'owner-authorized-disclosure',
-      hostingLogDeletion: 'owner-authorized-disclosure',
-      supportResponseSla: 'owner-confirmed',
-      ageRating: 'saved-app-store-calculation-9-plus',
-      allContentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
-      brandEvidenceAttachment: 'pending-signed-owner-declaration',
-      exactReleaseCandidate: 'pending-build-and-qa',
-      screenshots: 'pending-exact-rc-capture',
-      appStoreConnectSave: 'pending-save',
-    },
-  };
+function addOwnerSellerDraft() {
+  // The canonical v3 fixture already contains the exact owner/seller draft.
 }
 
 function withReleaseFixture(mutate, assertion) {
@@ -205,6 +71,40 @@ test('versioned App Store metadata is a valid blocked 3.0 build 4 candidate', ()
   assert.match(result.stdout, /draft verified; submission remains blocked/i);
 });
 
+test('metadata verifier rejects empty required release and authoritative artifacts', async (t) => {
+  for (const relativePath of [
+    `${releasePath}/review-notes.md`,
+    `${releasePath}/en-US.md`,
+    `${releasePath}/screenshots-manifest.json`,
+    'release/compliance-facts.json',
+    'release/public-contact-facts.json',
+  ]) {
+    await t.test(relativePath, () => withReleaseFixture(
+      (root) => writeFileSync(join(root, relativePath), ''),
+      (result) => {
+        assert.equal(result.status, 1, `${relativePath} empty artifact bypassed verifier`);
+        assert.match(result.stderr, /must not be empty/iu);
+      },
+    ));
+  }
+});
+
+test('metadata verifier rejects null JSON authorities instead of skipping them', async (t) => {
+  for (const relativePath of [
+    `${releasePath}/release-manifest.json`,
+    `${releasePath}/age-rating.json`,
+    `${releasePath}/app-privacy.json`,
+  ]) {
+    await t.test(relativePath, () => withReleaseFixture(
+      (root) => writeFileSync(join(root, relativePath), 'null\n'),
+      (result) => {
+        assert.equal(result.status, 1, `${relativePath} null authority bypassed verifier`);
+        assert.match(result.stderr, /must be a JSON object/iu);
+      },
+    ));
+  }
+});
+
 test('Review Notes use the owner-authorized hosting disclosure and current manual-entry behavior', () => {
   const notes = readFileSync(join(projectRoot, releasePath, 'review-notes.md'), 'utf8');
 
@@ -212,7 +112,7 @@ test('Review Notes use the owner-authorized hosting disclosure and current manua
   assert.doesNotMatch(notes, /continues automatically|about 1\.6 seconds/i);
   assert.doesNotMatch(notes, /\bOn Apps\b|\bReturn to Apps\b/i);
   assert.match(notes, /remains on the introduction until the reviewer taps “Enter CaboHealth”/i);
-  assert.match(notes, /On Home, confirm both/i);
+  assert.match(notes, /On Home, confirm two public resources and locked Client Resources/i);
   assert.match(notes, /IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency/i);
   assert.match(notes, /IP address, browser or user-agent, requested URL, and technical errors/i);
   assert.match(notes, /visible in hPanel for up to 7 days/i);
@@ -224,7 +124,7 @@ test('metadata verifier rejects Review Notes regressions in hosting facts or ent
     [
       'hosting placeholder restored',
       (source) => source.replace(
-        /Opening either resource causes Hostinger[\s\S]*?They are not used for tracking\./u,
+        /Prior technical verification observed Hostinger[\s\S]*?They are not used for tracking\./u,
         '[INSERT VERIFIED HOSTINGER REQUEST-LOG FIELDS, PURPOSE, RETENTION, DELETION, AND FINAL APP PRIVACY MAPPING.]',
       ),
       /obsolete hosting blocker placeholder/i,
@@ -295,7 +195,7 @@ test('App Privacy preserves observed logs separately from the owner-authorized d
     'latency',
   ]);
   assert.deepEqual(privacy.nativeBehavior.localOnlyState, [
-    'saved public-module slugs and order',
+    'saved public-resource slugs and order',
     'language, appearance, haptics, and effects preferences',
     'recipe favorite keys',
     'visit-checklist completion state',
@@ -308,6 +208,23 @@ test('metadata verifier accepts the five owner confirmations without releasing u
     (result) => {
       assert.equal(result.status, 0, result.stderr || result.stdout);
       assert.match(result.stdout, /draft verified; submission remains blocked/i);
+    },
+  );
+});
+
+test('metadata verifier keeps Staff Access review blocked without isolated credentials or Apple direction', () => {
+  withReleaseFixture(
+    (root) => {
+      const file = join(root, releasePath, 'review-notes.md');
+      const source = readFileSync(file, 'utf8');
+      writeFileSync(file, source.replace(
+        /Staff Access is an owner\/operator surface; reviewer access, if required, is supplied separately in App Store Connect\.\n/u,
+        'Staff Access is ready for App Review.\n',
+      ));
+    },
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /Staff Access review-access disclosure/iu);
     },
   );
 });
@@ -396,8 +313,8 @@ test('metadata verifier rejects an arbitrary third hosted resource in Review Not
       const file = join(root, releasePath, 'review-notes.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        'Those are also the only Universal Links.',
-        '3. Meditation Studio — public — https://cabohealth.org/apps/meditation/\n\nThose are also the only Universal Links.',
+        'These are the only Universal Link entry points.',
+        '4. Meditation Studio — public — https://cabohealth.org/apps/meditation/\n\nThese are the only Universal Link entry points.',
       ));
     },
     (result) => {
@@ -413,13 +330,13 @@ test('metadata verifier rejects a third Review Notes resource even without a URL
       const file = join(root, releasePath, 'review-notes.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        'Those are also the only Universal Links.',
-        '3. Meditation Studio — public\n\nThose are also the only Universal Links.',
+        'These are the only Universal Link entry points.',
+        '4. Meditation Studio — public\n\nThese are the only Universal Link entry points.',
       ));
     },
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /Guideline 4\.7 resource list must contain exactly the two approved entries/i);
+      assert.match(result.stderr, /Guideline 4\.7 resource list must contain exactly two public entries and one protected Client Resources entry/i);
     },
   );
 });
@@ -438,6 +355,77 @@ test('metadata verifier rejects credentials in versioned Review Notes', () => {
   );
 });
 
+test('metadata verifier rejects canonical CH and AR credentials in Review Notes', async (t) => {
+  for (const code of [
+    'CH-01234567-89ABCDEF-01234567-89ABCDEF',
+    'AR-01234567-89ABCDEF-01234567-89ABCDEF',
+  ]) {
+    await t.test(code.slice(0, 2), () => withReleaseFixture(
+      (root) => {
+        const file = join(root, releasePath, 'review-notes.md');
+        writeFileSync(file, `${readFileSync(file, 'utf8')}\nApp Review credential: ${code}\n`);
+      },
+      (result) => {
+        assert.equal(result.status, 1, `${code.slice(0, 2)} credential bypassed Review Notes scan`);
+        assert.match(result.stderr, /appear to contain a credential/iu);
+      },
+    ));
+  }
+});
+
+test('metadata verifier rejects credentials outside the paste-ready body, with spaced groups, or in another release checklist', async (t) => {
+  const mutations = [
+    ['before marker', 'review-notes.md', (source) => source.replace(
+      '## Paste-ready body after all gates are resolved',
+      'App Review credential: AR-01234567-89ABCDEF-01234567-89ABCDEF\n\n## Paste-ready body after all gates are resolved',
+    )],
+    ['spaced groups', 'review-notes.md', (source) => `${source}\nAR-0123 4567-89AB CDEF-0123 4567-89AB CDEF\n`],
+    ['other checklist', 'submission-gates.md', (source) => `${source}\nCH-01234567-89ABCDEF-01234567-89ABCDEF\n`],
+  ];
+  for (const [name, relativePath, mutate] of mutations) {
+    await t.test(name, () => withReleaseFixture(
+      (root) => {
+        const file = join(root, releasePath, relativePath);
+        writeFileSync(file, mutate(readFileSync(file, 'utf8')));
+      },
+      (result) => {
+        assert.equal(result.status, 1, `${name} credential bypassed repository scan`);
+        assert.match(result.stderr, /credential|CH or AR/iu);
+      },
+    ));
+  }
+});
+
+test('metadata verifier rejects access credentials in project-level release authorities', () => {
+  withReleaseFixture(
+    (root) => {
+      const file = join(root, 'release/data-inventory.md');
+      writeFileSync(
+        file,
+        `${readFileSync(file, 'utf8')}\nApp Review credential: AR-01234567-89ABCDEF-01234567-89ABCDEF\n`,
+      );
+    },
+    (result) => {
+      assert.equal(result.status, 1, `project-level release credential bypassed scan:\n${result.stdout}${result.stderr}`);
+      assert.match(result.stderr, /release\/data-inventory\.md.*CH or AR credential/iu);
+    },
+  );
+});
+
+test('metadata verifier never follows symbolic links in release authorities', () => {
+  withReleaseFixture(
+    (root) => {
+      const path = join(root, 'release/data-inventory.md');
+      rmSync(path);
+      symlinkSync('content-rights.md', path);
+    },
+    (result) => {
+      assert.equal(result.status, 1, `release authority symlink bypassed no-follow scan:\n${result.stdout}${result.stderr}`);
+      assert.match(result.stderr, /must not be a symbolic link: release\/data-inventory\.md/iu);
+    },
+  );
+});
+
 test('metadata verifier rejects excluded modules in Review Notes', () => {
   withReleaseFixture(
     (root) => {
@@ -448,6 +436,25 @@ test('metadata verifier rejects excluded modules in Review Notes', () => {
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
       assert.match(result.stderr, /Review Notes name excluded release scope/i);
+    },
+  );
+});
+
+test('metadata verifier rejects Review Notes that contradict the complimentary no-sale model', () => {
+  withReleaseFixture(
+    (root) => {
+      const file = join(root, releasePath, 'review-notes.md');
+      writeFileSync(
+        file,
+        readFileSync(file, 'utf8').replace(
+          'ACCESS, BUSINESS MODEL, AND DATA',
+          'Clinic access costs USD 99.\n\nACCESS, BUSINESS MODEL, AND DATA',
+        ),
+      );
+    },
+    (result) => {
+      assert.equal(result.status, 1, `paid-access contradiction bypassed Review Notes verifier:\n${result.stdout}${result.stderr}`);
+      assert.match(result.stderr, /Review Notes contradict.*complimentary no-sale model/iu);
     },
   );
 });
@@ -469,6 +476,7 @@ test('metadata verifier rejects owner, category, territory, platform, rights, an
     ['separate legal entity', (manifest) => { manifest.ownerSeller.brandIsSeparateLegalEntity = true; }, /brand must not be represented as a separate legal entity/i],
     ['registered organization', (manifest) => { manifest.ownerSeller.registeredOrganization = true; }, /seller must remain an individual/i],
     ['seller mismatch', (manifest) => { manifest.ownerSeller.legalSeller = 'Another Seller'; }, /legal seller must remain Ivan Guaderrama/i],
+    ['owner territory drift', (manifest) => { manifest.ownerSeller.releaseTerritories = ['FRA']; }, /owner release territories must be exactly MEX and USA/i],
     ['Medical category retained', (manifest) => { manifest.appStoreDraft.categories.primary = 'Medical'; }, /categories must replace Medical with Health & Fitness and Food & Drink/i],
     ['extra territory', (manifest) => { manifest.appStoreDraft.availability.territories.push('CAN'); }, /territories must be exactly MEX and USA/i],
     ['DSA EU reassessment disabled', (manifest) => {
@@ -490,7 +498,7 @@ test('metadata verifier rejects owner, category, territory, platform, rights, an
     ['ASC marked saved', (manifest) => { manifest.appStoreDraft.status = 'saved'; }, /App Store draft must remain pending-save/i],
     ['DSA marked saved', (manifest) => { manifest.appStoreDraft.dsa.status = 'saved'; }, /DSA status must remain pending-save/i],
     ['medical-device gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.regulatedMedicalDevice = 'complete'; }, /regulatedMedicalDevice must remain owner-confirmed-pending-exact-rc-review/i],
-    ['privacy gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.finalPrivacyDisclosure = 'complete'; }, /finalPrivacyDisclosure must remain owner-authorized-pending-linkage-and-exact-rc-review/i],
+    ['privacy gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.finalPrivacyDisclosure = 'complete'; }, /finalPrivacyDisclosure must remain pending-final-linkage-category-review-and-save/i],
     ['rights gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.allContentRights = 'complete'; }, /allContentRights must remain owner-confirmed-scoped-pending-third-party-inventory/i],
   ];
 
@@ -532,10 +540,12 @@ test('metadata verifier rejects contradictory Cabo Health entity claims while re
     ['declarations draft', 'declarations.md', (source) => `${source}\nCabo Health is a legal entity.\n`],
     ['submission gates', 'submission-gates.md', (source) => `${source}\nCabo Health, a separate company, submits this app.\n`],
     ['en-US public metadata', 'en-US.md', (source) => source.replace(
-      'CaboHealth brings two carefully curated public wellness resources into one calm, bilingual experience.',
-      'Cabo Health is a company.\n\nCaboHealth brings two carefully curated public wellness resources into one calm, bilingual experience.',
+      'CaboHealth brings science-grounded general-wellness resources into one calm, bilingual experience.',
+      'Cabo Health is a company.\n\nCaboHealth brings science-grounded general-wellness resources into one calm, bilingual experience.',
     )],
     ['App Privacy draft', 'app-privacy.md', (source) => `${source}\nCabo Health has been registered as an organization.\n`],
+    ['es-MX public metadata', 'es-MX.md', (source) => `${source}\nCabo Health es una empresa y organización legal registrada.\n`],
+    ['es-MX public metadata', 'es-MX.md', (source) => `${source}\nCabo Health es una compañía registrada.\n`],
   ];
 
   for (const [label, relativePath, mutate] of mutations) {
@@ -561,9 +571,29 @@ test('metadata verifier permits ordinary Apple Developer Program and third-party
     (root) => {
       const file = join(root, releasePath, 'review-notes.md');
       const source = readFileSync(file, 'utf8');
-      writeFileSync(file, `${source}\nApple is a third-party organization that operates the Apple Developer Program.\n`);
+      writeFileSync(file, source.replace(
+        '## Paste-ready body after all gates are resolved',
+        'Apple is a third-party organization.\n\n## Paste-ready body after all gates are resolved',
+      ));
     },
     (result) => assert.equal(result.status, 0, result.stderr || result.stdout),
+  );
+});
+
+test('metadata verifier rejects a data inventory that claims the audit stores actor UID', () => {
+  withReleaseFixture(
+    (root) => {
+      const file = join(root, 'release/data-inventory.md');
+      const source = readFileSync(file, 'utf8');
+      writeFileSync(file, source.replace(
+        'fixed `actorLabel: Staff`, target suffix or opaque ID',
+        'actor UID, target type or opaque ID',
+      ));
+    },
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /fixed Staff actor label without an actor UID/iu);
+    },
   );
 });
 
@@ -612,14 +642,29 @@ test('metadata verifier reconciles authoritative Task 7 facts and current app co
   }
 });
 
-test('metadata verifier rejects an unconditional Data Not Collected recommendation', () => {
+test('metadata verifier rejects Data Not Collected for the retained v3 architecture', () => {
   withReleaseFixture(
     (root) => mutateJson(root, `${releasePath}/app-privacy.json`, (privacy) => {
-      privacy.recommendedAppPrivacyAnswer = 'data-not-collected';
+      privacy.recommendedAppPrivacyAnswer = 'No, we do not collect data from this app';
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /App Privacy recommendation must remain conditional/i);
+      assert.match(result.stderr, /App Privacy collection answer must remain Yes, we collect data from this app/i);
+    },
+  );
+});
+
+test('metadata verifier rejects App Privacy prose that drifts from its JSON authority', () => {
+  withReleaseFixture(
+    (root) => {
+      writeFileSync(
+        join(root, releasePath, 'app-privacy.md'),
+        '# App Privacy\n\nData Not Collected. Saved in App Store Connect.\n',
+      );
+    },
+    (result) => {
+      assert.equal(result.status, 1, `contradictory App Privacy prose bypassed verifier:\n${result.stdout}${result.stderr}`);
+      assert.match(result.stderr, /app-privacy\.md.*exact reviewed prose/iu);
     },
   );
 });
@@ -653,6 +698,44 @@ test('metadata verifier rejects unapproved App Privacy purposes and schema keys'
     ['extra root key', (privacy) => {
       privacy.unexpected = true;
     }],
+    ['audit exposes resource URLs', (privacy) => {
+      privacy.applicationAudit.containsResourceUrls = true;
+    }],
+    ['advertising provisional purpose', (privacy) => {
+      privacy.conditionalRecommendation.provisionalPurpose = ['Targeted Advertising'];
+    }],
+    ['non-Apple fraud purpose taxonomy', (privacy) => {
+      privacy.conditionalRecommendation.provisionalPurpose = [
+        'App Functionality',
+        'Fraud Prevention, Security, and Compliance',
+      ];
+    }],
+    ['coarse location omitted', (privacy) => {
+      privacy.conditionalRecommendation.provisionalCategoryMapping =
+        privacy.conditionalRecommendation.provisionalCategoryMapping
+          .filter((entry) => !entry.startsWith('Coarse Location'));
+    }],
+    ['group label instead of selectable data type', (privacy) => {
+      privacy.conditionalRecommendation.provisionalCategoryMapping[0] = 'Identifiers';
+    }],
+    ['native resource URL', (privacy) => {
+      privacy.backend.resourceUrlsReturnedToNative = true;
+    }],
+    ['debug App Check provider', (privacy) => {
+      privacy.appCheck.providers = ['debug'];
+    }],
+    ['best-effort deletion', (privacy) => {
+      privacy.deletion.mechanism = 'best effort';
+    }],
+    ['saved client linkage', (privacy) => {
+      privacy.clientAccount.status = 'saved';
+    }],
+    ['unkeyed code digest', (privacy) => {
+      privacy.backend.codeDigests = 'plain SHA-256';
+    }],
+    ['missing backend providers', (privacy) => {
+      privacy.backend.providers = [];
+    }],
   ];
 
   for (const [name, mutate] of mutations) {
@@ -660,38 +743,53 @@ test('metadata verifier rejects unapproved App Privacy purposes and schema keys'
       (root) => mutateJson(root, `${releasePath}/app-privacy.json`, mutate),
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed verifier:\n${result.stdout}${result.stderr}`);
-        assert.match(result.stderr, /App Privacy schemas and hosting purposes must be exact/i);
+        assert.match(result.stderr, /App Privacy schemas and hosting purposes must be exact|App Privacy client-access architecture|conditional App Privacy mapping|exact privacy authority/iu);
       },
     ));
   }
 });
 
-test('metadata verifier rejects a saved 9+ rating without all three recorded questionnaire answers', () => {
+test('metadata verifier rejects a projected 9+ rating without all three recorded questionnaire answers', () => {
   withReleaseFixture(
     (root) => mutateJson(root, `${releasePath}/age-rating.json`, (age) => {
       age.conditions.unrestrictedWebAccess.requiredAnswer = true;
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /saved 9\+ rating requires unrestrictedWebAccess=false/i);
+      assert.match(result.stderr, /projected 9\+ rating requires unrestrictedWebAccess=false/i);
     },
   );
 });
 
-test('metadata verifier requires the exact saved App Store calculation', async (t) => {
+test('metadata verifier rejects age-rating prose that drifts from its JSON authority', () => {
+  withReleaseFixture(
+    (root) => {
+      writeFileSync(
+        join(root, releasePath, 'age-rating.md'),
+        '# Age rating\n\nFinal calculated rating: 17+. Advertising: Yes.\n',
+      );
+    },
+    (result) => {
+      assert.equal(result.status, 1, `contradictory age-rating prose bypassed verifier:\n${result.stdout}${result.stderr}`);
+      assert.match(result.stderr, /age-rating\.md.*exact reviewed prose/iu);
+    },
+  );
+});
+
+test('metadata verifier requires the exact projected rating and pending recalculation state', async (t) => {
   const mutations = [
-    ['calculated rating removed', (age) => { age.calculatedRating = null; }],
-    ['calculated rating changed', (age) => { age.calculatedRating = '12+'; }],
+    ['previous saved rating removed', (age) => { age.previousSavedRating = null; }],
+    ['calculated rating filled before ASC save', (age) => { age.calculatedRating = '9+'; }],
     ['draft status restored', (age) => { age.status = 'draft-conditional'; }],
-    ['owner confirmation reopened', (age) => { age.ownerConfirmationRequired = true; }],
-    ['App Store calculation reopened', (age) => { age.appStoreCalculationRequired = true; }],
+    ['owner confirmation falsely closed', (age) => { age.ownerConfirmationRequired = false; }],
+    ['App Store calculation falsely closed', (age) => { age.appStoreCalculationRequired = false; }],
   ];
   for (const [name, mutate] of mutations) {
     await t.test(name, () => withReleaseFixture(
       (root) => mutateJson(root, `${releasePath}/age-rating.json`, mutate),
       (result) => {
         assert.equal(result.status, 1, result.stdout || result.stderr);
-        assert.match(result.stderr, /Age rating must retain the saved App Store Connect 9\+ calculation/i);
+        assert.match(result.stderr, /Age rating must remain projected 9\+ with owner reconfirmation and App Store recalculation required/i);
       },
     ));
   }
@@ -700,6 +798,11 @@ test('metadata verifier requires the exact saved App Store calculation', async (
 test('metadata verifier rejects extra or contradictory age-rating answers', async (t) => {
   const mutations = [
     ['UGC changed to yes', (age) => { age.otherSupportedAnswers.userGeneratedContent = true; }],
+    ['medical information changed', (age) => { age.conditions.medicalOrTreatmentInformation.requiredAnswer = 'INFREQUENT'; }],
+    ['health topics changed from presence value', (age) => { age.conditions.healthOrWellnessTopics.requiredAnswer = 'FREQUENT'; }],
+    ['violence changed', (age) => { age.otherSupportedAnswers.violenceRealistic = 'INFREQUENT'; }],
+    ['questionnaire scale changed', (age) => { age.questionnaireReference.frequencyScale = ['NONE', 'FREQUENT']; }],
+    ['kids band enabled', (age) => { age.ageCategoryAndOverride.kidsAgeBand = 'FIVE_AND_UNDER'; }],
     ['extra condition', (age) => { age.conditions.unexpected = { requiredAnswer: false }; }],
   ];
   for (const [name, mutate] of mutations) {
@@ -707,7 +810,10 @@ test('metadata verifier rejects extra or contradictory age-rating answers', asyn
       (root) => mutateJson(root, `${releasePath}/age-rating.json`, mutate),
       (result) => {
         assert.equal(result.status, 1, result.stdout || result.stderr);
-        assert.match(result.stderr, /age-rating condition and supported-answer schemas must be exact/i);
+        assert.match(
+          result.stderr,
+          /age-rating condition and supported-answer schemas must be exact|exact age-rating authority|Age rating must remain|requires (?:medicalOrTreatmentInformation|healthOrWellnessTopics)/i,
+        );
       },
     ));
   }
@@ -723,6 +829,22 @@ test('metadata verifier binds screenshot planning to the exact candidate build',
       assert.match(result.stderr, /screenshot manifest must target 3\.0 build 4/i);
     },
   );
+});
+
+test('metadata verifier rejects screenshot schema and evidence-authority drift', async (t) => {
+  const mutations = [
+    ['schema', (screenshots) => { screenshots.schemaVersion = 999; }],
+    ['evidence keys', (screenshots) => { screenshots.requiredEvidence = {}; }],
+  ];
+  for (const [name, mutate] of mutations) {
+    await t.test(name, () => withReleaseFixture(
+      (root) => mutateJson(root, `${releasePath}/screenshots-manifest.json`, mutate),
+      (result) => {
+        assert.equal(result.status, 1, `${name} screenshot drift bypassed verifier`);
+        assert.match(result.stderr, /Screenshot manifest must retain the exact authority schema/iu);
+      },
+    ));
+  }
 });
 
 test('metadata verifier rejects public copy that presents the app as a generic marketplace', () => {

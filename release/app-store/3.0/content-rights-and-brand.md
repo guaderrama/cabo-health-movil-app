@@ -12,7 +12,7 @@ Apple previously questioned the individual developer account’s relationship to
 - [ ] Identify Apple ID `6758285327` and bundle ID `com.cabohealth.app`.
 - [ ] State that the initial release scope is Mexico and United States only.
 - [ ] Attach current evidence that Ivan controls `cabohealth.org`.
-- [ ] Attach a brand/logo/content rights schedule covering the Cabo Health name, wordmark, logo, the two public resources, screenshots, metadata, distribution, and updates.
+- [ ] Attach a brand/logo/content rights schedule covering the Cabo Health name, wordmark, logo, two public resources, protected Client Resources content, fixed App Review sample, Staff Access presentation, screenshots, metadata, distribution, and updates.
 - [ ] Include a dated signature and a verification contact appropriate for an individual owner.
 - [ ] Attach only genuine assignment, license, source, or authorship evidence; make no invented registration or trademark claim.
 
@@ -20,6 +20,7 @@ Apple previously questioned the individual developer account’s relationship to
 
 - [ ] Healthy Recipes: convert the owner-confirmed authorization into an itemized rights basis for all twelve recipe texts, labels, food-safety wording, and every visual asset; distinguish original writing from third-party material.
 - [ ] Clinic Guide: convert the owner-confirmed authorization into an itemized rights basis for clinic descriptions, contact presentation, logo, and location information.
+- [ ] Client Resources and fixed App Review sample: inventory every reviewed page and asset; confirm they remain educational/general wellness, contain no client or health data, and have an itemized rights basis before activation.
 - [ ] Review WHO, FoodSafety.gov, USDA FSIS, Gobierno de México 9-1-1, Apple Maps, and WhatsApp references; confirm that each use is permitted and accurately attributed.
 - **RECORDED:** Retain **Yes — uses third-party material** as the App Store Content Rights recommendation; owner confirmation is recorded, while final third-party inventory remains pending. Do not reuse the legacy “No third-party content” answer.
 - [ ] Record approver, material/version, basis, scope, date, territory/attribution limits, and a sanitized private-evidence reference in the final rights record.
