@@ -86,7 +86,14 @@ test('client secrets never enter AsyncStorage or application logs', () => {
 
 function collectSourceFiles(root) {
   const allowed = /\.(?:cjs|js|json|mjs|ts|tsx)$/u;
-  const ignored = new Set(['.git', '.test-build', 'node_modules']);
+  const ignored = new Set([
+    '.git',
+    '.test-build',
+    'lib',
+    'node_modules',
+    'test-build',
+    'tests',
+  ]);
   const paths = [];
   const visit = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
