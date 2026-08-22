@@ -5,7 +5,11 @@ import { test } from 'node:test';
 import { AccessCodeIssuer } from '../../domain/accessCodeIssuer.js';
 import { AdminClientAccessRevocationService } from '../../domain/adminClientAccessRevocation.js';
 import { ClientAccessRemovalService } from '../../domain/clientAccessRemoval.js';
-import { ClientAccountDeletionService } from '../../domain/clientAccountDeletion.js';
+import {
+  AccountDeletionRetryBatchError,
+  type ClientAccountDeletionStore,
+  ClientAccountDeletionService,
+} from '../../domain/clientAccountDeletion.js';
 import { ClientAccessRedeemer } from '../../domain/clientAccessRedeemer.js';
 import { ClientLaunchService } from '../../domain/clientLaunchService.js';
 import { ClientSessionManager } from '../../domain/clientSessionManager.js';
@@ -324,9 +328,104 @@ test('deletion never reports completion while an authoritative client record is 
   });
   authUnavailable = false;
 
-  await assert.rejects(deletion.retryPending(), /invalid_client_grant_record/u);
+  await assert.rejects(deletion.retryPending(), (error: unknown) => {
+    if (!(error instanceof AccountDeletionRetryBatchError)) return false;
+    assert.deepEqual(error.summary, {
+      completed: 0,
+      failed: 1,
+      malformed: 0,
+      pending: 0,
+    });
+    assert.doesNotMatch(error.message, /grant|client_/u);
+    return true;
+  });
   assert.match(harness.database.serializedState(), /_private_account_deletions/u);
   assert.match(harness.database.serializedState(), /_private_client_grants/u);
+});
+
+test('scheduled deletion isolates one subject failure and signals a sanitized aggregate', async () => {
+  const failingSubject = `client_${'a'.repeat(32)}`;
+  const completingSubject = `client_${'b'.repeat(32)}`;
+  const attemptedSubjects: string[] = [];
+  const store: ClientAccountDeletionStore = {
+    async beginAccountDeletion() {
+      return { kind: 'invalid' };
+    },
+    async completeAccountDeletion(subjectUid) {
+      return subjectUid === completingSubject
+        ? { kind: 'completed' }
+        : { kind: 'not_ready' };
+    },
+    async listPendingAccountDeletions() {
+      return { malformed: 0, subjectUids: [failingSubject, completingSubject] };
+    },
+    async markAccountDeletionAttemptFailed() {},
+    async purgeAccountDeletionArtifacts(subjectUid) {
+      attemptedSubjects.push(subjectUid);
+      if (subjectUid === failingSubject) throw new Error('injected_firestore_failure');
+      return { kind: 'ready' };
+    },
+  };
+  const deletion = new ClientAccountDeletionService({
+    authAccounts: { async deleteUser() {} },
+    installationHasher: hasher('installation'),
+    nowMs: () => nowMs,
+    store,
+  });
+
+  await assert.rejects(deletion.retryPending(), (error: unknown) => {
+    if (!(error instanceof AccountDeletionRetryBatchError)) return false;
+    assert.equal(error.message, 'account_deletion_retry_incomplete');
+    assert.deepEqual(error.summary, {
+      completed: 1,
+      failed: 1,
+      malformed: 0,
+      pending: 0,
+    });
+    assert.doesNotMatch(JSON.stringify(error), /client_/u);
+    return true;
+  });
+  assert.deepEqual(attemptedSubjects, [failingSubject, completingSubject]);
+});
+
+test('scheduled deletion reports malformed tombstones after valid jobs make progress', async () => {
+  const harness = await createRedeemedHarness(nowMs + 30 * 24 * 60 * 60 * 1_000);
+  let authUnavailable = true;
+  const deletion = new ClientAccountDeletionService({
+    authAccounts: {
+      async deleteUser() {
+        if (authUnavailable) throw new Error('temporary_auth_failure');
+      },
+    },
+    installationHasher: hasher('installation'),
+    nowMs: () => nowMs,
+    store: harness.store,
+  });
+  assert.deepEqual(await deletion.request({
+    installationId,
+    subjectUid: harness.subjectUid,
+  }), { status: 'pending' });
+  await harness.database.runTransaction(async (transaction) => {
+    transaction.create('_private_account_deletions/malformed-document', {
+      schemaVersion: 999,
+      status: 'pending',
+    });
+  });
+  authUnavailable = false;
+
+  await assert.rejects(deletion.retryPending(), (error: unknown) => {
+    if (!(error instanceof AccountDeletionRetryBatchError)) return false;
+    assert.deepEqual(error.summary, {
+      completed: 1,
+      failed: 0,
+      malformed: 1,
+      pending: 0,
+    });
+    assert.doesNotMatch(JSON.stringify(error), /malformed-document|client_/u);
+    return true;
+  });
+  const residualJobs = await harness.database.listCollection('_private_account_deletions');
+  assert.deepEqual(residualJobs.map(({ id }) => id), ['malformed-document']);
 });
 
 async function createRedeemedHarness(expiresAtMs: number) {

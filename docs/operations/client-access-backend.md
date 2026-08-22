@@ -47,7 +47,12 @@ activated**. Deployment remains an explicit release gate.
   safely attributable installation rate-limit bucket before deleting Firebase
   Auth. Failures remain pending and a scheduled worker retries every five
   minutes. The tombstone, code, and grant are removed only after Auth and
-  linked-data cleanup complete.
+  linked-data cleanup complete. Each scheduled subject is isolated: a
+  Firestore/record failure cannot prevent the remaining valid jobs in that
+  bounded batch from progressing. After processing valid jobs, any unexpected
+  per-subject exception or malformed tombstone raises one aggregate operational
+  error with counts only—never document IDs, Auth UIDs, or underlying error
+  text.
 
 The deliberate response exceptions are: the one-time code to the authorized
 administrator, a Firebase custom token from client redemption, the short
@@ -235,8 +240,9 @@ Do not call this Apple-ready or production-ready until all are complete:
 5. Integrate and test the native adapter, staff portal, and PHP broker adapter
    end-to-end; verify remove/delete/revoke during active native and web sessions.
 6. Exercise the durable deletion worker with injected Auth/Firestore failures
-   in staging, verify deployed TTL status, and confirm the native UI treats
-   `pending` as pending rather than as completed erasure.
+   and malformed tombstones in staging; verify the sanitized aggregate alert,
+   deployed TTL status, and that the native UI treats `pending` as pending
+   rather than as completed erasure.
 7. Implement a **separate** synthetic `purpose: "app_review"` credential and
    isolated review-sandbox repository. It must be multi-device/non-expiring,
    excluded from the four production slots, and unable to read or mutate

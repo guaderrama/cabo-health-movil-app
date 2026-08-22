@@ -648,14 +648,24 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
     });
   }
 
-  async listPendingAccountDeletions(limit: number): Promise<readonly string[]> {
+  async listPendingAccountDeletions(limit: number): Promise<Readonly<{
+    malformed: number;
+    subjectUids: readonly string[];
+  }>> {
     const documents = await this.#database.listCollection(ACCOUNT_DELETION_PREFIX);
-    return Object.freeze(documents
-      .map(({ value }) => parseStoredAccountDeletion(value))
+    const parsed = documents.map(({ id, value }) => {
+      const deletion = parseStoredAccountDeletion(value);
+      return deletion?.subjectUid === id ? deletion : null;
+    });
+    const subjectUids = parsed
       .filter((value): value is Readonly<StoredAccountDeletion> => value !== null)
       .sort((left, right) => left.createdAtMs - right.createdAtMs)
       .slice(0, limit)
-      .map(({ subjectUid }) => subjectUid));
+      .map(({ subjectUid }) => subjectUid);
+    return Object.freeze({
+      malformed: parsed.filter((value) => value === null).length,
+      subjectUids: Object.freeze(subjectUids),
+    });
   }
 
   createLaunch(command: Readonly<CreateLaunchCommand>): Promise<'created' | 'invalid'> {
