@@ -1,10 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Modo desarrollo - todo abierto
-    // IMPORTANTE: Cambiar a reglas restrictivas antes de producción
+    // All app and admin traffic must use a trusted server boundary. The
+    // Firebase Admin SDK bypasses these client rules; mobile and web SDKs do
+    // not receive direct access, even when Firebase Auth is present.
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
