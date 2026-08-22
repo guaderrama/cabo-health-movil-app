@@ -15,13 +15,28 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, useTranslations } from '../../hooks';
+import type { MessageKey } from '../../i18n/messages';
 import {
+  DEFAULT_DEV_MINIAPP_ICON,
+  DEV_MINIAPP_ICONS,
   isDevMiniappPanelEnabled,
   type CreateDevMiniappResult,
   type DevMiniapp,
   type DevMiniappAccess,
+  type DevMiniappIcon,
   type DevMiniappInput,
 } from './devMiniappCatalog';
+
+const ICON_LABEL_KEYS = Object.freeze({
+  'flask-outline': 'devPanel.iconLab',
+  'book-outline': 'devPanel.iconGuide',
+  'leaf-outline': 'devPanel.iconNutrition',
+  'restaurant-outline': 'devPanel.iconRecipes',
+  'heart-outline': 'devPanel.iconWellness',
+  'map-outline': 'devPanel.iconLocation',
+  'chatbubble-ellipses-outline': 'devPanel.iconContact',
+  'sparkles-outline': 'devPanel.iconFeatured',
+} satisfies Record<DevMiniappIcon, MessageKey>);
 
 const EMPTY_FORM: DevMiniappInput = {
   titleEn: '',
@@ -30,6 +45,7 @@ const EMPTY_FORM: DevMiniappInput = {
   summaryEs: '',
   url: '',
   access: 'public',
+  icon: DEFAULT_DEV_MINIAPP_ICON,
 };
 
 export function DevMiniappPanel({
@@ -82,6 +98,7 @@ export function DevMiniappPanel({
       summaryEs: 'Tarjeta temporal que usa una página existente de CaboHealth.',
       url: 'https://cabohealth.org/apps/healthy-recipes/',
       access: 'client',
+      icon: 'restaurant-outline',
     });
     setFormError(null);
   };
@@ -171,6 +188,16 @@ export function DevMiniappPanel({
                   index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
                 ]}
               >
+                <View
+                  accessible={false}
+                  importantForAccessibility="no-hide-descendants"
+                  style={[
+                    styles.savedIcon,
+                    { backgroundColor: colors.editorialCoverMuted, borderColor: colors.editorialBorder },
+                  ]}
+                >
+                  <Ionicons name={miniapp.icon} size={21} color={colors.primary} />
+                </View>
                 <View style={styles.savedCopy}>
                   <Text style={[styles.savedTitle, { color: colors.text }]} numberOfLines={1}>{displayTitle(miniapp)}</Text>
                   <Text style={[styles.savedMeta, { color: colors.textSecondary }]} numberOfLines={1}>
@@ -245,6 +272,19 @@ export function DevMiniappPanel({
               keyboardType="url"
               placeholder="https://example.org/guide/"
             />
+
+            <Text style={[styles.fieldLabel, { color: colors.text }]}>{t('devPanel.icon')}</Text>
+            <View accessibilityRole="radiogroup" style={styles.iconGrid}>
+              {DEV_MINIAPP_ICONS.map((icon) => (
+                <IconChoice
+                  key={icon}
+                  icon={icon}
+                  label={t(ICON_LABEL_KEYS[icon])}
+                  selected={(form.icon ?? DEFAULT_DEV_MINIAPP_ICON) === icon}
+                  onPress={() => update('icon', icon)}
+                />
+              ))}
+            </View>
 
             <Text style={[styles.fieldLabel, { color: colors.text }]}>{t('devPanel.access')}</Text>
             <View accessibilityRole="radiogroup" style={styles.segmented}>
@@ -343,6 +383,38 @@ function AccessChoice({
   );
 }
 
+function IconChoice({
+  icon,
+  label,
+  selected,
+  onPress,
+}: {
+  icon: DevMiniappIcon;
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: selected }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.iconChoice,
+        {
+          backgroundColor: selected ? colors.primary : colors.editorialSurfaceMuted,
+          borderColor: selected ? colors.primary : colors.editorialBorder,
+        },
+        pressed && styles.pressed,
+      ]}
+    >
+      <Ionicons name={icon} size={24} color={selected ? colors.onPrimary : colors.primary} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { minHeight: 64, flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 16, paddingBottom: 10, borderBottomWidth: 1 },
@@ -361,6 +433,7 @@ const styles = StyleSheet.create({
   card: { borderWidth: 1, borderRadius: 17, overflow: 'hidden' },
   empty: { padding: 16, fontSize: 13, lineHeight: 18 },
   savedRow: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 },
+  savedIcon: { width: 38, height: 38, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   savedCopy: { flex: 1 },
   savedTitle: { fontSize: 14, lineHeight: 19, fontWeight: '700' },
   savedMeta: { marginTop: 2, fontSize: 11, lineHeight: 15 },
@@ -372,6 +445,8 @@ const styles = StyleSheet.create({
   fieldLabel: { marginBottom: 6, fontSize: 12, lineHeight: 16, fontWeight: '700' },
   input: { minHeight: 46, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, lineHeight: 20 },
   multiline: { minHeight: 72, textAlignVertical: 'top' },
+  iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  iconChoice: { width: 52, height: 52, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   segmented: { flexDirection: 'row', gap: 8 },
   accessWarning: { marginTop: 8, fontSize: 11, lineHeight: 16 },
   segment: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderRadius: 12, paddingHorizontal: 10 },

@@ -21,6 +21,7 @@ const validInput = Object.freeze({
   summaryEs: 'Guía educativa de alimentos para clientes de CaboHealth.',
   url: 'https://cabohealth.org/apps/microbiota-guide/',
   access: 'client',
+  icon: 'leaf-outline',
 });
 
 test('a valid CaboHealth app link becomes a local test miniapp', () => {
@@ -35,6 +36,7 @@ test('a valid CaboHealth app link becomes a local test miniapp', () => {
       summaryEs: validInput.summaryEs,
       url: validInput.url,
       access: 'client',
+      icon: 'leaf-outline',
       active: true,
     },
   });
@@ -49,6 +51,29 @@ test('a public HTTPS page on another domain becomes a local test miniapp', () =>
   assert.equal(result.value.url, url);
   assert.equal(result.value.slug, 'guides.example.org');
   assert.equal(result.value.access, 'client');
+  assert.equal(result.value.icon, 'leaf-outline');
+});
+
+test('test miniapps accept only the small reviewed icon library', () => {
+  const accepted = [
+    'flask-outline',
+    'book-outline',
+    'leaf-outline',
+    'restaurant-outline',
+    'heart-outline',
+    'map-outline',
+    'chatbubble-ellipses-outline',
+    'sparkles-outline',
+  ];
+  for (const icon of accepted) {
+    const result = createDevMiniapp({ ...validInput, icon }, []);
+    assert.equal(result.ok, true, icon);
+    if (result.ok) assert.equal(result.value.icon, icon);
+  }
+  assert.deepEqual(createDevMiniapp({ ...validInput, icon: 'logo-apple' }, []), {
+    ok: false,
+    reason: 'Choose one of the available miniapp icons.',
+  });
 });
 
 test('test miniapps reject insecure or non-public URL shapes', () => {
@@ -102,6 +127,7 @@ test('the local test catalog has a small fixed capacity', () => {
     summaryEs: 'Prueba temporal.',
     url: `https://cabohealth.org/apps/test-${index}/`,
     access: 'public',
+    icon: 'flask-outline',
     active: true,
   }));
   assert.deepEqual(createDevMiniapp(validInput, existing), {
@@ -138,10 +164,17 @@ test('stored test miniapps are parsed fail-closed', () => {
     [{ ...created.value, active: false }],
   );
 
+  const { icon: _legacyIcon, ...legacy } = created.value;
+  assert.deepEqual(
+    parseDevMiniappCatalog(JSON.stringify([{ ...legacy, active: false }])),
+    [{ ...created.value, icon: 'flask-outline', active: false }],
+  );
+
   for (const stored of [
     '{',
     JSON.stringify([{ ...created.value, url: 'https://evil.example/' }]),
     JSON.stringify([{ ...created.value, unexpected: true }]),
+    JSON.stringify([{ ...created.value, icon: 'logo-apple' }]),
     JSON.stringify([created.value, created.value]),
   ]) {
     assert.throws(() => parseDevMiniappCatalog(stored), /Invalid test miniapp catalog/u);

@@ -34,3 +34,16 @@ test('the test panel contains no legacy PIN, Firebase authority, or client-code 
   assert.doesNotMatch(sources, /ADMIN_PIN|master.?code|firebase|firestore|access_codes/iu);
   assert.match(read('i18n/messages.ts'), /Client codes and server protection are not active yet\./u);
 });
+
+test('the test panel offers a reviewed icon picker and cards render the stored choice', () => {
+  const panel = read('features/devMiniapps/DevMiniappPanel.tsx');
+  const tile = read('features/devMiniapps/DevMiniappTile.tsx');
+  const catalog = read('features/devMiniapps/devMiniappCatalog.ts');
+
+  assert.match(catalog, /DEV_MINIAPP_ICONS/u);
+  assert.match(panel, /accessibilityRole="radiogroup"/u);
+  assert.match(panel, /IconChoice/u);
+  assert.match(panel, /update\('icon', icon\)/u);
+  assert.match(panel, /form\.icon \?\? DEFAULT_DEV_MINIAPP_ICON/u);
+  assert.match(tile, /icon=\{miniapp\.icon\}/u);
+});

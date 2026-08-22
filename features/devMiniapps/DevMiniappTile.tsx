@@ -25,7 +25,7 @@ export function DevMiniappTile({
       eyebrow={access}
       title={title}
       summary={summary}
-      icon="flask-outline"
+      icon={miniapp.icon}
       accessibilityLabel={label}
       accessibilityHint={t('catalog.open')}
       index={index}

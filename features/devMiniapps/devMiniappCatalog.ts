@@ -1,5 +1,19 @@
 export type DevMiniappAccess = 'public' | 'client';
 
+export const DEV_MINIAPP_ICONS = Object.freeze([
+  'flask-outline',
+  'book-outline',
+  'leaf-outline',
+  'restaurant-outline',
+  'heart-outline',
+  'map-outline',
+  'chatbubble-ellipses-outline',
+  'sparkles-outline',
+] as const);
+
+export type DevMiniappIcon = (typeof DEV_MINIAPP_ICONS)[number];
+export const DEFAULT_DEV_MINIAPP_ICON: DevMiniappIcon = 'flask-outline';
+
 export interface DevMiniappInput {
   titleEn: string;
   titleEs: string;
@@ -7,11 +21,13 @@ export interface DevMiniappInput {
   summaryEs: string;
   url: string;
   access: DevMiniappAccess;
+  icon?: DevMiniappIcon;
 }
 
-export interface DevMiniapp extends DevMiniappInput {
+export interface DevMiniapp extends Omit<DevMiniappInput, 'icon'> {
   id: string;
   slug: string;
+  icon: DevMiniappIcon;
   active: boolean;
 }
 
@@ -49,6 +65,7 @@ export function removeDevMiniapp(
 const DEV_MINIAPP_KEYS = Object.freeze([
   'access',
   'active',
+  'icon',
   'id',
   'slug',
   'summaryEn',
@@ -57,6 +74,14 @@ const DEV_MINIAPP_KEYS = Object.freeze([
   'titleEs',
   'url',
 ]);
+
+const LEGACY_DEV_MINIAPP_KEYS = Object.freeze(
+  DEV_MINIAPP_KEYS.filter((key) => key !== 'icon'),
+);
+
+function isDevMiniappIcon(value: unknown): value is DevMiniappIcon {
+  return typeof value === 'string' && DEV_MINIAPP_ICONS.some((icon) => icon === value);
+}
 
 type ParsedDevMiniappUrl = Readonly<{
   canonicalUrl: string;
@@ -114,7 +139,11 @@ export function parseDevMiniappCatalog(stored: string): readonly Readonly<DevMin
         throw new Error('invalid');
       }
       const record = candidate as Record<string, unknown>;
-      if (JSON.stringify(Object.keys(record).sort()) !== JSON.stringify(DEV_MINIAPP_KEYS)) {
+      const keys = JSON.stringify(Object.keys(record).sort());
+      if (
+        keys !== JSON.stringify(DEV_MINIAPP_KEYS)
+        && keys !== JSON.stringify(LEGACY_DEV_MINIAPP_KEYS)
+      ) {
         throw new Error('invalid');
       }
       if (
@@ -126,6 +155,7 @@ export function parseDevMiniappCatalog(stored: string): readonly Readonly<DevMin
         || typeof record.summaryEs !== 'string'
         || typeof record.url !== 'string'
         || typeof record.active !== 'boolean'
+        || (record.icon !== undefined && typeof record.icon !== 'string')
         || (record.access !== 'public' && record.access !== 'client')
       ) {
         throw new Error('invalid');
@@ -137,6 +167,7 @@ export function parseDevMiniappCatalog(stored: string): readonly Readonly<DevMin
         summaryEs: record.summaryEs,
         url: record.url,
         access: record.access,
+        icon: record.icon === undefined ? DEFAULT_DEV_MINIAPP_ICON : record.icon as DevMiniappIcon,
       }, result);
       if (!created.ok || record.id !== created.value.id || record.slug !== created.value.slug) {
         throw new Error('invalid');
@@ -192,6 +223,7 @@ export function createDevMiniapp(
   const titleEs = input.titleEs.trim();
   const summaryEn = input.summaryEn.trim();
   const summaryEs = input.summaryEs.trim();
+  const icon = input.icon ?? DEFAULT_DEV_MINIAPP_ICON;
   if (
     !titleEn
     || !titleEs
@@ -206,6 +238,12 @@ export function createDevMiniapp(
     return {
       ok: false,
       reason: 'Complete both languages and choose Public or Clients.',
+    };
+  }
+  if (!isDevMiniappIcon(icon)) {
+    return {
+      ok: false,
+      reason: 'Choose one of the available miniapp icons.',
     };
   }
   const parsedUrl = parsePublicHttpsUrl(input.url);
@@ -229,6 +267,7 @@ export function createDevMiniapp(
       summaryEs,
       url: parsedUrl.canonicalUrl,
       access: input.access,
+      icon,
       active: true,
     },
   };
