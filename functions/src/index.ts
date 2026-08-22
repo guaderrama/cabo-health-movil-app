@@ -38,6 +38,10 @@ import {
   AppReviewSessionManager,
 } from './domain/appReviewAccess.js';
 import { AppReviewAccountDeletionService } from './domain/appReviewAccountDeletion.js';
+import {
+  AccountDeletionReceiptError,
+  AccountDeletionReceiptStatusService,
+} from './domain/accountDeletionReceipt.js';
 import { AppReviewDataRetentionService } from './domain/appReviewDataRetention.js';
 import {
   CatalogDraftAdminService,
@@ -66,6 +70,7 @@ import { authorizeAppCheckSurface } from './security/appCheckAuthorization.js';
 const REGION = 'us-central1';
 const CODE_PEPPER_RING = defineSecret('CLIENT_CODE_PEPPER_RING');
 const INSTALLATION_PEPPER_RING = defineSecret('CLIENT_INSTALLATION_PEPPER_RING');
+const CLIENT_DELETION_RECEIPT_PEPPER_RING = defineSecret('CLIENT_DELETION_RECEIPT_PEPPER_RING');
 const RATE_LIMIT_PEPPER_RING = defineSecret('CLIENT_RATE_LIMIT_PEPPER_RING');
 const LAUNCH_NONCE_PEPPER_RING = defineSecret('CLIENT_LAUNCH_NONCE_PEPPER_RING');
 const WEB_SESSION_PEPPER_RING = defineSecret('CLIENT_WEB_SESSION_PEPPER_RING');
@@ -73,6 +78,7 @@ const WEB_CSRF_PEPPER_RING = defineSecret('CLIENT_WEB_CSRF_PEPPER_RING');
 const BROKER_HMAC_KEY_RING = defineSecret('CLIENT_BROKER_HMAC_KEY_RING');
 const APP_REVIEW_CREDENTIAL_PEPPER_RING = defineSecret('APP_REVIEW_CREDENTIAL_PEPPER_RING');
 const APP_REVIEW_INSTALLATION_PEPPER_RING = defineSecret('APP_REVIEW_INSTALLATION_PEPPER_RING');
+const APP_REVIEW_DELETION_RECEIPT_PEPPER_RING = defineSecret('APP_REVIEW_DELETION_RECEIPT_PEPPER_RING');
 const APP_REVIEW_RATE_LIMIT_PEPPER_RING = defineSecret('APP_REVIEW_RATE_LIMIT_PEPPER_RING');
 const APP_REVIEW_LAUNCH_NONCE_PEPPER_RING = defineSecret('APP_REVIEW_LAUNCH_NONCE_PEPPER_RING');
 const APP_REVIEW_WEB_SESSION_PEPPER_RING = defineSecret('APP_REVIEW_WEB_SESSION_PEPPER_RING');
@@ -152,7 +158,7 @@ export const adminListClientAccessCodes = onCall(baseCallableOptions, async (req
 
 export const adminRevokeClientAccessCode = onCall({
   ...baseCallableOptions,
-  secrets: [INSTALLATION_PEPPER_RING],
+  secrets: [INSTALLATION_PEPPER_RING, CLIENT_DELETION_RECEIPT_PEPPER_RING],
 }, async (request) => {
   assertStaffAppCheck(request);
   await assertProductionAdmin(request, 'client_codes');
@@ -344,17 +350,36 @@ export const createAppReviewLaunch = onCall({
 
 export const deleteAppReviewAccount = onCall({
   ...baseCallableOptions,
-  secrets: [APP_REVIEW_INSTALLATION_PEPPER_RING],
+  secrets: [APP_REVIEW_INSTALLATION_PEPPER_RING, APP_REVIEW_DELETION_RECEIPT_PEPPER_RING],
 }, async (request) => {
   assertClientAppCheck(request);
   const subjectUid = assertAppReviewDeletionAuth(request);
+  const input = parseDeletionRequestInput(request.data);
   try {
     return await createAppReviewAccountDeletionService().request({
-      installationId: parseInstallationId(request.data),
+      ...input,
       subjectUid,
     });
   } catch (error) {
     throw mapAppReviewAccountDeletionError(error);
+  }
+});
+
+export const getAppReviewAccountDeletionStatus = onCall({
+  ...baseCallableOptions,
+  secrets: [APP_REVIEW_DELETION_RECEIPT_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  try {
+    return await new AccountDeletionReceiptStatusService({
+      receiptHasher: hasherFromSecret(
+        APP_REVIEW_DELETION_RECEIPT_PEPPER_RING,
+        'cabohealth/app-review/deletion-receipt/v1',
+      ),
+      store: createAppReviewStore(),
+    }).getStatus(parseDeletionStatusInput(request.data));
+  } catch (error) {
+    throw mapDeletionReceiptStatusError(error, 'app_review');
   }
 });
 
@@ -414,7 +439,7 @@ export const refreshClientAccess = onCall({
 
 export const removeClientAccess = onCall({
   ...baseCallableOptions,
-  secrets: [INSTALLATION_PEPPER_RING],
+  secrets: [INSTALLATION_PEPPER_RING, CLIENT_DELETION_RECEIPT_PEPPER_RING],
 }, async (request) => {
   assertClientAppCheck(request);
   const subjectUid = assertClientAuth(request);
@@ -430,17 +455,36 @@ export const removeClientAccess = onCall({
 
 export const deleteClientAccount = onCall({
   ...baseCallableOptions,
-  secrets: [INSTALLATION_PEPPER_RING],
+  secrets: [INSTALLATION_PEPPER_RING, CLIENT_DELETION_RECEIPT_PEPPER_RING],
 }, async (request) => {
   assertClientAppCheck(request);
   const subjectUid = assertClientAuth(request);
+  const input = parseDeletionRequestInput(request.data);
   try {
     return await createAccountDeletionService().request({
-      installationId: parseInstallationId(request.data),
+      ...input,
       subjectUid,
     });
   } catch (error) {
     throw mapClientAccessError(error);
+  }
+});
+
+export const getClientAccountDeletionStatus = onCall({
+  ...baseCallableOptions,
+  secrets: [CLIENT_DELETION_RECEIPT_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  try {
+    return await new AccountDeletionReceiptStatusService({
+      receiptHasher: hasherFromSecret(
+        CLIENT_DELETION_RECEIPT_PEPPER_RING,
+        'cabohealth/deletion-receipt/v1',
+      ),
+      store: createStore(),
+    }).getStatus(parseDeletionStatusInput(request.data));
+  } catch (error) {
+    throw mapDeletionReceiptStatusError(error, 'production');
   }
 });
 
@@ -449,7 +493,7 @@ export const retryClientAccountDeletions = onSchedule({
   memory: '256MiB',
   region: REGION,
   schedule: 'every 5 minutes',
-  secrets: [INSTALLATION_PEPPER_RING],
+  secrets: [INSTALLATION_PEPPER_RING, CLIENT_DELETION_RECEIPT_PEPPER_RING],
   timeoutSeconds: 120,
 }, async () => {
   const store = createStore();
@@ -603,6 +647,10 @@ function createAppReviewAccountDeletionService(): AppReviewAccountDeletionServic
       APP_REVIEW_INSTALLATION_PEPPER_RING,
       'cabohealth/app-review/installation/v1',
     ),
+    receiptHasher: hasherFromSecret(
+      APP_REVIEW_DELETION_RECEIPT_PEPPER_RING,
+      'cabohealth/app-review/deletion-receipt/v1',
+    ),
     retention: createAppReviewDataRetentionService(store),
     store,
   });
@@ -713,6 +761,10 @@ function createAccountDeletionService(
     installationHasher: hasherFromSecret(
       INSTALLATION_PEPPER_RING,
       'cabohealth/installation/v1',
+    ),
+    receiptHasher: hasherFromSecret(
+      CLIENT_DELETION_RECEIPT_PEPPER_RING,
+      'cabohealth/deletion-receipt/v1',
     ),
     store,
   });
@@ -978,6 +1030,33 @@ function parseInstallationId(value: unknown): string {
   return value.installationId;
 }
 
+function parseDeletionRequestInput(value: unknown): Readonly<{
+  deletionReceipt: string;
+  installationId: string;
+}> {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, ['deletionReceipt', 'installationId'])
+    || typeof value.deletionReceipt !== 'string'
+    || typeof value.installationId !== 'string'
+  ) throw new HttpsError('invalid-argument', 'invalid_access');
+  return Object.freeze({
+    deletionReceipt: value.deletionReceipt,
+    installationId: value.installationId,
+  });
+}
+
+function parseDeletionStatusInput(value: unknown): Readonly<{
+  deletionReceipt: string;
+}> {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, ['deletionReceipt'])
+    || typeof value.deletionReceipt !== 'string'
+  ) throw new HttpsError('invalid-argument', 'invalid_access');
+  return Object.freeze({ deletionReceipt: value.deletionReceipt });
+}
+
 function parseLaunchInput(value: unknown): { installationId: string; resourceId: string } {
   if (
     !isRecord(value)
@@ -1028,6 +1107,19 @@ function mapAppReviewAccountDeletionError(error: unknown): HttpsError {
     return new HttpsError('permission-denied', 'invalid_access');
   }
   return new HttpsError('internal', 'app_review_operation_failed');
+}
+
+function mapDeletionReceiptStatusError(
+  error: unknown,
+  realm: 'app_review' | 'production',
+): HttpsError {
+  if (error instanceof AccountDeletionReceiptError || error instanceof HttpsError) {
+    return new HttpsError('permission-denied', 'invalid_access');
+  }
+  return new HttpsError(
+    'internal',
+    realm === 'app_review' ? 'app_review_operation_failed' : 'client_access_operation_failed',
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

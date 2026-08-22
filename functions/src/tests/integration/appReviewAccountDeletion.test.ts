@@ -7,6 +7,7 @@ import {
   AppReviewInputError,
 } from '../../domain/appReviewAccess.js';
 import { AppReviewAccountDeletionService } from '../../domain/appReviewAccountDeletion.js';
+import { AccountDeletionReceiptStatusService } from '../../domain/accountDeletionReceipt.js';
 import { AppReviewDataRetentionService } from '../../domain/appReviewDataRetention.js';
 import { FirestoreAppReviewSandboxStore } from '../../repositories/firestoreAppReviewSandboxStore.js';
 import { VersionedHmac } from '../../security/versionedHmac.js';
@@ -14,6 +15,7 @@ import { InMemoryDocumentDatabase } from '../support/inMemoryDocumentDatabase.js
 
 const nowMs = 1_800_000_000_000;
 const installationId = '1'.repeat(32);
+const deletionReceipt = 'ZYXWVUTSRQPONMLKJIHGFEDCBA9876543210abcdefg';
 const productionSentinelPath = `_private_client_grants/client_${'p'.repeat(32)}`;
 
 test('a current active review identity can request immediate durable account deletion', async () => {
@@ -34,20 +36,31 @@ test('a current active review identity can request immediate durable account del
   const deletion = new AppReviewAccountDeletionService({
     installationHasher: hasher('installation'),
     nowMs: () => nowMs + 1,
+    receiptHasher: hasher('deletion-receipt'),
     retention,
     store: harness.store,
   });
 
   assert.deepEqual(await deletion.request({
+    deletionReceipt,
     installationId,
     subjectUid: harness.subjectUid,
-  }), { status: 'completed' });
+  }), completedReceiptStatus(nowMs + 1, nowMs + 1));
   assert.deepEqual(deletedSubjects, [harness.subjectUid]);
   assert.deepEqual(await harness.database.listCollection('review_sandbox_grants'), []);
   assert.deepEqual(
     await harness.database.listCollection('review_sandbox_account_deletions'),
     [],
   );
+  assert.deepEqual(await new AccountDeletionReceiptStatusService({
+    receiptHasher: hasher('deletion-receipt'),
+    store: harness.store,
+  }).getStatus({ deletionReceipt }), completedReceiptStatus(nowMs + 1, nowMs + 1));
+  const receiptState = JSON.stringify(
+    await harness.database.listCollection('review_sandbox_account_deletion_receipts'),
+  );
+  assert.equal(receiptState.includes(deletionReceipt), false);
+  assert.equal(receiptState.includes(harness.subjectUid), false);
   assert.deepEqual(await harness.database.runTransaction(
     (transaction) => transaction.get(productionSentinelPath),
   ), { realm: 'production-sentinel' });
@@ -58,6 +71,7 @@ test('review deletion rejects a wrong installation and a production-realm subjec
   const deletion = new AppReviewAccountDeletionService({
     installationHasher: hasher('installation'),
     nowMs: () => nowMs + 1,
+    receiptHasher: hasher('deletion-receipt'),
     retention: new AppReviewDataRetentionService({
       authAccounts: { async deleteUser() { throw new Error('must_not_delete'); } },
       nowMs: () => nowMs + 1,
@@ -67,9 +81,11 @@ test('review deletion rejects a wrong installation and a production-realm subjec
   });
 
   for (const input of [{
+    deletionReceipt,
     installationId: '2'.repeat(32),
     subjectUid: harness.subjectUid,
   }, {
+    deletionReceipt,
     installationId,
     subjectUid: `client_${'a'.repeat(32)}`,
   }]) {
@@ -105,14 +121,16 @@ test('an Auth failure returns pending and the scheduled worker completes the dur
   const deletion = new AppReviewAccountDeletionService({
     installationHasher: hasher('installation'),
     nowMs: () => nowMs + 1,
+    receiptHasher: hasher('deletion-receipt'),
     retention: requestRetention,
     store: harness.store,
   });
 
   assert.deepEqual(await deletion.request({
+    deletionReceipt,
     installationId,
     subjectUid: harness.subjectUid,
-  }), { status: 'pending' });
+  }), pendingReceiptStatus(nowMs + 1));
   assert.equal((await harness.database.listCollection('review_sandbox_grants')).length, 1);
   assert.equal(
     (await harness.database.listCollection('review_sandbox_account_deletions')).length,
@@ -145,6 +163,7 @@ test('retrying the same accepted request reuses one durable deletion job', async
   const deletion = new AppReviewAccountDeletionService({
     installationHasher: hasher('installation'),
     nowMs: () => nowMs + authAttempts + 1,
+    receiptHasher: hasher('deletion-receipt'),
     retention: new AppReviewDataRetentionService({
       authAccounts: {
         async deleteUser(subjectUid) {
@@ -159,9 +178,9 @@ test('retrying the same accepted request reuses one durable deletion job', async
     store: harness.store,
   });
 
-  const input = Object.freeze({ installationId, subjectUid: harness.subjectUid });
-  assert.deepEqual(await deletion.request(input), { status: 'pending' });
-  assert.deepEqual(await deletion.request(input), { status: 'pending' });
+  const input = Object.freeze({ deletionReceipt, installationId, subjectUid: harness.subjectUid });
+  assert.deepEqual(await deletion.request(input), pendingReceiptStatus(nowMs + 1));
+  assert.deepEqual(await deletion.request(input), pendingReceiptStatus(nowMs + 1));
 
   const jobs = await harness.database.listCollection('review_sandbox_account_deletions');
   const grants = await harness.database.listCollection('review_sandbox_grants');
@@ -208,4 +227,24 @@ function hasher(namespace: string): VersionedHmac {
     currentVersion: 'v1',
     keys: { v1: `${namespace}-app-review-test-pepper-at-least-32-bytes` },
   });
+}
+
+function completedReceiptStatus(requestedAtMs: number, completedAtMs: number) {
+  return {
+    completedAtMs,
+    expectedCompletionByMs: requestedAtMs + 30 * 24 * 60 * 60 * 1_000,
+    requestedAtMs,
+    schemaVersion: 1,
+    status: 'completed',
+  } as const;
+}
+
+function pendingReceiptStatus(requestedAtMs: number) {
+  return {
+    completedAtMs: null,
+    expectedCompletionByMs: requestedAtMs + 30 * 24 * 60 * 60 * 1_000,
+    requestedAtMs,
+    schemaVersion: 1,
+    status: 'pending',
+  } as const;
 }

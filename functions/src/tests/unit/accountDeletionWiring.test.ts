@@ -27,3 +27,26 @@ test('the callable and scheduled retry both use the durable account-deletion ser
   assert.doesNotMatch(source, /revokeRefreshTokens\(subjectUid\)/u);
   assert.doesNotMatch(source, /return Object\.freeze\(\{ deleted: true \}\)/u);
 });
+
+test('production deletion status is App-Check-only and isolated behind its own receipt pepper', async () => {
+  const source = await readFile('src/index.ts', 'utf8');
+  const deletion = callableBlock(source, 'deleteClientAccount');
+  const status = callableBlock(source, 'getClientAccountDeletionStatus');
+
+  assert.match(deletion, /CLIENT_DELETION_RECEIPT_PEPPER_RING/u);
+  assert.match(deletion, /const input = parseDeletionRequestInput\(request\.data\)/u);
+  assert.match(deletion, /\.request\(\{[\s\S]{0,120}?\.\.\.input,[\s\S]{0,120}?subjectUid/u);
+  assert.match(status, /assertClientAppCheck\(request\)/u);
+  assert.match(status, /AccountDeletionReceiptStatusService/u);
+  assert.match(status, /CLIENT_DELETION_RECEIPT_PEPPER_RING/u);
+  assert.doesNotMatch(status, /assertClientAuth|assertAppReviewAuth|request\.auth/u);
+  assert.doesNotMatch(status, /createAppReviewStore/u);
+  assert.doesNotMatch(status, /console\.|logger\./u);
+});
+
+function callableBlock(source: string, name: string): string {
+  const start = source.indexOf(`export const ${name} =`);
+  assert.notEqual(start, -1, `${name} must exist`);
+  const next = source.indexOf('\nexport const ', start + 1);
+  return source.slice(start, next === -1 ? undefined : next);
+}

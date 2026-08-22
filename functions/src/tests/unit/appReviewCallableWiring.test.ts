@@ -23,7 +23,8 @@ test('App Review callables have exact realm-specific auth and fixed contracts', 
   const deletionBlock = callableBlock(source, 'deleteAppReviewAccount');
   assert.match(deletionBlock, /assertClientAppCheck\(request\)/u);
   assert.match(deletionBlock, /assertAppReviewDeletionAuth\(request\)/u);
-  assert.match(deletionBlock, /installationId: parseInstallationId\(request\.data\)/u);
+  assert.match(deletionBlock, /const input = parseDeletionRequestInput\(request\.data\)/u);
+  assert.match(deletionBlock, /\.\.\.input,[\s\S]{0,120}?subjectUid/u);
   assert.match(source, /function assertAppReviewAuth[\s\S]{0,500}?authority !== 'app_review'/u);
   assert.match(source, /function assertClientAuth[\s\S]{0,300}?\^client_/u);
 });
@@ -33,6 +34,7 @@ test('App Review uses a mandatory named database, separate secrets, store, broke
   for (const secret of [
     'APP_REVIEW_CREDENTIAL_PEPPER_RING',
     'APP_REVIEW_INSTALLATION_PEPPER_RING',
+    'APP_REVIEW_DELETION_RECEIPT_PEPPER_RING',
     'APP_REVIEW_RATE_LIMIT_PEPPER_RING',
     'APP_REVIEW_LAUNCH_NONCE_PEPPER_RING',
     'APP_REVIEW_WEB_SESSION_PEPPER_RING',

@@ -26,6 +26,7 @@ test('Firestore index config contains no legacy catalog index', async () => {
       return override.collectionGroup;
     }).sort(),
     [
+      '_private_account_deletion_receipts',
       '_private_audit_events',
       '_private_broker_requests',
       '_private_launch_nonces',
@@ -51,6 +52,7 @@ test('App Review named-database rules and TTL policy are isolated and default-de
     assert.deepEqual(override.indexes, []);
     return override.collectionGroup;
   }).sort(), [
+    'review_sandbox_account_deletion_receipts',
     'review_sandbox_broker_requests',
     'review_sandbox_launch_nonces',
     'review_sandbox_rate_limits',

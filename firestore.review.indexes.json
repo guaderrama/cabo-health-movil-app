@@ -2,6 +2,12 @@
   "indexes": [],
   "fieldOverrides": [
     {
+      "collectionGroup": "review_sandbox_account_deletion_receipts",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "review_sandbox_broker_requests",
       "fieldPath": "expiresAtMs",
       "ttl": true,

@@ -2,6 +2,12 @@
   "indexes": [],
   "fieldOverrides": [
     {
+      "collectionGroup": "_private_account_deletion_receipts",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "_private_audit_events",
       "fieldPath": "expiresAtMs",
       "ttl": true,

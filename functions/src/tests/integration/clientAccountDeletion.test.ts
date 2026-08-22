@@ -12,6 +12,7 @@ import {
   ClientAccountDeletionMaintenanceService,
   ClientAccountDeletionService,
 } from '../../domain/clientAccountDeletion.js';
+import { AccountDeletionReceiptStatusService } from '../../domain/accountDeletionReceipt.js';
 import { ClientAccessRedeemer } from '../../domain/clientAccessRedeemer.js';
 import { ClientLaunchService } from '../../domain/clientLaunchService.js';
 import { ClientSessionManager } from '../../domain/clientSessionManager.js';
@@ -26,6 +27,7 @@ import { InMemoryDocumentDatabase } from '../support/inMemoryDocumentDatabase.js
 
 const nowMs = Date.UTC(2026, 7, 21);
 const installationId = '11111111111111111111111111111111';
+const deletionReceipt = 'abcdefghijklmnopqrstuvwxyz1234567890ABCDEFG';
 const resourceId = 'healthy-recipes-client';
 const resource = {
   access: 'client',
@@ -50,28 +52,85 @@ test('an Auth failure leaves a durable revoked deletion job that the client can 
       },
     },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs,
     store: harness.store,
   });
 
   assert.deepEqual(await deletion.request({
+    deletionReceipt,
     installationId,
     subjectUid: harness.subjectUid,
-  }), { status: 'pending' });
+  }), {
+    completedAtMs: null,
+    expectedCompletionByMs: nowMs + 30 * 24 * 60 * 60 * 1_000,
+    requestedAtMs: nowMs,
+    schemaVersion: 1,
+    status: 'pending',
+  });
   const pendingState = harness.database.serializedState();
   assert.match(pendingState, /_private_account_deletions/u);
+  assert.match(pendingState, /_private_account_deletion_receipts/u);
   assert.match(pendingState, /"status":"revoked"/u);
+  assert.equal(pendingState.includes(deletionReceipt), false);
+  const pendingReceipts = await harness.database.listCollection(
+    '_private_account_deletion_receipts',
+  );
+  assert.equal(pendingReceipts.length, 1);
+  assert.deepEqual(Object.keys(pendingReceipts[0]!.value as object).sort(), [
+    'completedAtMs',
+    'expectedCompletionByMs',
+    'hashVersion',
+    'requestedAtMs',
+    'schemaVersion',
+    'status',
+  ]);
+  const polled = await new AccountDeletionReceiptStatusService({
+    receiptHasher: hasher('deletion-receipt'),
+    store: harness.store,
+  }).getStatus({ deletionReceipt });
+  assert.equal(polled.status, 'pending');
+  assert.equal(JSON.stringify(
+    await harness.database.listCollection('_private_account_deletion_receipts'),
+  ).includes(harness.subjectUid), false);
 
   assert.deepEqual(await deletion.request({
+    deletionReceipt,
     installationId,
     subjectUid: harness.subjectUid,
-  }), { status: 'pending' });
+  }), polled);
   authUnavailable = false;
   assert.deepEqual(await deletion.retryPending(), { completed: 1, pending: 0 });
   const completedState = harness.database.serializedState();
   assert.doesNotMatch(completedState, /_private_account_deletions/u);
   assert.equal(completedState.includes(harness.subjectUid), false);
   assert.equal(completedState.includes(harness.codeId), false);
+  const completedReceipts = await harness.database.listCollection(
+    '_private_account_deletion_receipts',
+  );
+  assert.equal(completedReceipts.length, 1);
+  assert.deepEqual(Object.keys(completedReceipts[0]!.value as object).sort(), [
+    'completedAtMs',
+    'expectedCompletionByMs',
+    'expiresAtMs',
+    'requestedAtMs',
+    'schemaVersion',
+    'status',
+  ]);
+  assert.equal(
+    (completedReceipts[0]!.value as { expiresAtMs: number }).expiresAtMs,
+    nowMs + 30 * 24 * 60 * 60 * 1_000,
+  );
+  assert.deepEqual(await new AccountDeletionReceiptStatusService({
+    receiptHasher: hasher('deletion-receipt'),
+    store: harness.store,
+  }).getStatus({ deletionReceipt }), {
+    completedAtMs: nowMs,
+    expectedCompletionByMs: nowMs + 30 * 24 * 60 * 60 * 1_000,
+    requestedAtMs: nowMs,
+    schemaVersion: 1,
+    status: 'completed',
+  });
   assert.equal(authAttempts, 3);
 });
 
@@ -117,13 +176,15 @@ test('completed deletion removes linked launch, web-session, and redemption arti
   const deletion = new ClientAccountDeletionService({
     authAccounts: { async deleteUser() {} },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs,
     store: harness.store,
   });
   assert.deepEqual(await deletion.request({
+    deletionReceipt,
     installationId,
     subjectUid: harness.subjectUid,
-  }), { status: 'completed' });
+  }), completedReceiptStatus(nowMs, nowMs));
 
   const completedState = harness.database.serializedState();
   assert.doesNotMatch(completedState, /_private_launch_nonces/u);
@@ -141,20 +202,55 @@ test('completed deletion removes linked launch, web-session, and redemption arti
   );
 });
 
+test('a lost-response retry finds the original pending receipt after pepper rotation', async () => {
+  const harness = await createRedeemedHarness(nowMs + 30 * 24 * 60 * 60 * 1_000);
+  const authAccounts = { async deleteUser() { throw new Error('temporary_auth_failure'); } };
+  const first = new ClientAccountDeletionService({
+    authAccounts,
+    installationHasher: hasher('installation'),
+    nowMs: () => nowMs,
+    receiptHasher: rotatingReceiptHasher('v1'),
+    store: harness.store,
+  });
+  assert.deepEqual(await first.request({
+    deletionReceipt,
+    installationId,
+    subjectUid: harness.subjectUid,
+  }), pendingReceiptStatus(nowMs));
+
+  const rotated = new ClientAccountDeletionService({
+    authAccounts,
+    installationHasher: hasher('installation'),
+    nowMs: () => nowMs + 1,
+    receiptHasher: rotatingReceiptHasher('v2'),
+    store: harness.store,
+  });
+  assert.deepEqual(await rotated.request({
+    deletionReceipt,
+    installationId,
+    subjectUid: harness.subjectUid,
+  }), pendingReceiptStatus(nowMs));
+  assert.equal((await harness.database.listCollection(
+    '_private_account_deletion_receipts',
+  )).length, 1);
+});
+
 test('a client can request deletion after an administrator revoked the code', async () => {
   const harness = await createRedeemedHarness(nowMs + 30 * 24 * 60 * 60 * 1_000);
   assert.equal((await harness.store.revokeAccessCode(harness.codeId, nowMs)).kind, 'revoked');
   const deletion = new ClientAccountDeletionService({
     authAccounts: { async deleteUser() {} },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs + 1,
     store: harness.store,
   });
 
   assert.deepEqual(await deletion.request({
+    deletionReceipt,
     installationId,
     subjectUid: harness.subjectUid,
-  }), { status: 'completed' });
+  }), completedReceiptStatus(nowMs + 1, nowMs + 1));
 });
 
 test('admin revocation durably enqueues deletion that the worker completes without a client token', async () => {
@@ -166,6 +262,7 @@ test('admin revocation durably enqueues deletion that the worker completes witho
   const deletion = new ClientAccountDeletionService({
     authAccounts: { async deleteUser() {} },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs + 1,
     store: harness.store,
   });
@@ -190,6 +287,7 @@ test('admin revocation succeeds with a durable tombstone when immediate cleanup 
   const deletion = new ClientAccountDeletionService({
     authAccounts: { async deleteUser() {} },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs,
     store,
   });
@@ -221,6 +319,7 @@ test('retrying a committed admin revocation remains successful while cleanup is 
     accountDeletion: new ClientAccountDeletionService({
       authAccounts: { async deleteUser() {} },
       installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
       nowMs: () => nowMs,
       store,
     }),
@@ -238,14 +337,16 @@ test('a client can request deletion after the access code and grant expired', as
   const deletion = new ClientAccountDeletionService({
     authAccounts: { async deleteUser() {} },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs + 2_000,
     store: harness.store,
   });
 
   assert.deepEqual(await deletion.request({
+    deletionReceipt,
     installationId,
     subjectUid: harness.subjectUid,
-  }), { status: 'completed' });
+  }), completedReceiptStatus(nowMs + 2_000, nowMs + 2_000));
 });
 
 test('natural expiry durably queues and completes cleanup for a redeemed client identity', async () => {
@@ -265,6 +366,7 @@ test('natural expiry durably queues and completes cleanup for a redeemed client 
       },
     },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs + 2_001,
     store: harness.store,
   });
@@ -324,6 +426,7 @@ test('remove durably enqueues deletion and the worker completes after an Auth ou
       },
     },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs,
     store: harness.store,
   });
@@ -356,9 +459,10 @@ test('sanitized deletion audit records have an explicit 30-day retention deadlin
   await new ClientAccountDeletionService({
     authAccounts: { async deleteUser() {} },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs,
     store: harness.store,
-  }).request({ installationId, subjectUid: harness.subjectUid });
+  }).request({ deletionReceipt, installationId, subjectUid: harness.subjectUid });
 
   const audit = await harness.database.listCollection('_private_audit_events');
   assert.ok(audit.length >= 2);
@@ -379,13 +483,15 @@ test('deletion never reports completion while an authoritative client record is 
       },
     },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs,
     store: harness.store,
   });
   assert.deepEqual(await deletion.request({
+    deletionReceipt,
     installationId,
     subjectUid: harness.subjectUid,
-  }), { status: 'pending' });
+  }), pendingReceiptStatus(nowMs));
   await harness.database.runTransaction(async (transaction) => {
     transaction.set(`_private_client_grants/${harness.subjectUid}`, {
       codeId: harness.codeId,
@@ -422,6 +528,7 @@ test('scheduled deletion isolates one subject failure and signals a sanitized ag
         ? { kind: 'completed' }
         : { kind: 'not_ready' };
     },
+    async findAccountDeletionReceiptStatus() { return null; },
     async listPendingAccountDeletions() {
       return { malformed: 0, subjectUids: [failingSubject, completingSubject] };
     },
@@ -435,6 +542,7 @@ test('scheduled deletion isolates one subject failure and signals a sanitized ag
   const deletion = new ClientAccountDeletionService({
     authAccounts: { async deleteUser() {} },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs,
     store,
   });
@@ -464,13 +572,15 @@ test('scheduled deletion reports malformed tombstones after valid jobs make prog
       },
     },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs,
     store: harness.store,
   });
   assert.deepEqual(await deletion.request({
+    deletionReceipt,
     installationId,
     subjectUid: harness.subjectUid,
-  }), { status: 'pending' });
+  }), pendingReceiptStatus(nowMs));
   await harness.database.runTransaction(async (transaction) => {
     transaction.create('_private_account_deletions/malformed-document', {
       schemaVersion: 999,
@@ -499,13 +609,15 @@ test('scheduled maintenance completes an existing deletion before reporting malf
   const requester = new ClientAccountDeletionService({
     authAccounts: { async deleteUser() { throw new Error('temporary_auth_failure'); } },
     installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
     nowMs: () => nowMs,
     store: harness.store,
   });
   assert.deepEqual(await requester.request({
+    deletionReceipt,
     installationId,
     subjectUid: harness.subjectUid,
-  }), { status: 'pending' });
+  }), pendingReceiptStatus(nowMs));
 
   const expiring = await new AccessCodeIssuer({
     codeHasher: hasher('code'),
@@ -547,6 +659,7 @@ test('scheduled maintenance completes an existing deletion before reporting malf
         },
       },
       installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
       nowMs: () => nowMs + 2_000,
       store: harness.store,
     }),
@@ -619,6 +732,38 @@ function hasher(namespace: string): VersionedHmac {
     acceptedVersions: () => ['2026-08'],
     keyFor: () => key,
   }, `cabohealth/${namespace}/test`);
+}
+
+function pendingReceiptStatus(requestedAtMs: number) {
+  return {
+    completedAtMs: null,
+    expectedCompletionByMs: requestedAtMs + 30 * 24 * 60 * 60 * 1_000,
+    requestedAtMs,
+    schemaVersion: 1,
+    status: 'pending',
+  } as const;
+}
+
+function completedReceiptStatus(requestedAtMs: number, completedAtMs: number) {
+  return {
+    completedAtMs,
+    expectedCompletionByMs: requestedAtMs + 30 * 24 * 60 * 60 * 1_000,
+    requestedAtMs,
+    schemaVersion: 1,
+    status: 'completed',
+  } as const;
+}
+
+function rotatingReceiptHasher(currentVersion: 'v1' | 'v2'): VersionedHmac {
+  return VersionedHmac.fromTestKeys({
+    currentVersion,
+    keys: currentVersion === 'v1'
+      ? { v1: 'receipt-v1-test-pepper-at-least-32-bytes' }
+      : {
+        v1: 'receipt-v1-test-pepper-at-least-32-bytes',
+        v2: 'receipt-v2-test-pepper-at-least-32-bytes',
+      },
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

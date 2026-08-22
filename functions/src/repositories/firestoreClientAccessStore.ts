@@ -16,6 +16,11 @@ import {
   type ClientAccountDeletionStore,
 } from '../domain/clientAccountDeletion.js';
 import {
+  ACCOUNT_DELETION_EXPECTED_COMPLETION_MS,
+  COMPLETED_DELETION_RECEIPT_RETENTION_MS,
+  type AccountDeletionReceiptStatus,
+} from '../domain/accountDeletionReceipt.js';
+import {
   type ClientSessionCommand,
   type ClientSessionStore,
 } from '../domain/clientSessionManager.js';
@@ -25,6 +30,7 @@ import {
   type CreateLaunchCommand,
 } from '../domain/clientLaunchService.js';
 import { type WebSessionStore } from '../domain/webSessionBroker.js';
+import type { HmacDigest } from '../security/versionedHmac.js';
 
 const ACTIVE_CODE_COUNTER_PATH = '_private_admin_counters/active_client_codes';
 const ACCESS_CODE_PREFIX = '_private_access_codes';
@@ -39,6 +45,7 @@ const LAUNCH_NONCE_PREFIX = '_private_launch_nonces';
 const WEB_SESSION_PREFIX = '_private_web_sessions';
 const BROKER_REQUEST_PREFIX = '_private_broker_requests';
 const ACCOUNT_DELETION_PREFIX = '_private_account_deletions';
+const ACCOUNT_DELETION_RECEIPT_PREFIX = '_private_account_deletion_receipts';
 
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1_000;
 const DELETION_ARTIFACT_BATCH_LIMIT = 400;
@@ -122,6 +129,7 @@ interface StoredAccountDeletion {
   readonly cleanupCompletedAtMs: number | null;
   readonly codeId: string;
   readonly createdAtMs: number;
+  readonly deletionReceiptLookupId: string | null;
   readonly installationLookupId: string;
   readonly lastAttemptAtMs: number | null;
   readonly rateLimitLookupIds: readonly string[];
@@ -130,6 +138,22 @@ interface StoredAccountDeletion {
   readonly subjectUid: string;
   readonly updatedAtMs: number;
 }
+
+type StoredAccountDeletionReceipt = Readonly<{
+  readonly completedAtMs: null;
+  readonly expectedCompletionByMs: number;
+  readonly hashVersion: string;
+  readonly requestedAtMs: number;
+  readonly schemaVersion: 1;
+  readonly status: 'pending';
+} | {
+  readonly completedAtMs: number;
+  readonly expectedCompletionByMs: number;
+  readonly expiresAtMs: number;
+  readonly requestedAtMs: number;
+  readonly schemaVersion: 1;
+  readonly status: 'completed';
+}>;
 
 export function clientResourcePath(resourceId: string): string {
   return `${CLIENT_RESOURCE_PREFIX}/${resourceId}`;
@@ -230,6 +254,7 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
               cleanupCompletedAtMs: null,
               codeId: code.codeId,
               createdAtMs: record.createdAtMs,
+              deletionReceiptLookupId: null,
               installationLookupId: parsedGrant.installationLookupId,
               lastAttemptAtMs: null,
               rateLimitLookupIds: parsedGrant.rateLimitLookupIds,
@@ -386,6 +411,7 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
             cleanupCompletedAtMs: null,
             codeId: code.codeId,
             createdAtMs: nowMs,
+            deletionReceiptLookupId: null,
             installationLookupId: parsedGrant.installationLookupId,
             lastAttemptAtMs: null,
             rateLimitLookupIds: parsedGrant.rateLimitLookupIds,
@@ -458,6 +484,7 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         cleanupCompletedAtMs: null,
         codeId: session.code.codeId,
         createdAtMs: command.nowMs,
+        deletionReceiptLookupId: null,
         installationLookupId: session.grant.installationLookupId,
         lastAttemptAtMs: null,
         rateLimitLookupIds: session.grant.rateLimitLookupIds,
@@ -500,17 +527,61 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
   > {
     const deletionPath = `${ACCOUNT_DELETION_PREFIX}/${command.subjectUid}`;
     return this.#database.runTransaction(async (transaction) => {
-      const existing = parseStoredAccountDeletion(await transaction.get(deletionPath));
+      const existingValue = await transaction.get(deletionPath);
+      const existing = parseStoredAccountDeletion(existingValue);
+      if (existingValue !== undefined && !existing) {
+        throw new Error('invalid_account_deletion_record');
+      }
       const acceptedInstallations = new Set(
         command.installationHashes.map(({ lookupId }) => lookupId),
+      );
+      const acceptedReceiptLookups = new Set(
+        command.deletionReceiptLookups.map(({ lookupId }) => lookupId),
       );
       if (existing) {
         if (
           existing.subjectUid !== command.subjectUid
           || !acceptedInstallations.has(existing.installationLookupId)
         ) return Object.freeze({ kind: 'invalid' as const });
+        if (existing.deletionReceiptLookupId === null) {
+          const candidates = await readDeletionReceiptCandidates(
+            transaction,
+            command.deletionReceiptLookups,
+          );
+          if (candidates.some(({ value }) => value !== undefined)) {
+            return Object.freeze({ kind: 'invalid' as const });
+          }
+          transaction.set(deletionPath, Object.freeze({
+            ...existing,
+            deletionReceiptLookupId: command.currentDeletionReceiptLookup.lookupId,
+            updatedAtMs: command.nowMs,
+          } satisfies StoredAccountDeletion));
+          transaction.create(
+            `${ACCOUNT_DELETION_RECEIPT_PREFIX}/${command.currentDeletionReceiptLookup.lookupId}`,
+            pendingDeletionReceipt(command.currentDeletionReceiptLookup, command.nowMs),
+          );
+          return Object.freeze({ kind: 'accepted' as const });
+        }
+        const receiptPath = `${ACCOUNT_DELETION_RECEIPT_PREFIX}/${existing.deletionReceiptLookupId}`;
+        const receiptValue = await transaction.get(receiptPath);
+        const receipt = parseStoredAccountDeletionReceipt(receiptValue);
+        if (receiptValue !== undefined && !receipt) {
+          throw new Error('invalid_account_deletion_receipt_record');
+        }
+        if (
+          !acceptedReceiptLookups.has(existing.deletionReceiptLookupId)
+          || receipt?.status !== 'pending'
+        ) return Object.freeze({ kind: 'invalid' as const });
         return Object.freeze({ kind: 'accepted' as const });
       }
+      const receiptCandidates = await readDeletionReceiptCandidates(
+        transaction,
+        command.deletionReceiptLookups,
+      );
+      if (receiptCandidates.some(({ value }) => value !== undefined)) {
+        return Object.freeze({ kind: 'invalid' as const });
+      }
+      const receiptPath = `${ACCOUNT_DELETION_RECEIPT_PREFIX}/${command.currentDeletionReceiptLookup.lookupId}`;
 
       const grantPath = `${CLIENT_GRANT_PREFIX}/${command.subjectUid}`;
       const grant = parseStoredClientGrant(await transaction.get(grantPath));
@@ -536,6 +607,7 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         cleanupCompletedAtMs: null,
         codeId: code.codeId,
         createdAtMs: command.nowMs,
+        deletionReceiptLookupId: command.currentDeletionReceiptLookup.lookupId,
         installationLookupId: command.currentInstallationHash.lookupId,
         lastAttemptAtMs: null,
         rateLimitLookupIds: grant.rateLimitLookupIds,
@@ -544,6 +616,10 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         subjectUid: command.subjectUid,
         updatedAtMs: command.nowMs,
       } satisfies StoredAccountDeletion));
+      transaction.create(
+        receiptPath,
+        pendingDeletionReceipt(command.currentDeletionReceiptLookup, command.nowMs),
+      );
       transaction.set(codePath, Object.freeze({
         ...code,
         status: 'revoked',
@@ -657,14 +733,22 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       ) return Object.freeze({ kind: 'not_ready' as const });
       const codePath = `${ACCESS_CODE_PREFIX}/${deletion.codeId}`;
       const grantPath = `${CLIENT_GRANT_PREFIX}/${subjectUid}`;
-      const [code, grant] = await Promise.all([
+      const receiptPath = deletion.deletionReceiptLookupId === null
+        ? null
+        : `${ACCOUNT_DELETION_RECEIPT_PREFIX}/${deletion.deletionReceiptLookupId}`;
+      const [code, grant, receiptValue] = await Promise.all([
         transaction.get(codePath),
         transaction.get(grantPath),
+        receiptPath ? transaction.get(receiptPath) : undefined,
       ]);
       const parsedCode = parseStoredAccessCode(code);
       const parsedGrant = parseStoredClientGrant(grant);
+      const receipt = parseStoredAccountDeletionReceipt(receiptValue);
       if (code !== undefined && !parsedCode) throw new Error('invalid_access_code_record');
       if (grant !== undefined && !parsedGrant) throw new Error('invalid_client_grant_record');
+      if (receiptPath && (!receipt || receipt.status !== 'pending')) {
+        throw new Error('invalid_account_deletion_receipt_record');
+      }
       if (
         parsedCode
         && (
@@ -693,12 +777,42 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       if (slotPath && slot?.codeId === deletion.codeId) transaction.delete(slotPath);
       if (parsedCode) transaction.delete(codePath);
       if (parsedGrant) transaction.delete(grantPath);
+      if (receiptPath && receipt?.status === 'pending') {
+        transaction.set(receiptPath, Object.freeze({
+          completedAtMs: nowMs,
+          expectedCompletionByMs: receipt.expectedCompletionByMs,
+          expiresAtMs: nowMs + COMPLETED_DELETION_RECEIPT_RETENTION_MS,
+          requestedAtMs: receipt.requestedAtMs,
+          schemaVersion: 1,
+          status: 'completed',
+        } satisfies StoredAccountDeletionReceipt));
+      }
       transaction.delete(deletionPath);
       transaction.create(
         `${AUDIT_EVENT_PREFIX}/delete_complete_${subjectAuditId(subjectUid)}_${nowMs}`,
         sanitizedAudit('client_account_deletion_completed', nowMs),
       );
       return Object.freeze({ kind: 'completed' as const });
+    });
+  }
+
+  async findAccountDeletionReceiptStatus(
+    receiptLookups: readonly Readonly<HmacDigest>[],
+  ): Promise<AccountDeletionReceiptStatus | null> {
+    if (receiptLookups.length < 1) return null;
+    return this.#database.runTransaction(async (transaction) => {
+      const candidates = await Promise.all(receiptLookups.map(async (lookup) => ({
+        value: await transaction.get(`${ACCOUNT_DELETION_RECEIPT_PREFIX}/${lookup.lookupId}`),
+      })));
+      const matches = candidates.flatMap(({ value }) => {
+        if (value === undefined) return [];
+        const receipt = parseStoredAccountDeletionReceipt(value);
+        if (!receipt) throw new Error('invalid_account_deletion_receipt_record');
+        return [receipt];
+      });
+      if (matches.length === 0) return null;
+      if (matches.length !== 1) throw new Error('ambiguous_account_deletion_receipt');
+      return accountDeletionReceiptView(matches[0]!);
     });
   }
 
@@ -1172,6 +1286,7 @@ async function reconcileExpiredSlots(
           cleanupCompletedAtMs: null,
           codeId: code.codeId,
           createdAtMs: nowMs,
+          deletionReceiptLookupId: null,
           installationLookupId: parsedGrant.installationLookupId,
           lastAttemptAtMs: null,
           rateLimitLookupIds: parsedGrant.rateLimitLookupIds,
@@ -1464,6 +1579,9 @@ function parseStoredAccountDeletion(value: unknown): Readonly<StoredAccountDelet
     || typeof candidate.codeId !== 'string'
     || !/^ac_[A-Za-z0-9_-]{32}$/u.test(candidate.codeId)
     || !isNonnegativeSafeInteger(candidate.createdAtMs)
+    || !(candidate.deletionReceiptLookupId === null
+      || (typeof candidate.deletionReceiptLookupId === 'string'
+        && /^[A-Za-z0-9_-]{20,128}$/u.test(candidate.deletionReceiptLookupId)))
     || typeof candidate.installationLookupId !== 'string'
     || !(candidate.lastAttemptAtMs === null || isNonnegativeSafeInteger(candidate.lastAttemptAtMs))
     || !Array.isArray(candidate.rateLimitLookupIds)
@@ -1473,6 +1591,90 @@ function parseStoredAccountDeletion(value: unknown): Readonly<StoredAccountDelet
     || !isNonnegativeSafeInteger(candidate.updatedAtMs)
   ) return null;
   return candidate as StoredAccountDeletion;
+}
+
+function parseStoredAccountDeletionReceipt(value: unknown): StoredAccountDeletionReceipt | null {
+  if (!isRecord(value) || value.schemaVersion !== 1) return null;
+  if (
+    value.status === 'pending'
+    && recordHasExactKeys(value, [
+      'completedAtMs',
+      'expectedCompletionByMs',
+      'hashVersion',
+      'requestedAtMs',
+      'schemaVersion',
+      'status',
+    ])
+    && value.completedAtMs === null
+    && typeof value.hashVersion === 'string'
+    && /^[A-Za-z0-9_-]{1,32}$/u.test(value.hashVersion)
+    && isNonnegativeSafeInteger(value.requestedAtMs)
+    && value.expectedCompletionByMs === (
+      value.requestedAtMs + ACCOUNT_DELETION_EXPECTED_COMPLETION_MS
+    )
+  ) return value as unknown as StoredAccountDeletionReceipt;
+  if (
+    value.status === 'completed'
+    && recordHasExactKeys(value, [
+      'completedAtMs',
+      'expectedCompletionByMs',
+      'expiresAtMs',
+      'requestedAtMs',
+      'schemaVersion',
+      'status',
+    ])
+    && isNonnegativeSafeInteger(value.requestedAtMs)
+    && value.expectedCompletionByMs === (
+      value.requestedAtMs + ACCOUNT_DELETION_EXPECTED_COMPLETION_MS
+    )
+    && isNonnegativeSafeInteger(value.completedAtMs)
+    && value.completedAtMs >= value.requestedAtMs
+    && value.expiresAtMs === (
+      value.completedAtMs + COMPLETED_DELETION_RECEIPT_RETENTION_MS
+    )
+  ) return value as unknown as StoredAccountDeletionReceipt;
+  return null;
+}
+
+async function readDeletionReceiptCandidates(
+  transaction: DocumentTransaction,
+  lookups: readonly Readonly<HmacDigest>[],
+): Promise<readonly Readonly<{ value: unknown | undefined }>[]> {
+  const candidates = await Promise.all(lookups.map(async (lookup) => ({
+    value: await transaction.get(`${ACCOUNT_DELETION_RECEIPT_PREFIX}/${lookup.lookupId}`),
+  })));
+  for (const candidate of candidates) {
+    if (candidate.value !== undefined && !parseStoredAccountDeletionReceipt(candidate.value)) {
+      throw new Error('invalid_account_deletion_receipt_record');
+    }
+  }
+  return candidates;
+}
+
+function pendingDeletionReceipt(
+  lookup: Readonly<HmacDigest>,
+  requestedAtMs: number,
+): StoredAccountDeletionReceipt {
+  return Object.freeze({
+    completedAtMs: null,
+    expectedCompletionByMs: requestedAtMs + ACCOUNT_DELETION_EXPECTED_COMPLETION_MS,
+    hashVersion: lookup.version,
+    requestedAtMs,
+    schemaVersion: 1,
+    status: 'pending',
+  });
+}
+
+function accountDeletionReceiptView(
+  receipt: StoredAccountDeletionReceipt,
+): AccountDeletionReceiptStatus {
+  return Object.freeze({
+    completedAtMs: receipt.completedAtMs,
+    expectedCompletionByMs: receipt.expectedCompletionByMs,
+    requestedAtMs: receipt.requestedAtMs,
+    schemaVersion: 1,
+    status: receipt.status,
+  });
 }
 
 function deletionArtifactBelongsTo(
@@ -1594,6 +1796,13 @@ function createSubjectUid(codeId: string, installationLookupId: string): string 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function recordHasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
+  return actual.length === sortedExpected.length
+    && actual.every((key, index) => key === sortedExpected[index]);
 }
 
 function isNonnegativeSafeInteger(value: unknown): value is number {

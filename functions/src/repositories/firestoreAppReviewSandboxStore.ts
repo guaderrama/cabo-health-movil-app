@@ -12,6 +12,11 @@ import {
   type AppReviewSandboxStore,
 } from '../domain/appReviewAccess.js';
 import type { AppReviewAccountDeletionStore } from '../domain/appReviewAccountDeletion.js';
+import {
+  ACCOUNT_DELETION_EXPECTED_COMPLETION_MS,
+  COMPLETED_DELETION_RECEIPT_RETENTION_MS,
+  type AccountDeletionReceiptStatus,
+} from '../domain/accountDeletionReceipt.js';
 import type { AppReviewDataRetentionStore } from '../domain/appReviewDataRetention.js';
 import type { WebSessionStore } from '../domain/webSessionBroker.js';
 import type { HmacDigest } from '../security/versionedHmac.js';
@@ -29,6 +34,7 @@ const LAUNCH_NONCE_PREFIX = 'review_sandbox_launch_nonces';
 const WEB_SESSION_PREFIX = 'review_sandbox_web_sessions';
 const BROKER_REQUEST_PREFIX = 'review_sandbox_broker_requests';
 const DATA_DELETION_PREFIX = 'review_sandbox_account_deletions';
+const DELETION_RECEIPT_PREFIX = 'review_sandbox_account_deletion_receipts';
 const RATE_WINDOW_MS = 15 * 60 * 1_000;
 const DELETION_ARTIFACT_BATCH_LIMIT = 400;
 
@@ -58,6 +64,7 @@ interface StoredReviewDataDeletion {
   readonly cleanupCompletedAtMs: number | null;
   readonly credentialGeneration: number;
   readonly createdAtMs: number;
+  readonly deletionReceiptLookupId: string | null;
   readonly installationLookupId: string;
   readonly lastAttemptAtMs: number | null;
   readonly rateLimitLookupIds: readonly string[];
@@ -66,6 +73,22 @@ interface StoredReviewDataDeletion {
   readonly subjectUid: string;
   readonly updatedAtMs: number;
 }
+
+type StoredReviewDeletionReceipt = Readonly<{
+  readonly completedAtMs: null;
+  readonly expectedCompletionByMs: number;
+  readonly hashVersion: string;
+  readonly requestedAtMs: number;
+  readonly schemaVersion: 1;
+  readonly status: 'pending';
+} | {
+  readonly completedAtMs: number;
+  readonly expectedCompletionByMs: number;
+  readonly expiresAtMs: number;
+  readonly requestedAtMs: number;
+  readonly schemaVersion: 1;
+  readonly status: 'completed';
+}>;
 
 interface StoredRateLimit {
   readonly blockedUntilMs: number;
@@ -552,6 +575,7 @@ export class FirestoreAppReviewSandboxStore implements
         cleanupCompletedAtMs: null,
         credentialGeneration: grant.credentialGeneration,
         createdAtMs: command.nowMs,
+        deletionReceiptLookupId: null,
         installationLookupId: grant.installationLookupId,
         lastAttemptAtMs: null,
         rateLimitLookupIds: grant.rateLimitLookupIds,
@@ -565,6 +589,8 @@ export class FirestoreAppReviewSandboxStore implements
   }
 
   beginRequestedAppReviewDataDeletion(command: Readonly<{
+    currentDeletionReceiptLookup: Readonly<HmacDigest>;
+    deletionReceiptLookups: readonly Readonly<HmacDigest>[];
     installationLookups: readonly Readonly<HmacDigest>[];
     nowMs: number;
     subjectUid: string;
@@ -573,9 +599,13 @@ export class FirestoreAppReviewSandboxStore implements
       !isNonnegativeSafeInteger(command.nowMs)
       || !/^review_[A-Za-z0-9_-]{32}$/u.test(command.subjectUid)
       || command.installationLookups.length < 1
+      || command.deletionReceiptLookups.length < 1
     ) return Promise.resolve('invalid');
     const acceptedInstallations = new Set(
       command.installationLookups.map(({ lookupId }) => lookupId),
+    );
+    const acceptedReceiptLookups = new Set(
+      command.deletionReceiptLookups.map(({ lookupId }) => lookupId),
     );
     return this.#database.runTransaction(async (transaction) => {
       const grantPath = `${GRANT_PREFIX}/${command.subjectUid}`;
@@ -600,8 +630,39 @@ export class FirestoreAppReviewSandboxStore implements
           || deletion.credentialGeneration !== grant.credentialGeneration
           || deletion.installationLookupId !== grant.installationLookupId
         ) throw new Error('invalid_app_review_retention_state');
+        if (deletion.deletionReceiptLookupId === null) {
+          const candidates = await readReviewDeletionReceiptCandidates(
+            transaction,
+            command.deletionReceiptLookups,
+          );
+          if (candidates.some(({ value }) => value !== undefined)) return 'invalid';
+          transaction.set(deletionPath, Object.freeze({
+            ...deletion,
+            deletionReceiptLookupId: command.currentDeletionReceiptLookup.lookupId,
+            updatedAtMs: command.nowMs,
+          } satisfies StoredReviewDataDeletion));
+          transaction.create(
+            `${DELETION_RECEIPT_PREFIX}/${command.currentDeletionReceiptLookup.lookupId}`,
+            pendingReviewDeletionReceipt(command.currentDeletionReceiptLookup, command.nowMs),
+          );
+          return 'accepted';
+        }
+        if (!acceptedReceiptLookups.has(deletion.deletionReceiptLookupId)) return 'invalid';
+        const receiptValue = await transaction.get(
+          `${DELETION_RECEIPT_PREFIX}/${deletion.deletionReceiptLookupId}`,
+        );
+        const receipt = parseReviewDeletionReceipt(receiptValue);
+        if (receiptValue !== undefined && !receipt) {
+          throw new Error('invalid_app_review_deletion_receipt_record');
+        }
+        if (receipt?.status !== 'pending') return 'invalid';
         return 'accepted';
       }
+      const receiptCandidates = await readReviewDeletionReceiptCandidates(
+        transaction,
+        command.deletionReceiptLookups,
+      );
+      if (receiptCandidates.some(({ value }) => value !== undefined)) return 'invalid';
       transaction.set(grantPath, Object.freeze({
         ...grant,
         status: 'removed',
@@ -612,6 +673,7 @@ export class FirestoreAppReviewSandboxStore implements
         cleanupCompletedAtMs: null,
         credentialGeneration: grant.credentialGeneration,
         createdAtMs: command.nowMs,
+        deletionReceiptLookupId: command.currentDeletionReceiptLookup.lookupId,
         installationLookupId: grant.installationLookupId,
         lastAttemptAtMs: null,
         rateLimitLookupIds: grant.rateLimitLookupIds,
@@ -620,6 +682,10 @@ export class FirestoreAppReviewSandboxStore implements
         subjectUid: command.subjectUid,
         updatedAtMs: command.nowMs,
       } satisfies StoredReviewDataDeletion));
+      transaction.create(
+        `${DELETION_RECEIPT_PREFIX}/${command.currentDeletionReceiptLookup.lookupId}`,
+        pendingReviewDeletionReceipt(command.currentDeletionReceiptLookup, command.nowMs),
+      );
       return 'accepted';
     });
   }
@@ -746,9 +812,19 @@ export class FirestoreAppReviewSandboxStore implements
         || deletion.cleanupCompletedAtMs === null
       ) return 'not_ready';
       const grantPath = `${GRANT_PREFIX}/${subjectUid}`;
-      const grantValue = await transaction.get(grantPath);
+      const receiptPath = deletion.deletionReceiptLookupId === null
+        ? null
+        : `${DELETION_RECEIPT_PREFIX}/${deletion.deletionReceiptLookupId}`;
+      const [grantValue, receiptValue] = await Promise.all([
+        transaction.get(grantPath),
+        receiptPath ? transaction.get(receiptPath) : undefined,
+      ]);
       const grant = parseGrant(grantValue);
+      const receipt = parseReviewDeletionReceipt(receiptValue);
       if (grantValue !== undefined && !grant) throw new Error('invalid_app_review_retention_state');
+      if (receiptPath && (!receipt || receipt.status !== 'pending')) {
+        throw new Error('invalid_app_review_deletion_receipt_record');
+      }
       if (grant && (
         grant.subjectUid !== subjectUid
         || grant.credentialGeneration !== deletion.credentialGeneration
@@ -756,8 +832,38 @@ export class FirestoreAppReviewSandboxStore implements
         || grant.status !== 'removed'
       )) throw new Error('invalid_app_review_retention_state');
       if (grant) transaction.delete(grantPath);
+      if (receiptPath && receipt?.status === 'pending') {
+        transaction.set(receiptPath, Object.freeze({
+          completedAtMs: nowMs,
+          expectedCompletionByMs: receipt.expectedCompletionByMs,
+          expiresAtMs: nowMs + COMPLETED_DELETION_RECEIPT_RETENTION_MS,
+          requestedAtMs: receipt.requestedAtMs,
+          schemaVersion: 1,
+          status: 'completed',
+        } satisfies StoredReviewDeletionReceipt));
+      }
       transaction.delete(deletionPath);
       return 'completed';
+    });
+  }
+
+  async findAccountDeletionReceiptStatus(
+    receiptLookups: readonly Readonly<HmacDigest>[],
+  ): Promise<AccountDeletionReceiptStatus | null> {
+    if (receiptLookups.length < 1) return null;
+    return this.#database.runTransaction(async (transaction) => {
+      const candidates = await Promise.all(receiptLookups.map(async (lookup) => ({
+        value: await transaction.get(`${DELETION_RECEIPT_PREFIX}/${lookup.lookupId}`),
+      })));
+      const matches = candidates.flatMap(({ value }) => {
+        if (value === undefined) return [];
+        const receipt = parseReviewDeletionReceipt(value);
+        if (!receipt) throw new Error('invalid_app_review_deletion_receipt_record');
+        return [receipt];
+      });
+      if (matches.length === 0) return null;
+      if (matches.length !== 1) throw new Error('ambiguous_app_review_deletion_receipt');
+      return reviewDeletionReceiptView(matches[0]!);
     });
   }
 }
@@ -848,6 +954,9 @@ function parseReviewDataDeletion(value: unknown): StoredReviewDataDeletion | nul
     || !Number.isSafeInteger(value.credentialGeneration)
     || (value.credentialGeneration as number) < 1
     || !isNonnegativeSafeInteger(value.createdAtMs)
+    || !(value.deletionReceiptLookupId === null
+      || (typeof value.deletionReceiptLookupId === 'string'
+        && /^[A-Za-z0-9_-]{20,128}$/u.test(value.deletionReceiptLookupId)))
     || typeof value.installationLookupId !== 'string'
     || !(value.lastAttemptAtMs === null || isNonnegativeSafeInteger(value.lastAttemptAtMs))
     || !Array.isArray(value.rateLimitLookupIds)
@@ -857,6 +966,90 @@ function parseReviewDataDeletion(value: unknown): StoredReviewDataDeletion | nul
     || !isNonnegativeSafeInteger(value.updatedAtMs)
   ) return null;
   return value as unknown as StoredReviewDataDeletion;
+}
+
+function parseReviewDeletionReceipt(value: unknown): StoredReviewDeletionReceipt | null {
+  if (!isRecord(value) || value.schemaVersion !== 1) return null;
+  if (
+    value.status === 'pending'
+    && recordHasExactKeys(value, [
+      'completedAtMs',
+      'expectedCompletionByMs',
+      'hashVersion',
+      'requestedAtMs',
+      'schemaVersion',
+      'status',
+    ])
+    && value.completedAtMs === null
+    && typeof value.hashVersion === 'string'
+    && /^[A-Za-z0-9_-]{1,32}$/u.test(value.hashVersion)
+    && isNonnegativeSafeInteger(value.requestedAtMs)
+    && value.expectedCompletionByMs === (
+      value.requestedAtMs + ACCOUNT_DELETION_EXPECTED_COMPLETION_MS
+    )
+  ) return value as unknown as StoredReviewDeletionReceipt;
+  if (
+    value.status === 'completed'
+    && recordHasExactKeys(value, [
+      'completedAtMs',
+      'expectedCompletionByMs',
+      'expiresAtMs',
+      'requestedAtMs',
+      'schemaVersion',
+      'status',
+    ])
+    && isNonnegativeSafeInteger(value.requestedAtMs)
+    && value.expectedCompletionByMs === (
+      value.requestedAtMs + ACCOUNT_DELETION_EXPECTED_COMPLETION_MS
+    )
+    && isNonnegativeSafeInteger(value.completedAtMs)
+    && value.completedAtMs >= value.requestedAtMs
+    && value.expiresAtMs === (
+      value.completedAtMs + COMPLETED_DELETION_RECEIPT_RETENTION_MS
+    )
+  ) return value as unknown as StoredReviewDeletionReceipt;
+  return null;
+}
+
+async function readReviewDeletionReceiptCandidates(
+  transaction: DocumentTransaction,
+  lookups: readonly Readonly<HmacDigest>[],
+): Promise<readonly Readonly<{ value: unknown | undefined }>[]> {
+  const candidates = await Promise.all(lookups.map(async (lookup) => ({
+    value: await transaction.get(`${DELETION_RECEIPT_PREFIX}/${lookup.lookupId}`),
+  })));
+  for (const candidate of candidates) {
+    if (candidate.value !== undefined && !parseReviewDeletionReceipt(candidate.value)) {
+      throw new Error('invalid_app_review_deletion_receipt_record');
+    }
+  }
+  return candidates;
+}
+
+function pendingReviewDeletionReceipt(
+  lookup: Readonly<HmacDigest>,
+  requestedAtMs: number,
+): StoredReviewDeletionReceipt {
+  return Object.freeze({
+    completedAtMs: null,
+    expectedCompletionByMs: requestedAtMs + ACCOUNT_DELETION_EXPECTED_COMPLETION_MS,
+    hashVersion: lookup.version,
+    requestedAtMs,
+    schemaVersion: 1,
+    status: 'pending',
+  });
+}
+
+function reviewDeletionReceiptView(
+  receipt: StoredReviewDeletionReceipt,
+): AccountDeletionReceiptStatus {
+  return Object.freeze({
+    completedAtMs: receipt.completedAtMs,
+    expectedCompletionByMs: receipt.expectedCompletionByMs,
+    requestedAtMs: receipt.requestedAtMs,
+    schemaVersion: 1,
+    status: receipt.status,
+  });
 }
 
 function parseRedemptionRequest(value: unknown): Readonly<{
@@ -1012,4 +1205,11 @@ function isNonnegativeSafeInteger(value: unknown): value is number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function recordHasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
+  return actual.length === sortedExpected.length
+    && actual.every((key, index) => key === sortedExpected[index]);
 }

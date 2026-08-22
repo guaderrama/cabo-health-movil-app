@@ -1,17 +1,23 @@
 import { ClientAccessPublicError } from './clientAccessRedeemer.js';
+import {
+  type AccountDeletionReceiptStatus,
+  type AccountDeletionReceiptStatusStore,
+} from './accountDeletionReceipt.js';
 import { type HmacDigest, VersionedHmac } from '../security/versionedHmac.js';
 
 const INSTALLATION_ID_PATTERN = /^[A-Za-z0-9_-]{32,128}$/u;
 const SUBJECT_UID_PATTERN = /^client_[A-Za-z0-9_-]{32}$/u;
 
 export interface ClientAccountDeletionCommand {
+  readonly currentDeletionReceiptLookup: Readonly<HmacDigest>;
   readonly currentInstallationHash: Readonly<HmacDigest>;
+  readonly deletionReceiptLookups: readonly Readonly<HmacDigest>[];
   readonly installationHashes: readonly Readonly<HmacDigest>[];
   readonly nowMs: number;
   readonly subjectUid: string;
 }
 
-export interface ClientAccountDeletionStore {
+export interface ClientAccountDeletionStore extends AccountDeletionReceiptStatusStore {
   beginAccountDeletion(command: Readonly<ClientAccountDeletionCommand>): Promise<
     Readonly<{ kind: 'accepted' } | { kind: 'invalid' }>
   >;
@@ -59,37 +65,50 @@ export class ClientAccountDeletionService {
   readonly #authAccounts: AuthAccountDeletionGateway;
   readonly #installationHasher: VersionedHmac;
   readonly #nowMs: () => number;
+  readonly #receiptHasher: VersionedHmac;
   readonly #store: ClientAccountDeletionStore;
 
   constructor(dependencies: {
     readonly authAccounts: AuthAccountDeletionGateway;
     readonly installationHasher: VersionedHmac;
     readonly nowMs?: () => number;
+    readonly receiptHasher: VersionedHmac;
     readonly store: ClientAccountDeletionStore;
   }) {
     this.#authAccounts = dependencies.authAccounts;
     this.#installationHasher = dependencies.installationHasher;
     this.#nowMs = dependencies.nowMs ?? Date.now;
+    this.#receiptHasher = dependencies.receiptHasher;
     this.#store = dependencies.store;
   }
 
   async request(input: {
+    readonly deletionReceipt: string;
     readonly installationId: string;
     readonly subjectUid: string;
-  }): Promise<Readonly<{ status: 'completed' | 'pending' }>> {
+  }): Promise<AccountDeletionReceiptStatus> {
     if (
       !INSTALLATION_ID_PATTERN.test(input.installationId)
+      || !/^[A-Za-z0-9_-]{43}$/u.test(input.deletionReceipt)
       || !SUBJECT_UID_PATTERN.test(input.subjectUid)
     ) throw new ClientAccessPublicError('invalid_access');
     const installationHashes = this.#installationHasher.lookupCandidates(input.installationId);
+    const deletionReceiptLookups = this.#receiptHasher.lookupCandidates(input.deletionReceipt);
     const accepted = await this.#store.beginAccountDeletion(Object.freeze({
+      currentDeletionReceiptLookup: deletionReceiptLookups[0]!,
       currentInstallationHash: installationHashes[0]!,
+      deletionReceiptLookups,
       installationHashes,
       nowMs: this.#nowMs(),
       subjectUid: input.subjectUid,
     }));
     if (accepted.kind !== 'accepted') throw new ClientAccessPublicError('invalid_access');
-    return this.processPending(input.subjectUid);
+    await this.processPending(input.subjectUid);
+    const status = await this.#store.findAccountDeletionReceiptStatus(
+      this.#receiptHasher.lookupCandidates(input.deletionReceipt),
+    );
+    if (!status) throw new Error('account_deletion_receipt_state_missing');
+    return status;
   }
 
   async processPending(
