@@ -1,4 +1,17 @@
 {
+  "functions": [
+    {
+      "codebase": "client-access",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "test-build"
+      ],
+      "source": "functions"
+    }
+  ],
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"

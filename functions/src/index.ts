@@ -1,0 +1,485 @@
+import { getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+import { defineSecret, defineString, type SecretParam } from 'firebase-functions/params';
+import {
+  HttpsError,
+  onCall,
+  onRequest,
+  type CallableRequest,
+} from 'firebase-functions/v2/https';
+
+import {
+  AccessCodeInputError,
+  AccessCodeIssuer,
+  AccessCodeLimitError,
+} from './domain/accessCodeIssuer.js';
+import {
+  ClientAccessPublicError,
+  ClientAccessRedeemer,
+} from './domain/clientAccessRedeemer.js';
+import { dispatchBrokerCommand } from './domain/brokerApi.js';
+import { ClientSessionManager } from './domain/clientSessionManager.js';
+import { ClientLaunchService } from './domain/clientLaunchService.js';
+import { WebSessionBroker } from './domain/webSessionBroker.js';
+import { AdminFirestoreDocumentDatabase } from './infrastructure/adminFirestoreDocumentDatabase.js';
+import { FirestoreClientAccessStore } from './repositories/firestoreClientAccessStore.js';
+import { parsePepperRingSecret, VersionedHmac } from './security/versionedHmac.js';
+import {
+  authorizeProductionAdmin,
+  authorizeProductionStaff,
+  type ProductionAdminPermission,
+} from './security/adminAuthorization.js';
+import { authenticateBrokerRequest } from './security/brokerAuthentication.js';
+import { authorizeAppCheckSurface } from './security/appCheckAuthorization.js';
+
+const REGION = 'us-central1';
+const CODE_PEPPER_RING = defineSecret('CLIENT_CODE_PEPPER_RING');
+const INSTALLATION_PEPPER_RING = defineSecret('CLIENT_INSTALLATION_PEPPER_RING');
+const RATE_LIMIT_PEPPER_RING = defineSecret('CLIENT_RATE_LIMIT_PEPPER_RING');
+const LAUNCH_NONCE_PEPPER_RING = defineSecret('CLIENT_LAUNCH_NONCE_PEPPER_RING');
+const WEB_SESSION_PEPPER_RING = defineSecret('CLIENT_WEB_SESSION_PEPPER_RING');
+const WEB_CSRF_PEPPER_RING = defineSecret('CLIENT_WEB_CSRF_PEPPER_RING');
+const BROKER_HMAC_KEY_RING = defineSecret('CLIENT_BROKER_HMAC_KEY_RING');
+const CLIENT_IOS_FIREBASE_APP_ID = defineString('CLIENT_IOS_FIREBASE_APP_ID');
+const STAFF_WEB_FIREBASE_APP_ID = defineString('STAFF_WEB_FIREBASE_APP_ID');
+
+if (getApps().length === 0) initializeApp();
+
+const baseCallableOptions = {
+  consumeAppCheckToken: true,
+  enforceAppCheck: true,
+  maxInstances: 10,
+  memory: '256MiB' as const,
+  region: REGION,
+  timeoutSeconds: 30,
+};
+
+export const adminCreateClientAccessCode = onCall({
+  ...baseCallableOptions,
+  secrets: [CODE_PEPPER_RING],
+}, async (request) => {
+  assertStaffAppCheck(request);
+  await assertProductionAdmin(request, 'client_codes');
+  const input = parseIssueInput(request.data);
+  const store = createStore();
+  const issuer = new AccessCodeIssuer({
+    codeHasher: hasherFromSecret(CODE_PEPPER_RING, 'cabohealth/access-code/v1'),
+    store,
+  });
+
+  try {
+    return await issuer.issue(input);
+  } catch (error) {
+    if (error instanceof AccessCodeInputError) {
+      throw new HttpsError('invalid-argument', 'invalid_admin_input');
+    }
+    if (error instanceof AccessCodeLimitError) {
+      throw new HttpsError('failed-precondition', 'active_code_limit');
+    }
+    throw new HttpsError('internal', 'client_access_operation_failed');
+  }
+});
+
+export const adminGetStaffSession = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  if (!isRecord(request.data) || Object.keys(request.data).length !== 0) {
+    throw new HttpsError('invalid-argument', 'invalid_admin_input');
+  }
+  try {
+    const staff = await authorizeProductionStaff({
+      auth: request.auth,
+      loadAdmin: loadProductionAdmin,
+      nowMs: Date.now(),
+    });
+    return Object.freeze({
+      permissions: staff.permissions,
+      scope: staff.scope,
+    });
+  } catch {
+    throw new HttpsError('permission-denied', 'admin_authorization_failed');
+  }
+});
+
+export const adminListClientAccessCodes = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  assertEmptyData(request.data, 'invalid_admin_input');
+  await assertProductionAdmin(request, 'client_codes');
+  try {
+    return Object.freeze({ codes: await createStore().listAccessCodes(Date.now()) });
+  } catch {
+    throw new HttpsError('internal', 'client_access_operation_failed');
+  }
+});
+
+export const adminRevokeClientAccessCode = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  await assertProductionAdmin(request, 'client_codes');
+  const codeId = parseCodeId(request.data);
+  try {
+    const result = await createStore().revokeAccessCode(codeId, Date.now());
+    if (result.kind !== 'revoked') {
+      throw new HttpsError('not-found', 'access_code_not_active');
+    }
+    if (result.subjectUid) await getAuth().revokeRefreshTokens(result.subjectUid);
+    return Object.freeze({ revoked: true });
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'client_access_operation_failed');
+  }
+});
+
+export const redeemClientAccessCode = onCall({
+  ...baseCallableOptions,
+  secrets: [CODE_PEPPER_RING, INSTALLATION_PEPPER_RING, RATE_LIMIT_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  const input = parseRedeemInput(request);
+  const redeemer = new ClientAccessRedeemer({
+    codeHasher: hasherFromSecret(CODE_PEPPER_RING, 'cabohealth/access-code/v1'),
+    installationHasher: hasherFromSecret(
+      INSTALLATION_PEPPER_RING,
+      'cabohealth/installation/v1',
+    ),
+    rateLimitHasher: hasherFromSecret(
+      RATE_LIMIT_PEPPER_RING,
+      'cabohealth/rate-limit/v1',
+    ),
+    store: createStore(),
+    tokenIssuer: {
+      createCustomToken: (subjectUid) => getAuth().createCustomToken(subjectUid),
+    },
+  });
+
+  try {
+    return await redeemer.redeem(input);
+  } catch (error) {
+    if (error instanceof ClientAccessPublicError) {
+      if (error.code === 'rate_limited') {
+        throw new HttpsError('resource-exhausted', 'rate_limited', {
+          retryAfterSeconds: error.retryAfterSeconds,
+        });
+      }
+      throw new HttpsError('permission-denied', 'invalid_access');
+    }
+    throw new HttpsError('internal', 'client_access_operation_failed');
+  }
+});
+
+export const refreshClientAccess = onCall({
+  ...baseCallableOptions,
+  secrets: [INSTALLATION_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  const subjectUid = assertClientAuth(request);
+  try {
+    const grant = await createSessionManager().refresh({
+      installationId: parseInstallationId(request.data),
+      subjectUid,
+    });
+    return Object.freeze({ grant });
+  } catch (error) {
+    throw mapClientAccessError(error);
+  }
+});
+
+export const removeClientAccess = onCall({
+  ...baseCallableOptions,
+  secrets: [INSTALLATION_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  const subjectUid = assertClientAuth(request);
+  try {
+    const result = await createSessionManager().remove({
+      installationId: parseInstallationId(request.data),
+      subjectUid,
+    });
+    await getAuth().revokeRefreshTokens(subjectUid);
+    return result;
+  } catch (error) {
+    throw mapClientAccessError(error);
+  }
+});
+
+export const deleteClientAccount = onCall({
+  ...baseCallableOptions,
+  secrets: [INSTALLATION_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  const subjectUid = assertClientAuth(request);
+  try {
+    const result = await createSessionManager().deleteAccount({
+      installationId: parseInstallationId(request.data),
+      subjectUid,
+    });
+    await getAuth().deleteUser(subjectUid);
+    return result;
+  } catch (error) {
+    throw mapClientAccessError(error);
+  }
+});
+
+export const createClientLaunch = onCall({
+  ...baseCallableOptions,
+  secrets: [INSTALLATION_PEPPER_RING, LAUNCH_NONCE_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  const subjectUid = assertClientAuth(request);
+  const input = parseLaunchInput(request.data);
+  try {
+    return await createLaunchService().create({ ...input, subjectUid });
+  } catch (error) {
+    throw mapClientAccessError(error);
+  }
+});
+
+/** Server-to-server API used only by the CaboHealth client-resources host. */
+export const brokerApi = onRequest({
+  cors: false,
+  maxInstances: 10,
+  memory: '256MiB',
+  region: REGION,
+  secrets: [
+    BROKER_HMAC_KEY_RING,
+    LAUNCH_NONCE_PEPPER_RING,
+    WEB_CSRF_PEPPER_RING,
+    WEB_SESSION_PEPPER_RING,
+  ],
+  timeoutSeconds: 15,
+}, async (request, response) => {
+  response.set('Cache-Control', 'no-store');
+  response.set('X-Content-Type-Options', 'nosniff');
+  try {
+    const rawBody = request.rawBody;
+    const contentType = request.get('content-type') ?? '';
+    if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/iu.test(contentType)) {
+      throw new Error('broker_authentication_failed');
+    }
+    const authenticated = authenticateBrokerRequest({
+      body: rawBody,
+      keyId: requiredHeader(request.get('x-cabohealth-key-id')),
+      method: request.method,
+      nowMs: Date.now(),
+      path: request.path,
+      requestId: requiredHeader(request.get('x-cabohealth-request-id')),
+      signature: requiredHeader(request.get('x-cabohealth-signature')),
+      timestamp: requiredHeader(request.get('x-cabohealth-timestamp')),
+    }, parsePepperRingSecret(BROKER_HMAC_KEY_RING.value()));
+    const result = await dispatchBrokerCommand({
+      path: request.path,
+      rawBody,
+      requestHash: authenticated.requestHash,
+    }, createWebSessionBroker());
+    response.status(200).json(result);
+  } catch {
+    response.status(403).json(Object.freeze({ error: 'invalid_access' }));
+  }
+});
+
+function createStore(): FirestoreClientAccessStore {
+  return new FirestoreClientAccessStore(
+    new AdminFirestoreDocumentDatabase(getFirestore()),
+  );
+}
+
+function createSessionManager(): ClientSessionManager {
+  return new ClientSessionManager({
+    installationHasher: hasherFromSecret(
+      INSTALLATION_PEPPER_RING,
+      'cabohealth/installation/v1',
+    ),
+    store: createStore(),
+  });
+}
+
+function createLaunchService(): ClientLaunchService {
+  return new ClientLaunchService({
+    installationHasher: hasherFromSecret(
+      INSTALLATION_PEPPER_RING,
+      'cabohealth/installation/v1',
+    ),
+    nonceHasher: hasherFromSecret(
+      LAUNCH_NONCE_PEPPER_RING,
+      'cabohealth/launch-nonce/v1',
+    ),
+    store: createStore(),
+  });
+}
+
+function createWebSessionBroker(): WebSessionBroker {
+  return new WebSessionBroker({
+    csrfHasher: hasherFromSecret(
+      WEB_CSRF_PEPPER_RING,
+      'cabohealth/web-csrf/v1',
+    ),
+    nonceHasher: hasherFromSecret(
+      LAUNCH_NONCE_PEPPER_RING,
+      'cabohealth/launch-nonce/v1',
+    ),
+    sessionHasher: hasherFromSecret(
+      WEB_SESSION_PEPPER_RING,
+      'cabohealth/web-session/v1',
+    ),
+    store: createStore(),
+  });
+}
+
+function hasherFromSecret(secret: SecretParam, namespace: string): VersionedHmac {
+  return new VersionedHmac(parsePepperRingSecret(secret.value()), namespace);
+}
+
+function assertFreshAppCheck(
+  request: CallableRequest<unknown>,
+  expectedAppId: string,
+  expectedPlatform: 'ios' | 'web',
+): void {
+  try {
+    authorizeAppCheckSurface({ app: request.app, expectedAppId, expectedPlatform });
+  } catch {
+    throw new HttpsError('failed-precondition', 'fresh_app_attestation_required');
+  }
+}
+
+function assertClientAppCheck(request: CallableRequest<unknown>): void {
+  assertFreshAppCheck(request, CLIENT_IOS_FIREBASE_APP_ID.value(), 'ios');
+}
+
+function assertStaffAppCheck(request: CallableRequest<unknown>): void {
+  assertFreshAppCheck(request, STAFF_WEB_FIREBASE_APP_ID.value(), 'web');
+}
+
+async function assertProductionAdmin(
+  request: CallableRequest<unknown>,
+  requiredPermission: ProductionAdminPermission,
+): Promise<void> {
+  try {
+    await authorizeProductionAdmin({
+      auth: request.auth,
+      loadAdmin: loadProductionAdmin,
+      nowMs: Date.now(),
+      requiredPermission,
+    });
+  } catch {
+    throw new HttpsError('permission-denied', 'admin_authorization_failed');
+  }
+}
+
+async function loadProductionAdmin(uid: string): Promise<unknown | undefined> {
+  const snapshot = await getFirestore().doc(`_private_admins/${uid}`).get();
+  return snapshot.exists ? snapshot.data() : undefined;
+}
+
+function assertClientAuth(request: CallableRequest<unknown>): string {
+  if (!request.auth || !/^client_[A-Za-z0-9_-]{32}$/u.test(request.auth.uid)) {
+    throw new HttpsError('unauthenticated', 'client_authentication_required');
+  }
+  return request.auth.uid;
+}
+
+function parseIssueInput(value: unknown): {
+  expiresAtMs: number;
+  resourceIds: readonly string[];
+  slot: 1 | 2 | 3 | 4;
+} {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, ['expiresAtMs', 'resourceIds', 'slot'])
+    || typeof value.expiresAtMs !== 'number'
+    || !Array.isArray(value.resourceIds)
+    || value.resourceIds.some((resourceId) => typeof resourceId !== 'string')
+    || ![1, 2, 3, 4].includes(value.slot as number)
+  ) throw new HttpsError('invalid-argument', 'invalid_admin_input');
+  return {
+    expiresAtMs: value.expiresAtMs,
+    resourceIds: value.resourceIds as string[],
+    slot: value.slot as 1 | 2 | 3 | 4,
+  };
+}
+
+function parseRedeemInput(request: CallableRequest<unknown>): {
+  code: string;
+  installationId: string;
+  requestId: string;
+  sourceAddress: string;
+} {
+  const value = request.data;
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, ['code', 'installationId', 'requestId'])
+    || typeof value.code !== 'string'
+    || typeof value.installationId !== 'string'
+    || typeof value.requestId !== 'string'
+  ) throw new HttpsError('invalid-argument', 'invalid_access');
+  const sourceAddress = request.rawRequest.ip ?? request.rawRequest.socket.remoteAddress;
+  if (typeof sourceAddress !== 'string') {
+    throw new HttpsError('invalid-argument', 'invalid_access');
+  }
+  return {
+    code: value.code,
+    installationId: value.installationId,
+    requestId: value.requestId,
+    sourceAddress,
+  };
+}
+
+function parseCodeId(value: unknown): string {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, ['codeId'])
+    || typeof value.codeId !== 'string'
+  ) {
+    throw new HttpsError('invalid-argument', 'invalid_admin_input');
+  }
+  return value.codeId;
+}
+
+function parseInstallationId(value: unknown): string {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, ['installationId'])
+    || typeof value.installationId !== 'string'
+  ) {
+    throw new HttpsError('invalid-argument', 'invalid_access');
+  }
+  return value.installationId;
+}
+
+function parseLaunchInput(value: unknown): { installationId: string; resourceId: string } {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, ['installationId', 'resourceId'])
+    || typeof value.installationId !== 'string'
+    || typeof value.resourceId !== 'string'
+  ) throw new HttpsError('invalid-argument', 'invalid_access');
+  return { installationId: value.installationId, resourceId: value.resourceId };
+}
+
+function mapClientAccessError(error: unknown): HttpsError {
+  if (error instanceof HttpsError) return error;
+  if (error instanceof ClientAccessPublicError) {
+    return new HttpsError('permission-denied', 'invalid_access');
+  }
+  return new HttpsError('internal', 'client_access_operation_failed');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function requiredHeader(value: string | undefined): string {
+  if (!value) throw new Error('broker_authentication_failed');
+  return value;
+}
+
+function assertEmptyData(value: unknown, message: string): void {
+  if (!isRecord(value) || Object.keys(value).length !== 0) {
+    throw new HttpsError('invalid-argument', message);
+  }
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
+  return actual.length === sortedExpected.length
+    && actual.every((key, index) => key === sortedExpected[index]);
+}
