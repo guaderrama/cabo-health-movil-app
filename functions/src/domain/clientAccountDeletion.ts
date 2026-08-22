@@ -146,3 +146,78 @@ export class ClientAccountDeletionService {
     return Object.freeze({ completed, pending });
   }
 }
+
+export interface ExpiredClientAccessReconciler {
+  reconcileExpiredClientAccess(nowMs: number): Promise<void>;
+}
+
+export interface AccountDeletionMaintenanceSummary extends AccountDeletionRetrySummary {
+  readonly reconciliationFailed: number;
+}
+
+export class AccountDeletionMaintenanceBatchError extends Error {
+  readonly summary: Readonly<AccountDeletionMaintenanceSummary>;
+
+  constructor(summary: Readonly<AccountDeletionMaintenanceSummary>) {
+    super('account_deletion_maintenance_incomplete');
+    this.name = 'AccountDeletionMaintenanceBatchError';
+    this.summary = Object.freeze({ ...summary });
+  }
+}
+
+export class ClientAccountDeletionMaintenanceService {
+  readonly #deletions: Pick<ClientAccountDeletionService, 'retryPending'>;
+  readonly #nowMs: () => number;
+  readonly #reconciler: ExpiredClientAccessReconciler;
+
+  constructor(dependencies: Readonly<{
+    deletions: Pick<ClientAccountDeletionService, 'retryPending'>;
+    nowMs?: () => number;
+    reconciler: ExpiredClientAccessReconciler;
+  }>) {
+    this.#deletions = dependencies.deletions;
+    this.#nowMs = dependencies.nowMs ?? Date.now;
+    this.#reconciler = dependencies.reconciler;
+  }
+
+  async runScheduled(limit = 4): Promise<Readonly<{ completed: number; pending: number }>> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) {
+      throw new Error('invalid_deletion_retry_limit');
+    }
+    const nowMs = this.#nowMs();
+    if (!Number.isSafeInteger(nowMs) || nowMs < 0) throw new Error('invalid_server_time');
+
+    let reconciliationFailed = 0;
+    try {
+      await this.#reconciler.reconcileExpiredClientAccess(nowMs);
+    } catch {
+      reconciliationFailed = 1;
+    }
+
+    let retrySummary: Readonly<AccountDeletionRetrySummary>;
+    try {
+      const result = await this.#deletions.retryPending(limit);
+      retrySummary = Object.freeze({
+        completed: result.completed,
+        failed: 0,
+        malformed: 0,
+        pending: result.pending,
+      });
+    } catch (error) {
+      retrySummary = error instanceof AccountDeletionRetryBatchError
+        ? error.summary
+        : Object.freeze({ completed: 0, failed: 1, malformed: 0, pending: 0 });
+    }
+
+    const summary = Object.freeze({
+      ...retrySummary,
+      reconciliationFailed,
+    });
+    if (
+      summary.reconciliationFailed > 0
+      || summary.failed > 0
+      || summary.malformed > 0
+    ) throw new AccountDeletionMaintenanceBatchError(summary);
+    return Object.freeze({ completed: summary.completed, pending: summary.pending });
+  }
+}

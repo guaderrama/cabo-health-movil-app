@@ -6,8 +6,10 @@ import { AccessCodeIssuer } from '../../domain/accessCodeIssuer.js';
 import { AdminClientAccessRevocationService } from '../../domain/adminClientAccessRevocation.js';
 import { ClientAccessRemovalService } from '../../domain/clientAccessRemoval.js';
 import {
+  AccountDeletionMaintenanceBatchError,
   AccountDeletionRetryBatchError,
   type ClientAccountDeletionStore,
+  ClientAccountDeletionMaintenanceService,
   ClientAccountDeletionService,
 } from '../../domain/clientAccountDeletion.js';
 import { ClientAccessRedeemer } from '../../domain/clientAccessRedeemer.js';
@@ -490,6 +492,83 @@ test('scheduled deletion reports malformed tombstones after valid jobs make prog
   });
   const residualJobs = await harness.database.listCollection('_private_account_deletions');
   assert.deepEqual(residualJobs.map(({ id }) => id), ['malformed-document']);
+});
+
+test('scheduled maintenance completes an existing deletion before reporting malformed expiry reconciliation', async () => {
+  const harness = await createRedeemedHarness(nowMs + 30 * 24 * 60 * 60 * 1_000);
+  const requester = new ClientAccountDeletionService({
+    authAccounts: { async deleteUser() { throw new Error('temporary_auth_failure'); } },
+    installationHasher: hasher('installation'),
+    nowMs: () => nowMs,
+    store: harness.store,
+  });
+  assert.deepEqual(await requester.request({
+    installationId,
+    subjectUid: harness.subjectUid,
+  }), { status: 'pending' });
+
+  const expiring = await new AccessCodeIssuer({
+    codeHasher: hasher('code'),
+    nowMs: () => nowMs,
+    randomSource: () => Buffer.alloc(16, 2),
+    store: harness.store,
+  }).issue({ expiresAtMs: nowMs + 1_000, resourceIds: [resourceId], slot: 1 });
+  let expiringSubject = '';
+  await new ClientAccessRedeemer({
+    codeHasher: hasher('code'),
+    installationHasher: hasher('installation'),
+    nowMs: () => nowMs,
+    rateLimitHasher: hasher('rate-limit'),
+    store: harness.store,
+    tokenIssuer: {
+      async createCustomToken(subjectUid) {
+        expiringSubject = subjectUid;
+        return 'second-test-custom-token';
+      },
+    },
+  }).redeem({
+    code: expiring.oneTimeCode,
+    installationId: '2'.repeat(32),
+    requestId: 'request-malformed-expiry-0001',
+    sourceAddress: '203.0.113.43',
+  });
+  await harness.database.runTransaction(async (transaction) => {
+    transaction.set(`_private_client_grants/${expiringSubject}`, {
+      codeId: expiring.summary.codeId,
+      schemaVersion: 999,
+    });
+  });
+  const deletedSubjects: string[] = [];
+  const maintenance = new ClientAccountDeletionMaintenanceService({
+    deletions: new ClientAccountDeletionService({
+      authAccounts: {
+        async deleteUser(subjectUid) {
+          deletedSubjects.push(subjectUid);
+        },
+      },
+      installationHasher: hasher('installation'),
+      nowMs: () => nowMs + 2_000,
+      store: harness.store,
+    }),
+    nowMs: () => nowMs + 2_000,
+    reconciler: harness.store,
+  });
+
+  await assert.rejects(maintenance.runScheduled(), (error: unknown) => {
+    if (!(error instanceof AccountDeletionMaintenanceBatchError)) return false;
+    assert.equal(error.message, 'account_deletion_maintenance_incomplete');
+    assert.deepEqual(error.summary, {
+      completed: 1,
+      failed: 0,
+      malformed: 0,
+      pending: 0,
+      reconciliationFailed: 1,
+    });
+    assert.doesNotMatch(JSON.stringify(error), /client_|invalid_client_grant|temporary/u);
+    return true;
+  });
+  assert.deepEqual(deletedSubjects, [harness.subjectUid]);
+  assert.deepEqual(await harness.database.listCollection('_private_account_deletions'), []);
 });
 
 async function createRedeemedHarness(expiresAtMs: number) {

@@ -21,7 +21,10 @@ import {
 } from './domain/clientAccessRedeemer.js';
 import { AdminClientAccessRevocationService } from './domain/adminClientAccessRevocation.js';
 import { ClientAccessRemovalService } from './domain/clientAccessRemoval.js';
-import { ClientAccountDeletionService } from './domain/clientAccountDeletion.js';
+import {
+  ClientAccountDeletionMaintenanceService,
+  ClientAccountDeletionService,
+} from './domain/clientAccountDeletion.js';
 import { dispatchBrokerCommand } from './domain/brokerApi.js';
 import { ClientSessionManager } from './domain/clientSessionManager.js';
 import { ClientLaunchService } from './domain/clientLaunchService.js';
@@ -432,10 +435,8 @@ export const retryClientAccountDeletions = onSchedule({
   secrets: [INSTALLATION_PEPPER_RING],
   timeoutSeconds: 120,
 }, async () => {
-  const nowMs = Date.now();
   const store = createStore();
-  await store.reconcileExpiredClientAccess(nowMs);
-  await createAccountDeletionService(store).retryPending();
+  await createAccountDeletionMaintenanceService(store).runScheduled();
 });
 
 export const cleanupAppReviewData = onSchedule({
@@ -683,6 +684,15 @@ function createAccountDeletionService(
       'cabohealth/installation/v1',
     ),
     store,
+  });
+}
+
+function createAccountDeletionMaintenanceService(
+  store: FirestoreClientAccessStore,
+): ClientAccountDeletionMaintenanceService {
+  return new ClientAccountDeletionMaintenanceService({
+    deletions: createAccountDeletionService(store),
+    reconciler: store,
   });
 }
 

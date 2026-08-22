@@ -242,6 +242,80 @@ test('an Auth outage leaves review access denied and a durable job that succeeds
   assert.deepEqual(await database.listCollection('review_sandbox_web_sessions'), []);
 });
 
+test('review cleanup completes an existing job before reporting malformed candidate discovery', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const store = new FirestoreAppReviewSandboxStore(database);
+  let clock = nowMs;
+  let randomByte = 20;
+  const credentials = new AppReviewCredentialService({
+    credentialHasher: hasher('credential'),
+    nowMs: () => clock,
+    randomSource: (size) => Buffer.alloc(size, randomByte++),
+    store,
+  });
+  const firstCredential = await credentials.rotate({ expectedGeneration: null });
+  const redeemer = new AppReviewAccessRedeemer({
+    credentialHasher: hasher('credential'),
+    installationHasher: hasher('installation'),
+    nowMs: () => clock,
+    rateLimitHasher: hasher('rate'),
+    store,
+    tokenIssuer: { async createCustomToken(subjectUid) { return subjectUid; } },
+  });
+  clock += 1;
+  const redeemed = await redeemer.redeem(redeemInput(
+    firstCredential.oneTimeCredential,
+    'e',
+    'request-retain-eeee',
+  ));
+  clock += 1;
+  await credentials.rotate({ expectedGeneration: 1 });
+  const unavailableRetention = new AppReviewDataRetentionService({
+    authAccounts: { async deleteUser() { throw new Error('temporary_auth_failure'); } },
+    nowMs: () => clock,
+    store,
+  });
+  assert.deepEqual(await unavailableRetention.runScheduled(), {
+    completed: 0,
+    failed: 0,
+    malformed: 0,
+    pending: 1,
+    queued: 1,
+  });
+  await database.runTransaction(async (transaction) => {
+    transaction.set('review_sandbox_credentials/current', {
+      generation: 2,
+      schemaVersion: 999,
+    });
+  });
+  const deletedSubjects: string[] = [];
+  const retention = new AppReviewDataRetentionService({
+    authAccounts: {
+      async deleteUser(subjectUid) {
+        deletedSubjects.push(subjectUid);
+      },
+    },
+    nowMs: () => clock,
+    store,
+  });
+
+  await assert.rejects(retention.runScheduled(), (error: unknown) => {
+    if (!(error instanceof AppReviewRetentionBatchError)) return false;
+    assert.deepEqual(error.summary, {
+      completed: 1,
+      failed: 1,
+      malformed: 0,
+      pending: 0,
+      queued: 0,
+    });
+    assert.doesNotMatch(JSON.stringify(error), /review_|invalid_app_review|temporary/u);
+    return true;
+  });
+  assert.deepEqual(deletedSubjects, [redeemed.customToken]);
+  assert.deepEqual(await database.listCollection('review_sandbox_account_deletions'), []);
+  assert.deepEqual(await database.listCollection('review_sandbox_grants'), []);
+});
+
 test('review cleanup isolates one subject failure and reports only aggregate counts', async () => {
   const failingSubject = `review_${'a'.repeat(32)}`;
   const completingSubject = `review_${'b'.repeat(32)}`;

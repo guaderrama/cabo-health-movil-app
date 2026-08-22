@@ -10,10 +10,13 @@ test('the callable and scheduled retry both use the durable account-deletion ser
     source.indexOf('export const createClientLaunch = onCall'),
   );
   assert.match(scheduled, /const store = createStore\(\)/u);
-  assert.match(scheduled, /await store\.reconcileExpiredClientAccess\(nowMs\)/u);
-  assert.match(scheduled, /await createAccountDeletionService\(store\)\.retryPending\(\)/u);
-  assert.ok(
-    scheduled.indexOf('reconcileExpiredClientAccess') < scheduled.indexOf('retryPending'),
+  assert.match(
+    scheduled,
+    /await createAccountDeletionMaintenanceService\(store\)\.runScheduled\(\)/u,
+  );
+  assert.match(
+    source,
+    /function createAccountDeletionMaintenanceService[\s\S]{0,700}?new ClientAccountDeletionMaintenanceService[\s\S]{0,500}?deletions: createAccountDeletionService\(store\)[\s\S]{0,300}?reconciler: store/u,
   );
   assert.match(source, /export const adminRevokeClientAccessCode =[\s\S]{0,900}?createAdminRevocationService\(\)\.revoke/u);
   assert.match(source, /function createAdminRevocationService\(\)[\s\S]{0,500}?new AdminClientAccessRevocationService/u);

@@ -71,19 +71,25 @@ export class AppReviewDataRetentionService {
       throw new Error('invalid_server_time');
     }
     const cutoffMs = Math.max(0, nowMs - APP_REVIEW_DATA_RETENTION_MS);
-    const candidates = await this.#store.listAppReviewRetentionCandidates(cutoffMs, limit);
     let failed = 0;
+    let malformedCandidates = 0;
     let queued = 0;
-    for (const subjectUid of candidates.subjectUids) {
-      try {
-        if (await this.#store.beginAppReviewDataDeletion({
-          cutoffMs,
-          nowMs,
-          subjectUid,
-        }) === 'queued') queued += 1;
-      } catch {
-        failed += 1;
+    try {
+      const candidates = await this.#store.listAppReviewRetentionCandidates(cutoffMs, limit);
+      malformedCandidates = candidates.malformed;
+      for (const subjectUid of candidates.subjectUids) {
+        try {
+          if (await this.#store.beginAppReviewDataDeletion({
+            cutoffMs,
+            nowMs,
+            subjectUid,
+          }) === 'queued') queued += 1;
+        } catch {
+          failed += 1;
+        }
       }
+    } catch {
+      failed += 1;
     }
 
     const jobs = await this.#store.listAppReviewDataDeletionJobs(limit);
@@ -106,7 +112,7 @@ export class AppReviewDataRetentionService {
     const summary = Object.freeze({
       completed,
       failed,
-      malformed: candidates.malformed + jobs.malformed,
+      malformed: malformedCandidates + jobs.malformed,
       pending,
       queued,
     });
