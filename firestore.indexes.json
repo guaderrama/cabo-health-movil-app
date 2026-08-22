@@ -1,4 +1,41 @@
 {
   "indexes": [],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "_private_audit_events",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "_private_broker_requests",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "_private_launch_nonces",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "_private_rate_limits",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "_private_redemption_requests",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "_private_web_sessions",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    }
+  ]
 }

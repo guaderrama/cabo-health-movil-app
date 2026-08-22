@@ -34,6 +34,16 @@ test('production admin authorization rejects stale auth and every incomplete ser
     { auth: validAuth, document: { ...validDocument, permissions: ['drafts'] } },
     { auth: validAuth, document: { ...validDocument, scope: 'review_sandbox' } },
     { auth: { ...validAuth, token: { ...validAuth.token, catalogAdmin: false } }, document: validDocument },
+    {
+      auth: {
+        ...validAuth,
+        token: {
+          ...validAuth.token,
+          firebase: { sign_in_second_factor: 'phone' },
+        },
+      },
+      document: validDocument,
+    },
   ] as const;
 
   for (const candidate of cases) {

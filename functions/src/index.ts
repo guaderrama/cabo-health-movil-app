@@ -8,6 +8,7 @@ import {
   onRequest,
   type CallableRequest,
 } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 
 import {
   AccessCodeInputError,
@@ -18,6 +19,9 @@ import {
   ClientAccessPublicError,
   ClientAccessRedeemer,
 } from './domain/clientAccessRedeemer.js';
+import { AdminClientAccessRevocationService } from './domain/adminClientAccessRevocation.js';
+import { ClientAccessRemovalService } from './domain/clientAccessRemoval.js';
+import { ClientAccountDeletionService } from './domain/clientAccountDeletion.js';
 import { dispatchBrokerCommand } from './domain/brokerApi.js';
 import { ClientSessionManager } from './domain/clientSessionManager.js';
 import { ClientLaunchService } from './domain/clientLaunchService.js';
@@ -112,16 +116,18 @@ export const adminListClientAccessCodes = onCall(baseCallableOptions, async (req
   }
 });
 
-export const adminRevokeClientAccessCode = onCall(baseCallableOptions, async (request) => {
+export const adminRevokeClientAccessCode = onCall({
+  ...baseCallableOptions,
+  secrets: [INSTALLATION_PEPPER_RING],
+}, async (request) => {
   assertStaffAppCheck(request);
   await assertProductionAdmin(request, 'client_codes');
   const codeId = parseCodeId(request.data);
   try {
-    const result = await createStore().revokeAccessCode(codeId, Date.now());
+    const result = await createAdminRevocationService().revoke(codeId);
     if (result.kind !== 'revoked') {
       throw new HttpsError('not-found', 'access_code_not_active');
     }
-    if (result.subjectUid) await getAuth().revokeRefreshTokens(result.subjectUid);
     return Object.freeze({ revoked: true });
   } catch (error) {
     if (error instanceof HttpsError) throw error;
@@ -190,12 +196,10 @@ export const removeClientAccess = onCall({
   assertClientAppCheck(request);
   const subjectUid = assertClientAuth(request);
   try {
-    const result = await createSessionManager().remove({
+    return await createClientAccessRemovalService().remove({
       installationId: parseInstallationId(request.data),
       subjectUid,
     });
-    await getAuth().revokeRefreshTokens(subjectUid);
-    return result;
   } catch (error) {
     throw mapClientAccessError(error);
   }
@@ -208,15 +212,24 @@ export const deleteClientAccount = onCall({
   assertClientAppCheck(request);
   const subjectUid = assertClientAuth(request);
   try {
-    const result = await createSessionManager().deleteAccount({
+    return await createAccountDeletionService().request({
       installationId: parseInstallationId(request.data),
       subjectUid,
     });
-    await getAuth().deleteUser(subjectUid);
-    return result;
   } catch (error) {
     throw mapClientAccessError(error);
   }
+});
+
+export const retryClientAccountDeletions = onSchedule({
+  maxInstances: 1,
+  memory: '256MiB',
+  region: REGION,
+  schedule: 'every 5 minutes',
+  secrets: [INSTALLATION_PEPPER_RING],
+  timeoutSeconds: 120,
+}, async () => {
+  await createAccountDeletionService().retryPending();
 });
 
 export const createClientLaunch = onCall({
@@ -282,13 +295,53 @@ function createStore(): FirestoreClientAccessStore {
   );
 }
 
-function createSessionManager(): ClientSessionManager {
+function createSessionManager(
+  store: FirestoreClientAccessStore = createStore(),
+): ClientSessionManager {
   return new ClientSessionManager({
     installationHasher: hasherFromSecret(
       INSTALLATION_PEPPER_RING,
       'cabohealth/installation/v1',
     ),
-    store: createStore(),
+    store,
+  });
+}
+
+function createAdminRevocationService(): AdminClientAccessRevocationService {
+  const store = createStore();
+  return new AdminClientAccessRevocationService({
+    accountDeletion: createAccountDeletionService(store),
+    store,
+  });
+}
+
+function createClientAccessRemovalService(): ClientAccessRemovalService {
+  const store = createStore();
+  return new ClientAccessRemovalService({
+    accountDeletion: createAccountDeletionService(store),
+    sessions: createSessionManager(store),
+  });
+}
+
+function createAccountDeletionService(
+  store: FirestoreClientAccessStore = createStore(),
+): ClientAccountDeletionService {
+  return new ClientAccountDeletionService({
+    authAccounts: {
+      async deleteUser(subjectUid) {
+        try {
+          await getAuth().deleteUser(subjectUid);
+        } catch (error) {
+          if (isRecord(error) && error.code === 'auth/user-not-found') return;
+          throw error;
+        }
+      },
+    },
+    installationHasher: hasherFromSecret(
+      INSTALLATION_PEPPER_RING,
+      'cabohealth/installation/v1',
+    ),
+    store,
   });
 }
 

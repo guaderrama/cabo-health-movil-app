@@ -14,7 +14,26 @@ test('Firebase config has no legacy/default project and requires explicit safe a
 
 test('Firestore index config contains no legacy catalog index', async () => {
   const parsed: unknown = JSON.parse(await readFile('../firestore.indexes.json', 'utf8'));
-  assert.deepEqual(parsed, { fieldOverrides: [], indexes: [] });
+  assert.ok(isRecord(parsed));
+  assert.deepEqual(parsed.indexes, []);
+  assert.ok(Array.isArray(parsed.fieldOverrides));
+  assert.deepEqual(
+    parsed.fieldOverrides.map((override) => {
+      assert.ok(isRecord(override));
+      assert.deepEqual(override.indexes, []);
+      assert.equal(override.fieldPath, 'expiresAtMs');
+      assert.equal(override.ttl, true);
+      return override.collectionGroup;
+    }).sort(),
+    [
+      '_private_audit_events',
+      '_private_broker_requests',
+      '_private_launch_nonces',
+      '_private_rate_limits',
+      '_private_redemption_requests',
+      '_private_web_sessions',
+    ],
+  );
   assert.doesNotMatch(JSON.stringify(parsed), /cabohealth_apps/u);
 });
 

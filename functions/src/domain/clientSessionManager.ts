@@ -21,9 +21,6 @@ export interface ClientSessionStore {
   removeSession(command: Readonly<ClientSessionCommand>): Promise<
     Readonly<{ kind: 'invalid' } | { kind: 'removed' }>
   >;
-  deleteSession(command: Readonly<ClientSessionCommand>): Promise<
-    Readonly<{ kind: 'deleted' } | { kind: 'invalid' }>
-  >;
 }
 
 export class ClientSessionManager {
@@ -57,15 +54,6 @@ export class ClientSessionManager {
     const result = await this.#store.removeSession(this.#command(input));
     if (result.kind !== 'removed') throw new ClientAccessPublicError('invalid_access');
     return Object.freeze({ removed: true });
-  }
-
-  async deleteAccount(input: {
-    readonly installationId: string;
-    readonly subjectUid: string;
-  }): Promise<Readonly<{ deleted: true }>> {
-    const result = await this.#store.deleteSession(this.#command(input));
-    if (result.kind !== 'deleted') throw new ClientAccessPublicError('invalid_access');
-    return Object.freeze({ deleted: true });
   }
 
   #command(input: {

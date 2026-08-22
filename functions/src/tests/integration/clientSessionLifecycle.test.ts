@@ -50,22 +50,6 @@ test('refresh revalidates the live grant and remove revokes that code and sessio
   );
 });
 
-test('delete removes the pseudonymous grant and rejects all later refreshes', async () => {
-  const harness = await createRedeemedHarness(2, '22222222222222222222222222222222');
-
-  assert.deepEqual(await harness.sessions.deleteAccount({
-    installationId: harness.installationId,
-    subjectUid: harness.subjectUid,
-  }), { deleted: true });
-  await assert.rejects(
-    harness.sessions.refresh({
-      installationId: harness.installationId,
-      subjectUid: harness.subjectUid,
-    }),
-    isInvalidAccess,
-  );
-});
-
 async function createRedeemedHarness(slot: 1 | 2 | 3 | 4, installationId: string) {
   const database = new InMemoryDocumentDatabase({ [clientResourcePath(resourceId)]: resource });
   const store = new FirestoreClientAccessStore(database);

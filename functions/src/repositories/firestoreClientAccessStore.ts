@@ -12,6 +12,10 @@ import {
   type RedemptionStore,
 } from '../domain/clientAccessRedeemer.js';
 import {
+  type ClientAccountDeletionCommand,
+  type ClientAccountDeletionStore,
+} from '../domain/clientAccountDeletion.js';
+import {
   type ClientSessionCommand,
   type ClientSessionStore,
 } from '../domain/clientSessionManager.js';
@@ -34,8 +38,11 @@ const AUDIT_EVENT_PREFIX = '_private_audit_events';
 const LAUNCH_NONCE_PREFIX = '_private_launch_nonces';
 const WEB_SESSION_PREFIX = '_private_web_sessions';
 const BROKER_REQUEST_PREFIX = '_private_broker_requests';
+const ACCOUNT_DELETION_PREFIX = '_private_account_deletions';
 
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1_000;
+const DELETION_ARTIFACT_BATCH_LIMIT = 400;
+const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 
 export interface DocumentTransaction {
   get(path: string): Promise<unknown | undefined>;
@@ -81,6 +88,7 @@ interface StoredClientGrant {
   readonly codeId: string;
   readonly expiresAtMs: number;
   readonly installationLookupId: string;
+  readonly rateLimitLookupIds: readonly string[];
   readonly resourceIds: readonly string[];
   readonly schemaVersion: 1;
   readonly status: 'active' | 'removed' | 'revoked';
@@ -109,11 +117,25 @@ interface StoredWebSession {
   readonly updatedAtMs: number;
 }
 
+interface StoredAccountDeletion {
+  readonly attempts: number;
+  readonly cleanupCompletedAtMs: number | null;
+  readonly codeId: string;
+  readonly createdAtMs: number;
+  readonly installationLookupId: string;
+  readonly lastAttemptAtMs: number | null;
+  readonly rateLimitLookupIds: readonly string[];
+  readonly schemaVersion: 1;
+  readonly status: 'pending';
+  readonly subjectUid: string;
+  readonly updatedAtMs: number;
+}
+
 export function clientResourcePath(resourceId: string): string {
   return `${CLIENT_RESOURCE_PREFIX}/${resourceId}`;
 }
 
-export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionStore, ClientSessionStore, ClientLaunchStore, WebSessionStore {
+export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionStore, ClientSessionStore, ClientLaunchStore, WebSessionStore, ClientAccountDeletionStore {
   readonly #database: DocumentDatabase;
 
   constructor(database: DocumentDatabase) {
@@ -257,7 +279,28 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       const code = parseStoredAccessCode(await transaction.get(codePath));
       const grantPath = code?.subjectUid ? `${CLIENT_GRANT_PREFIX}/${code.subjectUid}` : null;
       const grant = grantPath ? await transaction.get(grantPath) : undefined;
+      const parsedGrant = parseStoredClientGrant(grant);
+      const deletionPath = code?.subjectUid
+        ? `${ACCOUNT_DELETION_PREFIX}/${code.subjectUid}`
+        : null;
+      const deletionValue = deletionPath ? await transaction.get(deletionPath) : undefined;
+      const deletion = parseStoredAccountDeletion(deletionValue);
+      if (grant !== undefined && !parsedGrant) throw new Error('invalid_client_grant_record');
+      if (deletionValue !== undefined && !deletion) {
+        throw new Error('invalid_account_deletion_record');
+      }
       const activeCount = await reconcileExpiredSlots(transaction, nowMs, false);
+      if (code?.status === 'revoked' && code.subjectUid && deletion) {
+        if (
+          deletion.subjectUid !== code.subjectUid
+          || deletion.codeId !== code.codeId
+        ) throw new Error('invalid_account_deletion_record');
+        writeActiveCodeCounter(transaction, activeCount, nowMs);
+        return Object.freeze({
+          kind: 'revoked' as const,
+          subjectUid: code.subjectUid,
+        });
+      }
       if (!code || code.status !== 'active') {
         writeActiveCodeCounter(transaction, activeCount, nowMs);
         return Object.freeze({ kind: 'not_active' as const });
@@ -275,19 +318,39 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${code.lookupId}`);
       transaction.delete(`${CLIENT_SLOT_PREFIX}/${code.slot}`);
       writeActiveCodeCounter(transaction, Math.max(0, activeCount - 1), nowMs);
-      if (grantPath && isRecord(grant)) {
+      if (grantPath && parsedGrant) {
         transaction.set(grantPath, Object.freeze({
-          ...grant,
+          ...parsedGrant,
           status: 'revoked',
           updatedAtMs: nowMs,
         }));
       }
-      transaction.create(`${AUDIT_EVENT_PREFIX}/revoke_${codeId}_${nowMs}`, Object.freeze({
-        codeId,
-        eventType: 'access_code_revoked',
-        occurredAtMs: nowMs,
-        schemaVersion: 1,
-      }));
+      if (code.subjectUid) {
+        if (!parsedGrant || !deletionPath) throw new Error('invalid_client_grant_record');
+        if (deletion === null) {
+          transaction.create(deletionPath, Object.freeze({
+            attempts: 0,
+            cleanupCompletedAtMs: null,
+            codeId: code.codeId,
+            createdAtMs: nowMs,
+            installationLookupId: parsedGrant.installationLookupId,
+            lastAttemptAtMs: null,
+            rateLimitLookupIds: parsedGrant.rateLimitLookupIds,
+            schemaVersion: 1,
+            status: 'pending',
+            subjectUid: code.subjectUid,
+            updatedAtMs: nowMs,
+          } satisfies StoredAccountDeletion));
+          transaction.create(
+            `${AUDIT_EVENT_PREFIX}/delete_request_${subjectAuditId(code.subjectUid)}_${nowMs}`,
+            sanitizedAudit('client_account_deletion_requested', nowMs),
+          );
+        }
+      }
+      transaction.create(
+        `${AUDIT_EVENT_PREFIX}/revoke_${codeId}_${nowMs}`,
+        sanitizedAudit('access_code_revoked', nowMs, codeId),
+      );
       return Object.freeze({ kind: 'revoked' as const, subjectUid: code.subjectUid });
     });
   }
@@ -318,9 +381,37 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
     Readonly<{ kind: 'invalid' } | { kind: 'removed' }>
   > {
     return this.#database.runTransaction(async (transaction) => {
+      const deletionPath = `${ACCOUNT_DELETION_PREFIX}/${command.subjectUid}`;
+      const deletionValue = await transaction.get(deletionPath);
+      const deletion = parseStoredAccountDeletion(deletionValue);
+      if (deletionValue !== undefined) {
+        if (!deletion) throw new Error('invalid_account_deletion_record');
+        const acceptedInstallations = new Set(
+          command.installationHashes.map(({ lookupId }) => lookupId),
+        );
+        return Object.freeze({
+          kind: deletion.subjectUid === command.subjectUid
+            && acceptedInstallations.has(deletion.installationLookupId)
+            ? 'removed' as const
+            : 'invalid' as const,
+        });
+      }
       const session = await readLiveSession(transaction, command, false);
       if (!session) return Object.freeze({ kind: 'invalid' as const });
       const counter = parseCounter(await transaction.get(ACTIVE_CODE_COUNTER_PATH));
+      transaction.create(deletionPath, Object.freeze({
+        attempts: 0,
+        cleanupCompletedAtMs: null,
+        codeId: session.code.codeId,
+        createdAtMs: command.nowMs,
+        installationLookupId: session.grant.installationLookupId,
+        lastAttemptAtMs: null,
+        rateLimitLookupIds: session.grant.rateLimitLookupIds,
+        schemaVersion: 1,
+        status: 'pending',
+        subjectUid: command.subjectUid,
+        updatedAtMs: command.nowMs,
+      } satisfies StoredAccountDeletion));
       transaction.set(session.codePath, Object.freeze({
         ...session.code,
         status: 'revoked',
@@ -342,32 +433,229 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         `${AUDIT_EVENT_PREFIX}/remove_${session.code.codeId}_${command.nowMs}`,
         sanitizedAudit('client_access_removed', command.nowMs, session.code.codeId),
       );
+      transaction.create(
+        `${AUDIT_EVENT_PREFIX}/delete_request_${subjectAuditId(command.subjectUid)}_${command.nowMs}`,
+        sanitizedAudit('client_account_deletion_requested', command.nowMs),
+      );
       return Object.freeze({ kind: 'removed' as const });
     });
   }
 
-  deleteSession(command: Readonly<ClientSessionCommand>): Promise<
-    Readonly<{ kind: 'deleted' } | { kind: 'invalid' }>
+  beginAccountDeletion(command: Readonly<ClientAccountDeletionCommand>): Promise<
+    Readonly<{ kind: 'accepted' } | { kind: 'invalid' }>
   > {
+    const deletionPath = `${ACCOUNT_DELETION_PREFIX}/${command.subjectUid}`;
     return this.#database.runTransaction(async (transaction) => {
-      const session = await readLiveSession(transaction, command, false);
-      if (!session) return Object.freeze({ kind: 'invalid' as const });
+      const existing = parseStoredAccountDeletion(await transaction.get(deletionPath));
+      const acceptedInstallations = new Set(
+        command.installationHashes.map(({ lookupId }) => lookupId),
+      );
+      if (existing) {
+        if (
+          existing.subjectUid !== command.subjectUid
+          || !acceptedInstallations.has(existing.installationLookupId)
+        ) return Object.freeze({ kind: 'invalid' as const });
+        return Object.freeze({ kind: 'accepted' as const });
+      }
+
+      const grantPath = `${CLIENT_GRANT_PREFIX}/${command.subjectUid}`;
+      const grant = parseStoredClientGrant(await transaction.get(grantPath));
+      if (!grant || !acceptedInstallations.has(grant.installationLookupId)) {
+        return Object.freeze({ kind: 'invalid' as const });
+      }
+      const codePath = `${ACCESS_CODE_PREFIX}/${grant.codeId}`;
+      const code = parseStoredAccessCode(await transaction.get(codePath));
+      if (
+        !code
+        || code.subjectUid !== command.subjectUid
+        || code.boundInstallationLookupId === null
+        || !acceptedInstallations.has(code.boundInstallationLookupId)
+      ) return Object.freeze({ kind: 'invalid' as const });
+      const slotPath = `${CLIENT_SLOT_PREFIX}/${code.slot}`;
+      const slotValue = await transaction.get(slotPath);
+      const slot = slotValue === undefined ? null : parseSlotDocument(slotValue, code.slot);
+      if (slotValue !== undefined && !slot) throw new Error('invalid_client_slot_record');
       const counter = parseCounter(await transaction.get(ACTIVE_CODE_COUNTER_PATH));
-      transaction.delete(session.codePath);
-      transaction.delete(session.grantPath);
-      transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${session.code.lookupId}`);
-      transaction.delete(`${CLIENT_SLOT_PREFIX}/${session.code.slot}`);
-      transaction.set(ACTIVE_CODE_COUNTER_PATH, Object.freeze({
-        activeCount: Math.max(0, counter - 1),
+
+      transaction.create(deletionPath, Object.freeze({
+        attempts: 0,
+        cleanupCompletedAtMs: null,
+        codeId: code.codeId,
+        createdAtMs: command.nowMs,
+        installationLookupId: command.currentInstallationHash.lookupId,
+        lastAttemptAtMs: null,
+        rateLimitLookupIds: grant.rateLimitLookupIds,
         schemaVersion: 1,
+        status: 'pending',
+        subjectUid: command.subjectUid,
+        updatedAtMs: command.nowMs,
+      } satisfies StoredAccountDeletion));
+      transaction.set(codePath, Object.freeze({
+        ...code,
+        status: 'revoked',
         updatedAtMs: command.nowMs,
       }));
+      transaction.set(grantPath, Object.freeze({
+        ...grant,
+        status: 'revoked',
+        updatedAtMs: command.nowMs,
+      }));
+      transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${code.lookupId}`);
+      if (slot?.codeId === code.codeId) {
+        transaction.delete(slotPath);
+        transaction.set(ACTIVE_CODE_COUNTER_PATH, Object.freeze({
+          activeCount: Math.max(0, counter - 1),
+          schemaVersion: 1,
+          updatedAtMs: command.nowMs,
+        }));
+      }
       transaction.create(
-        `${AUDIT_EVENT_PREFIX}/delete_${subjectAuditId(command.subjectUid)}_${command.nowMs}`,
-        sanitizedAudit('client_account_deleted', command.nowMs),
+        `${AUDIT_EVENT_PREFIX}/delete_request_${subjectAuditId(command.subjectUid)}_${command.nowMs}`,
+        sanitizedAudit('client_account_deletion_requested', command.nowMs),
       );
-      return Object.freeze({ kind: 'deleted' as const });
+      return Object.freeze({ kind: 'accepted' as const });
     });
+  }
+
+  async purgeAccountDeletionArtifacts(
+    subjectUid: string,
+    nowMs: number,
+  ): Promise<Readonly<{ kind: 'missing' | 'more' | 'ready' }>> {
+    const deletionPath = `${ACCOUNT_DELETION_PREFIX}/${subjectUid}`;
+    const deletion = await this.#database.runTransaction(async (transaction) => (
+      parseStoredAccountDeletion(await transaction.get(deletionPath))
+    ));
+    if (!deletion || deletion.subjectUid !== subjectUid) {
+      return Object.freeze({ kind: 'missing' as const });
+    }
+    const collections = await Promise.all([
+      this.#database.listCollection(LAUNCH_NONCE_PREFIX),
+      this.#database.listCollection(WEB_SESSION_PREFIX),
+      this.#database.listCollection(REDEMPTION_REQUEST_PREFIX),
+    ]);
+    const candidates = [
+      ...collections[0].flatMap(({ id, value }) => {
+        return recordReferencesDeletion(value, deletion)
+          ? [`${LAUNCH_NONCE_PREFIX}/${id}`]
+          : [];
+      }),
+      ...collections[1].flatMap(({ id, value }) => {
+        return recordReferencesDeletion(value, deletion)
+          ? [`${WEB_SESSION_PREFIX}/${id}`]
+          : [];
+      }),
+      ...collections[2].flatMap(({ id, value }) => {
+        return recordReferencesDeletion(value, deletion)
+          ? [`${REDEMPTION_REQUEST_PREFIX}/${id}`]
+          : [];
+      }),
+      ...deletion.rateLimitLookupIds.map((lookupId) => `${RATE_LIMIT_PREFIX}/${lookupId}`),
+    ];
+    const batch = candidates.slice(0, DELETION_ARTIFACT_BATCH_LIMIT);
+    const hasMore = candidates.length > batch.length;
+    return this.#database.runTransaction(async (transaction) => {
+      const currentDeletion = parseStoredAccountDeletion(await transaction.get(deletionPath));
+      if (!currentDeletion || currentDeletion.subjectUid !== subjectUid) {
+        return Object.freeze({ kind: 'missing' as const });
+      }
+      const currentArtifacts = await Promise.all(batch.map(async (path) => Object.freeze({
+        path,
+        value: await transaction.get(path),
+      })));
+      for (const artifact of currentArtifacts) {
+        if (deletionArtifactBelongsTo(artifact.path, artifact.value, currentDeletion)) {
+          transaction.delete(artifact.path);
+        }
+      }
+      transaction.set(deletionPath, Object.freeze({
+        ...currentDeletion,
+        cleanupCompletedAtMs: hasMore ? null : nowMs,
+        updatedAtMs: nowMs,
+      }));
+      return Object.freeze({ kind: hasMore ? 'more' as const : 'ready' as const });
+    });
+  }
+
+  markAccountDeletionAttemptFailed(subjectUid: string, nowMs: number): Promise<void> {
+    const deletionPath = `${ACCOUNT_DELETION_PREFIX}/${subjectUid}`;
+    return this.#database.runTransaction(async (transaction) => {
+      const deletion = parseStoredAccountDeletion(await transaction.get(deletionPath));
+      if (!deletion || deletion.subjectUid !== subjectUid) return;
+      transaction.set(deletionPath, Object.freeze({
+        ...deletion,
+        attempts: deletion.attempts + 1,
+        lastAttemptAtMs: nowMs,
+        updatedAtMs: nowMs,
+      }));
+    });
+  }
+
+  completeAccountDeletion(subjectUid: string, nowMs: number): Promise<
+    Readonly<{ kind: 'completed' } | { kind: 'not_ready' }>
+  > {
+    const deletionPath = `${ACCOUNT_DELETION_PREFIX}/${subjectUid}`;
+    return this.#database.runTransaction(async (transaction) => {
+      const deletion = parseStoredAccountDeletion(await transaction.get(deletionPath));
+      if (
+        !deletion
+        || deletion.subjectUid !== subjectUid
+        || deletion.cleanupCompletedAtMs === null
+      ) return Object.freeze({ kind: 'not_ready' as const });
+      const codePath = `${ACCESS_CODE_PREFIX}/${deletion.codeId}`;
+      const grantPath = `${CLIENT_GRANT_PREFIX}/${subjectUid}`;
+      const [code, grant] = await Promise.all([
+        transaction.get(codePath),
+        transaction.get(grantPath),
+      ]);
+      const parsedCode = parseStoredAccessCode(code);
+      const parsedGrant = parseStoredClientGrant(grant);
+      if (code !== undefined && !parsedCode) throw new Error('invalid_access_code_record');
+      if (grant !== undefined && !parsedGrant) throw new Error('invalid_client_grant_record');
+      if (
+        parsedCode
+        && (
+          parsedCode.codeId !== deletion.codeId
+          || parsedCode.subjectUid !== subjectUid
+          || parsedCode.status !== 'revoked'
+        )
+      ) throw new Error('invalid_access_code_record');
+      if (
+        parsedGrant
+        && (
+          parsedGrant.codeId !== deletion.codeId
+          || parsedGrant.status === 'active'
+        )
+      ) throw new Error('invalid_client_grant_record');
+      const slotPath = parsedCode ? `${CLIENT_SLOT_PREFIX}/${parsedCode.slot}` : null;
+      const slotValue = slotPath ? await transaction.get(slotPath) : undefined;
+      const slot = parsedCode && slotValue !== undefined
+        ? parseSlotDocument(slotValue, parsedCode.slot)
+        : null;
+      if (slotValue !== undefined && !slot) throw new Error('invalid_client_slot_record');
+
+      if (parsedCode?.lookupId) {
+        transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${parsedCode.lookupId}`);
+      }
+      if (slotPath && slot?.codeId === deletion.codeId) transaction.delete(slotPath);
+      if (parsedCode) transaction.delete(codePath);
+      if (parsedGrant) transaction.delete(grantPath);
+      transaction.delete(deletionPath);
+      transaction.create(
+        `${AUDIT_EVENT_PREFIX}/delete_complete_${subjectAuditId(subjectUid)}_${nowMs}`,
+        sanitizedAudit('client_account_deletion_completed', nowMs),
+      );
+      return Object.freeze({ kind: 'completed' as const });
+    });
+  }
+
+  async listPendingAccountDeletions(limit: number): Promise<readonly string[]> {
+    const documents = await this.#database.listCollection(ACCOUNT_DELETION_PREFIX);
+    return Object.freeze(documents
+      .map(({ value }) => parseStoredAccountDeletion(value))
+      .filter((value): value is Readonly<StoredAccountDeletion> => value !== null)
+      .sort((left, right) => left.createdAtMs - right.createdAtMs)
+      .slice(0, limit)
+      .map(({ subjectUid }) => subjectUid));
   }
 
   createLaunch(command: Readonly<CreateLaunchCommand>): Promise<'created' | 'invalid'> {
@@ -728,6 +1016,9 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
           codeId: storedCode.codeId,
           expiresAtMs: storedCode.expiresAtMs,
           installationLookupId: currentInstallationLookupId,
+          rateLimitLookupIds: Object.freeze(command.rateLimitBuckets
+            .filter(({ clearOnSuccess }) => clearOnSuccess)
+            .map(({ lookupId }) => lookupId)),
           resourceIds: storedCode.resourceIds,
           schemaVersion: 1,
           status: 'active',
@@ -995,12 +1286,19 @@ function parseStoredClientGrant(value: unknown): Readonly<StoredClientGrant> | n
     || typeof candidate.codeId !== 'string'
     || !isNonnegativeSafeInteger(candidate.expiresAtMs)
     || typeof candidate.installationLookupId !== 'string'
+    || !(candidate.rateLimitLookupIds === undefined || (
+      Array.isArray(candidate.rateLimitLookupIds)
+      && candidate.rateLimitLookupIds.every((lookupId) => typeof lookupId === 'string')
+    ))
     || !Array.isArray(candidate.resourceIds)
     || candidate.resourceIds.some((resourceId) => typeof resourceId !== 'string')
     || !['active', 'removed', 'revoked'].includes(candidate.status as string)
     || !isNonnegativeSafeInteger(candidate.updatedAtMs)
   ) return null;
-  return candidate as StoredClientGrant;
+  return Object.freeze({
+    ...(candidate as StoredClientGrant),
+    rateLimitLookupIds: Object.freeze(candidate.rateLimitLookupIds ?? []),
+  });
 }
 
 function parseStoredLaunchNonce(value: unknown): Readonly<StoredLaunchNonce> | null {
@@ -1056,6 +1354,58 @@ function parseStoredWebSession(value: unknown): Readonly<StoredWebSession> | nul
   return candidate as StoredWebSession;
 }
 
+function parseStoredAccountDeletion(value: unknown): Readonly<StoredAccountDeletion> | null {
+  if (!isRecord(value)) return null;
+  const candidate = value as Partial<StoredAccountDeletion>;
+  if (
+    candidate.schemaVersion !== 1
+    || candidate.status !== 'pending'
+    || !isNonnegativeSafeInteger(candidate.attempts)
+    || !(candidate.cleanupCompletedAtMs === null
+      || isNonnegativeSafeInteger(candidate.cleanupCompletedAtMs))
+    || typeof candidate.codeId !== 'string'
+    || !/^ac_[A-Za-z0-9_-]{32}$/u.test(candidate.codeId)
+    || !isNonnegativeSafeInteger(candidate.createdAtMs)
+    || typeof candidate.installationLookupId !== 'string'
+    || !(candidate.lastAttemptAtMs === null || isNonnegativeSafeInteger(candidate.lastAttemptAtMs))
+    || !Array.isArray(candidate.rateLimitLookupIds)
+    || candidate.rateLimitLookupIds.some((lookupId) => typeof lookupId !== 'string')
+    || typeof candidate.subjectUid !== 'string'
+    || !/^client_[A-Za-z0-9_-]{32}$/u.test(candidate.subjectUid)
+    || !isNonnegativeSafeInteger(candidate.updatedAtMs)
+  ) return null;
+  return candidate as StoredAccountDeletion;
+}
+
+function deletionArtifactBelongsTo(
+  path: string,
+  value: unknown,
+  deletion: Readonly<StoredAccountDeletion>,
+): boolean {
+  if (path.startsWith(`${LAUNCH_NONCE_PREFIX}/`)) {
+    return recordReferencesDeletion(value, deletion);
+  }
+  if (path.startsWith(`${WEB_SESSION_PREFIX}/`)) {
+    return recordReferencesDeletion(value, deletion);
+  }
+  if (path.startsWith(`${REDEMPTION_REQUEST_PREFIX}/`)) {
+    return recordReferencesDeletion(value, deletion);
+  }
+  if (path.startsWith(`${RATE_LIMIT_PREFIX}/`)) {
+    const lookupId = path.slice(RATE_LIMIT_PREFIX.length + 1);
+    return deletion.rateLimitLookupIds.includes(lookupId) && value !== undefined;
+  }
+  return false;
+}
+
+function recordReferencesDeletion(
+  value: unknown,
+  deletion: Readonly<StoredAccountDeletion>,
+): boolean {
+  return isRecord(value)
+    && (value.subjectUid === deletion.subjectUid || value.codeId === deletion.codeId);
+}
+
 async function brokerRequestIsFresh(
   transaction: DocumentTransaction,
   brokerRequestHash: string,
@@ -1080,6 +1430,7 @@ function sanitizedAudit(eventType: string, occurredAtMs: number, codeId?: string
   return Object.freeze({
     ...(codeId ? { codeId } : {}),
     eventType,
+    expiresAtMs: occurredAtMs + AUDIT_RETENTION_MS,
     occurredAtMs,
     schemaVersion: 1,
   });

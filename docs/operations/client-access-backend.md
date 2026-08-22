@@ -26,8 +26,12 @@ activated**. Deployment remains an explicit release gate.
   title, summary, icon key, access, status, and expiry. They contain no client
   name, code ID, installation ID, private URL, health data, or reusable web
   credential.
-- Client refresh, remove, account delete, and launch re-check the live code,
-  grant, installation binding, resource, and expiry. A launch nonce is
+- Client refresh and launch re-check the live code, grant, installation
+  binding, resource, and expiry. Remove verifies that same live binding, then
+  atomically revokes access and creates the durable deletion job described
+  below. Explicit account deletion instead verifies the retained installation
+  binding, so an authenticated client can still request erasure after its code
+  was revoked or expired. A launch nonce is
   one-use, valid for 60 seconds, and opens only the fixed CaboHealth POST URL.
 - The web broker consumes the launch nonce into a one-hour-or-shorter hashed
   session. Every introspection re-checks the live production grant/code and
@@ -36,6 +40,14 @@ activated**. Deployment remains an explicit release gate.
 - Firestore client rules are default-deny. Only the Admin SDK in Functions can
   access backend documents. Production source contains no application logging
   of codes, credentials, digests, IP addresses, grants, or identifiers.
+- Explicit account deletion, client removal, and administrator revocation all
+  create a durable `_private_account_deletions` tombstone and revoke the
+  code/grant in one transaction. They then remove
+  subject/code-linked launch nonces, web sessions, redemption requests, and the
+  safely attributable installation rate-limit bucket before deleting Firebase
+  Auth. Failures remain pending and a scheduled worker retries every five
+  minutes. The tombstone, code, and grant are removed only after Auth and
+  linked-data cleanup complete.
 
 The deliberate response exceptions are: the one-time code to the authorized
 administrator, a Firebase custom token from client redemption, the short
@@ -57,14 +69,14 @@ iOS app; administrator callables accept only the configured staff web app.
 | `adminRevokeClientAccessCode` | `{codeId}` | `{revoked:true}` |
 | `redeemClientAccessCode` | `{code, installationId, requestId}` | `{customToken, grant}` |
 | `refreshClientAccess` | `{installationId}` | `{grant}` |
-| `removeClientAccess` | `{installationId}` | `{removed:true}` |
-| `deleteClientAccount` | `{installationId}` | `{deleted:true}` |
+| `removeClientAccess` | `{installationId}` | `{removed:true}` after revocation and deletion job are durable |
+| `deleteClientAccount` | `{installationId}` | `{status:'pending'\|'completed'}` |
 | `createClientLaunch` | `{installationId, resourceId}` | fixed HTTPS POST URL, nonce, expiry |
 
 Admin operations additionally require all of the following server-side:
 
 1. Firebase Auth with `catalogAdmin: true`.
-2. A second-factor sign-in claim.
+2. An exact TOTP second-factor claim (`sign_in_second_factor: "totp"`).
 3. `auth_time` no older than 15 minutes.
 4. An active `_private_admins/{uid}` document with `scope: "production"`.
 5. The exact permission (`client_codes` or `client_resource_drafts`).
@@ -72,12 +84,24 @@ Admin operations additionally require all of the following server-side:
 Claims alone never authorize an administrator. A review-sandbox admin document
 cannot operate on production.
 
-`deleteClientAccount` currently removes the authoritative code and grant, so
-all native and web authorization fails immediately. It is **not yet a complete
-privacy erasure**: already-hashed launch/session records remain until TTL, and
-sanitized audit events follow the retention policy. Full cascade deletion and
-an approved audit-retention policy are mandatory before this response may be
-described to users as completed account deletion.
+`removeClientAccess` closes the current pseudonymous client identity: it returns
+`{removed:true}` only after access is revoked and cleanup is durably queued,
+even if Firebase Auth or Firestore cleanup must finish in the scheduled worker.
+The native app may then clear its session. A later valid code creates a new
+client identity; removal does not preserve the prior account or grant.
+
+`deleteClientAccount` returns `pending` whenever Auth deletion, bounded artifact
+cleanup, or finalization has not durably completed. It never reports completion
+merely because authorization was revoked. While pending, all native and web
+authorization is already denied and the scheduled worker retries idempotently;
+an authenticated explicit-delete caller may also retry. `completed` means Auth is deleted (or
+was already absent), linked subject/code records are removed, and the tombstone
+is finalized. IP-only rate-limit and broker replay records are deliberately not
+treated as account data because they cannot be safely attributed to one client;
+they contain no subject/code and remain only until their short TTL. Sanitized
+audit event bodies omit Auth UID, installation ID, code plaintext, and health
+data, but may retain an opaque code ID; deletion event document names use a
+one-way subject-derived suffix. All expire after 30 days.
 
 ## Server-to-server broker API
 
@@ -155,8 +179,8 @@ only unconfigured `cabohealth-staging` and `cabohealth-prod` aliases. Replace
 each placeholder with the independently verified project ID before deployment,
 then always pass `--project cabohealth-staging` or
 `--project cabohealth-prod`. The legacy project must never be restored as a
-default. `firestore.indexes.json` is intentionally empty; no legacy catalog
-index is deployed.
+default. `firestore.indexes.json` has no composite indexes or legacy catalog
+entries; it contains only the explicit TTL field overrides below.
 
 ## Firestore activation requirements
 
@@ -177,8 +201,9 @@ Seed only reviewed `_private_client_resources/{resourceId}` documents:
 No URL belongs in this document. The reviewed CaboHealth web release maps the
 entitlement ID to bundled/server-controlled content.
 
-Enable Firestore TTL on `expiresAtMs` for:
+The committed Firestore configuration enables TTL on `expiresAtMs` for:
 
+- `_private_audit_events` (30-day sanitized retention)
 - `_private_rate_limits`
 - `_private_redemption_requests`
 - `_private_launch_nonces`
@@ -188,12 +213,12 @@ Enable Firestore TTL on `expiresAtMs` for:
 Expiry is already enforced in transactions; TTL is retention cleanup, not an
 authorization mechanism.
 
-Current maximum residual retention after `deleteClientAccount` is governed by
-those TTL policies: broker requests two minutes, launch nonces one minute,
-rate-limit/redemption request records up to thirty/five minutes, and web
-sessions up to one hour. These records contain digests rather than plaintext,
-but launch/session records remain linkable to the pseudonymous subject/code
-until cleanup. Audit retention must be explicitly approved and documented.
+Account deletion actively removes linked launch, web-session, redemption, and
+safely attributable installation-rate records before returning `completed`.
+The residual non-account records are bounded by TTL: broker requests two
+minutes and IP-only rate-limit records thirty minutes. Sanitized audit events
+have a 30-day expiry. Firestore TTL deletion is asynchronous, so staging must
+verify that every field override is active; authorization never depends on TTL.
 
 ## Release gates still open
 
@@ -205,14 +230,13 @@ Do not call this Apple-ready or production-ready until all are complete:
    consumed-token replay behavior on a physical iPhone.
 3. Bootstrap the owner Auth account, MFA, custom claim, and active private
    admin document through a separately controlled process.
-4. Deploy rules and Functions to staging, configure TTL, seed the signed fixed
-   catalog, and run Firebase Emulator and concurrency/failure tests.
+4. Deploy rules, TTL field overrides, and Functions to staging; seed the signed
+   fixed catalog and run Firebase Emulator and concurrency/failure tests.
 5. Integrate and test the native adapter, staff portal, and PHP broker adapter
    end-to-end; verify remove/delete/revoke during active native and web sessions.
-6. Implement and test cascade deletion (or a bounded deletion job) for all
-   subject/code-linked launch and web-session artifacts, configure/verify TTL,
-   and approve a minimal sanitized-audit retention schedule. Until then, do not
-   market `deleteClientAccount` as completed privacy erasure.
+6. Exercise the durable deletion worker with injected Auth/Firestore failures
+   in staging, verify deployed TTL status, and confirm the native UI treats
+   `pending` as pending rather than as completed erasure.
 7. Implement a **separate** synthetic `purpose: "app_review"` credential and
    isolated review-sandbox repository. It must be multi-device/non-expiring,
    excluded from the four production slots, and unable to read or mutate

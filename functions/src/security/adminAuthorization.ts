@@ -43,7 +43,7 @@ export async function authorizeProductionStaff(
   if (authAgeMs < -MAX_CLOCK_SKEW_MS || authAgeMs > MAX_AUTH_AGE_MS) throw failure();
   if (
     !isRecord(auth.token.firebase)
-    || typeof auth.token.firebase.sign_in_second_factor !== 'string'
+    || auth.token.firebase.sign_in_second_factor !== 'totp'
   ) throw failure();
 
   const admin = await input.loadAdmin(auth.uid);
