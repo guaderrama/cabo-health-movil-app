@@ -54,6 +54,7 @@ const REALM_DEFINITIONS = Object.freeze([
       phpHarnessPath: 'tools/hosting/tests/client-resource-broker.php',
       contentFiles: Object.freeze(['en.json', 'es-MX.json']),
       factoryClass: 'SignedFunctionsClientResourcesBackend',
+      backendFactorySha256: '8debc4e5bcf1fbbaef8426fa47f9def98ce0718146b1ee5cab61235d892a2972',
     }),
   }),
   Object.freeze({
@@ -82,6 +83,7 @@ const REALM_DEFINITIONS = Object.freeze([
       phpHarnessPath: 'tools/hosting/tests/app-review-broker.php',
       contentFiles: Object.freeze(['sample.json']),
       factoryClass: 'SignedFunctionsAppReviewBackend',
+      backendFactorySha256: '2b8ab60cc1c023d3e652127adb5e2a1be8dc5c746f7314957d16a589dbde13bf',
     }),
   }),
 ]);
@@ -1018,17 +1020,9 @@ function parseBrokerConfig(bytes, definition) {
 }
 
 function assertBackendFactory(bytes, definition) {
-  const source = bytes.toString('utf8');
-  const expectedVariable = definition.externalInputs.brokerConfigEnvironmentVariable;
-  const expectedClass = definition.externalInputs.factoryClass;
-  const other = REALM_DEFINITIONS.find(({ realm }) => realm !== definition.realm);
-  if (
-    !source.includes(expectedVariable)
-    || !source.includes(expectedClass)
-    || !source.includes('fromPrivateConfigFile')
-    || source.includes(other.externalInputs.brokerConfigEnvironmentVariable)
-    || source.includes(other.externalInputs.factoryClass)
-  ) throw new Error('protected_overlay_backend_factory_invalid');
+  if (sha256(bytes) !== definition.externalInputs.backendFactorySha256) {
+    throw new Error('protected_overlay_backend_factory_invalid');
+  }
 }
 
 function readPrivateContentInventory(path, documentRoot, expectedFiles, identities) {

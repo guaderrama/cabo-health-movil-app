@@ -230,6 +230,28 @@ test('activation rejects symlinked private inputs even when their targets are ou
   }), /protected_overlay_directory_invalid/u);
 });
 
+test('activation rejects a factory that only names the authorized adapter contract in comments', (context) => {
+  const fixture = makeDeploymentFixture();
+  context.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  const productionFactory = fixture.realms.production.backendFactoryPath;
+  writeFileSync(productionFactory, `<?php
+
+declare(strict_types=1);
+
+// CABOHEALTH_CLIENT_RESOURCES_SIGNING_CONFIG
+// SignedFunctionsClientResourcesBackend::fromPrivateConfigFile
+return static function (): ClientResourcesBackend {
+    throw new RuntimeException('attacker-controlled factory');
+};
+`, { mode: 0o600 });
+  chmodSync(productionFactory, 0o600);
+
+  assert.throws(() => createProtectedOverlayActivationPlan({
+    deploymentRoot: fixture.root,
+    realms: fixture.realms,
+  }), /protected_overlay_backend_factory_invalid/u);
+});
+
 test('promotion fails closed before mutation and then installs both exact public overlays', (context) => {
   const fixture = makeDeploymentFixture();
   context.after(() => rmSync(fixture.root, { recursive: true, force: true }));
