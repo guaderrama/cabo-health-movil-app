@@ -49,7 +49,7 @@ test('approved simplified home has matching English and Spanish copy', () => {
   assert.deepEqual(
     keys.map((key) => translateMessage('en', key)),
     [
-      'Curated resources for everyday wellbeing.',
+      'Longevity, grounded in science.',
       'Mini apps',
       'Tools',
       'Plan your visit and contact the clinic.',
@@ -61,7 +61,7 @@ test('approved simplified home has matching English and Spanish copy', () => {
   assert.deepEqual(
     keys.map((key) => translateMessage('es-MX', key)),
     [
-      'Recursos seleccionados para tu bienestar diario.',
+      'Longevidad con base científica.',
       'Mini apps',
       'Herramientas',
       'Planea tu visita y contacta a la clínica.',
