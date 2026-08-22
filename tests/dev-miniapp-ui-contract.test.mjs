@@ -39,6 +39,8 @@ test('the test panel offers a reviewed icon picker and cards render the stored c
   const panel = read('features/devMiniapps/DevMiniappPanel.tsx');
   const tile = read('features/devMiniapps/DevMiniappTile.tsx');
   const catalog = read('features/devMiniapps/devMiniappCatalog.ts');
+  const cover = read('components/EditorialMiniappCover.tsx');
+  const brandIcon = read('components/icons/CaboHealthMiniappIcon.tsx');
 
   assert.match(catalog, /DEV_MINIAPP_ICONS/u);
   assert.match(panel, /accessibilityRole="radiogroup"/u);
@@ -46,4 +48,22 @@ test('the test panel offers a reviewed icon picker and cards render the stored c
   assert.match(panel, /update\('icon', icon\)/u);
   assert.match(panel, /form\.icon \?\? DEFAULT_DEV_MINIAPP_ICON/u);
   assert.match(tile, /icon=\{miniapp\.icon\}/u);
+  assert.match(panel, /CaboHealthMiniappIcon/u);
+  assert.match(cover, /CaboHealthMiniappIcon/u);
+  assert.doesNotMatch(panel, /<Ionicons name=\{miniapp\.icon\}/u);
+  assert.doesNotMatch(panel, /<Ionicons name=\{icon\}/u);
+  assert.doesNotMatch(cover, /<Ionicons name=\{icon\}/u);
+  assert.match(brandIcon, /primary.*secondary.*accent/su);
+  for (const icon of [
+    'flask-outline',
+    'book-outline',
+    'leaf-outline',
+    'restaurant-outline',
+    'heart-outline',
+    'map-outline',
+    'chatbubble-ellipses-outline',
+    'sparkles-outline',
+  ]) {
+    assert.match(brandIcon, new RegExp(`'${icon}'`, 'u'));
+  }
 });

@@ -1,9 +1,12 @@
-import type { ComponentProps } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { useEditorialTileMotion, useTheme } from '../hooks';
+import {
+  CaboHealthMiniappIcon,
+  type CaboHealthMiniappIconName,
+} from './icons/CaboHealthMiniappIcon';
 
 export type EditorialMiniappTone = 'clinic' | 'recipes' | 'test';
 
@@ -29,7 +32,7 @@ export function EditorialMiniappCover({
   eyebrow: string;
   title: string;
   summary: string;
-  icon: ComponentProps<typeof Ionicons>['name'];
+  icon: CaboHealthMiniappIconName;
   accessibilityLabel: string;
   accessibilityHint: string;
   index?: number;
@@ -92,7 +95,7 @@ export function EditorialMiniappCover({
               },
             ]}
           >
-            <Ionicons name={icon} size={30} color={colors.primary} />
+            <CaboHealthMiniappIcon name={icon} size={31} />
           </View>
           <View style={[styles.bronzeRule, { backgroundColor: colors.accent }]} />
         </LinearGradient>

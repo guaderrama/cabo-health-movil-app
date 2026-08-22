@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CaboHealthMiniappIcon } from '../../components/icons/CaboHealthMiniappIcon';
 import { useTheme, useTranslations } from '../../hooks';
 import type { MessageKey } from '../../i18n/messages';
 import {
@@ -196,7 +197,7 @@ export function DevMiniappPanel({
                     { backgroundColor: colors.editorialCoverMuted, borderColor: colors.editorialBorder },
                   ]}
                 >
-                  <Ionicons name={miniapp.icon} size={21} color={colors.primary} />
+                  <CaboHealthMiniappIcon name={miniapp.icon} size={22} />
                 </View>
                 <View style={styles.savedCopy}>
                   <Text style={[styles.savedTitle, { color: colors.text }]} numberOfLines={1}>{displayTitle(miniapp)}</Text>
@@ -238,7 +239,7 @@ export function DevMiniappPanel({
                 pressed && styles.pressed,
               ]}
             >
-              <Ionicons name="flask-outline" size={19} color={colors.primary} />
+              <CaboHealthMiniappIcon name="flask-outline" size={20} />
               <Text style={[styles.sampleButtonText, { color: colors.primary }]}>{t('devPanel.useSample')}</Text>
             </Pressable>
             <Field
@@ -410,7 +411,7 @@ function IconChoice({
         pressed && styles.pressed,
       ]}
     >
-      <Ionicons name={icon} size={24} color={selected ? colors.onPrimary : colors.primary} />
+      <CaboHealthMiniappIcon name={icon} size={27} inverted={selected} />
     </Pressable>
   );
 }
