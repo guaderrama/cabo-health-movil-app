@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   cpSync,
+  existsSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
@@ -11,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { once } from 'node:events';
 
 import {
   createProtectedOverlayArtifact,
@@ -18,6 +21,10 @@ import {
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const cliPath = join(projectRoot, 'scripts/protected-overlay-release.mjs');
+const lockWorkerPath = join(
+  projectRoot,
+  'tests/fixtures/protected-overlay-lock-worker.mjs',
+);
 
 test('CLI rejects an inode substituted between metadata validation and reading', (context) => {
   const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-cli-toctou-'));
@@ -72,6 +79,59 @@ syncBuiltinESMExports();
 
   assert.notEqual(result.status, 0, result.stdout);
   assert.match(result.stderr, /protected_overlay_input_file_invalid/u);
+});
+
+test('deployment lock admits only one real operator process at a time', async (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-lock-'));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const managedRoot = join(fixture, 'managed');
+  const readyPath = join(fixture, 'holder.ready');
+  const resumePath = join(fixture, 'holder.resume');
+  mkdirSync(managedRoot, { mode: 0o700 });
+
+  const holder = spawn(process.execPath, [
+    lockWorkerPath,
+    managedRoot,
+    readyPath,
+    resumePath,
+  ], { cwd: projectRoot, encoding: 'utf8' });
+  const holderOutput = collectChildOutput(holder);
+  await waitForPath(readyPath);
+
+  const contender = spawnSync(process.execPath, [lockWorkerPath, managedRoot], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  assert.notEqual(contender.status, 0, contender.stdout);
+  assert.match(contender.stderr, /protected_overlay_transaction_locked/u);
+
+  writeFileSync(resumePath, 'resume\n', { flag: 'wx', mode: 0o600 });
+  const [status] = await once(holder, 'exit');
+  const output = await holderOutput;
+  assert.equal(status, 0, output.stderr);
+  assert.deepEqual(JSON.parse(output.stdout), { status: 'locked' });
+});
+
+test('a process killed while holding the deployment lock cannot deadlock recovery', (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-stale-lock-'));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const managedRoot = join(fixture, 'managed');
+  mkdirSync(managedRoot, { mode: 0o700 });
+
+  const crashed = spawnSync(process.execPath, [lockWorkerPath, managedRoot], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: { ...process.env, CABOHEALTH_TEST_CRASH_LOCK: '1' },
+  });
+  assert.equal(crashed.status, null);
+  assert.equal(crashed.signal, 'SIGKILL');
+
+  const recovered = spawnSync(process.execPath, [lockWorkerPath, managedRoot], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  assert.equal(recovered.status, 0, recovered.stderr);
+  assert.deepEqual(JSON.parse(recovered.stdout), { status: 'locked' });
 });
 
 test('artifact creation rejects a reviewed source inode swapped after inventory validation', (context) => {
@@ -145,4 +205,22 @@ fs.lstatSync = function guardedLstat(path, ...args) {
 };
 syncBuiltinESMExports();
 `);
+}
+
+async function waitForPath(path) {
+  const deadline = Date.now() + 5_000;
+  while (!existsSync(path)) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+  }
+}
+
+function collectChildOutput(child) {
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  return new Promise((resolvePromise) => {
+    child.on('close', () => resolvePromise({ stderr, stdout }));
+  });
 }
