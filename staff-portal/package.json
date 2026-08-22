@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:release": "vite build --mode staff-release",
     "preview": "vite preview",
+    "release:artifact": "node scripts/create-release-artifact.mjs",
+    "release:verify-artifact": "node scripts/verify-release-artifact.mjs",
+    "release:verify-live": "node scripts/verify-live-release.mjs",
     "test": "tsc --project tsconfig.test.json && vite build && node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit --project tsconfig.json"
   },

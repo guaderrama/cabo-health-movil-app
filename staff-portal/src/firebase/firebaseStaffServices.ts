@@ -20,6 +20,10 @@ import {
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 import {
+  calculateStaffSessionExpiryMs,
+  createAuthorizationBoundTransport,
+} from '../domain/authBoundary.js';
+import {
   createScopedStaffGateway,
   parseServerStaffSession,
   type CallableTransport,
@@ -37,6 +41,7 @@ export interface FirebaseStaffServices {
   completeTotp(oneTimePassword: string): Promise<Extract<StaffSignInResult, { kind: 'authenticated' }>>;
   restore(): Promise<Extract<StaffSignInResult, { kind: 'authenticated' }> | null>;
   signOut(): Promise<void>;
+  onAuthorizationLost(listener: () => void): () => void;
 }
 
 export function createFirebaseStaffServices(config: StaffFirebaseConfig): FirebaseStaffServices {
@@ -47,7 +52,7 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
   });
   const auth = getAuth(app);
   const functions = getFunctions(app, config.functionsRegion);
-  const production: CallableTransport = async (name, payload) => {
+  const rawProduction: CallableTransport = async (name, payload) => {
     const response = await httpsCallable<Record<string, unknown>, unknown>(functions, name, {
       limitedUseAppCheckTokens: true,
     })(payload);
@@ -58,11 +63,50 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
   };
   let pendingResolver: MultiFactorResolver | null = null;
   let pendingEnrollmentId: string | null = null;
+  const authorizationLostListeners = new Set<() => void>();
+  let authorizationInvalidation: Promise<void> | null = null;
+  let sessionExpiryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearSessionExpiryTimer = () => {
+    if (sessionExpiryTimer !== null) clearTimeout(sessionExpiryTimer);
+    sessionExpiryTimer = null;
+  };
+
+  const invalidateAuthorization = (): Promise<void> => {
+    if (authorizationInvalidation) return authorizationInvalidation;
+    clearSessionExpiryTimer();
+    pendingResolver = null;
+    pendingEnrollmentId = null;
+    authorizationInvalidation = (async () => {
+      try {
+        await signOut(auth);
+      } finally {
+        for (const listener of authorizationLostListeners) {
+          try { listener(); } catch { /* A view listener cannot reopen authorization. */ }
+        }
+      }
+    })().finally(() => { authorizationInvalidation = null; });
+    return authorizationInvalidation;
+  };
+  const production = createAuthorizationBoundTransport(rawProduction, invalidateAuthorization);
+
+  const armSessionExpiry = async (expiresAtMs: number) => {
+    clearSessionExpiryTimer();
+    const remainingMs = expiresAtMs - Date.now();
+    if (remainingMs <= 0) {
+      await invalidateAuthorization();
+      throw authorizationExpiredError();
+    }
+    sessionExpiryTimer = setTimeout(() => {
+      void invalidateAuthorization().catch(() => undefined);
+    }, remainingMs);
+  };
 
   const finishAuthenticated = async (user: User): Promise<Extract<StaffSignInResult, { kind: 'authenticated' }>> => {
-    await assertTotpMfaSession(user);
+    const expiresAtMs = await assertTotpMfaSession(user);
     const rawSession = await production('adminGetStaffSession', {});
     const session = parseServerStaffSession(rawSession);
+    await armSessionExpiry(expiresAtMs);
     return Object.freeze({
       kind: 'authenticated',
       session,
@@ -72,6 +116,7 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
 
   return Object.freeze({
     signIn: async (email: string, password: string) => {
+      clearSessionExpiryTimer();
       await setPersistence(auth, browserSessionPersistence);
       pendingResolver = null;
       pendingEnrollmentId = null;
@@ -123,11 +168,20 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
         return null;
       }
     },
-    signOut: () => signOut(auth),
+    signOut: async () => {
+      clearSessionExpiryTimer();
+      pendingResolver = null;
+      pendingEnrollmentId = null;
+      await signOut(auth);
+    },
+    onAuthorizationLost: (listener: () => void) => {
+      authorizationLostListeners.add(listener);
+      return () => { authorizationLostListeners.delete(listener); };
+    },
   });
 }
 
-async function assertTotpMfaSession(user: User): Promise<void> {
+async function assertTotpMfaSession(user: User): Promise<number> {
   const enrolled = multiFactor(user).enrolledFactors.some((factor) => factor.factorId === FactorId.TOTP);
   const token = await user.getIdTokenResult(true);
   const firebaseClaim = token.claims.firebase;
@@ -135,6 +189,11 @@ async function assertTotpMfaSession(user: User): Promise<void> {
   if (!enrolled || secondFactor !== FactorId.TOTP) {
     throw new Error('totp_mfa_required');
   }
+  return calculateStaffSessionExpiryMs(token.claims.auth_time);
+}
+
+function authorizationExpiredError(): Error & { code: string } {
+  return Object.assign(new Error('staff_session_expired'), { code: 'auth/requires-recent-login' });
 }
 
 function isMfaRequired(error: unknown): boolean {

@@ -23,7 +23,8 @@ Separate React/Vite surface for authorized CaboHealth staff at the canonical URL
 - Resource entries are drafts only. There is no publication or runtime-activation operation.
 - CSP is present in HTML, portable `_headers`, and Hostinger/Apache `.htaccess`; build source maps are disabled.
 - Every callable requests a limited-use App Check token because the production Functions consume replay-protected tokens.
-- The build validates the non-secret Firebase project/region and replaces the CSP template with one exact Functions origin. Missing or malformed values produce `https://invalid.invalid`, so an unconfigured build remains closed.
+- The release build requires externally pinned `APP_ENV`, project, web App ID, backend App ID parameter, and region. The public config must exactly match those pins. Missing or malformed values stop release builds; ordinary unconfigured test builds use `https://invalid.invalid` and remain closed.
+- Callable authorization failures centrally sign out the browser and clear email, password, TOTP, and workspace state so the server's 15-minute freshness boundary always requires a clean email/password plus TOTP sign-in.
 
 ## Required production environment
 
@@ -35,13 +36,21 @@ Set these at build time in the approved deployment system; do not commit values:
 - `VITE_FIREBASE_APP_ID`
 - `VITE_FIREBASE_APPCHECK_ENTERPRISE_SITE_KEY`
 - `VITE_FIREBASE_FUNCTIONS_REGION` (defaults to `us-central1`)
+- `APP_ENV` (`staging` or `production`)
+- `STAFF_EXPECTED_FIREBASE_PROJECT_ID`
+- `STAFF_EXPECTED_FIREBASE_WEB_APP_ID`
+- `STAFF_WEB_FIREBASE_APP_ID` (must equal the deployed backend parameter)
 
 The portal fails closed with a bilingual setup message when configuration is absent.
 It also rejects the legacy project and every non-dedicated identity: the project
-ID must start with `cabohealth-`, the Auth domain must be exactly
-`<projectId>.firebaseapp.com`, the App ID must be a Firebase web App ID, and the
+ID must be the exact external pin for the selected environment, the Auth domain
+must be exactly `<projectId>.firebaseapp.com`, the App ID must be the exact
+pinned Firebase web App ID and backend `STAFF_WEB_FIREBASE_APP_ID`, and the
 Functions region must be exactly `us-central1`.
-Deploy only the generated `dist/` directory, never the `public/` templates directly. Hostinger must allow Apache `mod_headers` and `mod_rewrite` for the versioned `.htaccess` to enforce headers and client-side routing.
+Deploy only the generated `dist/` directory, never the `public/` templates directly. Hostinger must allow Apache `mod_headers` and `mod_rewrite` for the versioned `.htaccess` to enforce headers and a protected 404 for unknown paths.
+The mandatory independent artifact and live-origin procedure is documented in
+`docs/operations/staff-portal-release.md`; `.htaccess` alone is never accepted
+as proof that Hostinger sent the required policy.
 
 ## Backend contracts
 

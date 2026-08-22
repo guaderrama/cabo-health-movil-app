@@ -1,5 +1,5 @@
 export type StaffScope = 'production' | 'review-sandbox';
-export type StaffPermission = 'client_codes' | 'client_resource_drafts';
+export type StaffPermission = 'client_codes' | 'client_resource_drafts' | 'app_review_credential';
 export type ClientCodeSlot = 1 | 2 | 3 | 4;
 
 // Release-reviewed entitlement. Keep this fixed until a server-authoritative
@@ -155,7 +155,9 @@ function isSlot(value: unknown): value is ClientCodeSlot {
 }
 
 function isPermission(value: unknown): value is StaffPermission {
-  return value === 'client_codes' || value === 'client_resource_drafts';
+  return value === 'client_codes'
+    || value === 'client_resource_drafts'
+    || value === 'app_review_credential';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

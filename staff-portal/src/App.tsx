@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AuditPanel } from './components/AuditPanel.js';
 import { CatalogDraftPanel } from './components/CatalogDraftPanel.js';
@@ -36,6 +36,24 @@ export function App({ services, draftGateway, auditGateway }: AppProps) {
   const t = useMemo(() => (
     (key: StaffMessageKey): string => STAFF_MESSAGES[language][key]
   ), [language]);
+
+  const resetAuthorization = useCallback(() => {
+    setAuthenticated(null);
+    setEmail('');
+    setPassword('');
+    setTotp('');
+    setMfaLabel('Authenticator');
+    setBusy(false);
+    setAuthError(true);
+    setTab('codes');
+    setStage('sign-in');
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
+
+  useEffect(() => services.onAuthorizationLost(resetAuthorization), [resetAuthorization, services]);
 
   useEffect(() => {
     let active = true;
@@ -94,6 +112,11 @@ export function App({ services, draftGateway, auditGateway }: AppProps) {
   const leave = async () => {
     await services.signOut();
     setAuthenticated(null);
+    setEmail('');
+    setPassword('');
+    setTotp('');
+    setMfaLabel('Authenticator');
+    setAuthError(false);
     setTab('codes');
     setStage('sign-in');
   };

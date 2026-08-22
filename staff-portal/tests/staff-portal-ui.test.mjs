@@ -54,6 +54,29 @@ test('the portal has visible sign-in, TOTP, scope, language, and three explicit 
   assert.match(app, /CatalogDraftPanel/u);
   assert.match(app, /AuditPanel/u);
   assert.match(app, /aria-label="Portal language"/u);
+  assert.match(app, /document\.documentElement\.lang\s*=\s*language/u);
+  assert.match(app, /services\.onAuthorizationLost/u);
+  for (const reset of [
+    /setAuthenticated\(null\)/u,
+    /setEmail\(''\)/u,
+    /setPassword\(''\)/u,
+    /setTotp\(''\)/u,
+    /setMfaLabel\('Authenticator'\)/u,
+    /setStage\('sign-in'\)/u,
+  ]) assert.match(app, reset);
   assert.doesNotMatch(app, /tapCount|longPress|PIN|localStorage|sessionStorage|location\.search/iu);
   assert.doesNotMatch(app, /select[^>]+scope|scope[^\n]+onChange/iu);
+});
+
+test('confirmation dialogs close on Escape, trap focus, and restore the invoking control', () => {
+  const dialog = read('src/components/ConfirmDialog.tsx');
+
+  assert.match(dialog, /document\.activeElement/u);
+  assert.match(dialog, /event\.key === 'Escape'/u);
+  assert.match(dialog, /event\.key !== 'Tab'/u);
+  assert.match(dialog, /event\.shiftKey/u);
+  assert.match(dialog, /previousFocus\.current\?\.focus\(\)/u);
+  assert.match(dialog, /document\.addEventListener\('keydown'/u);
+  assert.match(dialog, /document\.removeEventListener\('keydown'/u);
+  assert.match(dialog, /aria-modal="true"/u);
 });

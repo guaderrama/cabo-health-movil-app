@@ -30,6 +30,7 @@ try {
     },
     appCheckSiteKey: import.meta.env.VITE_FIREBASE_APPCHECK_ENTERPRISE_SITE_KEY,
     functionsRegion: import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || STAFF_FUNCTIONS_REGION,
+    deployment: __STAFF_DEPLOYMENT_IDENTITY__,
   });
   const services = createFirebaseStaffServices(config);
   root.render(

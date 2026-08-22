@@ -28,7 +28,7 @@
     "functions:build": "npm --prefix functions run build",
     "functions:test": "npm --prefix functions test",
     "staff:dev": "npm --prefix staff-portal run dev",
-    "staff:build": "npm --prefix staff-portal run build",
+    "staff:build": "npm --prefix staff-portal run build:release",
     "staff:preview": "npm --prefix staff-portal run preview",
     "staff:test": "npm --prefix staff-portal test"
   },

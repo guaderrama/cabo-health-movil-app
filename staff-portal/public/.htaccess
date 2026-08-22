@@ -1,4 +1,8 @@
 Options -Indexes
+AddDefaultCharset UTF-8
+AddType text/javascript .js
+AddType text/css .css
+ErrorDocument 404 /staff/404.html
 
 <IfModule mod_headers.c>
   Header always set Cache-Control "no-store"
@@ -16,5 +20,5 @@ Options -Indexes
   RewriteEngine On
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule ^ index.html [L]
+  RewriteRule ^ - [R=404,L]
 </IfModule>

@@ -20,6 +20,12 @@ test('Firebase boundary requires App Check and TOTP MFA and never imports Firest
   assert.match(source, /adminGetStaffSession/u);
   assert.match(source, /httpsCallable/u);
   assert.match(source, /limitedUseAppCheckTokens:\s*true/u);
+  assert.match(source, /createAuthorizationBoundTransport/u);
+  assert.match(source, /onAuthorizationLost/u);
+  assert.match(source, /await signOut\(auth\)/u);
+  assert.match(source, /calculateStaffSessionExpiryMs/u);
+  assert.match(source, /setTimeout/u);
+  assert.match(source, /clearTimeout/u);
   const passwordFlow = source.slice(source.indexOf('signIn: async'), source.indexOf('completeTotp: async'));
   const totpFlow = source.slice(source.indexOf('completeTotp: async'), source.indexOf('restore: async'));
   assert.match(passwordFlow, /await signOut\(auth\)/u);
@@ -38,10 +44,10 @@ test('Firebase boundary requires App Check and TOTP MFA and never imports Firest
 test('the trusted server session has an exact schema with no client-supplied scope fields', () => {
   assert.deepEqual(parseServerStaffSession({
     scope: 'production',
-    permissions: ['client_codes', 'client_resource_drafts'],
+    permissions: ['client_codes', 'client_resource_drafts', 'app_review_credential'],
   }), {
     scope: 'production',
-    permissions: ['client_codes', 'client_resource_drafts'],
+    permissions: ['client_codes', 'client_resource_drafts', 'app_review_credential'],
   });
   assert.throws(() => parseServerStaffSession({
     scope: 'production',
