@@ -87,7 +87,7 @@ test('one secret field consumes CH or AR while App Review exposes isolated durab
   assert.match(modal, /!isReviewGrant[^]*clientAccess\.removeAccess/u);
   assert.match(modal, /isReviewGrant[^]*clientAccess\.deleteReviewAccount/u);
   assert.match(modal, /reviewDeleting[^]*clientAccess\.confirmDeleteReviewTitle/u);
-  assert.match(modal, /deletionResult\.status === 'pending'/u);
+  assert.match(modal, /deletionTracking\.kind !== 'none'/u);
   assert.match(modal, /clientAccess\.deletionPendingBody/u);
   assert.match(modal, /clientAccess\.deletionCompletedBody/u);
   assert.match(modal, /deletionError[^]*clientAccess\.deleteUnavailable/u);
@@ -105,7 +105,7 @@ test('remove and delete copy disclose the durable backend deletion and local-ins
   assert.match(messages, /Eliminar también borra de tu iPhone el identificador de esta instalación de la app\./u);
   assert.match(adapter, /removeAccess:[^]*functions\.call\('removeClientAccess'/u);
   assert.match(adapter, /deleteAccount:[^]*principal\.realm === 'production_client'[^]*'deleteClientAccount'[^]*'deleteAppReviewAccount'/u);
-  assert.match(adapter, /cleanupAccountDeletion:[^]*installation\.clear\(\)[^]*auth\.signOut\(\)/u);
+  assert.match(adapter, /const cleanupAccountDeletion[^]*installation\.clear\(\)[^]*auth\.signOut\(\)[^]*cleanupAccountDeletion,/u);
 });
 
 test('the destructive confirmation isolates VoiceOver from the controls behind it', () => {
@@ -114,4 +114,29 @@ test('the destructive confirmation isolates VoiceOver from the controls behind i
   assert.match(modal, /accessibilityElementsHidden=\{confirmAction !== null\}/u);
   assert.match(modal, /importantForAccessibility=\{confirmAction !== null \? 'no-hide-descendants' : 'auto'\}/u);
   assert.match(modal, /accessibilityViewIsModal/u);
+});
+
+test('durable deletion receipts are polled before session restore and remain user-verifiable', () => {
+  const bootstrap = read('context/ClientAccessBootstrap.tsx');
+  const provider = read('context/ClientAccessContext.tsx');
+  const modal = read('features/clientAccess/ClientAccessModal.tsx');
+  const messages = read('i18n/messages.ts');
+  const support = read('features/clientAccess/clientAccessSupport.ts');
+
+  assert.match(bootstrap, /deletionTracker=\{runtime\?\.deletionTracker\}/u);
+  assert.match(provider, /deletionTracker\.check\(\)[^]*controller\.initialize\(\)/u);
+  assert.match(provider, /nextState === 'active'[^]*checkDeletionStatus/u);
+  assert.match(modal, /clientAccess\.checkDeletionStatus/u);
+  assert.match(modal, /expectedCompletionByMs/u);
+  assert.match(modal, /clientAccess\.deletionOverdueBody/u);
+  assert.match(modal, /openClientAccessSupport\(\)/u);
+  assert.match(support, /Linking\.openURL\(config\.urls\.support\)/u);
+  assert.match(modal, /clientAccess\.deletionSupport/u);
+  assert.match(modal, /acknowledgeDeletionCompletion/u);
+  assert.match(modal, /archiveDeletionReceipt/u);
+  assert.match(messages, /normally retries about every five minutes/u);
+  assert.match(messages, /normalmente reintenta aproximadamente cada cinco minutos/u);
+  assert.match(messages, /Completion is expected by/u);
+  assert.match(messages, /Se espera que termine antes del/u);
+  assert.doesNotMatch(messages, /guaranteed|garantizad[oa]/iu);
 });

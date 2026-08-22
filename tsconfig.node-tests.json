@@ -18,6 +18,7 @@
     "features/devMiniapps/devMiniappCatalog.ts",
     "features/devMiniapps/devMiniappStore.ts",
     "features/clientAccess/clientAccessController.ts",
+    "features/clientAccess/clientDeletionReceiptStore.ts",
     "features/clientAccess/firebaseClientAccessAdapter.ts",
     "features/clientAccess/clientInstallationStore.ts",
     "features/clientAccess/clientResourceDeepLink.ts",

@@ -6,12 +6,21 @@ import {
   createOpaqueClientSession,
   type ClientAccessGateway,
   type ClientAccessRealm,
+  type ClientAccountDeletionCleanupStatus,
+  type ClientAccountDeletionStatusResult,
   type ClientGrantView,
   type ClientSessionStore,
   normalizeClientAccessCredential,
   type OpaqueClientSession,
   parseClientGrantView,
 } from './clientAccessController';
+import {
+  type ClientAccountDeletionTracker,
+  type ClientAccountDeletionTrackingState,
+  type ClientDeletionReceiptRecord,
+  type ClientDeletionReceiptStore,
+  parseDeletionStatus,
+} from './clientDeletionReceiptStore';
 
 const CLIENT_UID_PATTERN = /^client_[A-Za-z0-9_-]{32}$/u;
 const REVIEW_UID_PATTERN = /^review_[A-Za-z0-9_-]{32}$/u;
@@ -38,18 +47,21 @@ export interface ClientInstallationPort {
 }
 
 export interface FirebaseClientAccessAdapter {
+  readonly deletionTracker: ClientAccountDeletionTracker;
   readonly gateway: ClientAccessGateway;
   readonly sessionStore: ClientSessionStore;
 }
 
 export function createFirebaseClientAccessAdapter({
   auth,
+  deletionReceipts,
   functions,
   installation,
   createRequestId,
   now = Date.now,
 }: {
   readonly auth: FirebaseClientAuthPort;
+  readonly deletionReceipts: ClientDeletionReceiptStore;
   readonly functions: FirebaseCallablePort;
   readonly installation: ClientInstallationPort;
   readonly createRequestId: () => string;
@@ -75,6 +87,197 @@ export function createFirebaseClientAccessAdapter({
     await auth.signOut().catch(() => {});
     throw new Error('invalid_backend_response');
   };
+
+  const cleanupAccountDeletion = async (
+    mode: 'begin' | 'retry',
+  ): Promise<ClientAccountDeletionCleanupStatus> => {
+    if (mode === 'retry' && !localDeletionCleanupPending) {
+      const persistedPending = await installation.hasDeletionCleanupPending()
+        .catch(() => false);
+      if (!persistedPending) return 'none';
+    }
+    localDeletionCleanupPending = true;
+    let markerPersisted = true;
+    if (mode === 'begin') {
+      markerPersisted = await installation.markDeletionCleanupPending().then(
+        () => true,
+        () => false,
+      );
+    }
+    const results = await Promise.allSettled([
+      installation.clear(),
+      auth.signOut(),
+    ]);
+    if (results.some((result) => result.status === 'rejected')) return 'pending';
+    if (!markerPersisted) return 'pending';
+    try {
+      await installation.clearDeletionCleanupPending();
+    } catch {
+      return 'pending';
+    }
+    localDeletionCleanupPending = false;
+    return 'completed';
+  };
+
+  const ensureReceiptCleanup = async (): Promise<ClientAccountDeletionCleanupStatus> => {
+    const retried = await cleanupAccountDeletion('retry');
+    return retried === 'none' ? cleanupAccountDeletion('begin') : retried;
+  };
+
+  const trackingState = (
+    receipt: Readonly<ClientDeletionReceiptRecord>,
+    status: Readonly<ClientAccountDeletionStatusResult>,
+    availability: 'current' | 'offline',
+  ): ClientAccountDeletionTrackingState => Object.freeze({
+    availability,
+    kind: status.status,
+    realm: receipt.realm,
+    status,
+  });
+
+  const pollReceipt = async (
+    receipt: Readonly<ClientDeletionReceiptRecord>,
+  ): Promise<ClientAccountDeletionTrackingState> => {
+    if (receipt.phase === 'accepted') {
+      await ensureReceiptCleanup().catch(() => 'pending');
+    }
+    let response: unknown;
+    try {
+      response = await functions.call(
+        receipt.realm === 'production_client'
+          ? 'getClientAccountDeletionStatus'
+          : 'getAppReviewAccountDeletionStatus',
+        { deletionReceipt: receipt.deletionReceipt },
+      );
+    } catch (error) {
+      if (isNotFound(error)) {
+        if (receipt.phase === 'prepared') {
+          try {
+            await deletionReceipts.clear(receipt);
+            return Object.freeze({ kind: 'none' as const });
+          } catch {
+            return Object.freeze({
+              kind: 'unavailable' as const,
+              phase: 'prepared' as const,
+              realm: receipt.realm,
+            });
+          }
+        }
+        return Object.freeze({
+          kind: 'unavailable' as const,
+          phase: 'accepted' as const,
+          realm: receipt.realm,
+        });
+      }
+      if (receipt.phase === 'accepted') {
+        if (receipt.lastKnownStatus) {
+          return trackingState(receipt, receipt.lastKnownStatus, 'offline');
+        }
+      }
+      return Object.freeze({
+        kind: 'unavailable' as const,
+        phase: receipt.phase,
+        realm: receipt.realm,
+      });
+    }
+    const status = parseDeletionStatus(response);
+    if (!status) {
+      return Object.freeze({
+        kind: 'unavailable' as const,
+        phase: receipt.phase,
+        realm: receipt.realm,
+      });
+    }
+    let accepted: Readonly<ClientDeletionReceiptRecord>;
+    try {
+      accepted = await deletionReceipts.markAccepted(receipt, status);
+    } catch {
+      return Object.freeze({
+        kind: 'unavailable' as const,
+        phase: receipt.phase,
+        realm: receipt.realm,
+      });
+    }
+    if (receipt.phase === 'prepared') {
+      await ensureReceiptCleanup().catch(() => 'pending');
+    }
+    return trackingState(accepted, status, 'current');
+  };
+
+  let deletionSubmissionPending: Promise<void> | null = null;
+  const withDeletionSubmission = async <T>(work: () => Promise<T>): Promise<T> => {
+    if (deletionSubmissionPending) {
+      throw new Error('client_deletion_submission_pending');
+    }
+    let releaseSubmission!: () => void;
+    const barrier = new Promise<void>((resolve) => { releaseSubmission = resolve; });
+    deletionSubmissionPending = barrier;
+    try {
+      return await work();
+    } finally {
+      if (deletionSubmissionPending === barrier) deletionSubmissionPending = null;
+      releaseSubmission();
+    }
+  };
+
+  const checkReceipt = async (): Promise<ClientAccountDeletionTrackingState> => {
+    while (deletionSubmissionPending) await deletionSubmissionPending;
+    let loaded: Awaited<ReturnType<ClientDeletionReceiptStore['load']>>;
+    try {
+      loaded = await deletionReceipts.load();
+    } catch {
+      return Object.freeze({
+        kind: 'unavailable' as const,
+        phase: 'corrupt' as const,
+        realm: null,
+      });
+    }
+    if (loaded.kind === 'none') return loaded;
+    if (loaded.kind === 'unavailable') {
+      return Object.freeze({
+        kind: 'unavailable' as const,
+        phase: 'corrupt' as const,
+        realm: loaded.realms.length === 1 ? loaded.realms[0]! : null,
+      });
+    }
+    return pollReceipt(loaded.receipt);
+  };
+
+  let checkPending: Promise<ClientAccountDeletionTrackingState> | null = null;
+  const check = (): Promise<ClientAccountDeletionTrackingState> => {
+    if (!checkPending) {
+      checkPending = checkReceipt().finally(() => { checkPending = null; });
+    }
+    return checkPending;
+  };
+
+  const clearAcceptedReceipt = async (completedOnly: boolean): Promise<boolean> => {
+    let loaded: Awaited<ReturnType<ClientDeletionReceiptStore['load']>>;
+    try {
+      loaded = await deletionReceipts.load();
+    } catch {
+      return false;
+    }
+    if (
+      loaded.kind !== 'receipt'
+      || loaded.receipt.phase !== 'accepted'
+      || !loaded.receipt.lastKnownStatus
+      || (completedOnly && loaded.receipt.lastKnownStatus.status !== 'completed')
+    ) return false;
+    if (await ensureReceiptCleanup().catch(() => 'pending') !== 'completed') return false;
+    try {
+      await deletionReceipts.clear(loaded.receipt);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const deletionTracker: ClientAccountDeletionTracker = Object.freeze({
+    check,
+    acknowledgeCompleted: () => clearAcceptedReceipt(true),
+    archiveAccepted: () => clearAcceptedReceipt(false),
+  });
 
   const gateway: ClientAccessGateway = Object.freeze({
     redeem: async (code: string) => {
@@ -159,51 +362,44 @@ export function createFirebaseClientAccessAdapter({
       }
     },
 
-    deleteAccount: async (_session: OpaqueClientSession) => {
+    deleteAccount: (_session: OpaqueClientSession) => withDeletionSubmission(async () => {
       const principal = requireAccessPrincipal();
-      const response = await functions.call(
-        principal.realm === 'production_client'
-          ? 'deleteClientAccount'
-          : 'deleteAppReviewAccount', {
-        installationId: await getInstallationId(),
-      });
-      if (
-        !hasExactKeys(response, ['status'])
-        || !['pending', 'completed'].includes(response.status as string)
-      ) {
-        throw new Error('invalid_backend_response');
-      }
-      return Object.freeze({ status: response.status as 'pending' | 'completed' });
-    },
-
-    cleanupAccountDeletion: async (mode: 'begin' | 'retry') => {
-      if (mode === 'retry' && !localDeletionCleanupPending) {
-        const persistedPending = await installation.hasDeletionCleanupPending()
-          .catch(() => false);
-        if (!persistedPending) return 'none';
-      }
-      localDeletionCleanupPending = true;
-      let markerPersisted = true;
-      if (mode === 'begin') {
-        markerPersisted = await installation.markDeletionCleanupPending().then(
-          () => true,
-          () => false,
-        );
-      }
-      const results = await Promise.allSettled([
-        installation.clear(),
-        auth.signOut(),
-      ]);
-      if (results.some((result) => result.status === 'rejected')) return 'pending';
-      if (!markerPersisted) return 'pending';
+      const receipt = await deletionReceipts.prepare(principal.realm);
+      let response: unknown;
+      let requestError: unknown = null;
       try {
-        await installation.clearDeletionCleanupPending();
-      } catch {
-        return 'pending';
+        response = await functions.call(
+          principal.realm === 'production_client'
+            ? 'deleteClientAccount'
+            : 'deleteAppReviewAccount', {
+          deletionReceipt: receipt.deletionReceipt,
+          installationId: await getInstallationId(),
+        });
+      } catch (error) {
+        requestError = error;
       }
-      localDeletionCleanupPending = false;
-      return 'completed';
-    },
+      const status = requestError === null ? parseDeletionStatus(response) : null;
+      if (status) {
+        try {
+          await deletionReceipts.markAccepted(receipt, status);
+          return status;
+        } catch {
+          return Object.freeze({ status: 'unavailable' as const });
+        }
+      }
+      const resolved = await pollReceipt(receipt);
+      if (resolved.kind === 'pending' || resolved.kind === 'completed') {
+        return resolved.status;
+      }
+      if (resolved.kind === 'none') {
+        throw requestError instanceof Error
+          ? requestError
+          : new Error('invalid_backend_response');
+      }
+      return Object.freeze({ status: 'unavailable' as const });
+    }),
+
+    cleanupAccountDeletion,
 
     signOut: () => auth.signOut(),
   });
@@ -224,7 +420,7 @@ export function createFirebaseClientAccessAdapter({
     clear: async () => {},
   });
 
-  return Object.freeze({ gateway, sessionStore });
+  return Object.freeze({ deletionTracker, gateway, sessionStore });
 }
 
 function realmForUid(uid: string): ClientAccessRealm | null {
@@ -302,4 +498,10 @@ function isPermissionDenied(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const code = (value as Record<string, unknown>).code;
   return code === 'permission-denied' || code === 'functions/permission-denied';
+}
+
+function isNotFound(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const code = (value as Record<string, unknown>).code;
+  return code === 'not-found' || code === 'functions/not-found';
 }

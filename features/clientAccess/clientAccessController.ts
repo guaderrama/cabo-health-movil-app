@@ -4,9 +4,17 @@ export const APP_REVIEW_LAUNCH_URL = 'https://cabohealth.org/apps/app-review/lau
 export const APP_REVIEW_RESOURCE_ID = 'review-sandbox-app-review-sample-v1' as const;
 export type ClientAccessRealm = 'production_client' | 'review_sandbox';
 export type ClientAccountDeletionStatus = 'pending' | 'completed';
-export interface ClientAccountDeletionResult {
+export type ClientAccountDeletionStatusResult = Readonly<{
+  readonly completedAtMs: number | null;
+  readonly expectedCompletionByMs: number;
+  readonly requestedAtMs: number;
+  readonly schemaVersion: 1;
   readonly status: ClientAccountDeletionStatus;
-}
+}>;
+export type ClientAccountDeletionResult = Readonly<
+  | ClientAccountDeletionStatusResult
+  | { status: 'unavailable' }
+>;
 export type ClientAccountDeletionCleanupStatus = 'none' | 'pending' | 'completed';
 const CLIENT_RESOURCE_ICON_KEYS = new Set([
   'flask-outline',
@@ -469,6 +477,12 @@ export function createClientAccessController({
     if (operationGeneration !== generation) {
       deletionPending = false;
       return null;
+    }
+    if (result.status === 'unavailable') {
+      currentSession = null;
+      deletionPending = false;
+      publish({ status: 'locked', grant: null, error: null });
+      return result;
     }
     await cleanupAcknowledgedDeletion();
     deletionPending = false;

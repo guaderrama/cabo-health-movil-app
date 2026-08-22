@@ -18,6 +18,10 @@ import {
   type ClientResourceLaunch,
   type ClientSessionStore,
 } from '../features/clientAccess/clientAccessController';
+import type {
+  ClientAccountDeletionTracker,
+  ClientAccountDeletionTrackingState,
+} from '../features/clientAccess/clientDeletionReceiptStore';
 
 const LOCKED_GATEWAY: ClientAccessGateway = Object.freeze({
   redeem: async () => null,
@@ -35,21 +39,27 @@ const EMPTY_SESSION_STORE: ClientSessionStore = Object.freeze({
 });
 
 interface ClientAccessContextValue extends ClientAccessSnapshot {
+  deletionTracking: ClientAccountDeletionTrackingState | Readonly<{ kind: 'checking' }>;
   redeem(code: string): Promise<boolean>;
   refresh(): Promise<void>;
   createLaunch(resourceId: string): Promise<Readonly<ClientResourceLaunch> | null>;
   removeAccess(): Promise<boolean>;
   deleteAccount(): Promise<Readonly<ClientAccountDeletionResult> | null>;
+  checkDeletionStatus(): Promise<void>;
+  acknowledgeDeletionCompletion(): Promise<boolean>;
+  archiveDeletionReceipt(): Promise<boolean>;
 }
 
 const ClientAccessContext = createContext<ClientAccessContextValue | undefined>(undefined);
 
 export function ClientAccessProvider({
   children,
+  deletionTracker,
   gateway = LOCKED_GATEWAY,
   sessionStore = EMPTY_SESSION_STORE,
 }: {
   children: ReactNode;
+  deletionTracker?: ClientAccountDeletionTracker;
   gateway?: ClientAccessGateway;
   sessionStore?: ClientSessionStore;
 }) {
@@ -61,36 +71,124 @@ export function ClientAccessProvider({
   const [snapshot, setSnapshot] = useState<Readonly<ClientAccessSnapshot>>(
     controller.getSnapshot(),
   );
+  const [deletionTracking, setDeletionTracking] = useState<
+    ClientAccessContextValue['deletionTracking']
+  >(deletionTracker ? Object.freeze({ kind: 'checking' as const }) : Object.freeze({ kind: 'none' as const }));
+  const deletionTrackingRef = useRef(deletionTracking);
+  const synchronizationGeneration = useRef(0);
+  const controllerInitialized = useRef(false);
+  const sessionSuspendedForDeletion = useRef(false);
+
+  const publishDeletionTracking = useCallback((next: ClientAccessContextValue['deletionTracking']) => {
+    deletionTrackingRef.current = next;
+    setDeletionTracking(next);
+  }, []);
+
+  const checkDeletionStatus = useCallback(async () => {
+    const operationGeneration = ++synchronizationGeneration.current;
+    if (!deletionTracker) {
+      publishDeletionTracking(Object.freeze({ kind: 'none' as const }));
+      if (!controllerInitialized.current) {
+        controllerInitialized.current = true;
+        await controller.initialize();
+      } else {
+        await controller.refresh();
+      }
+      return;
+    }
+    publishDeletionTracking(Object.freeze({ kind: 'checking' as const }));
+    const next = await deletionTracker.check().catch(() => Object.freeze({
+      kind: 'unavailable' as const,
+      phase: 'corrupt' as const,
+      realm: null,
+    }));
+    if (operationGeneration !== synchronizationGeneration.current) return;
+    if (next.kind !== 'none') {
+      publishDeletionTracking(next);
+      sessionSuspendedForDeletion.current = true;
+      return;
+    }
+    if (!controllerInitialized.current || sessionSuspendedForDeletion.current) {
+      controllerInitialized.current = true;
+      sessionSuspendedForDeletion.current = false;
+      await controller.initialize();
+    } else {
+      await controller.refresh();
+    }
+    if (operationGeneration === synchronizationGeneration.current) {
+      publishDeletionTracking(next);
+    }
+  }, [controller, deletionTracker, publishDeletionTracking]);
 
   useEffect(() => {
     const unsubscribe = controller.subscribe(setSnapshot);
-    void controller.initialize();
-    return unsubscribe;
-  }, [controller]);
+    void checkDeletionStatus();
+    return () => {
+      synchronizationGeneration.current += 1;
+      unsubscribe();
+    };
+  }, [checkDeletionStatus, controller]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') void controller.refresh();
+      if (nextState === 'active') void checkDeletionStatus();
     });
     return () => subscription.remove();
-  }, [controller]);
+  }, [checkDeletionStatus]);
 
-  const redeem = useCallback((code: string) => controller.redeem(code), [controller]);
-  const refresh = useCallback(() => controller.refresh(), [controller]);
+  const redeem = useCallback((code: string) => (
+    deletionTrackingRef.current.kind === 'none'
+      ? controller.redeem(code)
+      : Promise.resolve(false)
+  ), [controller]);
+  const refresh = checkDeletionStatus;
   const createLaunch = useCallback(
     (resourceId: string) => controller.createLaunch(resourceId),
     [controller],
   );
   const removeAccess = useCallback(() => controller.removeAccess(), [controller]);
-  const deleteAccount = useCallback(() => controller.deleteAccount(), [controller]);
+  const deleteAccount = useCallback(async () => {
+    const result = await controller.deleteAccount();
+    if (deletionTracker) await checkDeletionStatus();
+    return result;
+  }, [checkDeletionStatus, controller, deletionTracker]);
+  const acknowledgeDeletionCompletion = useCallback(async () => {
+    if (!deletionTracker || !await deletionTracker.acknowledgeCompleted()) return false;
+    synchronizationGeneration.current += 1;
+    publishDeletionTracking(Object.freeze({ kind: 'none' as const }));
+    sessionSuspendedForDeletion.current = false;
+    return true;
+  }, [deletionTracker, publishDeletionTracking]);
+  const archiveDeletionReceipt = useCallback(async () => {
+    if (!deletionTracker || !await deletionTracker.archiveAccepted()) return false;
+    synchronizationGeneration.current += 1;
+    publishDeletionTracking(Object.freeze({ kind: 'none' as const }));
+    sessionSuspendedForDeletion.current = false;
+    return true;
+  }, [deletionTracker, publishDeletionTracking]);
   const value = useMemo<ClientAccessContextValue>(() => ({
     ...snapshot,
+    deletionTracking,
     redeem,
     refresh,
     createLaunch,
     removeAccess,
     deleteAccount,
-  }), [createLaunch, deleteAccount, redeem, refresh, removeAccess, snapshot]);
+    checkDeletionStatus,
+    acknowledgeDeletionCompletion,
+    archiveDeletionReceipt,
+  }), [
+    acknowledgeDeletionCompletion,
+    archiveDeletionReceipt,
+    checkDeletionStatus,
+    createLaunch,
+    deleteAccount,
+    deletionTracking,
+    redeem,
+    refresh,
+    removeAccess,
+    snapshot,
+  ]);
 
   return <ClientAccessContext.Provider value={value}>{children}</ClientAccessContext.Provider>;
 }

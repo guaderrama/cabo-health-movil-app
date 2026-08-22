@@ -8,6 +8,7 @@ import {
   createClientInstallationPort,
   type ClientInstallationSecureStorage,
 } from './clientInstallationStore';
+import { createClientDeletionReceiptStore } from './clientDeletionReceiptStore';
 
 export type CaboHealthAppEnvironment = 'development' | 'staging' | 'production';
 
@@ -115,8 +116,13 @@ export async function createNativeClientAccessRuntime({
       storage: secureStorage,
       randomBytes,
     });
+    const deletionReceipts = createClientDeletionReceiptStore({
+      storage: secureStorage,
+      randomBytes,
+    });
     return createFirebaseClientAccessAdapter({
       auth: bridge.auth,
+      deletionReceipts,
       functions: bridge.functionsForRegion(environment.functionsRegion ?? 'us-central1'),
       installation,
       createRequestId,

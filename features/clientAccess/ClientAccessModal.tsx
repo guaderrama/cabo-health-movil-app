@@ -15,14 +15,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useClientAccess } from '../../context/ClientAccessContext';
 import { useTheme, useTranslations } from '../../hooks';
-import type {
-  ClientAccountDeletionResult,
-  ClientResourceLaunch,
-  ClientResourceView,
-} from './clientAccessController';
+import type { ClientResourceLaunch, ClientResourceView } from './clientAccessController';
+import type { ClientAccountDeletionTrackingState } from './clientDeletionReceiptStore';
+import { openClientAccessSupport } from './clientAccessSupport';
 import { ClientResourceWebView } from './ClientResourceWebView';
 
 type ConfirmAction = 'remove' | 'delete-production' | 'delete-review' | null;
+type DeletionTrackingPresentation = ClientAccountDeletionTrackingState
+  | Readonly<{ kind: 'checking' }>;
 
 export function ClientAccessModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { colors } = useTheme();
@@ -36,20 +36,26 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
     createLaunch,
     removeAccess,
     deleteAccount,
+    deletionTracking,
+    checkDeletionStatus,
+    acknowledgeDeletionCompletion,
+    archiveDeletionReceipt,
   } = useClientAccess();
   const [code, setCode] = useState('');
   const [attempted, setAttempted] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [actionPending, setActionPending] = useState(false);
-  const [deletionResult, setDeletionResult] = useState<Readonly<ClientAccountDeletionResult> | null>(null);
   const [deletionError, setDeletionError] = useState(false);
+  const [deletionActionError, setDeletionActionError] = useState(false);
   const [launchPendingId, setLaunchPendingId] = useState<string | null>(null);
   const [launchError, setLaunchError] = useState(false);
   const [activeLaunch, setActiveLaunch] = useState<Readonly<ClientResourceLaunch> | null>(null);
   const [activeResourceId, setActiveResourceId] = useState<string | null>(null);
   const [activeResourceTitle, setActiveResourceTitle] = useState('');
   const launchGeneration = useRef(0);
-  const busy = status === 'checking' || status === 'redeeming';
+  const busy = status === 'checking'
+    || status === 'redeeming'
+    || deletionTracking.kind === 'checking';
   const unlocked = status === 'unlocked' && grant !== null;
   const isReviewGrant = grant !== null && 'scope' in grant && grant.scope === 'review_sandbox';
 
@@ -59,8 +65,8 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
       setAttempted(false);
       setConfirmAction(null);
       setActionPending(false);
-      setDeletionResult(null);
       setDeletionError(false);
+      setDeletionActionError(false);
       setLaunchPendingId(null);
       setLaunchError(false);
       setActiveLaunch(null);
@@ -109,8 +115,7 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
     const result = await deleteAccount();
     setConfirmAction(null);
     setActionPending(false);
-    if (result) setDeletionResult(result);
-    else setDeletionError(true);
+    if (!result) setDeletionError(true);
   };
 
   const openResource = async (resource: Readonly<ClientResourceView>) => {
@@ -137,6 +142,39 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
     setActiveLaunch(null);
     setActiveResourceId(null);
     onClose();
+  };
+
+  const finishDeletion = async () => {
+    if (actionPending) return;
+    if (deletionTracking.kind !== 'completed') {
+      closeModal();
+      return;
+    }
+    setActionPending(true);
+    setDeletionActionError(false);
+    const cleared = await acknowledgeDeletionCompletion();
+    setActionPending(false);
+    if (cleared) closeModal();
+    else setDeletionActionError(true);
+  };
+
+  const archiveDeletion = async () => {
+    if (actionPending) return;
+    setActionPending(true);
+    setDeletionActionError(false);
+    const archived = await archiveDeletionReceipt();
+    setActionPending(false);
+    if (archived) closeModal();
+    else setDeletionActionError(true);
+  };
+
+  const openDeletionSupport = async () => {
+    setDeletionActionError(false);
+    try {
+      await openClientAccessSupport();
+    } catch {
+      setDeletionActionError(true);
+    }
   };
 
   const errorMessage = error === 'invalid-code'
@@ -196,35 +234,17 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
         </View>
 
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]}>
-          {deletionResult ? (
-            <View
-              accessibilityRole="alert"
-              style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
-            >
-              <Ionicons name="checkmark-circle-outline" size={48} color={colors.success} />
-              <Text style={[styles.cardTitle, { color: colors.text }]}>
-                {deletionResult.status === 'pending'
-                  ? t('clientAccess.deletionPendingTitle')
-                  : t('clientAccess.deletionCompletedTitle')}
-              </Text>
-              <Text style={[styles.cardCopy, { color: colors.textSecondary }]}>
-                {deletionResult.status === 'pending'
-                  ? t('clientAccess.deletionPendingBody')
-                  : t('clientAccess.deletionCompletedBody')}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t('common.done')}
-                onPress={closeModal}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  { backgroundColor: colors.primary },
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={[styles.primaryLabel, { color: colors.white }]}>{t('common.done')}</Text>
-              </Pressable>
-            </View>
+          {deletionTracking.kind !== 'none' ? (
+            <DeletionStatusCard
+              actionError={deletionActionError}
+              busy={actionPending}
+              language={language}
+              tracking={deletionTracking}
+              onArchive={() => { void archiveDeletion(); }}
+              onCheck={() => { void checkDeletionStatus(); }}
+              onDone={() => { void finishDeletion(); }}
+              onSupport={() => { void openDeletionSupport(); }}
+            />
           ) : unlocked ? (
             <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
               <Ionicons name="checkmark-circle-outline" size={45} color={colors.success} />
@@ -354,6 +374,207 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
   );
 }
 
+function DeletionStatusCard({
+  actionError,
+  busy,
+  language,
+  tracking,
+  onArchive,
+  onCheck,
+  onDone,
+  onSupport,
+}: {
+  actionError: boolean;
+  busy: boolean;
+  language: 'en' | 'es-MX';
+  tracking: DeletionTrackingPresentation;
+  onArchive: () => void;
+  onCheck: () => void;
+  onDone: () => void;
+  onSupport: () => void;
+}) {
+  const { colors } = useTheme();
+  const { t } = useTranslations();
+
+  if (tracking.kind === 'checking') {
+    return (
+      <View
+        accessibilityRole="alert"
+        style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.cardTitle, { color: colors.text }]}>
+          {t('clientAccess.deletionCheckingTitle')}
+        </Text>
+        <Text style={[styles.cardCopy, { color: colors.textSecondary }]}>
+          {t('clientAccess.deletionCheckingBody')}
+        </Text>
+      </View>
+    );
+  }
+
+  if (tracking.kind === 'unavailable') {
+    const accepted = tracking.phase === 'accepted';
+    return (
+      <View
+        accessibilityRole="alert"
+        style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+      >
+        <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
+        <Text style={[styles.cardTitle, { color: colors.text }]}>
+          {accepted
+            ? t('clientAccess.deletionUnavailableAcceptedTitle')
+            : t('clientAccess.deletionUnavailablePreparedTitle')}
+        </Text>
+        <Text style={[styles.cardCopy, { color: colors.textSecondary }]}>
+          {accepted
+            ? t('clientAccess.deletionUnavailableAcceptedBody')
+            : t('clientAccess.deletionUnavailablePreparedBody')}
+        </Text>
+        {actionError && (
+          <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>
+            {t('clientAccess.deletionReceiptActionFailed')}
+          </Text>
+        )}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ busy, disabled: busy }}
+          disabled={busy}
+          onPress={onCheck}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            { backgroundColor: colors.primary },
+            busy && styles.disabled,
+            pressed && styles.pressed,
+          ]}
+        >
+          {busy
+            ? <ActivityIndicator color={colors.white} />
+            : <Text style={[styles.primaryLabel, { color: colors.white }]}>{t('clientAccess.checkDeletionStatus')}</Text>}
+        </Pressable>
+        <Pressable
+          accessibilityRole="link"
+          disabled={busy}
+          onPress={onSupport}
+          style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.primary }, pressed && styles.pressed]}
+        >
+          <Text style={[styles.secondaryLabel, { color: colors.primary }]}>{t('clientAccess.deletionSupport')}</Text>
+        </Pressable>
+        {accepted && (
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={onArchive}
+            style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
+          >
+            <Text style={[styles.deleteLabel, { color: colors.error }]}>
+              {t('clientAccess.archiveDeletionReceipt')}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+    );
+  }
+
+  if (tracking.kind === 'none') return null;
+
+  const overdue = tracking.kind === 'pending'
+    && Date.now() >= tracking.status.expectedCompletionByMs;
+  const formattedExpectedDate = new Intl.DateTimeFormat(
+    language === 'es-MX' ? 'es-MX' : 'en-US',
+    { day: 'numeric', month: 'long', year: 'numeric' },
+  ).format(new Date(tracking.status.expectedCompletionByMs));
+  const completed = tracking.kind === 'completed';
+  return (
+    <View
+      accessibilityRole="alert"
+      style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+    >
+      <Ionicons
+        name={completed ? 'checkmark-circle-outline' : overdue ? 'time-outline' : 'shield-checkmark-outline'}
+        size={48}
+        color={completed ? colors.success : overdue ? colors.error : colors.primary}
+      />
+      <Text style={[styles.cardTitle, { color: colors.text }]}>
+        {completed
+          ? t('clientAccess.deletionCompletedTitle')
+          : overdue
+            ? t('clientAccess.deletionOverdueTitle')
+            : t('clientAccess.deletionPendingTitle')}
+      </Text>
+      <Text style={[styles.cardCopy, { color: colors.textSecondary }]}>
+        {completed
+          ? t('clientAccess.deletionCompletedBody')
+          : overdue
+            ? t('clientAccess.deletionOverdueBody')
+            : t('clientAccess.deletionPendingBody')}
+      </Text>
+      {!completed && (
+        <Text style={[styles.expectedDate, { color: colors.text }]}>
+          {t('clientAccess.deletionExpectedBy')} {formattedExpectedDate}
+        </Text>
+      )}
+      {tracking.availability === 'offline' && (
+        <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>
+          {t('clientAccess.deletionStatusOffline')}
+        </Text>
+      )}
+      {actionError && (
+        <Text accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>
+          {t('clientAccess.deletionReceiptActionFailed')}
+        </Text>
+      )}
+      {!completed && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ busy, disabled: busy }}
+          disabled={busy}
+          onPress={onCheck}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            { backgroundColor: colors.primary },
+            busy && styles.disabled,
+            pressed && styles.pressed,
+          ]}
+        >
+          {busy
+            ? <ActivityIndicator color={colors.white} />
+            : <Text style={[styles.primaryLabel, { color: colors.white }]}>{t('clientAccess.checkDeletionStatus')}</Text>}
+        </Pressable>
+      )}
+      {overdue && (
+        <Pressable
+          accessibilityRole="link"
+          disabled={busy}
+          onPress={onSupport}
+          style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.primary }, pressed && styles.pressed]}
+        >
+          <Text style={[styles.secondaryLabel, { color: colors.primary }]}>{t('clientAccess.deletionSupport')}</Text>
+        </Pressable>
+      )}
+      {completed && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('common.done')}
+          accessibilityState={{ busy, disabled: busy }}
+          disabled={busy}
+          onPress={onDone}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            { backgroundColor: colors.primary },
+            busy && styles.disabled,
+            pressed && styles.pressed,
+          ]}
+        >
+          {busy
+            ? <ActivityIndicator color={colors.white} />
+            : <Text style={[styles.primaryLabel, { color: colors.white }]}>{t('common.done')}</Text>}
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 function ConfirmationDialog({
   action,
   busy,
@@ -428,6 +649,7 @@ const styles = StyleSheet.create({
   card: { borderWidth: 1, borderRadius: 22, padding: 24, alignItems: 'center' },
   cardTitle: { marginTop: 13, textAlign: 'center', fontFamily: 'Georgia', fontSize: 21, lineHeight: 27, fontWeight: '600' },
   cardCopy: { maxWidth: 330, marginTop: 7, textAlign: 'center', fontSize: 14, lineHeight: 20 },
+  expectedDate: { marginTop: 14, textAlign: 'center', fontSize: 13, lineHeight: 18, fontWeight: '700' },
   input: { width: '100%', minHeight: 52, marginTop: 20, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontSize: 16, letterSpacing: 0.7 },
   error: { marginTop: 10, textAlign: 'center', fontSize: 12, lineHeight: 17 },
   primaryButton: { width: '100%', minHeight: 50, marginTop: 18, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },

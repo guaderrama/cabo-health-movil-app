@@ -5,6 +5,9 @@ import {
   createFirebaseClientAccessAdapter,
 } from '../.test-build/features/clientAccess/firebaseClientAccessAdapter.js';
 import {
+  createClientDeletionReceiptStore,
+} from '../.test-build/features/clientAccess/clientDeletionReceiptStore.js';
+import {
   createClientAccessController,
 } from '../.test-build/features/clientAccess/clientAccessController.js';
 
@@ -40,6 +43,20 @@ const REVIEW_GRANT = Object.freeze({
   })]),
 });
 
+const DELETION_REQUESTED_AT_MS = 1_900_000_000_000;
+const DELETION_PENDING = Object.freeze({
+  completedAtMs: null,
+  expectedCompletionByMs: DELETION_REQUESTED_AT_MS + 30 * 24 * 60 * 60 * 1_000,
+  requestedAtMs: DELETION_REQUESTED_AT_MS,
+  schemaVersion: 1,
+  status: 'pending',
+});
+const DELETION_COMPLETED = Object.freeze({
+  ...DELETION_PENDING,
+  completedAtMs: DELETION_REQUESTED_AT_MS + 5_000,
+  status: 'completed',
+});
+
 function makeHarness({
   currentUid = null,
   signedInUid = 'client_abcdefghijklmnopqrstuvwxyz123456',
@@ -47,6 +64,7 @@ function makeHarness({
   failInstallationClear = false,
   signOutFailures = 0,
   cleanupState = null,
+  secureValues = new Map(),
 } = {}) {
   let uid = currentUid;
   let signOutAttempts = 0;
@@ -93,7 +111,7 @@ function makeHarness({
         };
       }
       if (name === 'removeClientAccess') return { removed: true };
-      if (name === 'deleteClientAccount') return { status: 'pending' };
+      if (name === 'deleteClientAccount') return DELETION_PENDING;
       throw new Error(`Unexpected function ${name}`);
   };
   const functions = { call: (name, data) => callImpl(name, data) };
@@ -123,8 +141,18 @@ function makeHarness({
     },
   };
   const requestIds = ['request_abcdefghijklmnop', 'request_qrstuvwxyz123456'];
+  const deletionReceipts = createClientDeletionReceiptStore({
+    storage: {
+      getItem: async (key) => secureValues.get(key) ?? null,
+      setItem: async (key, value) => { secureValues.set(key, value); },
+      deleteItem: async (key) => { secureValues.delete(key); },
+    },
+    randomBytes: async (length) => Uint8Array.from({ length }, (_, index) => index + 1),
+    now: () => DELETION_REQUESTED_AT_MS - 1_000,
+  });
   const adapter = createFirebaseClientAccessAdapter({
     auth,
+    deletionReceipts,
     functions,
     installation,
     createRequestId: () => requestIds.shift() ?? 'request_fallback1234',
@@ -133,6 +161,8 @@ function makeHarness({
   return {
     adapter,
     calls,
+    deletionReceipts,
+    secureValues,
     auth,
     replaceCall(next) { callImpl = next; },
   };
@@ -444,8 +474,11 @@ test('remove and delete require the live principal, clear Firebase auth, and del
   const deletionSession = await deletion.adapter.sessionStore.restore();
   await deletion.adapter.gateway.deleteAccount(deletionSession);
   await deletion.adapter.gateway.cleanupAccountDeletion('begin');
+  const deletionReceipt = deletion.calls[0][2].deletionReceipt;
+  assert.match(deletionReceipt, /^[A-Za-z0-9_-]{43}$/u);
   assert.deepEqual(deletion.calls, [
     ['call', 'deleteClientAccount', {
+      deletionReceipt,
       installationId: 'installation_abcdefghijklmnopqrstuvwxyz123456',
     }],
     ['clearInstallation'],
@@ -459,7 +492,7 @@ test('review deletion uses only its realm-specific callable and returns the dura
   });
   harness.replaceCall(async (name, data) => {
     harness.calls.push(['call', name, data]);
-    return { status: 'pending' };
+    return DELETION_PENDING;
   });
   const session = await harness.adapter.sessionStore.restore();
   assert.ok(session);
@@ -467,10 +500,13 @@ test('review deletion uses only its realm-specific callable and returns the dura
   const result = await harness.adapter.gateway.deleteAccount(session);
   const cleanup = await harness.adapter.gateway.cleanupAccountDeletion('begin');
 
-  assert.deepEqual(result, { status: 'pending' });
+  assert.deepEqual(result, DELETION_PENDING);
   assert.equal(cleanup, 'completed');
+  const deletionReceipt = harness.calls[0][2].deletionReceipt;
+  assert.match(deletionReceipt, /^[A-Za-z0-9_-]{43}$/u);
   assert.deepEqual(harness.calls, [
     ['call', 'deleteAppReviewAccount', {
+      deletionReceipt,
       installationId: 'installation_abcdefghijklmnopqrstuvwxyz123456',
     }],
     ['clearInstallation'],
@@ -489,7 +525,7 @@ test('an acknowledged review deletion locks locally and signs out even when inst
   harness.replaceCall(async (name, data) => {
     harness.calls.push(['call', name, data]);
     if (name === 'refreshAppReviewAccess') return { grant: REVIEW_GRANT };
-    if (name === 'deleteAppReviewAccount') return { status: 'pending' };
+    if (name === 'deleteAppReviewAccount') return DELETION_PENDING;
     throw new Error('wrong_realm');
   });
   const controller = createClientAccessController({
@@ -499,7 +535,7 @@ test('an acknowledged review deletion locks locally and signs out even when inst
   await controller.initialize();
   assert.equal(controller.getSnapshot().status, 'unlocked');
 
-  assert.deepEqual(await controller.deleteAccount(), { status: 'pending' });
+  assert.deepEqual(await controller.deleteAccount(), DELETION_PENDING);
   assert.deepEqual(controller.getSnapshot(), {
     status: 'locked',
     grant: null,
@@ -517,7 +553,7 @@ test('foreground refresh retries failed local cleanup without repeating an ackno
   harness.replaceCall(async (name, data) => {
     harness.calls.push(['call', name, data]);
     if (name === 'refreshAppReviewAccess') return { grant: REVIEW_GRANT };
-    if (name === 'deleteAppReviewAccount') return { status: 'pending' };
+    if (name === 'deleteAppReviewAccount') return DELETION_PENDING;
     throw new Error('wrong_realm');
   });
   const controller = createClientAccessController({
@@ -525,7 +561,7 @@ test('foreground refresh retries failed local cleanup without repeating an ackno
     sessionStore: harness.adapter.sessionStore,
   });
   await controller.initialize();
-  assert.deepEqual(await controller.deleteAccount(), { status: 'pending' });
+  assert.deepEqual(await controller.deleteAccount(), DELETION_PENDING);
 
   await controller.refresh();
 
@@ -548,7 +584,7 @@ test('a fresh runtime resumes durable local cleanup without repeating the backen
   firstRuntime.replaceCall(async (name, data) => {
     firstRuntime.calls.push(['call', name, data]);
     if (name === 'refreshAppReviewAccess') return { grant: REVIEW_GRANT };
-    if (name === 'deleteAppReviewAccount') return { status: 'pending' };
+    if (name === 'deleteAppReviewAccount') return DELETION_PENDING;
     throw new Error('wrong_realm');
   });
   const firstController = createClientAccessController({
@@ -556,7 +592,7 @@ test('a fresh runtime resumes durable local cleanup without repeating the backen
     sessionStore: firstRuntime.adapter.sessionStore,
   });
   await firstController.initialize();
-  assert.deepEqual(await firstController.deleteAccount(), { status: 'pending' });
+  assert.deepEqual(await firstController.deleteAccount(), DELETION_PENDING);
   assert.equal(cleanupState.pending, true);
 
   const nextRuntime = makeHarness({ cleanupState });
@@ -590,23 +626,23 @@ test('a failed cleanup-marker write remains pending until a safe in-process retr
   });
   harness.replaceCall(async (name, data) => {
     harness.calls.push(['call', name, data]);
-    if (name === 'deleteAppReviewAccount') return { status: 'pending' };
+    if (name === 'deleteAppReviewAccount') return DELETION_PENDING;
     throw new Error('wrong_realm');
   });
   const session = await harness.adapter.sessionStore.restore();
 
-  assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), { status: 'pending' });
+  assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), DELETION_PENDING);
   assert.equal(await harness.adapter.gateway.cleanupAccountDeletion('begin'), 'pending');
   assert.equal(await harness.adapter.gateway.cleanupAccountDeletion('retry'), 'completed');
   assert.equal(harness.calls.filter(([, name]) => name === 'deleteAppReviewAccount').length, 1);
 });
 
 test('account deletion accepts only the durable pending or completed backend contract', async () => {
-  for (const status of ['pending', 'completed']) {
+  for (const status of [DELETION_PENDING, DELETION_COMPLETED]) {
     const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
-    harness.replaceCall(async () => ({ status }));
+    harness.replaceCall(async () => status);
     const session = await harness.adapter.sessionStore.restore();
-    assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), { status });
+    assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), status);
     assert.deepEqual(harness.calls, []);
   }
 
@@ -618,12 +654,190 @@ test('account deletion accepts only the durable pending or completed backend con
     const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
     harness.replaceCall(async () => response);
     const session = await harness.adapter.sessionStore.restore();
-    await assert.rejects(
-      harness.adapter.gateway.deleteAccount(session),
-      /invalid_backend_response/u,
-    );
+    assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), {
+      status: 'unavailable',
+    });
+    assert.deepEqual(await harness.adapter.deletionTracker.check(), {
+      kind: 'unavailable',
+      phase: 'prepared',
+      realm: 'production_client',
+    });
+    assert.equal(harness.secureValues.size, 1);
     assert.deepEqual(harness.calls, []);
   }
+});
+
+test('a lost delete response is resolved by the Auth-free realm status callable', async () => {
+  const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    if (name === 'deleteClientAccount') throw new Error('response_lost');
+    if (name === 'getClientAccountDeletionStatus') return DELETION_PENDING;
+    throw new Error('wrong_callable');
+  });
+  const session = await harness.adapter.sessionStore.restore();
+
+  assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), DELETION_PENDING);
+  assert.equal(harness.calls.length, 4);
+  assert.equal(harness.calls[0][1], 'deleteClientAccount');
+  assert.equal(harness.calls[1][1], 'getClientAccountDeletionStatus');
+  assert.equal(harness.calls[0][2].deletionReceipt, harness.calls[1][2].deletionReceipt);
+  assert.equal('installationId' in harness.calls[1][2], false);
+  assert.equal(harness.calls.filter(([kind]) => kind === 'signOut').length, 1);
+});
+
+test('foreground status polling waits for an in-flight deletion submission to settle', async () => {
+  const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+  let accepted = false;
+  let resolveDeletion;
+  const pendingDeletion = new Promise((resolve) => { resolveDeletion = resolve; });
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    if (name === 'deleteClientAccount') return pendingDeletion;
+    if (name === 'getClientAccountDeletionStatus' && !accepted) {
+      const error = new Error('invalid_access');
+      error.code = 'functions/not-found';
+      throw error;
+    }
+    if (name === 'getClientAccountDeletionStatus') return DELETION_PENDING;
+    throw new Error('wrong_callable');
+  });
+  const session = await harness.adapter.sessionStore.restore();
+  const deletion = harness.adapter.gateway.deleteAccount(session);
+  while (!harness.calls.some(([, name]) => name === 'deleteClientAccount')) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  const check = harness.adapter.deletionTracker.check();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    harness.calls.some(([, name]) => name === 'getClientAccountDeletionStatus'),
+    false,
+  );
+
+  accepted = true;
+  resolveDeletion(DELETION_PENDING);
+  assert.deepEqual(await deletion, DELETION_PENDING);
+  assert.equal((await check).kind, 'pending');
+  assert.equal(harness.secureValues.size, 1);
+});
+
+test('offline uncertainty keeps a prepared receipt and locks without clearing Auth or installation', async () => {
+  const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    throw new Error('offline');
+  });
+  const controller = createClientAccessController({
+    gateway: harness.adapter.gateway,
+    sessionStore: harness.adapter.sessionStore,
+  });
+  await controller.initialize();
+
+  assert.deepEqual(await controller.deleteAccount(), { status: 'unavailable' });
+  assert.equal(controller.getSnapshot().status, 'locked');
+  assert.equal(harness.calls.some(([kind]) => kind === 'signOut'), false);
+  assert.equal(harness.calls.some(([kind]) => kind === 'clearInstallation'), false);
+  assert.deepEqual(await harness.adapter.deletionTracker.check(), {
+    kind: 'unavailable',
+    phase: 'prepared',
+    realm: 'production_client',
+  });
+});
+
+test('only explicit not-found discards a prepared receipt and permits restoring the old session', async () => {
+  const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+  let offline = true;
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    if (name === 'refreshClientAccess') return { grant: ACTIVE_GRANT };
+    if (name === 'deleteClientAccount' || offline) throw new Error('offline');
+    const error = new Error('invalid_access');
+    error.code = 'functions/not-found';
+    throw error;
+  });
+  const controller = createClientAccessController({
+    gateway: harness.adapter.gateway,
+    sessionStore: harness.adapter.sessionStore,
+  });
+  await controller.initialize();
+  assert.deepEqual(await controller.deleteAccount(), { status: 'unavailable' });
+
+  offline = false;
+  assert.deepEqual(await harness.adapter.deletionTracker.check(), { kind: 'none' });
+  assert.equal(harness.secureValues.size, 0);
+  await controller.initialize();
+  assert.equal(controller.getSnapshot().status, 'unlocked');
+});
+
+test('accepted not-found never restores access and requires explicit safe archival', async () => {
+  const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+  let completedTtlExpired = false;
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    if (name === 'deleteClientAccount') return DELETION_PENDING;
+    if (completedTtlExpired) {
+      const error = new Error('invalid_access');
+      error.code = 'functions/not-found';
+      throw error;
+    }
+    return DELETION_PENDING;
+  });
+  const session = await harness.adapter.sessionStore.restore();
+  assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), DELETION_PENDING);
+
+  completedTtlExpired = true;
+  assert.deepEqual(await harness.adapter.deletionTracker.check(), {
+    kind: 'unavailable',
+    phase: 'accepted',
+    realm: 'production_client',
+  });
+  assert.equal(harness.secureValues.size, 1);
+  assert.equal(await harness.adapter.deletionTracker.archiveAccepted(), true);
+  assert.equal(harness.secureValues.size, 0);
+  assert.equal(harness.calls.some(([kind]) => kind === 'signOut'), true);
+});
+
+test('an accepted receipt remains cleanup authority when the status response is malformed', async () => {
+  const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    if (name === 'deleteClientAccount') return DELETION_PENDING;
+    if (name === 'getClientAccountDeletionStatus') return { status: 'pending' };
+    throw new Error('wrong_callable');
+  });
+  const session = await harness.adapter.sessionStore.restore();
+  assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), DELETION_PENDING);
+
+  assert.deepEqual(await harness.adapter.deletionTracker.check(), {
+    kind: 'unavailable',
+    phase: 'accepted',
+    realm: 'production_client',
+  });
+  assert.equal(harness.calls.some(([kind]) => kind === 'clearInstallation'), true);
+  assert.equal(harness.calls.some(([kind]) => kind === 'signOut'), true);
+  assert.equal(harness.secureValues.size, 1);
+});
+
+test('manual polling advances pending to completed and Done clears only after confirmation', async () => {
+  const harness = makeHarness({ currentUid: 'review_abcdefghijklmnopqrstuvwxyz123456' });
+  let status = DELETION_PENDING;
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    if (name === 'deleteAppReviewAccount') return DELETION_PENDING;
+    if (name === 'getAppReviewAccountDeletionStatus') return status;
+    throw new Error('wrong_realm');
+  });
+  const session = await harness.adapter.sessionStore.restore();
+  assert.deepEqual(await harness.adapter.gateway.deleteAccount(session), DELETION_PENDING);
+
+  assert.equal((await harness.adapter.deletionTracker.check()).kind, 'pending');
+  status = DELETION_COMPLETED;
+  const completed = await harness.adapter.deletionTracker.check();
+  assert.equal(completed.kind, 'completed');
+  assert.equal(harness.secureValues.size, 1);
+  assert.equal(await harness.adapter.deletionTracker.acknowledgeCompleted(), true);
+  assert.deepEqual(await harness.adapter.deletionTracker.check(), { kind: 'none' });
 });
 
 test('all authenticated operations fail closed when Firebase has no live client principal', async () => {

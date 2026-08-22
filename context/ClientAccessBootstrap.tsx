@@ -22,6 +22,7 @@ export function ClientAccessBootstrap({ children }: { readonly children: ReactNo
   return (
     <ClientAccessProvider
       key={runtime === null ? 'locked' : 'native'}
+      deletionTracker={runtime?.deletionTracker}
       gateway={runtime?.gateway}
       sessionStore={runtime?.sessionStore}
     >

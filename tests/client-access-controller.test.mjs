@@ -406,6 +406,39 @@ test('account deletion keeps active access available when the server has not ack
   });
 });
 
+test('an unresolved durable deletion receipt locks access without erasing the restorable session', async () => {
+  const session = createOpaqueClientSession();
+  const effects = [];
+  const controller = createClientAccessController({
+    gateway: {
+      redeem: async () => null,
+      refresh: async () => grant,
+      removeAccess: async () => {},
+      deleteAccount: async () => ({ status: 'unavailable' }),
+      signOut: async () => { effects.push('sign-out'); },
+    },
+    sessionStore: {
+      restore: async () => { effects.push('restore'); return session; },
+      commit: async () => {},
+      clear: async () => { effects.push('clear'); },
+    },
+  });
+  await controller.initialize();
+  effects.length = 0;
+
+  assert.deepEqual(await controller.deleteAccount(), { status: 'unavailable' });
+  assert.deepEqual(effects, []);
+  assert.deepEqual(controller.getSnapshot(), {
+    status: 'locked',
+    grant: null,
+    error: null,
+  });
+
+  await controller.initialize();
+  assert.deepEqual(effects, ['restore']);
+  assert.equal(controller.getSnapshot().status, 'unlocked');
+});
+
 test('account deletion can be retried after a pre-acceptance network failure', async () => {
   const session = createOpaqueClientSession();
   const effects = [];
