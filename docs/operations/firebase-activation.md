@@ -7,7 +7,10 @@ staff domain `cabohealth.org`; no Authentication user or TOTP enrollment exists.
 No database/location, claim, document, rule, index, TTL policy, parameter,
 secret, Function, or budget amount has been created. The iOS and staff web apps
 are registered and App Attest is configured with a one-hour token TTL, but
-service enforcement remains off. See
+service enforcement remains off. The staff web app's score-based reCAPTCHA
+Enterprise provider is also registered for only `cabohealth.org`, with a
+one-hour token TTL and minimum score `0.5`; its public site-key value remains an
+external build input. See
 [`../decisions/0001-single-firebase-production-project.md`](../decisions/0001-single-firebase-production-project.md)
 for the accepted architecture and external-state snapshot.
 

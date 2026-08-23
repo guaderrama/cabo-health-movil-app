@@ -26,6 +26,13 @@ The approved release system must inject all values. Never commit them to an
   `VITE_FIREBASE_APPCHECK_ENTERPRISE_SITE_KEY`
 - `VITE_FIREBASE_FUNCTIONS_REGION=us-central1`
 
+The production provider is the score-based reCAPTCHA Enterprise key named
+`CaboHealth Staff App Check`. Its only allowed domain is `cabohealth.org`; its
+App Check token TTL is one hour and its minimum valid score is `0.5`. Retrieve
+the public site-key value from the owner-controlled project at build time. Do
+not copy that value into Git, documentation, tickets, or release logs, and do
+not add `localhost` to this production key.
+
 The build fails unless the public project/App ID, external expected pins, and
 backend `STAFF_WEB_FIREBASE_APP_ID` all match. The Auth domain must be exactly
 `<projectId>.firebaseapp.com`. Confirm independently that Functions were

@@ -71,6 +71,7 @@ Completed:
 - Firebase iOS app `CaboHealth iOS` registered for bundle `com.cabohealth.app`, App Store ID `6758285327`, and Apple team `DQ8PH2DZ3R`.
 - Firebase web app `CaboHealth Staff Access` registered for the staff portal.
 - App Attest provider registered for the iOS app with a one-hour App Check token TTL. Enforcement remains off until the exact signed TestFlight client produces valid metrics.
+- A score-based reCAPTCHA Enterprise key named `CaboHealth Staff App Check` is restricted to `cabohealth.org`. It is registered as the staff web app's App Check provider with a one-hour token TTL and minimum valid score `0.5`; the public site-key value remains outside Git.
 - Identity Platform initialized. Email/password sign-in is enabled, TOTP is the enabled MFA provider with one adjacent clock interval, and the only custom authorized web domain is `cabohealth.org` for the canonical `https://cabohealth.org/staff/` surface.
 - The owner/operator currently has the project Owner role. Firebase-created service agents and default compute/App Engine service accounts exist; their effective roles must be reviewed and reduced before Functions deployment.
 
@@ -79,7 +80,7 @@ Not completed:
 - no Firestore database or location;
 - no Authentication user, enrolled TOTP factor, custom claim, or private admin record;
 - no deployed rules, indexes, TTL policy, Functions, runtime identity, or secrets;
-- no DeviceCheck fallback key, web reCAPTCHA Enterprise provider, or App Check service enforcement;
+- no DeviceCheck fallback key or App Check service enforcement;
 - no Firebase budget amount or alert thresholds;
 - no real client code, App Review credential, or protected resource URL;
 - no Hostinger protected activation;
