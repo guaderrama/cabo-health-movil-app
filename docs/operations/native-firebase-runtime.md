@@ -9,9 +9,11 @@ an App Check initialization failure, or a project mismatch all keep Client
 Resources locked.
 
 This repository does not contain a Firebase app ID, API key, service plist,
-debug token, backend secret, access code, or Firebase project alias. Do not
-reuse a Firebase project owned by another app. Create dedicated CaboHealth
-development/staging/production projects before enabling a build environment.
+debug token, backend secret, or access code. The non-secret production alias is
+pinned to `cabohealth-owner-prod`; native credentials remain external. Do not
+reuse `Cabo Health Nova` or another app's Firebase project. Under ADR 0001,
+development uses emulators and only the exact production/TestFlight build may
+use the dedicated cloud project. A staging project requires a superseding ADR.
 
 `expo-updates` is intentionally absent: the reviewed binary cannot be changed
 by an undeclared over-the-air JavaScript update. Ship code changes through a
@@ -21,7 +23,8 @@ is added in a future release.
 ## Build inputs
 
 The EAS profile supplies `APP_ENV` (`development`, `staging`, or `production`).
-The build environment must additionally supply:
+`staging` remains fail-closed dormant capability and has no authorized cloud
+project. A production build environment must additionally supply:
 
 - `CABOHEALTH_GOOGLE_SERVICES_PLIST`: a file-type environment variable pointing
   to that environment's `GoogleService-Info.plist`.
@@ -30,14 +33,14 @@ The build environment must additionally supply:
 
 The plist `BUNDLE_ID` must be `com.cabohealth.app`. Staging and production
 configuration fails before native compilation if any required input is missing
-or mismatched. A development build without these inputs remains intentionally
-locked.
+or mismatched; no staging credentials are authorized. A development build
+without these inputs remains intentionally locked.
 
 `CABOHEALTH_APP_CHECK_DEBUG=true` is accepted only for `APP_ENV=development`.
-Register only the development provider's generated device token in the
-dedicated Firebase development project. Do not place a debug token in
-`eas.json`, Expo `extra`, source code, application logs, or a plist, and never
-enable the debug provider in staging or production.
+Use debug providers only with local/emulator development and never register a
+debug token in the production project. Do not place a debug token in `eas.json`,
+Expo `extra`, source code, application logs, or a plist, and never enable the
+debug provider in staging or production.
 
 ## Attestation and calls
 
@@ -65,8 +68,9 @@ Before a release:
 
 1. Run `npm test`, `npm run typecheck`, and `npm run expo:config` without native
    credentials; the public config must report client access disabled.
-2. Resolve the staging config with its file/project inputs and confirm the
-   plugins and matching project ID.
+2. Resolve the exact production config with its private file/project inputs and
+   confirm the plugins and matching `cabohealth-owner-prod` project ID before
+   the guarded RC build. Keep preview/staging client access locked.
 3. Build a clean development client after adding native modules; an older Expo
    development client cannot acquire them through an OTA update.
 4. Verify invalid/revoked/expired codes, foreground refresh, Remove Access,

@@ -1,8 +1,15 @@
 # Firebase activation: local proof and guarded cloud handoff
 
-Status: local tooling is implemented; no Firebase project, database, identity,
-claim, document, rule, index, parameter, secret, or billing setting has been
-created or changed by this work.
+Status: `cabohealth-owner-prod` was created, linked to owner-controlled billing,
+enabled for the required APIs, and added to Firebase on 2026-08-22. Identity
+Platform is initialized with email/password sign-in, TOTP MFA, and the exact
+staff domain `cabohealth.org`; no Authentication user or TOTP enrollment exists.
+No database/location, claim, document, rule, index, TTL policy, parameter,
+secret, Function, or budget amount has been created. The iOS and staff web apps
+are registered and App Attest is configured with a one-hour token TTL, but
+service enforcement remains off. See
+[`../decisions/0001-single-firebase-production-project.md`](../decisions/0001-single-firebase-production-project.md)
+for the accepted architecture and external-state snapshot.
 
 This runbook is the only activation path for the two Firestore databases and
 the initial owner authority. It follows Firebase's current documentation for
@@ -21,9 +28,13 @@ than allowing a test to invent a database ID.
   `firestore.review.rules` and `firestore.review.indexes.json`.
 - Both rules files deny every mobile/web SDK read and write. Privileged access
   is through Firebase Admin SDK plus separately reviewed IAM.
-- Production project IDs end in `-prod`; staging project IDs end in
-  `-staging`. The review database ID must end in `-production`/`-prod` or
-  `-staging` respectively. The tools reject cross-environment combinations.
+- The only authorized cloud project is `cabohealth-owner-prod`. Local
+  development and rules tests use emulator-only project `demo-cabohealth`.
+  The existing `staging` parser/test path is dormant future capability; it
+  does not authorize creation or use of a staging project.
+- The production review database is exactly
+  `cabohealth-review-production`. The tools reject cross-environment
+  project/database combinations.
 - The checked-in `firebase.json` intentionally contains
   `UNCONFIGURED_CABOHEALTH_REVIEW_DATABASE_ID`. A direct all-service deploy is
   therefore fail-closed. A reviewed private config must be rendered for each
@@ -67,58 +78,52 @@ npm run firebase:config -- \
   --out /ABSOLUTE/REPO/release/private/firebase.production.json
 ```
 
-Use `staging`, an exact `-staging` project ID, and an exact `-staging` review
-database ID for the first pass. The command writes mode `0600` and prints only
+The accepted single-project architecture renders only `production`, project
+`cabohealth-owner-prod`, and review database
+`cabohealth-review-production`. The command writes mode `0600` and prints only
 sanitized evidence: environment, exact non-secret project/database IDs, and
 the SHA-256 of the rendered config. Review the file and hash before any cloud
-command. Do not edit the placeholder in the checked-in config.
+command. Do not edit the placeholder in checked-in `firebase.json`; the private
+rendered config remains the deployment authority.
 
 ## Cloud provisioning and rules
 
-**OWNER APPROVAL REQUIRED:** the owner must confirm the exact staging and
-production project IDs, database IDs, location, edition, quota/billing impact,
-deletion protection, and the operator's `roles/datastore.owner` authority.
-Database creation is irreversible in location and is not authorized merely by
-merging this code.
+**OWNER APPROVAL REQUIRED:** the owner must confirm the exact production
+project/database IDs, location, edition, quota/billing impact, deletion
+protection, and the operator's `roles/datastore.owner` authority. Database
+creation is irreversible in location and is not authorized merely by creating
+the project or merging this code.
 
-After that approval, run staging first, replacing every uppercase token with a
-confirmed exact value. The command intentionally relies on the documented
-Standard-edition default; selecting Enterprise would require a separately
-reviewed architecture and command:
+After that approval, inspect the production project first. The command relies
+on Standard edition; selecting Enterprise requires a separate ADR and reviewed
+command:
 
 ```sh
 npm exec -- firebase firestore:databases:list \
-  --project EXACT_CABOHEALTH_PROJECT_ID_ENDING_IN_STAGING
+  --project cabohealth-owner-prod
 
 npm exec -- firebase firestore:databases:create \
-  EXACT_REVIEW_DATABASE_ID_ENDING_IN_STAGING \
+  cabohealth-review-production \
   --location=OWNER_APPROVED_LOCATION \
   --delete-protection ENABLED \
-  --project EXACT_CABOHEALTH_PROJECT_ID_ENDING_IN_STAGING
+  --project cabohealth-owner-prod
 
 npm exec -- firebase firestore:databases:get \
-  EXACT_REVIEW_DATABASE_ID_ENDING_IN_STAGING \
-  --project EXACT_CABOHEALTH_PROJECT_ID_ENDING_IN_STAGING
+  cabohealth-review-production \
+  --project cabohealth-owner-prod
 
-npm exec -- firebase deploy \
-  --config /ABSOLUTE/REPO/release/private/firebase.staging.json \
-  --project EXACT_CABOHEALTH_PROJECT_ID_ENDING_IN_STAGING \
-  --only firestore
-```
-
-For production, repeat with the separately reviewed production artifact. The
-exact guarded production form is:
-
-```sh
 npm exec -- firebase deploy \
   --config /ABSOLUTE/REPO/release/private/firebase.production.json \
-  --project EXACT_CABOHEALTH_PROJECT_ID_ENDING_IN_PROD \
+  --project cabohealth-owner-prod \
   --only firestore
 ```
 
-After each deployment, verify both database identities, deny-all rules, every
+Create `(default)` explicitly in the same owner-approved location with deletion
+protection before the named database; never let a convenience deploy choose an
+implicit location. After deployment, verify both database identities, deny-all rules, every
 TTL field override, and deletion protection in the provider. Do not deploy
-Functions or issue an App Review credential until staging verification passes.
+Functions or issue an App Review credential until emulator, synthetic-record,
+rules, IAM, and deletion tests pass and the exact database evidence is reviewed.
 
 The three non-secret Functions parameters remain separate from this renderer:
 `CLIENT_IOS_FIREBASE_APP_ID`, `STAFF_WEB_FIREBASE_APP_ID`, and
@@ -130,10 +135,17 @@ Secret Manager values remain external and are never accepted by these tools.
 
 ## Plan and apply the owner bootstrap
 
-The owner Auth user must already exist in the exact project, be enabled, and
-have a TOTP factor enrolled. The tool does not create users, enroll MFA, accept
-an email address, or accept credential material. Put only the Firebase Auth UID
-in a private mode-`0600` file without exposing it in shell history.
+Identity Platform has already been initialized for this project. Email/password
+sign-in is enabled and requires a password; TOTP is enabled with one adjacent
+clock interval. The Firebase-hosted domains plus `cabohealth.org` are the only
+authorized domains. Do not add `localhost` to production merely for development:
+local work uses the Auth emulator.
+
+The owner Auth user must already exist in the exact project, be enabled, have a
+verified email, and have a TOTP factor enrolled. The bootstrap tool does not
+create users, enroll MFA, accept an email address, or accept credential material.
+Put only the Firebase Auth UID in a private mode-`0600` file without exposing it
+in shell history.
 
 The default command is local-only: it writes a private exact plan and prints a
 sanitized evidence object containing the plan hash but not the UID or document
@@ -176,7 +188,8 @@ npm run firebase:bootstrap -- \
   --reviewed-plan-sha256 EXACT_64_CHARACTER_SHA256_FROM_DRY_RUN
 ```
 
-Run and verify this complete sequence in staging before requesting separate
-production approval. Real project creation, billing enablement, IAM, database
-creation, parameters, secrets, App Check, rules/TTL deployment, bootstrap
-application, and production evidence all remain external gates.
+Run and verify the dry-run sequence locally before requesting each separate
+production mutation approval. IAM, database creation, parameters, secrets, App
+Check, rules/TTL deployment, bootstrap application, and production evidence
+remain external gates. Do not create a staging project without a superseding
+owner-approved ADR.

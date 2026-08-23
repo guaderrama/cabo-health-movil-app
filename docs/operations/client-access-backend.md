@@ -457,8 +457,9 @@ Account deletion actively removes linked launch, web-session, redemption, and
 safely attributable installation-rate records before returning `completed`.
 The residual non-account records are bounded by TTL: broker requests two
 minutes and IP-only rate-limit records thirty minutes. Sanitized audit events
-have a 30-day expiry. Firestore TTL deletion is asynchronous, so staging must
-verify that every field override is active; authorization never depends on TTL.
+have a 30-day expiry. Firestore TTL deletion is asynchronous, so emulator tests
+and the controlled synthetic-record production verification must confirm that
+every field override is active; authorization never depends on TTL.
 
 Before activating any TTL policy, inspect every TTL-enabled collection in both
 the production and review databases for historical documents whose
@@ -474,27 +475,29 @@ for domain validation and callable responses.
 
 Do not call this Apple-ready or production-ready until all are complete:
 
-1. Create separate staging and production Firebase projects and explicit CLI
-   aliases; provision the eight independent production secret rings without
-   exposing values.
+1. Preserve the owner-approved single project `cabohealth-owner-prod` and its
+   exact CLI alias; provision the independent production/review secret rings
+   without exposing values. Do not create a staging project without a
+   superseding ADR.
 2. Enable App Check with App Attest for the production iOS bundle and verify
    exact app-ID binding and consumed-token replay behavior across all 11 iOS
    client callables on a physical iPhone.
 3. Bootstrap the owner Auth account, MFA, custom claim, and active private
    admin document through a separately controlled process.
-4. Migrate or remove every historical numeric `expiresAtMs` value, deploy rules,
-   TTL field overrides, and Functions to staging, and verify every retained TTL
-   deadline is a Firestore `Timestamp`; seed the signed fixed catalog and run
-   Firebase Emulator and concurrency/failure tests.
+4. Migrate or remove every historical numeric `expiresAtMs` value, run rules,
+   TTL, concurrency, and failure tests in the Firebase Emulator, then deploy to
+   production under a separately reviewed mutation and verify every retained
+   TTL deadline is a Firestore `Timestamp`; seed only the signed fixed catalog.
 5. Integrate and test the native adapter against all six production client
    callables—redeem, refresh, remove, delete, deletion status, and launch—plus
    the staff portal and PHP broker adapter end-to-end. Verify the 256-bit
    receipt remains only in SecureStore and exercise remove/delete/revoke during
    active native and web sessions.
 6. Exercise the durable deletion worker with injected Auth/Firestore failures
-   and malformed tombstones in staging; verify the sanitized aggregate alert,
-   deployed TTL status, and that the native UI treats `pending` as pending
-   rather than as completed erasure.
+   and malformed tombstones in the emulator, then verify controlled synthetic
+   production deletion, the sanitized aggregate alert, deployed TTL status,
+   and that the native UI treats `pending` as pending rather than as completed
+   erasure.
 7. Provision and verify the source-implemented App Review realm: the named
    Firestore database, its default-deny rules/TTL policy, least-privilege
    runtime identity, eight separate key rings, fixed Hostinger sample, portal

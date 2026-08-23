@@ -1,6 +1,5 @@
 {
   "projects": {
-    "cabohealth-prod": "UNCONFIGURED_CABOHEALTH_PRODUCTION_PROJECT_ID",
-    "cabohealth-staging": "UNCONFIGURED_CABOHEALTH_STAGING_PROJECT_ID"
+    "cabohealth-prod": "cabohealth-owner-prod"
   }
 }

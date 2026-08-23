@@ -2,13 +2,12 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
-test('Firebase config has no legacy/default project and requires explicit safe aliases', async () => {
+test('Firebase config pins the owner-approved single production project', async () => {
   const parsed: unknown = JSON.parse(await readFile('../.firebaserc', 'utf8'));
   assert.ok(isRecord(parsed) && isRecord(parsed.projects));
-  assert.deepEqual(Object.keys(parsed.projects).sort(), ['cabohealth-prod', 'cabohealth-staging']);
+  assert.deepEqual(Object.keys(parsed.projects), ['cabohealth-prod']);
   assert.equal(Object.hasOwn(parsed.projects, 'default'), false);
-  assert.match(String(parsed.projects['cabohealth-staging']), /^UNCONFIGURED_/u);
-  assert.match(String(parsed.projects['cabohealth-prod']), /^UNCONFIGURED_/u);
+  assert.equal(parsed.projects['cabohealth-prod'], 'cabohealth-owner-prod');
   assert.doesNotMatch(JSON.stringify(parsed), /instalacionmariposas/u);
 });
 
