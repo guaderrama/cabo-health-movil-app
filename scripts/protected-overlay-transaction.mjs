@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import {
   closeSync,
   constants,
@@ -6,13 +7,9 @@ import {
   fstatSync,
   fsyncSync,
   linkSync,
-  lstatSync,
   mkdirSync,
   openSync,
-  readdirSync,
-  realpathSync,
   renameSync,
-  rmdirSync,
   unlinkSync,
   writeSync,
 } from 'node:fs';
@@ -27,6 +24,223 @@ const LOCK_NAME = 'transaction.lock';
 const LOCK_KIND = 'cabohealth-protected-overlay-lock-v1';
 const JOURNAL_KIND = 'cabohealth-protected-overlay-transaction-v1';
 const TOKEN_PATTERN = /^[a-f0-9]{32}$/u;
+
+// Node does not expose openat(2)/unlinkat(2). The cleanup worker enters each
+// already-validated directory as its process cwd, verifies that kernel-held
+// inode before touching an entry, and gives every child directory the same
+// descriptor-bound treatment in a fresh process. Path replacement can make
+// cleanup fail, but it cannot redirect traversal through a symlink.
+const DURABLE_TREE_CLEANUP_WORKER_SOURCE = String.raw`
+'use strict';
+const { spawnSync } = require('node:child_process');
+const {
+  closeSync,
+  constants,
+  fstatSync,
+  fsyncSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  rmdirSync,
+  unlinkSync,
+} = require('node:fs');
+
+function fail(message) {
+  throw new Error(message);
+}
+
+function mode(stat) {
+  return Number(stat.mode & 0o777n);
+}
+
+function sameFile(left, right) {
+  return [
+    'dev',
+    'ino',
+    'mode',
+    'nlink',
+    'uid',
+    'gid',
+    'rdev',
+    'size',
+    'mtimeNs',
+    'ctimeNs',
+  ].every((field) => left[field] === right[field]);
+}
+
+function sameDirectory(left, right) {
+  return [
+    'dev',
+    'ino',
+    'mode',
+    'uid',
+    'gid',
+    'rdev',
+  ].every((field) => left[field] === right[field]);
+}
+
+function encodedPath(components) {
+  return Buffer.from(JSON.stringify(components)).toString('base64');
+}
+
+function spawnBoundDirectory(name, stat, source, encodedSource, components) {
+  return spawnSync(process.execPath, [
+    '-e',
+    source,
+    String(stat.dev),
+    String(stat.ino),
+    encodedSource,
+    encodedPath(components),
+  ], {
+    cwd: name,
+    encoding: 'utf8',
+    env: process.env,
+    maxBuffer: 1024 * 1024,
+  });
+}
+
+let rootDescriptor;
+try {
+  const [expectedDev, expectedIno, encodedSource, encodedSelection] = process.argv.slice(1);
+  if (!/^\d+$/.test(expectedDev || '') || !/^\d+$/.test(expectedIno || '')) {
+    fail('cleanup worker identity invalid');
+  }
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encodedSource || '')) {
+    fail('cleanup worker source invalid');
+  }
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encodedSelection || '')) {
+    fail('cleanup worker selection invalid');
+  }
+  const source = Buffer.from(encodedSource, 'base64').toString('utf8');
+  let selection;
+  try {
+    selection = JSON.parse(Buffer.from(encodedSelection, 'base64').toString('utf8'));
+  } catch {
+    fail('cleanup worker selection invalid');
+  }
+  if (
+    !Array.isArray(selection)
+    || selection.some((component) => (
+      typeof component !== 'string'
+      || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/.test(component)
+      || component === '.'
+      || component === '..'
+    ))
+    || encodedPath(selection) !== encodedSelection
+  ) fail('cleanup worker selection invalid');
+  rootDescriptor = openSync(
+    '.',
+    constants.O_RDONLY | constants.O_DIRECTORY | (constants.O_NOFOLLOW || 0),
+  );
+  const root = fstatSync(rootDescriptor, { bigint: true });
+  const currentUid = typeof process.geteuid === 'function' ? process.geteuid() : null;
+  if (
+    !root.isDirectory()
+    || root.isSymbolicLink()
+    || String(root.dev) !== expectedDev
+    || String(root.ino) !== expectedIno
+    || currentUid !== null && Number(root.uid) !== currentUid
+    || ![0o700, 0o755].includes(mode(root))
+  ) fail('cleanup worker directory changed');
+
+  if (selection.length > 0) {
+    const [entryName, ...remaining] = selection;
+    const before = lstatSync(entryName, { bigint: true });
+    if (
+      !before.isDirectory()
+      || before.isSymbolicLink()
+      || currentUid !== null && Number(before.uid) !== currentUid
+      || ![0o700, 0o755].includes(mode(before))
+    ) fail('cleanup worker selected directory invalid');
+    const child = spawnBoundDirectory(
+      entryName,
+      before,
+      source,
+      encodedSource,
+      remaining,
+    );
+    if (child.error || child.status !== 0) {
+      fail(child.error?.message || child.stderr || 'cleanup worker selected child failed');
+    }
+    const after = lstatSync(entryName, { bigint: true });
+    if (!after.isDirectory() || after.isSymbolicLink() || !sameDirectory(before, after)) {
+      fail('cleanup worker selected child changed');
+    }
+    if (remaining.length === 0) {
+      rmdirSync(entryName);
+      fsyncSync(rootDescriptor);
+    }
+  } else {
+    for (const entry of readdirSync('.', { withFileTypes: true })) {
+      if (entry.name === '.' || entry.name === '..' || entry.name.includes('/')) {
+        fail('cleanup worker entry invalid');
+      }
+      const before = lstatSync(entry.name, { bigint: true });
+      if (before.isSymbolicLink()) fail('cleanup worker symlink refused');
+      if (before.isDirectory()) {
+        const child = spawnBoundDirectory(
+          entry.name,
+          before,
+          source,
+          encodedSource,
+          [],
+        );
+        if (child.error || child.status !== 0) {
+          fail(child.error?.message || child.stderr || 'cleanup worker child failed');
+        }
+        const after = lstatSync(entry.name, { bigint: true });
+        if (!after.isDirectory() || after.isSymbolicLink() || !sameDirectory(before, after)) {
+          fail('cleanup worker child changed');
+        }
+        rmdirSync(entry.name);
+        fsyncSync(rootDescriptor);
+        continue;
+      }
+      if (!before.isFile() || before.nlink !== 1n || ![0o400, 0o600, 0o644].includes(mode(before))) {
+        fail('cleanup worker file invalid');
+      }
+      if (currentUid !== null && Number(before.uid) !== currentUid) {
+        fail('cleanup worker file owner invalid');
+      }
+      if (before.size < 0n || before.size > 16n * 1024n * 1024n) {
+        fail('cleanup worker file size invalid');
+      }
+      let fileDescriptor;
+      try {
+        fileDescriptor = openSync(entry.name, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+        const opened = fstatSync(fileDescriptor, { bigint: true });
+        if (!opened.isFile() || opened.isSymbolicLink() || !sameFile(before, opened)) {
+          fail('cleanup worker file changed');
+        }
+        readFileSync(fileDescriptor);
+        const read = fstatSync(fileDescriptor, { bigint: true });
+        if (!sameFile(opened, read)) fail('cleanup worker file changed');
+        unlinkSync(entry.name);
+        const unlinked = fstatSync(fileDescriptor, { bigint: true });
+        if (
+          unlinked.dev !== opened.dev
+          || unlinked.ino !== opened.ino
+          || unlinked.nlink !== 0n
+        ) fail('cleanup worker unlink changed');
+      } finally {
+        if (fileDescriptor !== undefined) closeSync(fileDescriptor);
+      }
+      fsyncSync(rootDescriptor);
+    }
+    if (readdirSync('.').length !== 0) fail('cleanup worker directory not empty');
+  }
+  fsyncSync(rootDescriptor);
+} catch (error) {
+  process.stderr.write(error && error.stack ? error.stack : String(error));
+  process.exitCode = 1;
+} finally {
+  if (rootDescriptor !== undefined) closeSync(rootDescriptor);
+}
+`;
+const DURABLE_TREE_CLEANUP_WORKER_BASE64 = Buffer.from(
+  DURABLE_TREE_CLEANUP_WORKER_SOURCE,
+).toString('base64');
 
 export function withExclusiveOverlayLock(managedRoot, operation) {
   if (typeof operation !== 'function') throw new Error('protected_overlay_transaction_invalid');
@@ -234,19 +448,19 @@ export function removeDurableOwnedTree(
   const root = inspectDescriptorBoundDirectory(managedRoot, {
     allowedModes: [0o700],
     errorCode,
-  }).path;
+  });
+  const lexicalRoot = resolve(managedRoot);
   const lexicalTarget = resolve(path);
+  const relativeTarget = relative(lexicalRoot, lexicalTarget);
+  if (
+    relativeTarget === ''
+    || relativeTarget === '..'
+    || relativeTarget.startsWith(`..${sep}`)
+    || resolve(lexicalRoot, relativeTarget) !== lexicalTarget
+  ) throw new Error(errorCode);
   if (!existsSync(lexicalTarget)) return;
-  let target;
-  try {
-    const lexicalStat = lstatSync(lexicalTarget, { bigint: true });
-    if (lexicalStat.isSymbolicLink()) throw new Error(errorCode);
-    target = realpathSync(lexicalTarget);
-  } catch {
-    throw new Error(errorCode);
-  }
-  if (target === root || !target.startsWith(`${root}${sep}`)) throw new Error(errorCode);
-  removeDirectoryRecursively(target, errorCode);
+  const components = relativeTarget.split(sep);
+  removeDirectoryRecursively(root, components, errorCode);
 }
 
 export function executeDurableMoveTransaction({
@@ -944,38 +1158,21 @@ function statesEqual(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function removeDirectoryRecursively(path, errorCode) {
-  const directory = inspectDescriptorBoundDirectory(path, {
-    allowedModes: [0o700, 0o755],
-    errorCode,
+function removeDirectoryRecursively(root, components, errorCode) {
+  const [expectedDev, expectedIno] = root.identity.split(':', 2);
+  const encodedSelection = Buffer.from(JSON.stringify(components)).toString('base64');
+  const result = spawnSync(process.execPath, [
+    '-e',
+    DURABLE_TREE_CLEANUP_WORKER_SOURCE,
+    expectedDev,
+    expectedIno,
+    DURABLE_TREE_CLEANUP_WORKER_BASE64,
+    encodedSelection,
+  ], {
+    cwd: root.path,
+    encoding: 'utf8',
+    env: process.env,
+    maxBuffer: 1024 * 1024,
   });
-  const entries = readdirSync(directory.path, { withFileTypes: true });
-  for (const entry of entries) {
-    const child = resolve(directory.path, entry.name);
-    const stat = lstatSync(child, { bigint: true });
-    if (stat.isSymbolicLink()) throw new Error(errorCode);
-    if (stat.isDirectory()) {
-      removeDirectoryRecursively(child, errorCode);
-    } else if (stat.isFile()) {
-      readDescriptorBoundFile(child, {
-        allowedLinkCounts: [1],
-        allowedModes: [0o400, 0o600, 0o644],
-        errorCode,
-        expectedParentModes: [0o700, 0o755],
-        maximumSize: 16 * 1024 * 1024,
-        minimumSize: 0,
-      });
-      durableUnlink(child, errorCode);
-    } else {
-      throw new Error(errorCode);
-    }
-  }
-  if (readdirSync(directory.path).length !== 0) throw new Error(errorCode);
-  try {
-    rmdirSync(directory.path);
-    fsyncDirectory(dirname(directory.path), errorCode);
-  } catch (error) {
-    if (error instanceof Error && error.message === errorCode) throw error;
-    throw new Error(errorCode);
-  }
+  if (result.error || result.status !== 0) throw new Error(errorCode);
 }

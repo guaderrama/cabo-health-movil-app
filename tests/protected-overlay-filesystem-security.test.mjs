@@ -39,6 +39,10 @@ const durableRenameWorkerPath = join(
   projectRoot,
   'tests/fixtures/protected-overlay-durable-rename-worker.mjs',
 );
+const cleanupWorkerPath = join(
+  projectRoot,
+  'tests/fixtures/protected-overlay-cleanup-worker.mjs',
+);
 
 function publishResumeSignal(path) {
   const candidatePath = `${path}.candidate-${process.pid}`;
@@ -264,7 +268,7 @@ test('test-only transaction barrier holds a real process until explicitly resume
   });
   const output = collectChildOutput(worker);
 
-  await waitForPath(readyPath);
+  await waitForFileContents(readyPath, 'journal-prepared\n');
   assert.equal(worker.exitCode, null);
   assert.equal(readFileSync(readyPath, 'utf8'), 'journal-prepared\n');
 
@@ -332,6 +336,143 @@ test('durable staging cleanup removes only an owned tree below its managed root'
 
   assert.equal(existsSync(stagingRoot), false);
   assert.equal(existsSync(managedRoot), true);
+});
+
+test('durable staging cleanup cannot follow a directory substituted after validation', (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-cleanup-aba-'));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const managedRoot = join(fixture, 'managed');
+  const stagingRoot = join(managedRoot, 'staging');
+  const stagingBackup = join(managedRoot, 'staging-original');
+  const victimRoot = join(fixture, 'victim');
+  const victimFile = join(victimRoot, 'must-survive.txt');
+  const replacement = join(fixture, 'staging-replacement');
+  const preload = join(fixture, 'swap-cleanup-directory.cjs');
+  const swapMarker = join(fixture, 'root-swap.complete');
+  mkdirSync(managedRoot, { mode: 0o700 });
+  mkdirSync(stagingRoot, { mode: 0o700 });
+  mkdirSync(victimRoot, { mode: 0o700 });
+  writeFileSync(join(stagingRoot, 'decoy.txt'), 'decoy\n', { mode: 0o600 });
+  writeFileSync(victimFile, 'sensitive\n', { mode: 0o600 });
+  symlinkSync(victimRoot, replacement);
+  writeSwapAfterLstatPreload(preload);
+
+  const result = spawnSync(process.execPath, [
+    cleanupWorkerPath,
+    stagingRoot,
+    managedRoot,
+  ], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `--require=${preload}`,
+      CABOHEALTH_TEST_SWAP_TARGET: realpathSync(stagingRoot),
+      CABOHEALTH_TEST_SWAP_REPLACEMENT: replacement,
+      CABOHEALTH_TEST_SWAP_BACKUP: stagingBackup,
+      CABOHEALTH_TEST_SWAP_MARKER: swapMarker,
+    },
+  });
+
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /test_cleanup_invalid/u);
+  assert.equal(readFileSync(swapMarker, 'utf8'), 'swapped\n');
+  assert.equal(readFileSync(victimFile, 'utf8'), 'sensitive\n');
+  assert.equal(readFileSync(join(stagingBackup, 'decoy.txt'), 'utf8'), 'decoy\n');
+});
+
+test('durable staging cleanup binds every nested directory before traversal', (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-cleanup-nested-'));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const managedRoot = join(fixture, 'managed');
+  const stagingRoot = join(managedRoot, 'staging');
+  const nestedRoot = join(stagingRoot, 'production');
+  const nestedBackup = join(stagingRoot, 'production-original');
+  const replacement = join(fixture, 'production-replacement');
+  const victimRoot = join(fixture, 'victim');
+  const victimFile = join(victimRoot, 'must-survive.txt');
+  const preload = join(fixture, 'swap-nested-directory.cjs');
+  const swapMarker = join(fixture, 'nested-swap.complete');
+  mkdirSync(managedRoot, { mode: 0o700 });
+  mkdirSync(stagingRoot, { mode: 0o700 });
+  mkdirSync(nestedRoot, { mode: 0o755 });
+  mkdirSync(victimRoot, { mode: 0o700 });
+  writeFileSync(join(nestedRoot, 'decoy.txt'), 'decoy\n', { mode: 0o600 });
+  writeFileSync(victimFile, 'sensitive\n', { mode: 0o600 });
+  symlinkSync(victimRoot, replacement);
+  writeSwapAfterLstatPreload(preload);
+
+  const result = spawnSync(process.execPath, [
+    cleanupWorkerPath,
+    stagingRoot,
+    managedRoot,
+  ], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `--require=${preload}`,
+      CABOHEALTH_TEST_SWAP_TARGET: realpathSync(nestedRoot),
+      CABOHEALTH_TEST_SWAP_REPLACEMENT: replacement,
+      CABOHEALTH_TEST_SWAP_BACKUP: nestedBackup,
+      CABOHEALTH_TEST_SWAP_MARKER: swapMarker,
+    },
+  });
+
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /test_cleanup_invalid/u);
+  assert.equal(readFileSync(swapMarker, 'utf8'), 'swapped\n');
+  assert.equal(readFileSync(victimFile, 'utf8'), 'sensitive\n');
+});
+
+test('durable staging cleanup binds every ancestor below the managed root', (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'cabohealth-overlay-cleanup-ancestor-'));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const managedRoot = join(fixture, 'managed');
+  const candidatesRoot = join(managedRoot, 'candidates');
+  const candidatesBackup = join(managedRoot, 'candidates-original');
+  const leafName = 'release.building-0123456789abcdef0123456789abcdef';
+  const stagingRoot = join(candidatesRoot, leafName);
+  const externalParent = join(fixture, 'external-parent');
+  const victimRoot = join(externalParent, leafName);
+  const victimFile = join(victimRoot, 'must-survive.txt');
+  const preload = join(fixture, 'swap-cleanup-ancestor.cjs');
+  const swapMarker = join(fixture, 'ancestor-swap.complete');
+  mkdirSync(managedRoot, { mode: 0o700 });
+  mkdirSync(candidatesRoot, { mode: 0o700 });
+  mkdirSync(stagingRoot, { mode: 0o700 });
+  mkdirSync(externalParent, { mode: 0o700 });
+  mkdirSync(victimRoot, { mode: 0o700 });
+  writeFileSync(join(stagingRoot, 'decoy.txt'), 'decoy\n', { mode: 0o600 });
+  writeFileSync(victimFile, 'sensitive\n', { mode: 0o600 });
+  writeSwapAncestorAfterExistsPreload(preload);
+
+  const result = spawnSync(process.execPath, [
+    cleanupWorkerPath,
+    stagingRoot,
+    managedRoot,
+  ], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `--require=${preload}`,
+      CABOHEALTH_TEST_SWAP_EXISTS_TARGET: stagingRoot,
+      CABOHEALTH_TEST_SWAP_ANCESTOR: candidatesRoot,
+      CABOHEALTH_TEST_SWAP_ANCESTOR_BACKUP: candidatesBackup,
+      CABOHEALTH_TEST_SWAP_ANCESTOR_REPLACEMENT: externalParent,
+      CABOHEALTH_TEST_SWAP_MARKER: swapMarker,
+    },
+  });
+
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /test_cleanup_invalid/u);
+  assert.equal(readFileSync(swapMarker, 'utf8'), 'swapped\n');
+  assert.equal(readFileSync(victimFile, 'utf8'), 'sensitive\n');
+  assert.equal(
+    readFileSync(join(candidatesBackup, leafName, 'decoy.txt'), 'utf8'),
+    'decoy\n',
+  );
 });
 
 test('cross-directory durable rename syncs destination before source', (context) => {
@@ -780,8 +921,48 @@ fs.lstatSync = function guardedLstat(path, ...args) {
     swapped = true;
     fs.renameSync(path, process.env.CABOHEALTH_TEST_SWAP_BACKUP);
     fs.renameSync(process.env.CABOHEALTH_TEST_SWAP_REPLACEMENT, path);
+    if (process.env.CABOHEALTH_TEST_SWAP_MARKER) {
+      fs.writeFileSync(process.env.CABOHEALTH_TEST_SWAP_MARKER, 'swapped\\n', {
+        flag: 'wx',
+        mode: 0o600,
+      });
+    }
   }
   return stat;
+};
+syncBuiltinESMExports();
+`);
+}
+
+function writeSwapAncestorAfterExistsPreload(path) {
+  writeFileSync(path, `'use strict';
+const fs = require('node:fs');
+const { syncBuiltinESMExports } = require('node:module');
+const pathModule = require('node:path');
+const originalExists = fs.existsSync;
+let swapped = false;
+fs.existsSync = function existsAndSwap(path) {
+  const exists = originalExists.call(this, path);
+  if (
+    !swapped
+    && exists
+    && pathModule.resolve(path) === pathModule.resolve(process.env.CABOHEALTH_TEST_SWAP_EXISTS_TARGET)
+  ) {
+    swapped = true;
+    fs.renameSync(
+      process.env.CABOHEALTH_TEST_SWAP_ANCESTOR,
+      process.env.CABOHEALTH_TEST_SWAP_ANCESTOR_BACKUP,
+    );
+    fs.symlinkSync(
+      process.env.CABOHEALTH_TEST_SWAP_ANCESTOR_REPLACEMENT,
+      process.env.CABOHEALTH_TEST_SWAP_ANCESTOR,
+    );
+    fs.writeFileSync(process.env.CABOHEALTH_TEST_SWAP_MARKER, 'swapped\\n', {
+      flag: 'wx',
+      mode: 0o600,
+    });
+  }
+  return exists;
 };
 syncBuiltinESMExports();
 `);
@@ -837,6 +1018,15 @@ syncBuiltinESMExports();
 async function waitForPath(path) {
   const deadline = Date.now() + 5_000;
   while (!existsSync(path)) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+  }
+}
+
+async function waitForFileContents(path, expected) {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    if (existsSync(path) && readFileSync(path, 'utf8') === expected) return;
     if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
   }
