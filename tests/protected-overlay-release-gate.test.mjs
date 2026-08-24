@@ -31,10 +31,12 @@ import {
   createProtectedOverlayArtifact,
   createProtectedOverlayDeploymentEvidence,
   createProtectedOverlayDeploymentEvidenceRequest,
+  deactivateFirstProtectedOverlays,
   promoteProtectedOverlays,
   rollbackProtectedOverlays,
   verifyProtectedOverlayActivationPlan,
   verifyProtectedOverlayArtifact,
+  verifyProtectedOverlayAbsence,
   verifyProtectedOverlayDeployment,
 } from '../scripts/protected-overlay-release-gate.mjs';
 
@@ -340,9 +342,20 @@ test('activation rejects unapproved web and PHP CLI runtime identities', (contex
   const fixture = makeDeploymentFixture();
   context.after(() => rmSync(fixture.root, { recursive: true, force: true }));
 
-  fixture.trustPolicy.realms[0].runtimeIdentity.phpSapi = 'cli';
+  for (const realm of fixture.trustPolicy.realms) {
+    realm.runtimeIdentity.phpSapi = 'litespeed';
+  }
   fixture.trustPolicySha256 = sha256Json(fixture.trustPolicy);
-  assert.throws(() => createActivation(fixture), /protected_overlay_trust_policy_invalid/u);
+  assert.deepEqual(
+    createActivation(fixture).realms.map(({ runtimeIdentity }) => runtimeIdentity.phpSapi),
+    ['litespeed', 'litespeed'],
+  );
+
+  for (const phpSapi of ['cli', 'cgi-fcgi', 'lsapi', 'LITESPEED']) {
+    fixture.trustPolicy.realms[0].runtimeIdentity.phpSapi = phpSapi;
+    fixture.trustPolicySha256 = sha256Json(fixture.trustPolicy);
+    assert.throws(() => createActivation(fixture), /protected_overlay_trust_policy_invalid/u);
+  }
 
   fixture.trustPolicy.realms[0].runtimeIdentity.phpSapi = 'fpm-fcgi';
   fixture.trustPolicy.realms[0].runtimeIdentity.phpCliVersionId = 80199;
@@ -572,6 +585,206 @@ test('signed evidence rejects SAPI, document-root, PHP CLI, version, and cross-r
   }
 });
 
+test('a first protected release deactivates durably to verified absence and can be promoted again', (context) => {
+  const deployment = makeDeploymentFixture();
+  context.after(() => rmSync(deployment.root, { recursive: true, force: true }));
+  const artifact = createProtectedOverlayArtifact({ projectRoot });
+  const activation = createActivation(deployment);
+  const evidence = createDeploymentEvidence(deployment, artifact, activation).evidence;
+  const deploymentArguments = {
+    activation,
+    artifact,
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedPredecessorReleaseId: 'absent',
+    projectRoot,
+    ...artifactPins(artifact),
+    ...securityPins(deployment, evidence),
+  };
+  promoteProtectedOverlays(deploymentArguments);
+
+  const deactivationArguments = {
+    activation,
+    currentPins: artifactPins(artifact),
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedCurrentEvidenceSha256: evidence.evidenceSha256,
+    expectedCurrentReleaseId: artifact.releaseId,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    trustPolicy: deployment.trustPolicy,
+  };
+  const expectedResult = {
+    status: 'deactivated',
+    deactivatedReleaseId: artifact.releaseId,
+    restoredReleaseId: 'absent',
+  };
+  assert.throws(() => deactivateFirstProtectedOverlays({
+    ...deactivationArguments,
+    expectedCurrentEvidenceSha256: '0'.repeat(64),
+  }), /protected_overlay_predecessor_mismatch/u);
+  assert.equal(verifyProtectedOverlayDeployment(deploymentArguments).status, 'verified');
+  assert.deepEqual(deactivateFirstProtectedOverlays(deactivationArguments), expectedResult);
+  assert.equal(
+    existsSync(join(deployment.root, '.cabohealth-protected-overlays/state.json')),
+    false,
+  );
+  for (const realm of artifact.realms) {
+    assert.equal(existsSync(join(deployment.root, ...realm.promoteTarget.split('/'))), false);
+    const archivedRoot = join(
+      deployment.root,
+      '.cabohealth-protected-overlays/candidates',
+      artifact.releaseId,
+      realm.realm,
+    );
+    assert.deepEqual(
+      realm.files.map((file) => readFileSync(join(archivedRoot, ...file.path.split('/')))),
+      realm.files.map((file) => Buffer.from(file.bytesBase64, 'base64')),
+    );
+  }
+  assert.deepEqual(verifyProtectedOverlayAbsence({
+    currentPins: artifactPins(artifact),
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedCurrentEvidenceSha256: evidence.evidenceSha256,
+    expectedCurrentReleaseId: artifact.releaseId,
+  }), {
+    status: 'verified-absent',
+    releaseId: artifact.releaseId,
+    artifactSha256: artifact.artifactSha256,
+    activationSha256: activation.activationSha256,
+    evidenceSha256: evidence.evidenceSha256,
+  });
+  assert.throws(() => verifyProtectedOverlayAbsence({
+    currentPins: artifactPins(artifact),
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedCurrentEvidenceSha256: '0'.repeat(64),
+    expectedCurrentReleaseId: artifact.releaseId,
+  }), /protected_overlay_absence_invalid/u);
+  assert.deepEqual(deactivateFirstProtectedOverlays(deactivationArguments), expectedResult);
+
+  assert.deepEqual(promoteProtectedOverlays(deploymentArguments), {
+    status: 'promoted',
+    currentReleaseId: artifact.releaseId,
+    predecessorReleaseId: 'absent',
+  });
+  assert.equal(verifyProtectedOverlayDeployment(deploymentArguments).status, 'verified');
+});
+
+test('verified absence rejects a superseded deactivation receipt for the same release bytes', (context) => {
+  const deployment = makeDeploymentFixture();
+  context.after(() => rmSync(deployment.root, { recursive: true, force: true }));
+  const artifact = createProtectedOverlayArtifact({ projectRoot });
+  const activationA = createActivation(deployment);
+  const evidenceA = createDeploymentEvidence(deployment, artifact, activationA).evidence;
+  const deploymentArgumentsA = {
+    activation: activationA,
+    artifact,
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activationA.activationSha256,
+    expectedPredecessorReleaseId: 'absent',
+    projectRoot,
+    ...artifactPins(artifact),
+    ...securityPins(deployment, evidenceA),
+  };
+  promoteProtectedOverlays(deploymentArgumentsA);
+  deactivateFirstProtectedOverlays({
+    activation: activationA,
+    currentPins: artifactPins(artifact),
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activationA.activationSha256,
+    expectedCurrentEvidenceSha256: evidenceA.evidenceSha256,
+    expectedCurrentReleaseId: artifact.releaseId,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    trustPolicy: deployment.trustPolicy,
+  });
+
+  writeFileSync(
+    join(deployment.realms.production.privateContentRoot, 'en.json'),
+    '{"value":"rotated exclusive production content"}\n',
+  );
+  const activationB = createActivation(deployment);
+  const evidenceB = createDeploymentEvidence(deployment, artifact, activationB).evidence;
+  const deploymentArgumentsB = {
+    activation: activationB,
+    artifact,
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activationB.activationSha256,
+    expectedPredecessorReleaseId: 'absent',
+    projectRoot,
+    ...artifactPins(artifact),
+    ...securityPins(deployment, evidenceB),
+  };
+  promoteProtectedOverlays(deploymentArgumentsB);
+  deactivateFirstProtectedOverlays({
+    activation: activationB,
+    currentPins: artifactPins(artifact),
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activationB.activationSha256,
+    expectedCurrentEvidenceSha256: evidenceB.evidenceSha256,
+    expectedCurrentReleaseId: artifact.releaseId,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    trustPolicy: deployment.trustPolicy,
+  });
+
+  assert.throws(() => verifyProtectedOverlayAbsence({
+    currentPins: artifactPins(artifact),
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activationA.activationSha256,
+    expectedCurrentEvidenceSha256: evidenceA.evidenceSha256,
+    expectedCurrentReleaseId: artifact.releaseId,
+  }), /protected_overlay_absence_invalid/u);
+  assert.equal(verifyProtectedOverlayAbsence({
+    currentPins: artifactPins(artifact),
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activationB.activationSha256,
+    expectedCurrentEvidenceSha256: evidenceB.evidenceSha256,
+    expectedCurrentReleaseId: artifact.releaseId,
+  }).status, 'verified-absent');
+});
+
+test('deactivate-first rejects a contaminated private candidate without moving live bytes', (context) => {
+  const deployment = makeDeploymentFixture();
+  const outside = mkdtempSync(join(tmpdir(), 'cabohealth-protected-deactivation-outside-'));
+  context.after(() => {
+    rmSync(deployment.root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+  const artifact = createProtectedOverlayArtifact({ projectRoot });
+  const activation = createActivation(deployment);
+  const evidence = createDeploymentEvidence(deployment, artifact, activation).evidence;
+  const deploymentArguments = {
+    activation,
+    artifact,
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedPredecessorReleaseId: 'absent',
+    projectRoot,
+    ...artifactPins(artifact),
+    ...securityPins(deployment, evidence),
+  };
+  promoteProtectedOverlays(deploymentArguments);
+  const candidateRoot = join(
+    deployment.root,
+    '.cabohealth-protected-overlays/candidates',
+    artifact.releaseId,
+  );
+  symlinkSync(outside, join(candidateRoot, 'production'));
+
+  assert.throws(() => deactivateFirstProtectedOverlays({
+    activation,
+    currentPins: artifactPins(artifact),
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedCurrentEvidenceSha256: evidence.evidenceSha256,
+    expectedCurrentReleaseId: artifact.releaseId,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    trustPolicy: deployment.trustPolicy,
+  }), /protected_overlay_candidate_collision/u);
+  assert.equal(verifyProtectedOverlayDeployment(deploymentArguments).status, 'verified');
+  assert.equal(existsSync(join(outside, 'production')), false);
+});
+
 test('promotion fails closed before mutation and then installs both exact public overlays', (context) => {
   const fixture = makeDeploymentFixture();
   context.after(() => rmSync(fixture.root, { recursive: true, force: true }));
@@ -737,6 +950,17 @@ test('successor promotion and rollback are bound to the exact predecessor releas
     currentReleaseId: successorArtifact.releaseId,
     predecessorReleaseId: firstArtifact.releaseId,
   });
+
+  assert.throws(() => deactivateFirstProtectedOverlays({
+    activation,
+    currentPins: artifactPins(successorArtifact),
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedCurrentEvidenceSha256: successorEvidence.evidenceSha256,
+    expectedCurrentReleaseId: successorArtifact.releaseId,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    trustPolicy: deployment.trustPolicy,
+  }), /protected_overlay_predecessor_mismatch/u);
 
   assert.throws(() => rollbackProtectedOverlays({
     activation,
@@ -986,6 +1210,101 @@ test('first CLI promotion recovers a SIGKILL to truly absent state before retry'
   ]);
   assert.equal(retried.status, 0, retried.stderr);
   assert.equal(runCli(['verify-deployment', ...commonArguments]).status, 0);
+});
+
+test('operator CLI deactivates only a first release, verifies absence, and is idempotent', (context) => {
+  const scenario = makeTwoReleaseCliScenario('deactivate-first-cli');
+  context.after(() => disposeTwoReleaseCliScenario(scenario));
+  const deactivationArguments = deactivateFirstCliArguments(scenario);
+  const expected = {
+    status: 'deactivated',
+    deactivatedReleaseId: scenario.initialArtifact.releaseId,
+    restoredReleaseId: 'absent',
+  };
+
+  const extraPredecessorPins = runCli([
+    'deactivate-first',
+    ...deactivationArguments,
+    '--predecessor-release-id', 'absent',
+  ]);
+  assert.notEqual(extraPredecessorPins.status, 0, extraPredecessorPins.stdout);
+  assert.match(extraPredecessorPins.stderr, /protected_overlay_arguments_invalid/u);
+  assert.equal(runCli(['verify-deployment', ...scenario.initialArguments]).status, 0);
+
+  const deactivated = runCli(['deactivate-first', ...deactivationArguments]);
+  assert.equal(deactivated.status, 0, deactivated.stderr || deactivated.stdout);
+  assert.deepEqual(JSON.parse(deactivated.stdout), expected);
+
+  const verified = runCli(['verify-absence', ...verifyAbsenceCliArguments(scenario)]);
+  assert.equal(verified.status, 0, verified.stderr || verified.stdout);
+  assert.deepEqual(JSON.parse(verified.stdout), {
+    status: 'verified-absent',
+    releaseId: scenario.initialArtifact.releaseId,
+    artifactSha256: scenario.initialArtifact.artifactSha256,
+    activationSha256: scenario.activation.activationSha256,
+    evidenceSha256: scenario.initialEvidence.evidenceSha256,
+  });
+
+  const retried = runCli(['deactivate-first', ...deactivationArguments]);
+  assert.equal(retried.status, 0, retried.stderr || retried.stdout);
+  assert.deepEqual(JSON.parse(retried.stdout), expected);
+
+  const promoted = runCli([
+    'promote',
+    ...scenario.initialArguments,
+    '--predecessor-release-id', 'absent',
+  ]);
+  assert.equal(promoted.status, 0, promoted.stderr || promoted.stdout);
+  assert.equal(runCli(['verify-deployment', ...scenario.initialArguments]).status, 0);
+});
+
+test('deactivate-first recovers every crash window without deleting either realm', (context) => {
+  for (const crashStep of [
+    'deactivation-authority-written',
+    'journal-prepared',
+    'move-1',
+    'move-2',
+    'state-committed',
+  ]) {
+    const scenario = makeTwoReleaseCliScenario(`deactivate-first-${crashStep}`);
+    context.after(() => disposeTwoReleaseCliScenario(scenario));
+    const deactivationArguments = deactivateFirstCliArguments(scenario);
+    const crashed = runCli(['deactivate-first', ...deactivationArguments], {
+      NODE_ENV: 'test',
+      CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: crashStep,
+    });
+    assert.equal(crashed.signal, 'SIGKILL', crashStep);
+
+    const retried = runCli(['deactivate-first', ...deactivationArguments]);
+    assert.equal(retried.status, 0, `${crashStep}: ${retried.stderr}`);
+    const verified = runCli(['verify-absence', ...verifyAbsenceCliArguments(scenario)]);
+    assert.equal(verified.status, 0, `${crashStep}: ${verified.stderr}`);
+    assert.equal(
+      existsSync(join(
+        scenario.deployment.root,
+        '.cabohealth-protected-overlays/transaction.json',
+      )),
+      false,
+      crashStep,
+    );
+    for (const realm of scenario.initialArtifact.realms) {
+      assert.equal(
+        existsSync(join(scenario.deployment.root, ...realm.promoteTarget.split('/'))),
+        false,
+        crashStep,
+      );
+      assert.equal(
+        existsSync(join(
+          scenario.deployment.root,
+          '.cabohealth-protected-overlays/candidates',
+          scenario.initialArtifact.releaseId,
+          realm.realm,
+        )),
+        true,
+        crashStep,
+      );
+    }
+  }
 });
 
 test('two real CLI promotions cannot interleave realms or commit the same predecessor', async (context) => {
@@ -1407,6 +1726,31 @@ function rollbackCliArguments(scenario) {
     '--predecessor-evidence-sha256', scenario.initialEvidence.evidenceSha256,
     '--trust-policy', argumentValue(scenario.successorArguments, '--trust-policy'),
     '--trust-policy-sha256', scenario.deployment.trustPolicySha256,
+  ];
+}
+
+function deactivateFirstCliArguments(scenario) {
+  return [
+    '--deployment-root', scenario.deployment.root,
+    '--activation', argumentValue(scenario.initialArguments, '--activation'),
+    '--activation-sha256', scenario.activation.activationSha256,
+    '--current-evidence-sha256', scenario.initialEvidence.evidenceSha256,
+    '--current-release-id', scenario.initialArtifact.releaseId,
+    '--current-inventory-sha256', scenario.initialArtifact.inventorySha256,
+    '--current-artifact-sha256', scenario.initialArtifact.artifactSha256,
+    '--trust-policy', argumentValue(scenario.initialArguments, '--trust-policy'),
+    '--trust-policy-sha256', scenario.deployment.trustPolicySha256,
+  ];
+}
+
+function verifyAbsenceCliArguments(scenario) {
+  return [
+    '--deployment-root', scenario.deployment.root,
+    '--activation-sha256', scenario.activation.activationSha256,
+    '--current-evidence-sha256', scenario.initialEvidence.evidenceSha256,
+    '--current-release-id', scenario.initialArtifact.releaseId,
+    '--current-inventory-sha256', scenario.initialArtifact.inventorySha256,
+    '--current-artifact-sha256', scenario.initialArtifact.artifactSha256,
   ];
 }
 

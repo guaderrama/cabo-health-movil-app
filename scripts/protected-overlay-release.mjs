@@ -8,8 +8,10 @@ import {
   createProtectedOverlayArtifact,
   createProtectedOverlayDeploymentEvidence,
   createProtectedOverlayDeploymentEvidenceRequest,
+  deactivateFirstProtectedOverlays,
   promoteProtectedOverlays,
   rollbackProtectedOverlays,
+  verifyProtectedOverlayAbsence,
   verifyProtectedOverlayDeployment,
   verifyProtectedOverlayArtifact,
 } from './protected-overlay-release-gate.mjs';
@@ -138,6 +140,56 @@ switch (command) {
   case 'verify-deployment': {
     assertExactArguments(arguments_, deploymentArgumentNames());
     print(verifyProtectedOverlayDeployment(readDeploymentArguments(arguments_)));
+    break;
+  }
+  case 'deactivate-first': {
+    assertExactArguments(arguments_, [
+      '--deployment-root',
+      '--activation',
+      '--activation-sha256',
+      '--current-evidence-sha256',
+      '--current-release-id',
+      '--current-inventory-sha256',
+      '--current-artifact-sha256',
+      '--trust-policy',
+      '--trust-policy-sha256',
+    ]);
+    print(deactivateFirstProtectedOverlays({
+      deploymentRoot: arguments_['--deployment-root'],
+      activation: readCanonicalJson(arguments_['--activation'], 0o400),
+      expectedActivationSha256: arguments_['--activation-sha256'],
+      expectedCurrentEvidenceSha256: arguments_['--current-evidence-sha256'],
+      expectedCurrentReleaseId: arguments_['--current-release-id'],
+      expectedTrustPolicySha256: arguments_['--trust-policy-sha256'],
+      trustPolicy: readCanonicalJson(arguments_['--trust-policy'], 0o400),
+      currentPins: {
+        expectedReleaseId: arguments_['--current-release-id'],
+        expectedInventorySha256: arguments_['--current-inventory-sha256'],
+        expectedArtifactSha256: arguments_['--current-artifact-sha256'],
+      },
+    }));
+    break;
+  }
+  case 'verify-absence': {
+    assertExactArguments(arguments_, [
+      '--deployment-root',
+      '--activation-sha256',
+      '--current-evidence-sha256',
+      '--current-release-id',
+      '--current-inventory-sha256',
+      '--current-artifact-sha256',
+    ]);
+    print(verifyProtectedOverlayAbsence({
+      deploymentRoot: arguments_['--deployment-root'],
+      expectedActivationSha256: arguments_['--activation-sha256'],
+      expectedCurrentEvidenceSha256: arguments_['--current-evidence-sha256'],
+      expectedCurrentReleaseId: arguments_['--current-release-id'],
+      currentPins: {
+        expectedReleaseId: arguments_['--current-release-id'],
+        expectedInventorySha256: arguments_['--current-inventory-sha256'],
+        expectedArtifactSha256: arguments_['--current-artifact-sha256'],
+      },
+    }));
     break;
   }
   case 'rollback': {
