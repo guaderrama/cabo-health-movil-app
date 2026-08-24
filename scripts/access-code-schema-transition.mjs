@@ -771,7 +771,7 @@ function assertScheduledWriterPaused(options) {
     `--location=${EXPECTED_REGION}`,
     `--project=${options.project}`,
     `--account=${options.operatorAccount}`,
-    '--format=json(name,state,schedule,timeZone,updateTime,httpTarget.uri,httpTarget.httpMethod,httpTarget.oidcToken.serviceAccountEmail)',
+    '--format=json(name,state,schedule,timeZone,userUpdateTime,httpTarget.uri,httpTarget.httpMethod,httpTarget.oidcToken.serviceAccountEmail)',
   ], 'writer_scheduler_description_unavailable'), 'writer_scheduler_description_invalid');
   const record = assertPlainObject(raw, 'writer_scheduler_description_invalid');
   const target = assertPlainObject(record.httpTarget, 'writer_scheduler_description_invalid');
@@ -779,8 +779,8 @@ function assertScheduledWriterPaused(options) {
   if (
     record.name !== `projects/${options.project}/locations/${EXPECTED_REGION}/jobs/${RETRY_SCHEDULER_JOB}`
     || record.state !== 'PAUSED'
-    || typeof record.updateTime !== 'string'
-    || Number.isNaN(Date.parse(record.updateTime))
+    || typeof record.userUpdateTime !== 'string'
+    || Number.isNaN(Date.parse(record.userUpdateTime))
     || record.schedule !== 'every 5 minutes'
     || record.timeZone !== 'UTC'
     || target.httpMethod !== 'POST'
@@ -819,7 +819,7 @@ function assertScheduledWriterPaused(options) {
     policyEtagSha256: sha256(policy.etag),
     schedulerJob: RETRY_SCHEDULER_JOB,
     schedulerState: record.state,
-    schedulerUpdateTime: record.updateTime,
+    schedulerUpdateTime: record.userUpdateTime,
     serviceName: SCHEDULED_WRITER_SERVICE,
   });
 }

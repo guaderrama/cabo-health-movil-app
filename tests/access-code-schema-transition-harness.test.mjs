@@ -151,7 +151,7 @@ function fakeGcloudProgram() {
       schedule: 'every 5 minutes',
       state: control.schedulerState,
       timeZone: 'UTC',
-      updateTime: '2026-08-24T18:30:00.000000Z',
+      userUpdateTime: '2026-08-24T18:30:00.000000Z',
     });
     return;
   }
