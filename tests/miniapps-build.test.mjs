@@ -287,8 +287,14 @@ test('generated Healthy Recipes document is complete without JavaScript and has 
         new RegExp(`<a href="https://cabohealth\\.org/app/${path}/" data-external-action data-label-en="${english}" data-label-es="${spanish}">`, 'u'),
       );
     }
-    assert.equal((html.match(/class="external-marker" aria-hidden="true">↗<\/span>/gu) ?? []).length, 4);
-    assert.doesNotMatch(html, /target\s*=|window\.open|https:\/\/www\.who\.int|https:\/\/www\.foodsafety\.gov|https:\/\/www\.fsis\.usda\.gov/iu);
+    for (const source of recipes.sources) {
+      assert.match(
+        html,
+        new RegExp(`<a href="${source.url.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}" data-external-action`, 'u'),
+      );
+    }
+    assert.equal((html.match(/class="external-marker" aria-hidden="true">↗<\/span>/gu) ?? []).length, 7);
+    assert.doesNotMatch(html, /target\s*=|window\.open/iu);
   });
 });
 
@@ -661,7 +667,7 @@ test('release renderer preserves the complete bilingual Clinic Guide without Jav
     assert.equal((html.match(/<h1\b/gu) ?? []).length, 1);
     assert.match(html, /data-language="en"[^>]*aria-pressed="true"/u);
     assert.match(html, /data-language="es-MX"[^>]*aria-pressed="false"/u);
-    assert.match(html, /<time datetime="2026-08-16">2026-08-16<\/time>/u);
+    assert.match(html, /<time datetime="2026-08-24">2026-08-24<\/time>/u);
     assert.doesNotMatch(html, /\shidden(?:\s|=|>)/u);
 
     for (const group of guide.groups) {
@@ -733,12 +739,12 @@ test('bilingual panels expose locale-specific accessible names and editorial cop
     assert.match(clinic, new RegExp(`id="clinic-${panel}-title-es"`, 'u'));
   }
   assert.match(clinic, /data-labelledby-en="clinic-sources-title-en"[^>]+data-labelledby-es="clinic-sources-title-es"/u);
-  assert.match(clinic, /<div lang="en" data-locale="en">[\s\S]*?Contact and location details are listed above\.[\s\S]*?Source names are displayed for reference and are not links\.[\s\S]*?<\/div>/u);
-  assert.match(clinic, /<div lang="es-MX" data-locale="es-MX">[\s\S]*?Los datos de contacto y ubicación aparecen arriba\.[\s\S]*?Los nombres de las fuentes se muestran como referencia y no son enlaces\.[\s\S]*?<\/div>/u);
+  assert.match(clinic, /<div lang="en" data-locale="en">[\s\S]*?Contact and location details are listed above\.[\s\S]*?citation opens the official source outside CaboHealth\.[\s\S]*?<\/div>/u);
+  assert.match(clinic, /<div lang="es-MX" data-locale="es-MX">[\s\S]*?Los datos de contacto y ubicación aparecen arriba\.[\s\S]*?cita abre la fuente oficial fuera de CaboHealth\.[\s\S]*?<\/div>/u);
   assert.doesNotMatch(clinic, /future release dependency|live byte consistency|dependencia obligatoria para una versión futura|consistencia de sus bytes|before deployment|owner-confirmed|confirmed by the owner|unapproved third-party|no aprobado/iu);
   assert.match(recipes, /data-labelledby-en="sources-title-en"[^>]+data-labelledby-es="sources-title-es"/u);
-  assert.match(recipes, /<div lang="en" data-locale="en">[\s\S]*?Source names are displayed for reference and are not links\.[\s\S]*?<\/div>/u);
-  assert.match(recipes, /<div lang="es-MX" data-locale="es-MX">[\s\S]*?Los nombres de las fuentes se muestran como referencia y no son enlaces\.[\s\S]*?<\/div>/u);
+  assert.match(recipes, /<div lang="en" data-locale="en">[\s\S]*?Each citation opens the official source outside CaboHealth\.[\s\S]*?<\/div>/u);
+  assert.match(recipes, /<div lang="es-MX" data-locale="es-MX">[\s\S]*?Cada cita abre la fuente oficial fuera de CaboHealth\.[\s\S]*?<\/div>/u);
   assert.doesNotMatch(recipes, /owner-confirmed|confirmed by the owner|unapproved third-party|no aprobado/iu);
 });
 
@@ -919,6 +925,7 @@ test('Clinic Guide actions exactly match the native allowlist and remain literal
       'https://cabohealth.org/app/terms/',
       'https://cabohealth.org/app/support/',
       'https://cabohealth.org/app/report-content/',
+      'https://www.gob.mx/911/articulos/que-es-9-1-1-conoce-mas-de-911emergencias?idiom=es',
     ];
     for (const href of actions) assert.ok(html.includes(`href="${href}"`), `missing exact action ${href}`);
     assert.equal((html.match(/data-external-action/gu) ?? []).length, actions.length);

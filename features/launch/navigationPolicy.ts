@@ -17,10 +17,22 @@ const ALLOWED_ROOT_FRAGMENTS: readonly string[] = Object.freeze([
   ...Object.values(EMBEDDED_PRESENTATION_FRAGMENTS),
 ]);
 
+export const APPROVED_EDITORIAL_SOURCE_URLS = Object.freeze({
+  'healthy-recipes': Object.freeze([
+    'https://www.who.int/news-room/fact-sheets/detail/healthy-diet',
+    'https://www.foodsafety.gov/keep-food-safe/4-steps-to-food-safety',
+    'https://www.fsis.usda.gov/food-safety/safe-food-handling-and-preparation/food-safety-basics/food-allergies-big-9',
+  ]),
+  'clinic-guide': Object.freeze([
+    'https://www.gob.mx/911/articulos/que-es-9-1-1-conoce-mas-de-911emergencias?idiom=es',
+  ]),
+} as const);
+
 export type NavigationReason =
   | 'selected-miniapp-path'
   | 'approved-legal-click'
   | 'approved-contact-click'
+  | 'approved-editorial-source-click'
   | 'popup-target'
   | 'unknown-miniapp'
   | 'unsafe-url-text'
@@ -43,14 +55,15 @@ export type NavigationDecision =
   | Readonly<{ decision: 'allow-webview'; reason: 'selected-miniapp-path' }>
   | Readonly<{
     decision: 'open-external';
-    reason: 'approved-legal-click' | 'approved-contact-click';
+    reason: 'approved-legal-click' | 'approved-contact-click' | 'approved-editorial-source-click';
   }>
   | Readonly<{
     decision: 'block';
     reason: Exclude<NavigationReason,
       | 'selected-miniapp-path'
       | 'approved-legal-click'
-      | 'approved-contact-click'>;
+      | 'approved-contact-click'
+      | 'approved-editorial-source-click'>;
   }>;
 
 export interface MiniappNavigationRequest {
@@ -86,13 +99,15 @@ export function classifyMiniappNavigation(
   const legalUrls = Object.values(miniapp.legalUrls);
   const legalDestination = legalUrls.includes(url as (typeof legalUrls)[number]);
   const contactDestination = contactUrls.includes(url);
-  if (legalDestination || contactDestination) {
+  const editorialSourceUrls: readonly string[] = APPROVED_EDITORIAL_SOURCE_URLS[miniapp.slug];
+  const editorialSourceDestination = editorialSourceUrls.includes(url);
+  if (legalDestination || contactDestination || editorialSourceDestination) {
     if (!isExplicitTopFrameIosClick(request)) {
       return block('external-not-user-initiated');
     }
-    return legalDestination
-      ? { decision: 'open-external', reason: 'approved-legal-click' }
-      : { decision: 'open-external', reason: 'approved-contact-click' };
+    if (legalDestination) return { decision: 'open-external', reason: 'approved-legal-click' };
+    if (contactDestination) return { decision: 'open-external', reason: 'approved-contact-click' };
+    return { decision: 'open-external', reason: 'approved-editorial-source-click' };
   }
 
   const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(url)?.[1];

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { captureReleaseV3, verifyCapturedReleaseV3 } from './verify-release-v3.mjs';
@@ -50,7 +50,7 @@ const expectedGateStates = Object.freeze({
   sellerLegalEntity: 'owner-confirmed-individual',
   sellerRelationship: 'owner-confirmed-trade-brand',
   brandAuthorization: 'owner-confirmed-pending-signed-declaration',
-  contentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
+  contentRights: 'inventory-revised-pending-owner-reconfirmation-and-per-family-basis',
   hostingLogTypes: 'owner-authorized-disclosure',
   hostingLogRetention: 'owner-authorized-disclosure',
   hostingLogDeletion: 'owner-authorized-disclosure',
@@ -58,21 +58,21 @@ const expectedGateStates = Object.freeze({
   phiRemediation: 'verified-owner-authorized',
   medicalDevice: 'owner-confirmed-pending-exact-rc-review',
   exportCompliance: 'owner-confirmed-pending-exact-rc-review',
-  firebaseAndHosting: 'pending-external-configuration',
-  hostedLegalClientAccess: 'pending-reviewed-update-and-deployment',
-  aasa: 'pending-reviewed-update-and-deployment',
-  appReviewCredential: 'pending-activation-and-staging-e2e',
+  firebaseAndHosting: 'core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e',
+  hostedLegalClientAccess: 'pending-revised-public-payload-redeploy-and-verification',
+  aasa: 'deployed-and-verified-origin-and-apple-cdn',
+  appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
   staffReviewAccess: 'pending-isolated-review-access-or-written-apple-direction',
   clientAccessModel: 'pending-apple-review-determination',
   ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
   privacyMapping: 'pending-final-linkage-category-review-and-save',
-  brandAndContentRights: 'pending-signed-owner-declaration-and-third-party-inventory',
+  brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
   exactReleaseCandidate: 'pending-version-bump-build-and-qa',
   testFlight: 'pending-build-upload-selection-and-physical-iphone-qa',
   accessibilityLabels: 'pending-exact-rc-evidence',
   screenshots: 'pending-exact-rc-capture',
   appStoreConnect: 'pending-final-save',
-  submission: 'blocked-pending-explicit-owner-confirmation',
+  submission: 'blocked-pending-release-gates-and-final-explicit-owner-confirmation',
 });
 
 const expectedOwnerSeller = Object.freeze({
@@ -104,12 +104,12 @@ const expectedUnresolvedExternalGates = Object.freeze({
   hostingLogDeletion: 'owner-authorized-disclosure',
   supportResponseSla: 'owner-confirmed',
   ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
-  allContentRights: 'owner-confirmed-scoped-pending-third-party-inventory',
+  allContentRights: 'inventory-revised-pending-owner-reconfirmation-and-per-family-basis',
   brandEvidenceAttachment: 'pending-signed-owner-declaration',
-  firebaseAndHosting: 'pending-external-configuration',
-  hostedLegalClientAccess: 'pending-reviewed-update-and-deployment',
-  aasa: 'pending-reviewed-update-and-deployment',
-  appReviewCredential: 'pending-activation-and-staging-e2e',
+  firebaseAndHosting: 'core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e',
+  hostedLegalClientAccess: 'pending-revised-public-payload-redeploy-and-verification',
+  aasa: 'deployed-and-verified-origin-and-apple-cdn',
+  appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
   staffReviewAccess: 'pending-isolated-review-access-or-written-apple-direction',
   clientAccessModel: 'pending-apple-review-determination',
   exactReleaseCandidate: 'pending-version-bump-build-and-qa',
@@ -132,13 +132,118 @@ const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmeti
 
 const EXACT_REVIEWED_PROSE_SHA256 = Object.freeze({
   'age-rating.md': 'a6f11c4ab2005ec58498931571a2212b3804db2dcfb081d91aa8e40ce07bd023',
-  'app-privacy.md': '0e2981965a5bda91cb886ed68626819c905ad8a05fc4285cc3f0a1a64b933b24',
+  'app-privacy.md': 'dcee032db9324354ded2220f899130be96d376b531c83bb1624dd03b9750457e',
+  'content-rights-inventory.md': '61c1554019b352042eac0aa9ab18f0f7c08385c92fac82f387f2110247794c07',
 });
+
+const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
+  Object.freeze({
+    sha256: 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117',
+    paths: Object.freeze(['assets/logo.png', 'miniapps/shared/logo.png']),
+  }),
+  Object.freeze({
+    sha256: '42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d',
+    paths: Object.freeze(['assets/logo-wordmark.png', 'miniapps/shared/logo-wordmark.png']),
+  }),
+  Object.freeze({
+    sha256: '6e619093c7b7c43d9444086386796726757397ba19ee6cad0d95502bec4b4deb',
+    paths: Object.freeze(['assets/logo-white.png', 'assets/splash-icon.png']),
+  }),
+  Object.freeze({
+    sha256: '18e6aadb5e1e13ab0ad0207869bd9323d36cd3c892d4286a9838b03a2f705416',
+    paths: Object.freeze(['assets/icon.png']),
+  }),
+  Object.freeze({
+    sha256: '5f4c0a732b6325bf4071d9124d2ae67e037cb24fcc9c482ef82bea742109a3b8',
+    paths: Object.freeze(['assets/adaptive-icon.png', 'assets/splash.png']),
+  }),
+  Object.freeze({
+    sha256: '24272cdaeff82cc5facdaccd982a6f05b60c4504704bbf94c19a6388659880bb',
+    paths: Object.freeze(['assets/favicon.png']),
+  }),
+  Object.freeze({
+    sha256: '4b569f0da0cffb9a54dedd93ce672cf7592ae4516dd12663e3b34d731df237c4',
+    paths: Object.freeze(['miniapps/shared/clinic-map-texture.png']),
+  }),
+  Object.freeze({
+    sha256: '85a305124862d9522f70df5bfdff8282ef95d14b6d2dd149a75361330eb4840b',
+    paths: Object.freeze(['staff-portal/public/favicon.svg']),
+  }),
+  Object.freeze({
+    sha256: '238c3c4fd1c9c6a782bc4f4b02f826134fafe01b7b72e6b852ef7ae30ce9541d',
+    paths: Object.freeze(['content/recipes.json']),
+  }),
+  Object.freeze({
+    sha256: '1c1b85c54ec94a31d8bef59ce2253dc9f9b6628684658439e1e6bec9e9586916',
+    paths: Object.freeze(['content/clinic-guide.json']),
+  }),
+  Object.freeze({
+    sha256: 'ed2be1dc101ff8237b0ced8b0fe58894a6f70e46dfb527e01442c22049d17c49',
+    paths: Object.freeze(['i18n/messages.ts']),
+  }),
+  Object.freeze({
+    sha256: 'fb60620a37efac4e4deb265ddc3a4e89642ecded2643a5cb25006da3dd14e720',
+    paths: Object.freeze(['features/onboarding/IntroScreen.tsx']),
+  }),
+  Object.freeze({
+    sha256: '803818464ef0663340d557b28fefd4dd6860abc3203fcbee7cbb14e7ef775a5e',
+    paths: Object.freeze(['constants/publicMiniapps.ts']),
+  }),
+  Object.freeze({
+    sha256: 'b04f3cf2e9446cee78e1473ba421059ba2d536829c39cdde9bf806aa172c65ba',
+    paths: Object.freeze(['miniapps/healthy-recipes/index.html']),
+  }),
+  Object.freeze({
+    sha256: '7f1b25f055b0dbc3c4587787046e94108ab75f7105cb1e13faa93a6ffda3ff38',
+    paths: Object.freeze(['miniapps/clinic-guide/index.html']),
+  }),
+  Object.freeze({
+    sha256: 'e3ebb6e0d7e94ffa04f123c2f2fe8cd746bf0dba80f3824746fdd7d9492f6593',
+    paths: Object.freeze(['client-resources-private/content/en.json']),
+  }),
+  Object.freeze({
+    sha256: 'e29960ae5490c90ffb3e869a040d3c2bf970465215065cb4debc4f97b1363555',
+    paths: Object.freeze(['client-resources-private/content/es-MX.json']),
+  }),
+  Object.freeze({
+    sha256: '03b558d9c0afc6a405f6fddf1d06fd67915170444baa596b713a150e9e8d0911',
+    paths: Object.freeze(['app-review-private/content/sample.json']),
+  }),
+  Object.freeze({
+    sha256: '90d3b21014dfb456c54029433875811e5727c4fc4b930934cfa4c5b77e9ae6ba',
+    paths: Object.freeze(['staff-portal/src/i18n/messages.ts']),
+  }),
+  Object.freeze({
+    sha256: '8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147',
+    paths: Object.freeze(['web-hosting/cabohealth.org/app/index.html']),
+  }),
+  Object.freeze({
+    sha256: 'bee0eaebf10afe3ded626da45a15ee11368e67f11e7d1dc170222405702fbb80',
+    paths: Object.freeze(['web-hosting/cabohealth.org/app/privacy/index.html']),
+  }),
+  Object.freeze({
+    sha256: 'b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22',
+    paths: Object.freeze(['web-hosting/cabohealth.org/app/terms/index.html']),
+  }),
+  Object.freeze({
+    sha256: '06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa',
+    paths: Object.freeze(['web-hosting/cabohealth.org/app/support/index.html']),
+  }),
+  Object.freeze({
+    sha256: 'f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c',
+    paths: Object.freeze(['web-hosting/cabohealth.org/app/report-content/index.html']),
+  }),
+]);
 
 function read(relativePath) {
   const absolutePath = join(releaseRoot, relativePath);
   if (!existsSync(absolutePath)) {
     errors.push(`Missing App Store metadata artifact: ${relativePath}`);
+    return '';
+  }
+  const stat = lstatSync(absolutePath);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    errors.push(`App Store metadata artifact must be a regular non-symbolic-link file: ${relativePath}`);
     return '';
   }
   const source = readFileSync(absolutePath, 'utf8');
@@ -150,6 +255,11 @@ function readProject(relativePath) {
   const absolutePath = join(root, relativePath);
   if (!existsSync(absolutePath)) {
     errors.push(`Missing authoritative project artifact: ${relativePath}`);
+    return '';
+  }
+  const stat = lstatSync(absolutePath);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    errors.push(`Authoritative project artifact must be a regular non-symbolic-link file: ${relativePath}`);
     return '';
   }
   const source = readFileSync(absolutePath, 'utf8');
@@ -217,6 +327,46 @@ function readExactReviewedProse(relativePath) {
   const actual = createHash('sha256').update(source, 'utf8').digest('hex');
   if (actual !== expected) errors.push(`${relativePath} must retain the exact reviewed prose`);
   return source;
+}
+
+function verifyContentRightsInventory() {
+  const inventory = readExactReviewedProse('content-rights-inventory.md');
+  if (!inventory) return;
+  requireText(
+    inventory,
+    /REVISED ITEMIZED DRAFT — OWNER RECONFIRMATION, PER-FAMILY BASIS, SIGNED DECLARATION, AND PRIVATE EVIDENCE PENDING/u,
+    'Content-rights inventory must remain revised and pending owner reconfirmation and per-family evidence',
+  );
+
+  for (const group of CONTENT_RIGHTS_SOURCE_GROUPS) {
+    if (!inventory.includes(group.sha256)) {
+      errors.push(`Content-rights inventory is missing source SHA-256 ${group.sha256}`);
+    }
+    for (const relativePath of group.paths) {
+      if (!inventory.includes(`\`${relativePath}\``)) {
+        errors.push(`Content-rights inventory is missing exact source ${relativePath}`);
+      }
+      const absolutePath = join(root, relativePath);
+      if (!existsSync(absolutePath)) {
+        errors.push(`Missing content-rights source artifact: ${relativePath}`);
+        continue;
+      }
+      const stat = lstatSync(absolutePath);
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        errors.push(`Content-rights source must be a regular non-symbolic-link file: ${relativePath}`);
+        continue;
+      }
+      const bytes = readFileSync(absolutePath);
+      if (bytes.length === 0) {
+        errors.push(`Content-rights source must not be empty: ${relativePath}`);
+        continue;
+      }
+      const actualSha256 = createHash('sha256').update(bytes).digest('hex');
+      if (actualSha256 !== group.sha256) {
+        errors.push(`Content-rights source SHA-256 mismatch: ${relativePath}`);
+      }
+    }
+  }
 }
 
 function requireText(source, pattern, message) {
@@ -485,7 +635,7 @@ function verifyManifest() {
   ) errors.push('App Review credential must remain isolated and pending activation');
   if (!hasExactKeys(aasaPlan, ['components', 'status'])
     || !equalJson(aasaPlan?.components, expectedAasaComponents)
-    || aasaPlan?.status !== 'pending-reviewed-update-and-deployment') {
+    || aasaPlan?.status !== 'deployed-and-verified-origin-and-apple-cdn') {
     errors.push('AASA plan must retain the ordered launch/api exclusions and three exact app roots');
   }
   if (!equalJson(urls, expectedUrls)) errors.push('Release manifest URLs do not match the exact canonical URLs');
@@ -574,9 +724,9 @@ function verifyManifest() {
   if (
     contentRights?.recommendedAnswer !== 'Yes'
     || contentRights?.usesThirdPartyMaterial !== true
-    || contentRights?.status !== 'owner-confirmed-scoped-pending-third-party-inventory'
+    || contentRights?.status !== 'inventory-revised-pending-owner-reconfirmation-and-per-family-basis'
   ) {
-    errors.push('Content Rights recommendation must remain Yes for uses third-party material with owner-confirmed scope while the final third-party inventory remains pending');
+    errors.push('Content Rights recommendation must remain Yes while the revised inventory awaits owner reconfirmation and per-family rights basis');
   }
   const unresolved = appStoreDraft?.unresolvedExternalGates;
   if (!hasExactKeys(unresolved, Object.keys(expectedUnresolvedExternalGates))) {
@@ -821,7 +971,7 @@ function verifyReviewNotes() {
   const body = notes.slice(markerIndex + marker.length).trim();
   if (countCharacters(body) > 4000) errors.push('Review Notes paste-ready body exceeds 4,000 characters');
   rejectUnapprovedHostedResourceUrls(body, 'Review Notes');
-  const resourceList = body.match(/GUIDELINE 4\.7 — HOSTED RESOURCES\n([\s\S]*?)\n\nOnly these Universal Links enter;/u)?.[1]?.trim();
+  const resourceList = body.match(/GUIDELINE 4\.7 — HOSTED RESOURCES\n([\s\S]*?)\n\nOnly these Universal Links enter\./u)?.[1]?.trim();
   const expectedResourceList = [
     ...approvedMiniapps.map((miniapp, index) => `${index + 1}. ${miniapp.title} — public — ${miniapp.url}`),
     `3. ${protectedClientResource.title} — protected existing-client eligibility — ${protectedClientResource.url}`,
@@ -858,42 +1008,48 @@ function verifyReviewNotes() {
   }
   const requiredPatterns = [
     [/CaboHealth 3\.0 \(build 4\)/u, 'Review Notes missing exact version/build'],
-    [/exactly two public general-wellness\/editorial resources and one server-protected Client Resources area/u, 'Review Notes must describe the exact public and protected resource scope'],
+    [/two public wellness\/editorial resources plus protected Client Resources/u, 'Review Notes must describe the exact public and protected resource scope'],
     [/This app is submitted by Ivan Guaderrama, an individual Apple Developer Program member\. Cabo Health is a trade brand owned and operated by Ivan Guaderrama and is not represented as a separate legal entity\./u, 'Review Notes missing the individual seller and trade-brand disclosure'],
     [/GUIDELINE 4\.2/u, 'Review Notes missing Guideline 4.2 native value'],
     [/GUIDELINE 4\.7/u, 'Review Notes missing Guideline 4.7 hosted-resource disclosure'],
+    [/PRIOR REVIEW RESOLUTION/u, 'Review Notes missing prior-review resolution'],
+    [/Former advisory and camera-based AI resources are excluded/iu, 'Review Notes missing prior advisory/camera-AI removal'],
+    [/No third-party AI is implemented\/invoked; app code sends no data to an AI provider/iu, 'Review Notes missing no-third-party-AI and no-AI-data disclosure'],
+    [/No camera, Photos, HealthKit, microphone, or location access; WebViews deny media\/geolocation/iu, 'Review Notes missing exact sensitive-permission exclusion'],
+    [/Both public resources show dated Sources\/Fuentes with official links/iu, 'Review Notes missing official editorial-source disclosure'],
     [/does not ask clients for a name, email address, phone number, or profile registration/iu, 'Review Notes missing pseudonymous client-account disclosure'],
     [/separate multi-device App Review credential/iu, 'Review Notes missing isolated App Review credential disclosure'],
     [/complimentary.*existing in-person clients/isu, 'Review Notes missing complimentary existing-client eligibility disclosure'],
-    [/no price, checkout, in-app purchase, subscription, or paid digital tier/iu, 'Review Notes missing monetization disclosure'],
-    [/each authorized client receives a separate revocable code/iu, 'Review Notes missing individual revocable-code model'],
+    [/No price, checkout, in-app purchase, subscription, paid digital tier, advertising/iu, 'Review Notes missing monetization disclosure'],
+    [/Each client receives a separate revocable code/iu, 'Review Notes missing individual revocable-code model'],
     [/no shared master code or fixed four-client business limit/iu, 'Review Notes missing no-master/no-fixed-limit disclosure'],
     [/user-generated content/iu, 'Review Notes missing UGC disclosure'],
     [/native message bridge/iu, 'Review Notes missing native-bridge disclosure'],
     [/drafts cannot publish or change the submitted runtime catalog/iu, 'Review Notes missing draft-only Staff Access disclosure'],
     [/Staff Access is an owner[/]operator surface; reviewer access, if required, is supplied separately in App Store Connect/iu, 'Review Notes must retain the Staff Access review-access disclosure'],
-    [/sensitive permission/iu, 'Review Notes missing permission disclosure'],
+    [/No health information or sensitive device permission is requested/iu, 'Review Notes missing permission disclosure'],
     [/remains on the introduction until the reviewer taps “Enter CaboHealth”/iu, 'Review Notes missing current manual-entry behavior'],
-    [/Prior technical verification observed Hostinger access-log fields: IP address, timestamp, HTTP method, requested resource, device\/user-agent details, country, response bytes, and latency/iu, 'Review Notes missing observed Hostinger log fields'],
-    [/Hostinger logs IP address, browser\/user-agent, requested URL, and technical errors/iu, 'Review Notes missing owner-authorized Hostinger log fields'],
-    [/for page delivery, security, and troubleshooting/iu, 'Review Notes missing Hostinger log purpose'],
-    [/hPanel shows logs up to 7 days/iu, 'Review Notes missing owner-authorized hPanel visibility'],
-    [/additional retention and deletion are controlled by Hostinger/iu, 'Review Notes missing owner-authorized retention/deletion disclosure'],
+    [/Hostinger verification observed IP, timestamp, method, resource, device\/user-agent, country, bytes, and latency/iu, 'Review Notes missing observed Hostinger log fields'],
+    [/Authorized logs include IP, user-agent, URL, and errors/iu, 'Review Notes missing owner-authorized Hostinger log fields'],
+    [/for delivery\/security\/troubleshooting/iu, 'Review Notes missing Hostinger log purpose'],
+    [/hPanel shows up to 7 days/iu, 'Review Notes missing owner-authorized hPanel visibility'],
+    [/added retention\/deletion is Hostinger-controlled/iu, 'Review Notes missing owner-authorized retention/deletion disclosure'],
     [/; no tracking\./iu, 'Review Notes missing non-tracking disclosure'],
     [/pseudonymous Firebase UID/iu, 'Review Notes missing pseudonymous Firebase identifier disclosure'],
     [/SecureStore/iu, 'Review Notes missing SecureStore installation disclosure'],
     [/App Check/iu, 'Review Notes missing App Check disclosure'],
     [/Launch nonces and hosted sessions are short-lived/iu, 'Review Notes missing short-lived launch and hosted-session disclosure'],
     [/Home > Client Resources > “Delete review access and data”/iu, 'Review Notes missing exact App Review deletion path'],
-    [/Confirm pending\/completed; if pending, reopen it without signing in to receive completion confirmation/iu, 'Review Notes missing deletion status and completion-confirmation review step'],
-    [/Durable deletion revokes access on acceptance; expiry\/admin revocation queues production cleanup/iu, 'Review Notes missing exact deletion lifecycle disclosure'],
+    [/Confirm pending\/completed; if pending, reopen it without signing in for completion confirmation/iu, 'Review Notes missing deletion status and completion-confirmation review step'],
+    [/Durable deletion revokes access on acceptance; expiry\/admin revocation queues cleanup/iu, 'Review Notes missing exact deletion lifecycle disclosure'],
     [/random 256-bit receipt stays in SecureStore/iu, 'Review Notes missing durable deletion receipt disclosure'],
     [/server keeps only a keyed-HMAC lookup and status timestamps/iu, 'Review Notes missing deletion receipt server-boundary disclosure'],
     [/expects completion within 30 days/iu, 'Review Notes missing non-guaranteed expected deletion window'],
     [/retries every five minutes/iu, 'Review Notes missing deletion retry interval'],
-    [/app confirms completion after reopening/iu, 'Review Notes missing in-app deletion completion confirmation'],
-    [/Staff audits are scheduled for deletion 30 days after creation; Firestore TTL deletion is asynchronous/iu, 'Review Notes missing asynchronous audit-deletion disclosure'],
-    [/Cloud Functions rate-limits a transient source IP; it stores no raw IP, only a keyed-HMAC bucket with a 30-minute deadline/iu, 'Review Notes missing transient source-IP rate-limit disclosure'],
+    [/confirms after reopening/iu, 'Review Notes missing in-app deletion completion confirmation'],
+    [/Staff-audit deletion deadline is 30 days; Firestore TTL is asynchronous/iu, 'Review Notes missing asynchronous audit-deletion disclosure'],
+    [/Cloud Functions writes no raw IP to Firestore; only keyed-HMAC rate-limit buckets with a 30-minute deadline/iu, 'Review Notes missing Firestore source-IP rate-limit boundary'],
+    [/Google Cloud Logging retains automatic Cloud Run request logs—source IP, method\/URL, user-agent, status, latency, sizes, protocol—for 30 days in `_Default`; no exclusion/iu, 'Review Notes missing automatic Cloud Run request-log retention disclosure'],
     [/durable deletion/iu, 'Review Notes missing durable deletion disclosure'],
     [/30 days/iu, 'Review Notes missing audit retention disclosure'],
   ];
@@ -905,6 +1061,7 @@ function verifyPrivacy() {
   if (!privacy) return;
   const nativeBehavior = privacy.nativeBehavior;
   const logs = privacy.hostedTechnicalRequestLogs;
+  const cloudRunLogs = privacy.cloudRunRequestLogs;
   const conditionalRecommendation = privacy.conditionalRecommendation;
   const schemaAndPurposesAreExact = (
     hasExactKeys(privacy, [
@@ -918,6 +1075,7 @@ function verifyPrivacy() {
       'appCheck',
       'backend',
       'cloudFunctionRequestSecurity',
+      'cloudRunRequestLogs',
       'accessArtifacts',
       'deletion',
       'deletionReceiptStatus',
@@ -964,12 +1122,25 @@ function verifyPrivacy() {
     ])
     && hasExactKeys(privacy.cloudFunctionRequestSecurity, [
       'rawSourceIpProcessedTransiently',
-      'rawSourceIpStored',
+      'rawSourceIpStoredInFirestore',
+      'providerRequestLoggingDocumentedSeparately',
       'storedRateLimitRepresentation',
       'purpose',
       'rateLimitBucketDeletionDeadlineMinutes',
       'physicalTtlDeletionAsynchronous',
       'tracking',
+    ])
+    && hasExactKeys(cloudRunLogs, [
+      'provider',
+      'automatic',
+      'observedFields',
+      'purpose',
+      'retentionDays',
+      'defaultSinkExclusionConfigured',
+      'deletionProcess',
+      'linkedToIdentity',
+      'tracking',
+      'verifiedDate',
     ])
     && hasExactKeys(privacy.accessArtifacts, [
       'redemptionRequestDigestDeadlineMinutes',
@@ -1074,9 +1245,9 @@ function verifyPrivacy() {
     errors.push('App Privacy schemas and hosting purposes must be exact');
   }
   if (
-    privacy.schemaVersion !== 4
+    privacy.schemaVersion !== 5
     || privacy.status !== 'pending-final-linkage-category-review-and-save'
-    || privacy.architectureStatus !== 'implemented-locally-pending-external-configuration-and-e2e'
+    || privacy.architectureStatus !== 'core-infrastructure-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e'
     || privacy.recommendedAppPrivacyAnswer !== 'Yes, we collect data from this app'
   ) {
     errors.push('App Privacy collection answer must remain Yes, we collect data from this app while linkage, categories, and exact-RC review remain pending');
@@ -1105,15 +1276,43 @@ function verifyPrivacy() {
     || privacy.installation?.storage !== 'SecureStore'
     || privacy.installation?.deviceBound !== true
     || privacy.appCheck?.required !== true
+    || !equalJson(privacy.backend?.providers, [
+      'Firebase Authentication',
+      'Cloud Functions',
+      'Cloud Firestore',
+      'Firebase App Check',
+      'Google Cloud Logging',
+      'Hostinger',
+    ])
     || privacy.backend?.codesStoredPlaintext !== false
     || privacy.backend?.clientNamesStored !== false
     || privacy.cloudFunctionRequestSecurity?.rawSourceIpProcessedTransiently !== true
-    || privacy.cloudFunctionRequestSecurity?.rawSourceIpStored !== false
+    || privacy.cloudFunctionRequestSecurity?.rawSourceIpStoredInFirestore !== false
+    || privacy.cloudFunctionRequestSecurity?.providerRequestLoggingDocumentedSeparately !== true
     || privacy.cloudFunctionRequestSecurity?.storedRateLimitRepresentation !== 'versioned keyed HMAC lookup only'
     || !equalJson(privacy.cloudFunctionRequestSecurity?.purpose, ['rate limiting', 'abuse prevention'])
     || privacy.cloudFunctionRequestSecurity?.rateLimitBucketDeletionDeadlineMinutes !== 30
     || privacy.cloudFunctionRequestSecurity?.physicalTtlDeletionAsynchronous !== true
     || privacy.cloudFunctionRequestSecurity?.tracking !== false
+    || cloudRunLogs?.provider !== 'Google Cloud Logging'
+    || cloudRunLogs?.automatic !== true
+    || !equalJson(cloudRunLogs?.observedFields, [
+      'source IP address',
+      'HTTP method',
+      'requested URL',
+      'user-agent',
+      'HTTP status',
+      'latency',
+      'request and response sizes',
+      'protocol',
+    ])
+    || !equalJson(cloudRunLogs?.purpose, ['service delivery', 'security and troubleshooting'])
+    || cloudRunLogs?.retentionDays !== 30
+    || cloudRunLogs?.defaultSinkExclusionConfigured !== false
+    || cloudRunLogs?.deletionProcess !== 'Google Cloud Logging applies the unlocked _Default bucket retention; expiration is provider-enforced and may be eventually consistent.'
+    || cloudRunLogs?.linkedToIdentity !== null
+    || cloudRunLogs?.tracking !== false
+    || cloudRunLogs?.verifiedDate !== '2026-08-24'
     || privacy.accessArtifacts?.redemptionRequestDigestDeadlineMinutes !== 5
     || privacy.accessArtifacts?.launchNonceDeadlineSeconds !== 60
     || privacy.accessArtifacts?.webSessionMaximumMinutes !== 60
@@ -1197,7 +1396,7 @@ function verifyPrivacy() {
     || privacy.reviewSandbox?.staleGenerationEligibility !== 'immediate'
     || privacy.reviewSandbox?.retryWorkerMinutes !== 5
     || privacy.reviewSandbox?.completionTimeGuaranteed !== false
-    || privacy.reviewSandbox?.status !== 'pending-activation-and-staging-e2e'
+    || privacy.reviewSandbox?.status !== 'infrastructure-deployed-pending-credential-valid-flow-and-device-e2e'
   ) errors.push('App Privacy client-access architecture must remain pseudonymous, device-bound, App-Check protected, transiently HMAC rate-limited, durably deletable in both realms, short-lived, and sanitized');
   if (
     logs?.provider !== 'Hostinger'
@@ -1225,7 +1424,7 @@ function verifyPrivacy() {
     errors.push('Hosting request-log facts must retain the owner-authorized retention/deletion disclosure, unresolved linkage, and non-tracking status');
   }
   if (
-    conditionalRecommendation?.dataNotCollectedPath !== 'Not applicable to this v3 architecture: pseudonymous identifiers and hosted request records are retained off device beyond real-time request servicing.'
+    conditionalRecommendation?.dataNotCollectedPath !== 'Not applicable to this v3 architecture: pseudonymous identifiers and provider request records are retained off device beyond real-time request servicing.'
     || conditionalRecommendation?.dataCollectedPath !== 'Required. Map the final verified production data types, purposes, linkage, and retention in App Store Connect after the exact RC and hosting configuration are tested.'
     || !equalJson(conditionalRecommendation?.provisionalPurpose, [
       'App Functionality',
@@ -1233,7 +1432,7 @@ function verifyPrivacy() {
     || !equalJson(conditionalRecommendation?.provisionalCategoryMapping, [
       'User ID, if the pseudonymous Firebase UID is retained and disclosure is required',
       'Device ID, if the app-installation identifier is retained off device and disclosure is required',
-      'Coarse Location, if retained country derived from an IP address is in disclosure scope',
+      'Coarse Location, Device ID, or Other Diagnostic Data as required by Apple\'s final mapping of retained IP addresses',
       'Product Interaction, if retained requested-resource activity is in disclosure scope',
       'Performance Data, if retained latency or response-byte measurements are in disclosure scope',
       'Other Diagnostic Data, if retained HTTP method, user-agent, or technical-error records are in disclosure scope',
@@ -1395,9 +1594,11 @@ function verifyScreenshots() {
 function verifyHumanChecklists() {
   const completedOwnerE2eGate = '- [x] Run a controlled production end-to-end check proving verified-email password-only sign-in, App Check, recent authentication, server-side permission enforcement, and no second-factor challenge.';
   const completedPublicWebGates = [
-    '- [x] Promote and origin-verify the independently reviewed and repinned Privacy, Terms, Support, and Report Content bytes as part of the exact 17-file Hostinger release.',
     '- [x] Deploy the ordered AASA authority with four launch/API exclusions followed by the three exact allowed roots; verify origin bytes and Apple CDN bytes before Universal Link QA.',
-    '- [x] Verify the public two-miniapp/legal payload remains exact and no WordPress/unrelated files change.',
+  ];
+  const pendingRevisedPublicWebGates = [
+    '- [ ] Promote and origin-verify the revised Healthy Recipes and Clinic Guide citation bytes plus the updated Privacy disclosure, then regenerate the exact public-release evidence. Marketing, Terms, Support, Report Content, and AASA remain unchanged from the preceding 17-file release.',
+    '- [ ] Verify the revised two-miniapp/Privacy payload is exact and no WordPress or unrelated file changes during promotion. The preceding release remains verified until replacement.',
   ];
   const required = [
     'testflight-what-to-test.md',
@@ -1425,7 +1626,12 @@ function verifyHumanChecklists() {
       }
       for (const completedPublicWebGate of completedPublicWebGates) {
         if (!source.includes(completedPublicWebGate)) {
-          errors.push('submission-gates.md must retain every exact completed public web evidence checkbox');
+          errors.push('submission-gates.md must retain the exact completed AASA public-web evidence checkbox');
+        }
+      }
+      for (const pendingRevisedPublicWebGate of pendingRevisedPublicWebGates) {
+        if (!source.includes(pendingRevisedPublicWebGate)) {
+          errors.push('submission-gates.md must retain every exact pending revised public-web checkbox');
         }
       }
       unsupportedCompletedEvidence = [completedOwnerE2eGate, ...completedPublicWebGates]
@@ -1490,6 +1696,7 @@ verifyPrivacy();
 verifyAgeRating();
 verifyScreenshots();
 verifyHumanChecklists();
+verifyContentRightsInventory();
 
 if (errors.length > 0) {
   for (const error of errors) process.stderr.write(`- ${error}\n`);

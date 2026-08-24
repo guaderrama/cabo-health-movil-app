@@ -15,7 +15,7 @@ Explore science-grounded wellness resources. Eligible existing CaboHealth client
 CaboHealth brings science-grounded general-wellness resources into one calm, bilingual experience.
 
 HEALTHY RECIPES
-Browse twelve original recipe ideas with search and category filters. Each recipe includes ingredients, steps, timing, servings, allergen notes, and food-safety reminders. Recipe favorites stay on your device.
+Browse twelve recipe ideas with search and category filters. Each recipe includes ingredients, steps, timing, servings, allergen notes, and food-safety reminders. Recipe favorites stay on your device.
 
 CABOHEALTH CLINIC GUIDE
 Prepare for a clinic visit with public location, hours, contact options, language and accessibility guidance, an emergency limitation, and a practical checklist. The checklist stays on your device and has no free-text fields or uploads.
@@ -41,7 +41,7 @@ https://cabohealth.org/app/support/
 https://cabohealth.org/app/privacy/
 
 ## Marketing URL
-https://cabohealth.org/
+https://cabohealth.org/app/
 
 ## Copyright
 2026 Ivan Guaderrama

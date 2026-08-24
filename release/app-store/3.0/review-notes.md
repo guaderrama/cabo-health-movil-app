@@ -4,40 +4,41 @@ Status: **DRAFT — DO NOT PASTE YET.** Submission remains blocked until the exa
 
 ## Paste-ready body after all gates are resolved
 
-CaboHealth 3.0 (build 4) is a deliberately limited release with exactly two public general-wellness/editorial resources and one server-protected Client Resources area.
+CaboHealth 3.0 (build 4): two public wellness/editorial resources plus protected Client Resources.
 
 This app is submitted by Ivan Guaderrama, an individual Apple Developer Program member. Cabo Health is a trade brand owned and operated by Ivan Guaderrama and is not represented as a separate legal entity.
 
 GUIDELINE 4.2 — NATIVE VALUE
-Home shows the reviewed catalog. Native features include recipe search/details, a visit checklist, favorites, EN/es-MX, appearance/reduced-effects settings, and bundled offline content. This is not a marketplace or general browser.
+Native search/details, checklist, favorites, bilingual UI, settings, and offline content; not a marketplace/browser.
 
 GUIDELINE 4.7 — HOSTED RESOURCES
 1. Healthy Recipes — public — https://cabohealth.org/apps/healthy-recipes/
 2. CaboHealth Clinic Guide — public — https://cabohealth.org/apps/clinic-guide/
 3. Client Resources — protected existing-client eligibility — https://cabohealth.org/apps/client-resources/
 
-These are the only Universal Link entry points. Client Resources is server-protected and exposes no arbitrary URL. Settings links to https://cabohealth.org/staff/ in the system browser; drafts cannot publish or change the submitted runtime catalog. WebViews allow only the reviewed CaboHealth path, have no native message bridge, and block arbitrary navigation and sensitive permissions.
+Only these Universal Links enter. No arbitrary URL/native message bridge. Drafts cannot publish or change the submitted runtime catalog. Other routes/permissions are blocked.
+
+PRIOR REVIEW RESOLUTION
+Former advisory and camera-based AI resources are excluded. No third-party AI is implemented/invoked; app code sends no data to an AI provider. No camera, Photos, HealthKit, microphone, or location access; WebViews deny media/geolocation. Both public resources show dated Sources/Fuentes with official links.
 
 REVIEW STEPS
-1. Clean-install and open the app. The app remains on the introduction until the reviewer taps “Enter CaboHealth”.
-2. On Home, confirm two public resources and locked Client Resources.
-3. Test Healthy Recipes search/detail/favorite: https://cabohealth.org/apps/healthy-recipes/
-4. Test Clinic Guide checklist/contact actions: https://cabohealth.org/apps/clinic-guide/
-5. Enter the separate multi-device App Review credential from App Store Connect. It opens only a fixed bilingual non-client sample through the app; no production-client record or credential is included in this draft.
-6. Test Saved and consumer Settings. Staff Access is an owner/operator surface; reviewer access, if required, is supplied separately in App Store Connect.
+1. Clean-install. The app remains on the introduction until the reviewer taps “Enter CaboHealth”.
+2. On Home, confirm two public resources and locked Client Resources. Test search/detail/favorite at https://cabohealth.org/apps/healthy-recipes/ and checklist/contact at https://cabohealth.org/apps/clinic-guide/.
+3. Enter the separate multi-device App Review credential for a fixed bilingual non-client sample, with no production data.
+4. Test Saved/Settings. Staff Access is an owner/operator surface; reviewer access, if required, is supplied separately in App Store Connect.
+5. Last: Home > Client Resources > “Delete review access and data”. Confirm pending/completed; if pending, reopen it without signing in for completion confirmation.
 
 ACCESS, BUSINESS MODEL, AND DATA
-Client Resources is complimentary for existing in-person clients and not sold separately. Production has a maximum of four active production eligibility codes. There is no price, checkout, in-app purchase, subscription, or paid digital tier; no advertising, user-generated content, or personalized medical recommendation. A code verifies eligibility, not a purchase. The separate multi-device App Review credential opens only the fixed sample and is not versioned here.
+Client Resources is complimentary for existing in-person clients individually authorized by the owner; it is not sold separately. Each client receives a separate revocable code; no shared master code or fixed four-client business limit. No price, checkout, in-app purchase, subscription, paid digital tier, advertising, user-generated content, or personalized medical recommendation.
 
-The app does not ask clients for a name, email address, phone number, or profile registration. Access uses a pseudonymous Firebase UID, an installation identifier in iOS SecureStore, Firebase App Check, and short-lived grants. Codes are keyed digests. Account removal uses durable deletion after revocation/expiry. Sanitized staff audit events are retained for 30 days. No health information or sensitive device permission is requested.
+The app does not ask clients for a name, email address, phone number, or profile registration. Access uses pseudonymous Firebase UID, SecureStore ID, App Check, and keyed code digests. Launch nonces and hosted sessions are short-lived. Durable deletion revokes access on acceptance; expiry/admin revocation queues cleanup. A random 256-bit receipt stays in SecureStore; the server keeps only a keyed-HMAC lookup and status timestamps, expects completion within 30 days, retries every five minutes, and confirms after reopening. Staff-audit deletion deadline is 30 days; Firestore TTL is asynchronous.
 
-Prior technical verification observed Hostinger access-log fields for IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency. Hostinger processes IP address, browser or user-agent, requested URL, and technical errors to deliver, secure, and troubleshoot the hosted pages. Logs are visible in hPanel for up to 7 days; additional retention and deletion are controlled by Hostinger. They are not used for tracking.
+Cloud Functions writes no raw IP to Firestore; only keyed-HMAC rate-limit buckets with a 30-minute deadline. Google Cloud Logging retains automatic Cloud Run request logs—source IP, method/URL, user-agent, status, latency, sizes, protocol—for 30 days in `_Default`; no exclusion. No health information or sensitive device permission is requested.
 
-Legal/support URLs:
+Hostinger verification observed IP, timestamp, method, resource, device/user-agent, country, bytes, and latency. Authorized logs include IP, user-agent, URL, and errors for delivery/security/troubleshooting. hPanel shows up to 7 days; added retention/deletion is Hostinger-controlled; no tracking.
+
 Privacy: https://cabohealth.org/app/privacy/
 Terms: https://cabohealth.org/app/terms/
 Support: https://cabohealth.org/app/support/
 Report Content: https://cabohealth.org/app/report-content/
 Staff Access: https://cabohealth.org/staff/
-
-The App Review credential is activated only after staging and TestFlight verification. Apple approval is not guaranteed.

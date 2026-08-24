@@ -5,6 +5,8 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -64,11 +66,37 @@ test('release v3 verifier accepts the truthful draft-blocked 3.0/build 4 package
   assert.match(result.stdout, /verified.*draft-blocked/iu);
 });
 
+test('release v3 capture rejects a symbolic link for every pinned authority', async (t) => {
+  for (const relativePath of [
+    'app.json',
+    'constants/config.ts',
+    'constants/publicMiniapps.ts',
+    'release/app-store/3.0/release-manifest.json',
+    'release/app-store/3.0/age-rating.json',
+    'release/app-store/3.0/app-privacy.json',
+  ]) {
+    await t.test(relativePath, () => withFixture(
+      (root) => {
+        const authority = join(root, relativePath);
+        const target = join(root, `authority-${relativePath.replaceAll('/', '-')}`);
+        cpSync(authority, target);
+        unlinkSync(authority);
+        symlinkSync(target, authority);
+      },
+      (result) => {
+        assert.equal(result.status, 1, `${relativePath} symlink bypassed capture`);
+        assert.match(result.stderr, /must be a regular non-symbolic-link file/iu);
+      },
+    ));
+  }
+});
+
 test('release v3 authorities record the complete age, sanitized audit, and App Review contracts', () => {
   const age = JSON.parse(readFileSync(join(projectRoot, 'release/app-store/3.0/age-rating.json'), 'utf8'));
   const privacy = JSON.parse(readFileSync(join(projectRoot, 'release/app-store/3.0/app-privacy.json'), 'utf8'));
   const manifest = JSON.parse(readFileSync(join(projectRoot, 'release/app-store/3.0/release-manifest.json'), 'utf8'));
 
+  assert.equal(privacy.schemaVersion, 5);
   assert.equal(privacy.recommendedAppPrivacyAnswer, 'Yes, we collect data from this app');
   assert.deepEqual(age.otherSupportedAnswers, {
     parentalControls: false,
@@ -94,17 +122,136 @@ test('release v3 authorities record the complete age, sanitized audit, and App R
     lootBox: false,
   });
   assert.deepEqual(privacy.applicationAudit, {
-    retentionDays: 30,
+    purpose: 'security and operational accountability',
+    deletionDeadlineDays: 30,
+    physicalTtlDeletionAsynchronous: true,
     actorLabel: 'Staff',
     containsActorUid: false,
     containsCodes: false,
     containsResourceUrls: false,
     containsClientNames: false,
   });
+  assert.deepEqual(privacy.deletion, {
+    durable: true,
+    mechanism: 'transactional deletion tombstone plus idempotent retry worker',
+    activeUserPath: 'Home > Client Resources > Delete access account and data',
+    responseStatuses: ['pending', 'completed'],
+    authorizationRevokedWhenAccepted: true,
+    grantExpiryQueuesDeletion: true,
+    administratorRevocationQueuesDeletion: true,
+    retryWorkerMinutes: 5,
+    completionTimeGuaranteed: false,
+  });
+  assert.deepEqual(privacy.deletionReceiptStatus, {
+    receiptEntropyBits: 256,
+    receiptEncoding: 'base64url',
+    receiptEncodedLength: 43,
+    nativeStorage: 'SecureStore',
+    localStates: ['prepared', 'accepted'],
+    preparedBeforeDeletionRequest: true,
+    deleteRequestFields: ['installationId', 'deletionReceipt'],
+    productionStatusCallable: 'getClientAccountDeletionStatus',
+    reviewStatusCallable: 'getAppReviewAccountDeletionStatus',
+    statusRequestFields: ['deletionReceipt'],
+    statusResponse: {
+      schemaVersion: 1,
+      exactFields: [
+        'schemaVersion',
+        'status',
+        'requestedAtMs',
+        'expectedCompletionByMs',
+        'completedAtMs',
+      ],
+      statuses: ['pending', 'completed'],
+      pendingCompletedAtMs: null,
+      timestampsAreIntegers: true,
+    },
+    limitedUseAppCheckRequired: true,
+    firebaseAuthenticationRequired: false,
+    rawReceiptStoredServerSide: false,
+    serverLookupRepresentation: 'versioned keyed HMAC lookup only',
+    productionCollection: '_private_account_deletion_receipts',
+    reviewCollection: 'review_sandbox_account_deletion_receipts',
+    separateRealmPeppers: true,
+    statusRecordContainsUid: false,
+    statusRecordContainsCode: false,
+    statusRecordContainsResourceUrl: false,
+    expectedCompletionDays: 30,
+    expectedCompletionGuaranteed: false,
+    retryWorkerMinutes: 5,
+    pendingHasTtl: false,
+    pendingRetention: 'until cleanup completes',
+    completedRecordContainsOnlyStatusTimestamps: true,
+    completedRetentionDays: 30,
+    completedRetentionStartsAt: 'completedAtMs',
+    completedPhysicalTtlDeletionAsynchronous: true,
+    checksOnClientResourcesReopen: true,
+    completionConfirmationInApp: true,
+    localReceiptClearedAfterCompletedAcknowledgement: true,
+    preparedNotFoundClearsReceipt: false,
+    preparedNotFoundRestoresAccess: false,
+    preparedNotFoundResubmitsSameReceipt: true,
+    acceptedNotFoundRestoresAccess: false,
+  });
+  assert.deepEqual(privacy.reviewSandbox, {
+    separateNamespace: true,
+    multiDevice: true,
+    fixedNonClientSample: true,
+    productionClientRecordsExposed: false,
+    userInitiatedDeletion: true,
+    activeUserPath: 'Home > Client Resources > Delete review access and data',
+    responseStatuses: ['pending', 'completed'],
+    authorizationRevokedWhenAccepted: true,
+    currentIdentityInactivityEligibilityDays: 30,
+    staleGenerationEligibility: 'immediate',
+    retryWorkerMinutes: 5,
+    completionTimeGuaranteed: false,
+    status: 'infrastructure-deployed-pending-credential-valid-flow-and-device-e2e',
+  });
+  assert.deepEqual(privacy.cloudFunctionRequestSecurity, {
+    rawSourceIpProcessedTransiently: true,
+    rawSourceIpStoredInFirestore: false,
+    providerRequestLoggingDocumentedSeparately: true,
+    storedRateLimitRepresentation: 'versioned keyed HMAC lookup only',
+    purpose: ['rate limiting', 'abuse prevention'],
+    rateLimitBucketDeletionDeadlineMinutes: 30,
+    physicalTtlDeletionAsynchronous: true,
+    tracking: false,
+  });
+  assert.deepEqual(privacy.cloudRunRequestLogs, {
+    provider: 'Google Cloud Logging',
+    automatic: true,
+    observedFields: [
+      'source IP address',
+      'HTTP method',
+      'requested URL',
+      'user-agent',
+      'HTTP status',
+      'latency',
+      'request and response sizes',
+      'protocol',
+    ],
+    purpose: ['service delivery', 'security and troubleshooting'],
+    retentionDays: 30,
+    defaultSinkExclusionConfigured: false,
+    deletionProcess: 'Google Cloud Logging applies the unlocked _Default bucket retention; expiration is provider-enforced and may be eventually consistent.',
+    linkedToIdentity: null,
+    tracking: false,
+    verifiedDate: '2026-08-24',
+  });
+  assert.deepEqual(privacy.accessArtifacts, {
+    redemptionRequestDigestDeadlineMinutes: 5,
+    launchNonceDeadlineSeconds: 60,
+    webSessionMaximumMinutes: 60,
+    brokerReplayDigestDeadlineMinutes: 2,
+    deletionTombstoneHasTtl: false,
+    deletionTombstoneRetention: 'until linked-data and Firebase Auth cleanup completes',
+    containsPlaintextSecrets: false,
+  });
   assert.deepEqual(privacy.conditionalRecommendation.provisionalCategoryMapping, [
     'User ID, if the pseudonymous Firebase UID is retained and disclosure is required',
     'Device ID, if the app-installation identifier is retained off device and disclosure is required',
-    'Coarse Location, if retained country derived from an IP address is in disclosure scope',
+    'Coarse Location, Device ID, or Other Diagnostic Data as required by Apple\'s final mapping of retained IP addresses',
     'Product Interaction, if retained requested-resource activity is in disclosure scope',
     'Performance Data, if retained latency or response-byte measurements are in disclosure scope',
     'Other Diagnostic Data, if retained HTTP method, user-agent, or technical-error records are in disclosure scope',
@@ -281,14 +428,14 @@ test('release v3 verifier rejects commerce, pricing, checkout, IAP, purchase CTA
   }
 });
 
-test('release v3 verifier requires maximum four existing in-person client slots', () => {
+test('release v3 verifier requires owner-issued individual access without a fixed business-count limit', () => {
   withFixture(
     (root) => mutateJson(root, 'release/app-store/3.0/release-manifest.json', (manifest) => {
-      manifest.scope.commercialModel.maximumActiveClientCodes = 5;
+      manifest.scope.commercialModel.maximumActiveClientCodes = 4;
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /maximumActiveClientCodes must remain 4/iu);
+      assert.match(result.stderr, /maximumActiveClientCodes must remain null/iu);
     },
   );
 });
@@ -333,13 +480,13 @@ test('release v3 verifier requires a 9+ reconfirmation rather than reusing the s
   );
 });
 
-test('release v3 verifier requires pseudonymous Firebase, SecureStore, App Check, durable deletion, and 30-day audit', async (t) => {
+test('release v3 verifier requires pseudonymous Firebase, SecureStore, App Check, durable deletion, and an asynchronous 30-day audit deadline', async (t) => {
   const mutations = [
     ['identified account', (privacy) => { privacy.clientAccount.pseudonymous = false; }],
     ['plain installation', (privacy) => { privacy.installation.storage = 'AsyncStorage'; }],
     ['App Check off', (privacy) => { privacy.appCheck.required = false; }],
     ['non-durable deletion', (privacy) => { privacy.deletion.durable = false; }],
-    ['long audit', (privacy) => { privacy.applicationAudit.retentionDays = 31; }],
+    ['wrong audit deadline', (privacy) => { privacy.applicationAudit.deletionDeadlineDays = 31; }],
     ['variable audit actor', (privacy) => { privacy.applicationAudit.actorLabel = 'Admin Name'; }],
     ['audit actor UID', (privacy) => { privacy.applicationAudit.containsActorUid = true; }],
   ];
@@ -352,6 +499,165 @@ test('release v3 verifier requires pseudonymous Firebase, SecureStore, App Check
       },
     ));
   }
+});
+
+test('release v3 verifier requires the exact production account-deletion contract', () => {
+  withFixture(
+    (root) => mutateJson(root, 'release/app-store/3.0/app-privacy.json', (privacy) => {
+      privacy.deletion.responseStatuses = ['completed'];
+    }),
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /privacy architecture must retain/iu);
+    },
+  );
+});
+
+test('captured release verifier rejects every structured App Privacy lifecycle drift', async (t) => {
+  const { captureReleaseV3, verifyCapturedReleaseV3 } = await import('../scripts/verify-release-v3.mjs');
+  const baseFiles = captureReleaseV3(projectRoot);
+  const mutations = [
+    ['schema version', (privacy) => { privacy.schemaVersion = 3; }],
+    ['production deletion mechanism', (privacy) => { privacy.deletion.mechanism = 'best effort'; }],
+    ['production deletion path', (privacy) => { privacy.deletion.activeUserPath = 'Settings'; }],
+    ['production deletion response', (privacy) => { privacy.deletion.responseStatuses = ['completed']; }],
+    ['production deletion authorization timing', (privacy) => { privacy.deletion.authorizationRevokedWhenAccepted = false; }],
+    ['production expiry enqueue', (privacy) => { privacy.deletion.grantExpiryQueuesDeletion = false; }],
+    ['production admin-revocation enqueue', (privacy) => { privacy.deletion.administratorRevocationQueuesDeletion = false; }],
+    ['production retry worker', (privacy) => { privacy.deletion.retryWorkerMinutes = 10; }],
+    ['production completion guarantee', (privacy) => { privacy.deletion.completionTimeGuaranteed = true; }],
+    ['receipt entropy', (privacy) => { privacy.deletionReceiptStatus.receiptEntropyBits = 128; }],
+    ['receipt encoding', (privacy) => { privacy.deletionReceiptStatus.receiptEncoding = 'hex'; }],
+    ['receipt encoded length', (privacy) => { privacy.deletionReceiptStatus.receiptEncodedLength = 42; }],
+    ['receipt native storage', (privacy) => { privacy.deletionReceiptStatus.nativeStorage = 'AsyncStorage'; }],
+    ['receipt local states', (privacy) => { privacy.deletionReceiptStatus.localStates = ['accepted']; }],
+    ['receipt prepared timing', (privacy) => { privacy.deletionReceiptStatus.preparedBeforeDeletionRequest = false; }],
+    ['receipt delete request', (privacy) => { privacy.deletionReceiptStatus.deleteRequestFields = ['deletionReceipt']; }],
+    ['production status callable', (privacy) => { privacy.deletionReceiptStatus.productionStatusCallable = 'unknown'; }],
+    ['review status callable', (privacy) => { privacy.deletionReceiptStatus.reviewStatusCallable = 'unknown'; }],
+    ['status request fields', (privacy) => { privacy.deletionReceiptStatus.statusRequestFields = ['uid']; }],
+    ['status response schema', (privacy) => { privacy.deletionReceiptStatus.statusResponse.schemaVersion = 2; }],
+    ['status response fields', (privacy) => { privacy.deletionReceiptStatus.statusResponse.exactFields = ['status']; }],
+    ['status response statuses', (privacy) => { privacy.deletionReceiptStatus.statusResponse.statuses = ['completed']; }],
+    ['pending completion timestamp', (privacy) => { privacy.deletionReceiptStatus.statusResponse.pendingCompletedAtMs = 0; }],
+    ['timestamp types', (privacy) => { privacy.deletionReceiptStatus.statusResponse.timestampsAreIntegers = false; }],
+    ['receipt App Check', (privacy) => { privacy.deletionReceiptStatus.limitedUseAppCheckRequired = false; }],
+    ['receipt Auth independence', (privacy) => { privacy.deletionReceiptStatus.firebaseAuthenticationRequired = true; }],
+    ['raw receipt storage', (privacy) => { privacy.deletionReceiptStatus.rawReceiptStoredServerSide = true; }],
+    ['receipt lookup representation', (privacy) => { privacy.deletionReceiptStatus.serverLookupRepresentation = 'plaintext'; }],
+    ['receipt production collection', (privacy) => { privacy.deletionReceiptStatus.productionCollection = 'shared'; }],
+    ['receipt review collection', (privacy) => { privacy.deletionReceiptStatus.reviewCollection = 'shared'; }],
+    ['receipt realm peppers', (privacy) => { privacy.deletionReceiptStatus.separateRealmPeppers = false; }],
+    ['receipt UID content', (privacy) => { privacy.deletionReceiptStatus.statusRecordContainsUid = true; }],
+    ['receipt code content', (privacy) => { privacy.deletionReceiptStatus.statusRecordContainsCode = true; }],
+    ['receipt URL content', (privacy) => { privacy.deletionReceiptStatus.statusRecordContainsResourceUrl = true; }],
+    ['receipt expected completion', (privacy) => { privacy.deletionReceiptStatus.expectedCompletionDays = 31; }],
+    ['receipt completion guarantee', (privacy) => { privacy.deletionReceiptStatus.expectedCompletionGuaranteed = true; }],
+    ['receipt retry worker', (privacy) => { privacy.deletionReceiptStatus.retryWorkerMinutes = 10; }],
+    ['pending receipt TTL', (privacy) => { privacy.deletionReceiptStatus.pendingHasTtl = true; }],
+    ['pending receipt retention', (privacy) => { privacy.deletionReceiptStatus.pendingRetention = '30 days'; }],
+    ['completed receipt contents', (privacy) => { privacy.deletionReceiptStatus.completedRecordContainsOnlyStatusTimestamps = false; }],
+    ['completed receipt retention', (privacy) => { privacy.deletionReceiptStatus.completedRetentionDays = 31; }],
+    ['completed receipt retention start', (privacy) => { privacy.deletionReceiptStatus.completedRetentionStartsAt = 'requestedAtMs'; }],
+    ['completed receipt TTL promise', (privacy) => { privacy.deletionReceiptStatus.completedPhysicalTtlDeletionAsynchronous = false; }],
+    ['receipt reopen check', (privacy) => { privacy.deletionReceiptStatus.checksOnClientResourcesReopen = false; }],
+    ['receipt completion confirmation', (privacy) => { privacy.deletionReceiptStatus.completionConfirmationInApp = false; }],
+    ['local receipt clearing', (privacy) => { privacy.deletionReceiptStatus.localReceiptClearedAfterCompletedAcknowledgement = false; }],
+    ['prepared missing receipt clearing', (privacy) => { privacy.deletionReceiptStatus.preparedNotFoundClearsReceipt = true; }],
+    ['prepared missing receipt access', (privacy) => { privacy.deletionReceiptStatus.preparedNotFoundRestoresAccess = true; }],
+    ['prepared missing receipt resubmission', (privacy) => { privacy.deletionReceiptStatus.preparedNotFoundResubmitsSameReceipt = false; }],
+    ['accepted missing receipt access', (privacy) => { privacy.deletionReceiptStatus.acceptedNotFoundRestoresAccess = true; }],
+    ['audit purpose', (privacy) => { privacy.applicationAudit.purpose = 'analytics'; }],
+    ['audit deadline', (privacy) => { privacy.applicationAudit.deletionDeadlineDays = 31; }],
+    ['audit physical TTL promise', (privacy) => { privacy.applicationAudit.physicalTtlDeletionAsynchronous = false; }],
+    ['audit actor label', (privacy) => { privacy.applicationAudit.actorLabel = 'Admin Name'; }],
+    ['audit actor UID', (privacy) => { privacy.applicationAudit.containsActorUid = true; }],
+    ['audit codes', (privacy) => { privacy.applicationAudit.containsCodes = true; }],
+    ['audit resource URLs', (privacy) => { privacy.applicationAudit.containsResourceUrls = true; }],
+    ['audit client names', (privacy) => { privacy.applicationAudit.containsClientNames = true; }],
+    ['review namespace', (privacy) => { privacy.reviewSandbox.separateNamespace = false; }],
+    ['review multi-device contract', (privacy) => { privacy.reviewSandbox.multiDevice = false; }],
+    ['review sample type', (privacy) => { privacy.reviewSandbox.fixedNonClientSample = false; }],
+    ['review production isolation', (privacy) => { privacy.reviewSandbox.productionClientRecordsExposed = true; }],
+    ['review self-deletion', (privacy) => { privacy.reviewSandbox.userInitiatedDeletion = false; }],
+    ['review deletion path', (privacy) => { privacy.reviewSandbox.activeUserPath = 'Settings'; }],
+    ['review deletion response', (privacy) => { privacy.reviewSandbox.responseStatuses = ['pending']; }],
+    ['review deletion authorization timing', (privacy) => { privacy.reviewSandbox.authorizationRevokedWhenAccepted = false; }],
+    ['review inactivity eligibility', (privacy) => { privacy.reviewSandbox.currentIdentityInactivityEligibilityDays = 31; }],
+    ['review stale-generation eligibility', (privacy) => { privacy.reviewSandbox.staleGenerationEligibility = 'after 30 days'; }],
+    ['review retry worker', (privacy) => { privacy.reviewSandbox.retryWorkerMinutes = 10; }],
+    ['review completion guarantee', (privacy) => { privacy.reviewSandbox.completionTimeGuaranteed = true; }],
+    ['review activation status', (privacy) => { privacy.reviewSandbox.status = 'active'; }],
+    ['source IP processing', (privacy) => { privacy.cloudFunctionRequestSecurity.rawSourceIpProcessedTransiently = false; }],
+    ['raw source IP Firestore storage', (privacy) => { privacy.cloudFunctionRequestSecurity.rawSourceIpStoredInFirestore = true; }],
+    ['request-log retention', (privacy) => { privacy.cloudRunRequestLogs.retentionDays = 31; }],
+    ['request-log exclusion claim', (privacy) => { privacy.cloudRunRequestLogs.defaultSinkExclusionConfigured = true; }],
+    ['rate-limit representation', (privacy) => { privacy.cloudFunctionRequestSecurity.storedRateLimitRepresentation = 'raw IP address'; }],
+    ['rate-limit purpose', (privacy) => { privacy.cloudFunctionRequestSecurity.purpose = ['analytics']; }],
+    ['rate-limit deadline', (privacy) => { privacy.cloudFunctionRequestSecurity.rateLimitBucketDeletionDeadlineMinutes = 31; }],
+    ['rate-limit physical TTL promise', (privacy) => { privacy.cloudFunctionRequestSecurity.physicalTtlDeletionAsynchronous = false; }],
+    ['rate-limit tracking', (privacy) => { privacy.cloudFunctionRequestSecurity.tracking = true; }],
+    ['redemption request deadline', (privacy) => { privacy.accessArtifacts.redemptionRequestDigestDeadlineMinutes = 6; }],
+    ['launch nonce deadline', (privacy) => { privacy.accessArtifacts.launchNonceDeadlineSeconds = 61; }],
+    ['web session maximum', (privacy) => { privacy.accessArtifacts.webSessionMaximumMinutes = 61; }],
+    ['broker replay deadline', (privacy) => { privacy.accessArtifacts.brokerReplayDigestDeadlineMinutes = 3; }],
+    ['tombstone TTL', (privacy) => { privacy.accessArtifacts.deletionTombstoneHasTtl = true; }],
+    ['tombstone retention', (privacy) => { privacy.accessArtifacts.deletionTombstoneRetention = 'forever'; }],
+    ['plaintext artifact', (privacy) => { privacy.accessArtifacts.containsPlaintextSecrets = true; }],
+  ];
+
+  for (const [name, mutate] of mutations) {
+    await t.test(name, () => {
+      const files = new Map(baseFiles);
+      const path = 'release/app-store/3.0/app-privacy.json';
+      const privacy = JSON.parse(files.get(path).toString('utf8'));
+      mutate(privacy);
+      files.set(path, Buffer.from(`${JSON.stringify(privacy, null, 2)}\n`));
+      assert.match(
+        verifyCapturedReleaseV3(files).join('\n'),
+        /privacy architecture must retain/iu,
+        `${name} was rejected only by its raw pin`,
+      );
+    });
+  }
+});
+
+test('captured release verifier rejects unknown keys in every new App Privacy object', async (t) => {
+  const { captureReleaseV3, verifyCapturedReleaseV3 } = await import('../scripts/verify-release-v3.mjs');
+  const baseFiles = captureReleaseV3(projectRoot);
+  for (const objectName of [
+    'cloudFunctionRequestSecurity',
+    'cloudRunRequestLogs',
+    'accessArtifacts',
+    'deletion',
+    'deletionReceiptStatus',
+    'applicationAudit',
+    'reviewSandbox',
+  ]) {
+    await t.test(objectName, () => {
+      const files = new Map(baseFiles);
+      const path = 'release/app-store/3.0/app-privacy.json';
+      const privacy = JSON.parse(files.get(path).toString('utf8'));
+      privacy[objectName].unexpected = true;
+      files.set(path, Buffer.from(`${JSON.stringify(privacy, null, 2)}\n`));
+      assert.match(
+        verifyCapturedReleaseV3(files).join('\n'),
+        /privacy must retain the exact authority schema/iu,
+      );
+    });
+  }
+});
+
+test('captured release verifier keeps the App Privacy raw-byte pin independent from semantic validation', async () => {
+  const { captureReleaseV3, verifyCapturedReleaseV3 } = await import('../scripts/verify-release-v3.mjs');
+  const files = captureReleaseV3(projectRoot);
+  const path = 'release/app-store/3.0/app-privacy.json';
+  files.set(path, Buffer.from(JSON.stringify(JSON.parse(files.get(path).toString('utf8')))));
+
+  const errors = verifyCapturedReleaseV3(files).join('\n');
+  assert.match(errors, /privacy must retain the exact privacy authority/iu);
+  assert.doesNotMatch(errors, /privacy must retain the exact authority schema/iu);
+  assert.doesNotMatch(errors, /privacy architecture must retain/iu);
 });
 
 test('release v3 verifier requires explicit negative answers for every supported age category', async (t) => {
@@ -409,7 +715,7 @@ test('release v3 verifier pins the current Apple age questionnaire and override 
   }
 });
 
-test('release v3 verifier keeps every incomplete external step explicitly blocked', () => {
+test('release v3 verifier keeps every external gate at its exact truthful state', () => {
   const manifest = JSON.parse(readFileSync(
     join(projectRoot, 'release/app-store/3.0/release-manifest.json'),
     'utf8',
@@ -428,7 +734,7 @@ test('release v3 verifier keeps every incomplete external step explicitly blocke
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /release gates must retain every required pending state/iu);
+      assert.match(result.stderr, /release gates must retain every exact truthful state/iu);
     },
   );
 });

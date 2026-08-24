@@ -2,11 +2,20 @@
 
 ## Status and access decision
 
-This runbook is a deployment design. No Firebase project, bucket, rule release,
-or remote document was changed while preparing it.
+The dedicated Firebase project and its two Firestore databases were created
+empty. The two exact deny-all rulesets and index/TTL definitions were deployed
+on 2026-08-22. The initial provider read reported all 13 TTL field operations
+as `CREATING`; a later read on the same date confirmed every field `ACTIVE`.
+The production database now contains only the separately reviewed bootstrap and
+controlled access state; the App Review database remains empty until its gated
+credential rotation. No backup bucket was created during initial provisioning.
+See
+[`firebase-activation.md`](firebase-activation.md) for the authoritative
+provisioning state and exact deployment command.
 
-The current App Store candidate reads its public catalog from committed local
-data and has no runtime dependency on the legacy Firestore client services.
+The current prospective source candidate reads its public catalog from
+committed local data and has no runtime dependency on the legacy Firestore
+client services.
 Therefore no legacy anonymous read is strictly necessary. The committed policy
 is intentionally default-deny for anonymous and authenticated client SDKs.
 Future catalog, client-code, and administrator operations must cross a trusted
@@ -33,13 +42,15 @@ affected build. Availability is not a reason to reopen a public collection.
 - Do not paste project identifiers, account tokens, document values, client
   codes, or exported object URLs into terminal transcripts or this repository.
 
-The deployment is blocked until the pinned Firebase Emulator Suite and
-`@firebase/rules-unit-testing` are installed in the controlled environment.
-Run a semantic matrix there proving that anonymous and ordinary authenticated
+Every future rules or schema mutation must re-run the pinned Firebase Emulator
+Suite and `@firebase/rules-unit-testing` gate in the controlled environment.
+The required runtime was available temporarily for the verified 2026-08-24
+run; it was removed afterwards and must be provided again for the next gate.
+The semantic matrix must prove that anonymous and ordinary authenticated
 contexts receive `permission-denied` for get, list, create, update, and delete.
 The static repository test is an additional guard, not a substitute.
 
-## 1. Local and staging gates
+## 1. Local and pre-deployment gates
 
 From the exact release commit:
 
@@ -56,6 +67,17 @@ name `demo-cabohealth`; it must not reference a real Firebase project:
 npm run test:firestore-rules:emulator
 ```
 
+The command performs two sequential emulator executions because the pinned
+Firestore emulator cannot load both database rule targets safely at once. It
+maps `firestore.rules` and `firestore.review.rules` to `(default)` separately
+and requires both anonymous read/write probes to fail with HTTP 403.
+
+On 2026-08-24 this exact command passed against the pinned Firestore emulator:
+the production rules rejected both probes (2/2), and the App Review rules
+rejected both probes (2/2). Java 21 and the emulator JAR were confined to a
+temporary directory and removed with the generated emulator log immediately
+after the run.
+
 Required matrix:
 
 | Context | get/list | create/update/delete |
@@ -67,6 +89,45 @@ Required matrix:
 A trusted backend smoke test is separate: its Admin SDK runtime identity should
 succeed only on the minimum collections required by that backend. Never embed a
 service-account key in the app, repository, shell history, or backup log.
+
+## Access-code schema transition
+
+The owner-approved access model removed the historical fixed four-slot ledger.
+New slotless `_private_access_codes` records use `schemaVersion: 2`. The final
+strict reader accepts schema 1 only when a valid legacy slot `1..4` is present
+and schema 2 only when `slot` is absent. That strict reader is committed but
+must not be deployed until the transition below is complete.
+
+A field-mask-only production read on 2026-08-24 returned sanitized counts only:
+one schema-1 slotless transitional record, zero schema-1 records with a legacy
+slot, zero schema-2 records, zero invalid records, zero slot-ledger documents,
+and no active-code counter. It did not read or retain a code, document ID,
+suffix, timestamp, client field, or resource field.
+
+The currently deployed transitional slotless-v1 Functions binary created that
+record. It is not a verified schema-v2 reader and therefore is neither the
+bridge nor a safe rollback after the first schema-v2 write.
+
+Use one serialized maintenance window in this exact order:
+
+1. Pause owner code issuance and revocation. Deploy the reviewed temporary
+   bridge reader. It must accept only schema 1 with a valid legacy slot, the
+   known schema-1 slotless transitional shape, and schema 2 without `slot`.
+   New codes must be written only as schema 2 without `slot`.
+2. Confirm the bridge is healthy. Then, and only with explicit owner
+   authorization, update only the transitional record's `schemaVersion` from 1
+   to 2 using its exact `updateTime` precondition. Do not rewrite any other
+   field.
+3. Re-read only `schemaVersion` and `slot` and require exactly one schema-2
+   slotless record, zero schema-1 slotless records, and zero invalid or
+   ambiguous records.
+4. Deploy the final strict reader, repeat the sanitized aggregate read, and
+   resume owner issuance and revocation.
+
+Until step 4 completes, rollback only to the reviewed bridge. Afterwards,
+rollback only to the bridge or another reviewed schema-v2-compatible build.
+Never roll back to the currently deployed transitional slotless-v1 binary, and
+never silently treat a schema-1 record without a slot as a permanent format.
 
 ## 2. Create and verify the private remote backup
 

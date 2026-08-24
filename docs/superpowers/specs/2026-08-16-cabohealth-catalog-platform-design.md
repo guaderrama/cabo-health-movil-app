@@ -1,5 +1,7 @@
 # CaboHealth Catalog Platform — Diseño de la versión para App Store
 
+> **Histórico y no normativo:** no ejecutes tareas sin revalidarlas ni uses este archivo como estado actual. Quedaron sustituidos la topología permanente de dos proyectos, el acceso Apple mediante `reviewSandboxAdmin`/cuenta Staff y MFA/TOTP en producción. La autoridad vigente es [ADR 0001](../../decisions/0001-single-firebase-production-project.md), [ADR 0002](../../decisions/0002-password-only-staff-access.md), los runbooks de acceso, activación Firebase y contención Firestore, y los registros de activación fechados. Web público, overlay protegido y Staff password-only están desplegados; el puente/migración/lector estricto y el RC/TestFlight de Apple siguen pendientes.
+
 **Fecha:** 2026-08-16
 
 **Estado:** Aprobado por el usuario

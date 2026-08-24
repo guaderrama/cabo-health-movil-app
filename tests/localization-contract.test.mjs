@@ -30,8 +30,8 @@ test('English and Mexican Spanish expose the same non-empty public message contr
 
   assert.equal(translateMessage('en', 'catalog.title'), 'Explore CaboHealth');
   assert.equal(translateMessage('es-MX', 'catalog.title'), 'Explora CaboHealth');
-  assert.equal(MESSAGES.en['recipes.subtitle'], 'Twelve original food ideas bundled with this app.');
-  assert.equal(MESSAGES['es-MX']['recipes.subtitle'], 'Doce ideas originales de alimentación incluidas en esta app.');
+  assert.equal(MESSAGES.en['recipes.subtitle'], 'Twelve practical food ideas bundled with this app.');
+  assert.equal(MESSAGES['es-MX']['recipes.subtitle'], 'Doce ideas prácticas de alimentación incluidas en esta app.');
   assert.equal(MESSAGES.en['recipes.beverage'], 'Beverage');
   assert.equal(MESSAGES['es-MX']['recipes.beverage'], 'Bebida');
 });
@@ -151,7 +151,7 @@ test('catalog card accessibility narration includes every localized required fac
   assert.equal(label.includes('Recetas Saludables'), true);
   assert.equal(label.includes('Público'), true);
   assert.equal(label.includes('Fuente: Equipo editorial de CaboHealth'), true);
-  assert.equal(label.includes('Revisado: 16 de agosto de 2026'), true);
+  assert.equal(label.includes('Revisado: 24 de agosto de 2026'), true);
   assert.equal(label.includes('Información de salud y bienestar'), true);
   assert.equal(label.includes('registros técnicos de solicitudes'), true);
   assert.equal(label.includes('Sin permisos del dispositivo'), true);

@@ -74,7 +74,7 @@
     "commercialModel": {
       "complimentary": true,
       "existingInPersonClientsOnly": true,
-      "maximumActiveClientCodes": 4,
+      "maximumActiveClientCodes": null,
       "separatelySold": false,
       "sale": false,
       "price": null,
@@ -125,14 +125,14 @@
       { "/": "/apps/clinic-guide/" },
       { "/": "/apps/client-resources/" }
     ],
-    "status": "pending-reviewed-update-and-deployment"
+    "status": "deployed-and-verified-origin-and-apple-cdn"
   },
   "urls": {
     "support": "https://cabohealth.org/app/support/",
     "privacy": "https://cabohealth.org/app/privacy/",
     "terms": "https://cabohealth.org/app/terms/",
     "reportContent": "https://cabohealth.org/app/report-content/",
-    "marketing": "https://cabohealth.org/",
+    "marketing": "https://cabohealth.org/app/",
     "staff": "https://cabohealth.org/staff/"
   },
   "copyright": {
@@ -172,7 +172,7 @@
     "contentRights": {
       "recommendedAnswer": "Yes",
       "usesThirdPartyMaterial": true,
-      "status": "owner-confirmed-scoped-pending-third-party-inventory"
+      "status": "inventory-revised-pending-owner-reconfirmation-and-per-family-basis"
     },
     "unresolvedExternalGates": {
       "regulatedMedicalDevice": "owner-confirmed-pending-exact-rc-review",
@@ -182,12 +182,12 @@
       "hostingLogDeletion": "owner-authorized-disclosure",
       "supportResponseSla": "owner-confirmed",
       "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
-      "allContentRights": "owner-confirmed-scoped-pending-third-party-inventory",
+      "allContentRights": "inventory-revised-pending-owner-reconfirmation-and-per-family-basis",
       "brandEvidenceAttachment": "pending-signed-owner-declaration",
-      "firebaseAndHosting": "pending-external-configuration",
-      "hostedLegalClientAccess": "pending-reviewed-update-and-deployment",
-      "aasa": "pending-reviewed-update-and-deployment",
-      "appReviewCredential": "pending-activation-and-staging-e2e",
+      "firebaseAndHosting": "core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e",
+      "hostedLegalClientAccess": "pending-revised-public-payload-redeploy-and-verification",
+      "aasa": "deployed-and-verified-origin-and-apple-cdn",
+      "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
       "staffReviewAccess": "pending-isolated-review-access-or-written-apple-direction",
       "clientAccessModel": "pending-apple-review-determination",
       "exactReleaseCandidate": "pending-version-bump-build-and-qa",
@@ -200,7 +200,7 @@
     "sellerLegalEntity": "owner-confirmed-individual",
     "sellerRelationship": "owner-confirmed-trade-brand",
     "brandAuthorization": "owner-confirmed-pending-signed-declaration",
-    "contentRights": "owner-confirmed-scoped-pending-third-party-inventory",
+    "contentRights": "inventory-revised-pending-owner-reconfirmation-and-per-family-basis",
     "hostingLogTypes": "owner-authorized-disclosure",
     "hostingLogRetention": "owner-authorized-disclosure",
     "hostingLogDeletion": "owner-authorized-disclosure",
@@ -208,21 +208,21 @@
     "phiRemediation": "verified-owner-authorized",
     "medicalDevice": "owner-confirmed-pending-exact-rc-review",
     "exportCompliance": "owner-confirmed-pending-exact-rc-review",
-    "firebaseAndHosting": "pending-external-configuration",
-    "hostedLegalClientAccess": "pending-reviewed-update-and-deployment",
-    "aasa": "pending-reviewed-update-and-deployment",
-    "appReviewCredential": "pending-activation-and-staging-e2e",
+    "firebaseAndHosting": "core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e",
+    "hostedLegalClientAccess": "pending-revised-public-payload-redeploy-and-verification",
+    "aasa": "deployed-and-verified-origin-and-apple-cdn",
+    "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
     "staffReviewAccess": "pending-isolated-review-access-or-written-apple-direction",
     "clientAccessModel": "pending-apple-review-determination",
     "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
     "privacyMapping": "pending-final-linkage-category-review-and-save",
-    "brandAndContentRights": "pending-signed-owner-declaration-and-third-party-inventory",
+    "brandAndContentRights": "pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis",
     "exactReleaseCandidate": "pending-version-bump-build-and-qa",
     "testFlight": "pending-build-upload-selection-and-physical-iphone-qa",
     "screenshots": "pending-exact-rc-capture",
     "accessibilityLabels": "pending-exact-rc-evidence",
     "appStoreConnect": "pending-final-save",
-    "submission": "blocked-pending-explicit-owner-confirmation"
+    "submission": "blocked-pending-release-gates-and-final-explicit-owner-confirmation"
   },
   "reviewRisk": {
     "level": "high",

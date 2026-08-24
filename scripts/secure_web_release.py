@@ -74,8 +74,8 @@ PROMOTE_TARGETS = (
 ENTRY_SLUGS = ("healthy-recipes", "clinic-guide")
 LEGAL_SLUGS = ("privacy", "terms", "support", "report-content")
 APP_ID = "DQ8PH2DZ3R.com.cabohealth.app"
-CAPSULE_SIZE = 719595
-CAPSULE_SHA256 = "2c839893cca416fdd471fef037bdfb8fc099960d9855e9d7b47981b13892602b"
+CAPSULE_SIZE = 721307
+CAPSULE_SHA256 = "b569107971f2db55f900e595e08e4d9a8daa54ef4588850424d60a9a8c089929"
 APACHE_SECURITY_SHA256 = "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"
 MARKETING_LANDING_SIZE = 15798
 MARKETING_LANDING_SHA256 = "8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147"
@@ -146,20 +146,20 @@ DRAFT_LEGAL_SHA256 = {
 # Pinned after owner-authorized fact reconciliation and independent byte review.
 # Any later legal-copy edit must fail closed until both authorities are repinned.
 FINAL_LEGAL_SHA256: dict[str, str | None] = {
-    "privacy": "def90b1f4ce575a270b5ab0e47d9963ad73393fc56c233c2a8a8a64248ddec4a",
+    "privacy": "bee0eaebf10afe3ded626da45a15ee11368e67f11e7d1dc170222405702fbb80",
     "report-content": "f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c",
     "support": "06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa",
     "terms": "b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22",
 }
 # This remains unset until an independently reviewed legal/AASA/Firebase/
 # Hostinger readiness record is pinned in both release authorities.
-WEB_DEPLOYMENT_READINESS_SHA256: str | None = "edb1856afb0fdc4d39e2f20d593e21bc7ed12553de8563dbad6f6a4b1ddf2a28"
+WEB_DEPLOYMENT_READINESS_SHA256: str | None = "f9dffa59e994449c64fec4f892f0d0f3e38ee641d70e9ea697eb74eeea52dcad"
 MINIAPP_FILE_PINS = (
     ("apps/.htaccess", 568, "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"),
     ("apps/clinic-guide/app.js", 3868, "f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7"),
-    ("apps/clinic-guide/index.html", 28285, "0a18f4f307e2c58189cf9471b71accd779adbfa0415142ac5be584a9a4ff2c8e"),
+    ("apps/clinic-guide/index.html", 28764, "8a42f8e12ce5b0a7a425cb4c25d291f4c2b749388780630403ada28c834a2abd"),
     ("apps/healthy-recipes/app.js", 4049, "70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090"),
-    ("apps/healthy-recipes/index.html", 57591, "d756583df4e13221bb24dd8bf44d5712b5c1bc6a409af2f6c33d6051f630114b"),
+    ("apps/healthy-recipes/index.html", 58398, "e7c42084fcfb55e01cbd01ac77bfc8ebc6f8d441a700bf8ae0d2fee45569a7b4"),
     ("apps/shared/clinic-map-texture.png", 382740, "4b569f0da0cffb9a54dedd93ce672cf7592ae4516dd12663e3b34d731df237c4"),
     ("apps/shared/logo-wordmark.png", 12584, "42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d"),
     ("apps/shared/logo.png", 13598, "e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117"),
@@ -4254,11 +4254,28 @@ def validate_web_deployment_readiness_bound(root_fd: int) -> None:
         raise ReleaseError("WEB_DEPLOYMENT_GATES_INCOMPLETE") from error
     if hashlib.sha256(raw).hexdigest() != WEB_DEPLOYMENT_READINESS_SHA256:
         fail("WEB_DEPLOYMENT_GATES_INCOMPLETE")
-    exact_key_set(readiness, ("schemaVersion", "artifactKind", "status"), "WEB_DEPLOYMENT_READINESS")
+    exact_key_set(
+        readiness,
+        ("schemaVersion", "artifactKind", "status", "reviewedAt", "reviewedInputs", "scope"),
+        "WEB_DEPLOYMENT_READINESS",
+    )
     if readiness != {
-        "schemaVersion": 1,
-        "artifactKind": "cabohealth-web-deployment-readiness-v1",
+        "schemaVersion": 2,
+        "artifactKind": "cabohealth-web-deployment-readiness-v2",
         "status": "ready",
+        "reviewedAt": "2026-08-24",
+        "reviewedInputs": {
+            "miniappCapsuleSha256": CAPSULE_SHA256,
+            "privacySha256": FINAL_LEGAL_SHA256["privacy"],
+            "marketingSha256": MARKETING_LANDING_SHA256,
+            "aasaSha256": hashlib.sha256(canonical_aasa_bytes()).hexdigest(),
+        },
+        "scope": {
+            "localAssemblyAuthorized": True,
+            "publicPromotionAuthorized": False,
+            "deployed": False,
+            "appleReady": False,
+        },
     }:
         fail("WEB_DEPLOYMENT_GATES_INCOMPLETE")
 

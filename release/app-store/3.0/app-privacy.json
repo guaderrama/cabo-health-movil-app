@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 5,
   "status": "pending-final-linkage-category-review-and-save",
-  "architectureStatus": "implemented-locally-pending-external-configuration-and-e2e",
+  "architectureStatus": "core-infrastructure-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e",
   "recommendedAppPrivacyAnswer": "Yes, we collect data from this app",
   "nativeBehavior": {
     "account": true,
@@ -45,6 +45,7 @@
       "Cloud Functions",
       "Cloud Firestore",
       "Firebase App Check",
+      "Google Cloud Logging",
       "Hostinger"
     ],
     "codesStoredPlaintext": false,
@@ -52,13 +53,132 @@
     "clientNamesStored": false,
     "resourceUrlsReturnedToNative": false
   },
+  "cloudFunctionRequestSecurity": {
+    "rawSourceIpProcessedTransiently": true,
+    "rawSourceIpStoredInFirestore": false,
+    "providerRequestLoggingDocumentedSeparately": true,
+    "storedRateLimitRepresentation": "versioned keyed HMAC lookup only",
+    "purpose": [
+      "rate limiting",
+      "abuse prevention"
+    ],
+    "rateLimitBucketDeletionDeadlineMinutes": 30,
+    "physicalTtlDeletionAsynchronous": true,
+    "tracking": false
+  },
+  "cloudRunRequestLogs": {
+    "provider": "Google Cloud Logging",
+    "automatic": true,
+    "observedFields": [
+      "source IP address",
+      "HTTP method",
+      "requested URL",
+      "user-agent",
+      "HTTP status",
+      "latency",
+      "request and response sizes",
+      "protocol"
+    ],
+    "purpose": [
+      "service delivery",
+      "security and troubleshooting"
+    ],
+    "retentionDays": 30,
+    "defaultSinkExclusionConfigured": false,
+    "deletionProcess": "Google Cloud Logging applies the unlocked _Default bucket retention; expiration is provider-enforced and may be eventually consistent.",
+    "linkedToIdentity": null,
+    "tracking": false,
+    "verifiedDate": "2026-08-24"
+  },
+  "accessArtifacts": {
+    "redemptionRequestDigestDeadlineMinutes": 5,
+    "launchNonceDeadlineSeconds": 60,
+    "webSessionMaximumMinutes": 60,
+    "brokerReplayDigestDeadlineMinutes": 2,
+    "deletionTombstoneHasTtl": false,
+    "deletionTombstoneRetention": "until linked-data and Firebase Auth cleanup completes",
+    "containsPlaintextSecrets": false
+  },
   "deletion": {
     "durable": true,
     "mechanism": "transactional deletion tombstone plus idempotent retry worker",
-    "availableAfterGrantRevocationOrExpiry": true
+    "activeUserPath": "Home > Client Resources > Delete access account and data",
+    "responseStatuses": [
+      "pending",
+      "completed"
+    ],
+    "authorizationRevokedWhenAccepted": true,
+    "grantExpiryQueuesDeletion": true,
+    "administratorRevocationQueuesDeletion": true,
+    "retryWorkerMinutes": 5,
+    "completionTimeGuaranteed": false
+  },
+  "deletionReceiptStatus": {
+    "receiptEntropyBits": 256,
+    "receiptEncoding": "base64url",
+    "receiptEncodedLength": 43,
+    "nativeStorage": "SecureStore",
+    "localStates": [
+      "prepared",
+      "accepted"
+    ],
+    "preparedBeforeDeletionRequest": true,
+    "deleteRequestFields": [
+      "installationId",
+      "deletionReceipt"
+    ],
+    "productionStatusCallable": "getClientAccountDeletionStatus",
+    "reviewStatusCallable": "getAppReviewAccountDeletionStatus",
+    "statusRequestFields": [
+      "deletionReceipt"
+    ],
+    "statusResponse": {
+      "schemaVersion": 1,
+      "exactFields": [
+        "schemaVersion",
+        "status",
+        "requestedAtMs",
+        "expectedCompletionByMs",
+        "completedAtMs"
+      ],
+      "statuses": [
+        "pending",
+        "completed"
+      ],
+      "pendingCompletedAtMs": null,
+      "timestampsAreIntegers": true
+    },
+    "limitedUseAppCheckRequired": true,
+    "firebaseAuthenticationRequired": false,
+    "rawReceiptStoredServerSide": false,
+    "serverLookupRepresentation": "versioned keyed HMAC lookup only",
+    "productionCollection": "_private_account_deletion_receipts",
+    "reviewCollection": "review_sandbox_account_deletion_receipts",
+    "separateRealmPeppers": true,
+    "statusRecordContainsUid": false,
+    "statusRecordContainsCode": false,
+    "statusRecordContainsResourceUrl": false,
+    "expectedCompletionDays": 30,
+    "expectedCompletionGuaranteed": false,
+    "retryWorkerMinutes": 5,
+    "pendingHasTtl": false,
+    "pendingRetention": "until cleanup completes",
+    "completedRecordContainsOnlyStatusTimestamps": true,
+    "completedRetentionDays": 30,
+    "completedRetentionStartsAt": "completedAtMs",
+    "completedPhysicalTtlDeletionAsynchronous": true,
+    "checksOnClientResourcesReopen": true,
+    "completionConfirmationInApp": true,
+    "localReceiptClearedAfterCompletedAcknowledgement": true,
+    "preparedNotFoundClearsReceipt": false,
+    "preparedNotFoundRestoresAccess": false,
+    "preparedNotFoundResubmitsSameReceipt": true,
+    "acceptedNotFoundRestoresAccess": false
   },
   "applicationAudit": {
-    "retentionDays": 30,
+    "purpose": "security and operational accountability",
+    "deletionDeadlineDays": 30,
+    "physicalTtlDeletionAsynchronous": true,
     "actorLabel": "Staff",
     "containsActorUid": false,
     "containsCodes": false,
@@ -70,7 +190,18 @@
     "multiDevice": true,
     "fixedNonClientSample": true,
     "productionClientRecordsExposed": false,
-    "status": "pending-activation-and-staging-e2e"
+    "userInitiatedDeletion": true,
+    "activeUserPath": "Home > Client Resources > Delete review access and data",
+    "responseStatuses": [
+      "pending",
+      "completed"
+    ],
+    "authorizationRevokedWhenAccepted": true,
+    "currentIdentityInactivityEligibilityDays": 30,
+    "staleGenerationEligibility": "immediate",
+    "retryWorkerMinutes": 5,
+    "completionTimeGuaranteed": false,
+    "status": "infrastructure-deployed-pending-credential-valid-flow-and-device-e2e"
   },
   "hostedTechnicalRequestLogs": {
     "provider": "Hostinger",
@@ -100,7 +231,7 @@
     "tracking": false
   },
   "conditionalRecommendation": {
-    "dataNotCollectedPath": "Not applicable to this v3 architecture: pseudonymous identifiers and hosted request records are retained off device beyond real-time request servicing.",
+    "dataNotCollectedPath": "Not applicable to this v3 architecture: pseudonymous identifiers and provider request records are retained off device beyond real-time request servicing.",
     "dataCollectedPath": "Required. Map the final verified production data types, purposes, linkage, and retention in App Store Connect after the exact RC and hosting configuration are tested.",
     "provisionalPurpose": [
       "App Functionality"
@@ -108,7 +239,7 @@
     "provisionalCategoryMapping": [
       "User ID, if the pseudonymous Firebase UID is retained and disclosure is required",
       "Device ID, if the app-installation identifier is retained off device and disclosure is required",
-      "Coarse Location, if retained country derived from an IP address is in disclosure scope",
+      "Coarse Location, Device ID, or Other Diagnostic Data as required by Apple's final mapping of retained IP addresses",
       "Product Interaction, if retained requested-resource activity is in disclosure scope",
       "Performance Data, if retained latency or response-byte measurements are in disclosure scope",
       "Other Diagnostic Data, if retained HTTP method, user-agent, or technical-error records are in disclosure scope",

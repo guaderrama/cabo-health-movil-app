@@ -27,11 +27,11 @@ Before answering:
 
 ## Content rights
 
-Recommended answer: **Yes — uses third-party material**. Ivan confirmed ownership or authorization for the Cabo Health logo, domain, texts, recipes, and images already used by the public resources. Protected Client Resources, the fixed App Review sample, Staff Access assets, third-party sources, maps/contact references, and the final brand relationship schedule still require itemized reconciliation. Do not reuse the legacy “No third-party content” answer.
+Recommended answer: **Yes — uses third-party material**. The itemized inventory now covers the Cabo Health brand, logos, domain, texts, recipes, images, native copy, public templates, protected Client Resources, fixed App Review sample, Staff Access assets, attributed citations, and nominative service references. Because its exact bytes changed on 2026-08-24 after the earlier scope approval, owner reconfirmation is pending along with the genuine per-family authorship, assignment, licence, permission, signed declaration, and private evidence. Do not reuse the legacy “No third-party content” answer.
 
 ## Pricing, availability, and release mode
 
-Candidate direction is free, no in-app purchase, no subscription, and manual release. Client Resources is complimentary for a maximum of four eligible existing in-person clients and is not sold separately; there is no price, checkout, or paid digital tier. Initial territories are exactly Mexico (`MEX`) and United States (`USA`), with automatic future territories disabled, Mac Apple Silicon availability off, and Vision Pro availability off. All remain `pending-save` until verified in App Store Connect and the eligibility model receives written Apple direction.
+Candidate direction is free, no in-app purchase, no subscription, and manual release. Client Resources is complimentary for existing in-person clients individually authorized by the owner and is not sold separately; each authorized client receives a separate revocable code, with no shared master code or fixed four-client business limit. There is no price, checkout, or paid digital tier. Initial territories are exactly Mexico (`MEX`) and United States (`USA`), with automatic future territories disabled, Mac Apple Silicon availability off, and Vision Pro availability off. All remain `pending-save` until verified in App Store Connect and the eligibility model receives written Apple direction.
 
 ## Digital Services Act
 

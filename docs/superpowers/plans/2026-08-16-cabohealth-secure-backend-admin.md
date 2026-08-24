@@ -1,5 +1,7 @@
 # CaboHealth Secure Backend and Admin Implementation Plan
 
+> **Historical and non-normative:** do not execute unchecked tasks or use this file as current status. Superseded decisions include the two-project staging topology, `reviewSandboxAdmin`/reviewer-staff login, and production MFA/TOTP. Current authority is [ADR 0001](../../decisions/0001-single-firebase-production-project.md), [ADR 0002](../../decisions/0002-password-only-staff-access.md), the client-access, Firebase-activation, and Firestore-containment runbooks, plus dated activation records. Public web, the protected overlay, and password-only Staff are deployed; schema bridge/migration/strict promotion and the Apple RC/TestFlight build remain pending.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Sustituir Firestore abierto, códigos/PIN embebidos y CRUD cliente por un backend Firebase verificable: catálogo público sanitizado, códigos hasheados, sesiones revocables, nonces de lanzamiento, administración con Auth + MFA + rol y auditoría completa.

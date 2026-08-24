@@ -1,7 +1,21 @@
 # Client-access backend: security and activation runbook
 
-Status: implemented and unit/integration tested in source, but **not deployed or
-activated**. Deployment remains an explicit release gate.
+Status: implemented and unit/integration tested. The two Firestore rulesets,
+indexes, all 13 TTL policies, 16 independent secret rings, the 26-Function
+2026-08-23 transitional baseline, the initial owner bootstrap, and the
+password-only Staff Portal are deployed with the verified dedicated runtime
+identity. The later temporary schema bridge and final strict reader are
+committed but not deployed; production still runs the transitional slotless-v1
+binary pending the ordered bridge, one-record migration, and strict promotion.
+**The owner's strong-password
+reset, exact legacy-factor removal, refresh-token revocation, and sanitized
+account read-back are complete. The fresh personal password-only live-portal
+E2E also completed without an MFA challenge; the authenticated workspace loaded
+and `adminGetStaffSession` returned HTTP 200.** The protected production/App
+Review Hostinger overlay is active and hosting-boundary verified.
+Physical-iPhone App Check, issuance and controlled rotation of the App Review
+credential, valid-credential/nonce/replay/revocation and reciprocal cross-realm
+E2E, TestFlight, and the exact release candidate remain separate release gates.
 
 ## Implemented trust boundaries
 
@@ -12,13 +26,14 @@ activated**. Deployment remains an explicit release gate.
   never a complete code. Installations, rate-limit keys, launch nonces, web
   sessions, CSRF material, and broker replay IDs are also stored only as
   digests/HMAC lookups.
-- Exactly four production slots exist (`1` through `4`). Create, list, and
-  revoke reconcile expired slots transactionally. A fifth active code is
-  rejected even when creates race.
+- The owner can create a separate production code for every existing client he
+  chooses to authorize. There is no fixed commercial code count, numeric slot
+  ledger, or shared master code. Creation remains transactionally collision-safe,
+  and listing exposes only currently active summaries.
 - The scheduled deletion worker runs every five minutes and reconciles natural
   expiry before retrying cleanup. An expired redeemed code is revoked together
   with its grant, and its durable deletion tombstone is created in the same
-  transaction; replacing that slot cannot bypass cleanup. An unredeemed expiry
+  transaction; issuing another independent code cannot bypass cleanup. An unredeemed expiry
   has no Auth identity or grant, so it creates no account-deletion job.
 - A code has the fixed purpose `cabohealth_client`, fixed scope
   `production_client`, one installation binding, and only reviewed resource
@@ -76,7 +91,7 @@ activated**. Deployment remains an explicit release gate.
   `review_*` Firebase Auth subjects, eight independent HMAC key rings, an
   independently named Firestore database, and a separate HTTP broker signing
   realm. It never reads the production catalog or code repositories, never
-  consumes one of the four production slots, and can grant only one fixed,
+  consumes a production-client code and can grant only one fixed,
   compiled non-clinical sample. The credential can be used on multiple review
   installations and remains valid until an authorized staff member rotates it.
   A current App Review identity becomes eligible for scheduled physical cleanup
@@ -108,8 +123,8 @@ and require the exact configured iOS Firebase App ID.
 | Callable | Request | Response |
 | --- | --- | --- |
 | `adminGetStaffSession` | `{}` | `{scope:'production', permissions:[...]}` |
-| `adminListClientAccessCodes` | `{}` | slot, suffix, dates, status, and opaque code ID only |
-| `adminCreateClientAccessCode` | `{slot, expiresAtMs, resourceIds}` | `{oneTimeCode, summary}` |
+| `adminListClientAccessCodes` | `{}` | active suffix, dates, status, and opaque code ID only |
+| `adminCreateClientAccessCode` | `{expiresAtMs, resourceIds}` | `{oneTimeCode, summary}` |
 | `adminRevokeClientAccessCode` | `{codeId}` | `{revoked:true}` |
 | `adminListCatalogDrafts` | `{}` | `{drafts:[...]}` (maximum 100, newest first) |
 | `adminCreateCatalogDraft` | `{access,icon,summary,title,url}` | `{draft}` |
@@ -150,15 +165,27 @@ that physical deletion will complete by that instant.
 
 Admin operations additionally require all of the following server-side:
 
-1. Firebase Auth with `catalogAdmin: true`.
-2. An exact TOTP second-factor claim (`sign_in_second_factor: "totp"`).
+1. A consumed limited-use App Check token from the exact configured staff web
+   App ID.
+2. Firebase Auth with `email_verified: true` and
+   `firebase.sign_in_provider: "password"`.
 3. `auth_time` no older than 15 minutes.
-4. An active `_private_admins/{uid}` document with `scope: "production"`.
-5. The exact permission (`client_codes`, `client_resource_drafts`, or
+4. The custom claim `catalogAdmin: true`.
+5. An exact active `_private_admins/{uid}` document with `schemaVersion: 1`,
+   `scope: "production"`, and the exact permission (`client_codes`,
+   `client_resource_drafts`, or
    `app_review_credential`).
 
 Claims alone never authorize an administrator. A review-sandbox admin document
 cannot operate on production.
+
+Identity Platform must enforce a minimum password length of 14 with uppercase,
+lowercase, and numeric characters required, no symbol requirement, and
+`forceUpgradeOnSignin: true`. The Staff Portal uses session-only Firebase Auth
+persistence, discards the submitted password, and signs out when authorization
+is lost or the 15-minute freshness boundary expires. Its password-reset result
+is deliberately generic for registered and unregistered addresses; provider
+email-enumeration privacy must be enabled and independently verified.
 
 Draft input is exact: icons are `laboratory`, `guide`, `nutrition`, `recipes`,
 `wellness`, `location`, `contact`, or `featured`; localized objects contain
@@ -396,13 +423,12 @@ committed `firestore.review.rules` and `firestore.review.indexes.json` belong
 only to that named database. They must never replace the production/default
 database configuration.
 
-The committed `.firebaserc` intentionally has no `default` project and contains
-only unconfigured `cabohealth-staging` and `cabohealth-prod` aliases. Replace
-each placeholder with the independently verified project ID before deployment,
-then always pass `--project cabohealth-staging` or
-`--project cabohealth-prod`. The legacy project must never be restored as a
-default. `firestore.indexes.json` has no composite indexes or legacy catalog
-entries; it contains only the explicit TTL field overrides below.
+The committed `.firebaserc` intentionally has no `default` or staging project.
+It contains only the configured `cabohealth-prod` alias for the exact dedicated
+production project. Every cloud command must still pass that alias or the exact
+project ID explicitly; never restore the legacy project as a default.
+`firestore.indexes.json` has no composite indexes or legacy catalog entries; it
+contains only the explicit TTL field overrides below.
 
 ## Firestore activation requirements
 
@@ -475,19 +501,31 @@ for domain validation and callable responses.
 
 Do not call this Apple-ready or production-ready until all are complete:
 
-1. Preserve the owner-approved single project `cabohealth-owner-prod` and its
-   exact CLI alias; provision the independent production/review secret rings
-   without exposing values. Do not create a staging project without a
-   superseding ADR.
+1. Preserve the owner-approved single project `cabohealth-owner-prod`, its
+   exact CLI alias, and the already provisioned independent production/review
+   secret rings without exposing values. Do not create a staging project
+   without a superseding ADR.
 2. Enable App Check with App Attest for the production iOS bundle and verify
    exact app-ID binding and consumed-token replay behavior across all 11 iOS
    client callables on a physical iPhone.
-3. Bootstrap the owner Auth account, MFA, custom claim, and active private
-   admin document through a separately controlled process.
-4. Migrate or remove every historical numeric `expiresAtMs` value, run rules,
-   TTL, concurrency, and failure tests in the Firebase Emulator, then deploy to
-   production under a separately reviewed mutation and verify every retained
-   TTL deadline is a Firestore `Timestamp`; seed only the signed fixed catalog.
+3. Maintain the completed password-only owner migration and live personal E2E.
+   The guarded 2026-08-23
+   operation enforced the password-reset prerequisite, verified the enabled and
+   email-verified password account, removed only the exact enrolled factor,
+   revoked prior sessions, and proved zero factors, `catalogAdmin: true`, and
+   the exact active private admin document and permissions. The subsequent
+   fresh password-only sign-in loaded the authenticated workspace and
+   `adminGetStaffSession` returned HTTP 200. Keep the project-level TOTP
+   provider enabled but dormant. Do not treat later source changes as proof of
+   deployment.
+4. Preserve the completed Firestore rules gate: the pinned emulator rejected
+   both production probes (2/2) and both App Review probes (2/2). Re-run it for
+   every future rules change. Before the backend schema update, deploy the
+   reviewed bridge, migrate only the one known schema-1 slotless record under
+   explicit authorization and an update-time precondition, verify sanitized
+   aggregate counts, and only then deploy the strict reader. Separately migrate
+   or remove any verified historical numeric `expiresAtMs` value and require
+   every retained TTL deadline to be a Firestore `Timestamp`.
 5. Integrate and test the native adapter against all six production client
    callables—redeem, refresh, remove, delete, deletion status, and launch—plus
    the staff portal and PHP broker adapter end-to-end. Verify the 256-bit
@@ -498,22 +536,37 @@ Do not call this Apple-ready or production-ready until all are complete:
    production deletion, the sanitized aggregate alert, deployed TTL status,
    and that the native UI treats `pending` as pending rather than as completed
    erasure.
-7. Provision and verify the source-implemented App Review realm: the named
-   Firestore database, its default-deny rules/TTL policy, least-privilege
-   runtime identity, eight separate key rings, fixed Hostinger sample, portal
-   status/rotation adapter, and all five review client callables—redeem,
-   refresh, delete, deletion status, and launch. Run
-   cross-realm and rotation tests end-to-end; exercise stale-generation,
-   30-day-inactivity, Auth-failure, and retry cleanup paths. Do not issue the
-   credential until all of those checks pass.
+7. Preserve the deployed App Review realm: the named Firestore database,
+   default-deny rules and TTL policies, database-scoped runtime IAM, eight
+   separate key rings, five review client callables, portal rotation adapter,
+   cleanup worker, and fixed hosting sample are active. Do not issue the
+   credential until a controlled operation can run valid-credential,
+   nonce/replay/revocation/deletion, reciprocal cross-realm, stale-generation,
+   30-day-inactivity, Auth-failure, retry, App Attest, and two-physical-iPhone
+   checks end-to-end.
 8. Wire the staff portal adapters to the five documented draft/audit callables
-   and verify optimistic-conflict/error handling in staging. Draft publication
-   remains an intentionally separate, reviewed release process; do not add a
-   generic publish endpoint.
+   and verify optimistic-conflict/error handling in the local emulator and,
+   when necessary, with disposable controlled production records. Draft
+   publication remains an intentionally separate, reviewed release process; do
+   not add a generic publish endpoint or create a staging project.
 9. Resolve or formally accept the current npm-audit residual: seven moderate
    `uuid` advisories arrive transitively through the latest pinned Firebase
    Admin/Functions packages. `npm audit` offers only a breaking downgrade;
    there are no high or critical findings in this package audit.
 
-No Firebase, Hostinger, or Apple deployment was performed while implementing
-this backend slice.
+Firestore rules/indexes/TTL, the independent Secret Manager rings, runtime IAM,
+and the 26-Function 2026-08-23 baseline have been provisioned in the exact
+production project. This does not claim that the committed bridge or strict
+reader is active.
+The fixed active owner-admin record and the fixed Client Resources runtime
+record are present and match the reviewed bootstrap authority exactly; do not
+rerun the bootstrap against the historical local schema-1 plan. The isolated
+App Review database remains intentionally empty until an authorized portal
+rotation creates the reviewer credential atomically. The protected
+production/App Review Hostinger overlay is active and hosting-boundary verified
+as release
+`protected-overlays-v1-f3fc2ffb500f41dbfbf16dd4141eef3ccf87ef7055df63a2054b9cbe042b8213`;
+that infrastructure activation does not issue a reviewer credential or
+complete valid-flow E2E. TestFlight and Apple submission remain incomplete.
+The owner-authorized Artifact Registry cleanup policy deletes Functions images
+older than seven days.

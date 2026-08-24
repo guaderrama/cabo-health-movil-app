@@ -19,12 +19,39 @@ const verifierPath = join(projectRoot, 'scripts/verify-app-store-metadata.mjs');
 const releasePath = 'release/app-store/3.0';
 const authorityPaths = Object.freeze([
   'app.json',
+  'app-review-private/content/sample.json',
+  'assets/adaptive-icon.png',
+  'assets/favicon.png',
+  'assets/icon.png',
+  'assets/logo-white.png',
+  'assets/logo-wordmark.png',
+  'assets/logo.png',
+  'assets/splash-icon.png',
+  'assets/splash.png',
+  'client-resources-private/content/en.json',
+  'client-resources-private/content/es-MX.json',
   'constants/config.ts',
   'constants/publicMiniapps.ts',
+  'content/clinic-guide.json',
+  'content/recipes.json',
+  'features/onboarding/IntroScreen.tsx',
+  'i18n/messages.ts',
+  'miniapps/clinic-guide/index.html',
+  'miniapps/healthy-recipes/index.html',
+  'miniapps/shared/clinic-map-texture.png',
+  'miniapps/shared/logo-wordmark.png',
+  'miniapps/shared/logo.png',
   'release/compliance-facts.json',
   'release/content-rights.md',
   'release/data-inventory.md',
   'release/public-contact-facts.json',
+  'staff-portal/public/favicon.svg',
+  'staff-portal/src/i18n/messages.ts',
+  'web-hosting/cabohealth.org/app/index.html',
+  'web-hosting/cabohealth.org/app/privacy/index.html',
+  'web-hosting/cabohealth.org/app/report-content/index.html',
+  'web-hosting/cabohealth.org/app/support/index.html',
+  'web-hosting/cabohealth.org/app/terms/index.html',
 ]);
 
 function verify(root) {
@@ -76,6 +103,7 @@ test('metadata verifier rejects empty required release and authoritative artifac
     `${releasePath}/review-notes.md`,
     `${releasePath}/en-US.md`,
     `${releasePath}/screenshots-manifest.json`,
+    `${releasePath}/content-rights-inventory.md`,
     'release/compliance-facts.json',
     'release/public-contact-facts.json',
   ]) {
@@ -87,6 +115,47 @@ test('metadata verifier rejects empty required release and authoritative artifac
       },
     ));
   }
+});
+
+test('metadata verifier binds the exact content-rights inventory to every listed source hash', async (t) => {
+  await t.test('inventory prose drift', () => withReleaseFixture(
+    (root) => writeFileSync(
+      join(root, releasePath, 'content-rights-inventory.md'),
+      readFileSync(join(root, releasePath, 'content-rights-inventory.md'), 'utf8')
+        .replace('PER-FAMILY BASIS', 'UNREVIEWED BASIS'),
+    ),
+    (result) => {
+      assert.equal(result.status, 1, 'content-rights inventory drift bypassed verifier');
+      assert.match(result.stderr, /content-rights-inventory\.md.*exact reviewed prose/iu);
+    },
+  ));
+
+  await t.test('declared-identical asset drift', () => withReleaseFixture(
+    (root) => writeFileSync(join(root, 'miniapps/shared/logo.png'), 'drift'),
+    (result) => {
+      assert.equal(result.status, 1, 'content-rights source drift bypassed verifier');
+      assert.match(result.stderr, /Content-rights source SHA-256 mismatch: miniapps\/shared\/logo\.png/iu);
+    },
+  ));
+
+  await t.test('listed source empty', () => withReleaseFixture(
+    (root) => writeFileSync(join(root, 'miniapps/shared/logo.png'), ''),
+    (result) => {
+      assert.equal(result.status, 1, 'empty content-rights source bypassed verifier');
+      assert.match(result.stderr, /Content-rights source must not be empty: miniapps\/shared\/logo\.png/iu);
+    },
+  ));
+
+  await t.test('listed source symlink', () => withReleaseFixture(
+    (root) => {
+      rmSync(join(root, 'staff-portal/public/favicon.svg'));
+      symlinkSync(join(root, 'assets/favicon.png'), join(root, 'staff-portal/public/favicon.svg'));
+    },
+    (result) => {
+      assert.equal(result.status, 1, 'content-rights source symlink bypassed verifier');
+      assert.match(result.stderr, /Content-rights source must be a regular non-symbolic-link file/iu);
+    },
+  ));
 });
 
 test('metadata verifier rejects null JSON authorities instead of skipping them', async (t) => {
@@ -105,28 +174,35 @@ test('metadata verifier rejects null JSON authorities instead of skipping them',
   }
 });
 
-test('Review Notes use the owner-authorized hosting disclosure and current manual-entry behavior', () => {
+test('Review Notes retain the prior-review resolution, current privacy facts, and manual-entry behavior', () => {
   const notes = readFileSync(join(projectRoot, releasePath, 'review-notes.md'), 'utf8');
 
   assert.doesNotMatch(notes, /\[INSERT VERIFIED HOSTINGER REQUEST-LOG FIELDS/i);
   assert.doesNotMatch(notes, /continues automatically|about 1\.6 seconds/i);
   assert.doesNotMatch(notes, /\bOn Apps\b|\bReturn to Apps\b/i);
+  assert.match(notes, /PRIOR REVIEW RESOLUTION/i);
+  assert.match(notes, /Former advisory and camera-based AI resources are excluded/i);
+  assert.match(notes, /No third-party AI is implemented\/invoked; app code sends no data to an AI provider/i);
+  assert.match(notes, /No camera, Photos, HealthKit, microphone, or location access; WebViews deny media\/geolocation/i);
+  assert.match(notes, /Both public resources show dated Sources\/Fuentes with official links/i);
   assert.match(notes, /remains on the introduction until the reviewer taps “Enter CaboHealth”/i);
   assert.match(notes, /On Home, confirm two public resources and locked Client Resources/i);
-  assert.match(notes, /IP address, timestamp, HTTP method, requested resource, device\/user-agent details, country, response bytes, and latency/i);
-  assert.match(notes, /Hostinger logs IP address, browser\/user-agent, requested URL, and technical errors/i);
-  assert.match(notes, /hPanel shows logs up to 7 days/i);
-  assert.match(notes, /additional retention and deletion are controlled by Hostinger/i);
+  assert.match(notes, /Hostinger verification observed IP, timestamp, method, resource, device\/user-agent, country, bytes, and latency/i);
+  assert.match(notes, /Authorized logs include IP, user-agent, URL, and errors for delivery\/security\/troubleshooting/i);
+  assert.match(notes, /hPanel shows up to 7 days/i);
+  assert.match(notes, /added retention\/deletion is Hostinger-controlled/i);
   assert.match(notes, /Launch nonces and hosted sessions are short-lived/i);
   assert.match(notes, /Home > Client Resources > “Delete review access and data”/i);
-  assert.match(notes, /Confirm pending\/completed; if pending, reopen it without signing in to receive completion confirmation/i);
-  assert.match(notes, /Durable deletion revokes access on acceptance; expiry\/admin revocation queues production cleanup/i);
+  assert.match(notes, /Confirm pending\/completed; if pending, reopen it without signing in for completion confirmation/i);
+  assert.match(notes, /Durable deletion revokes access on acceptance; expiry\/admin revocation queues cleanup/i);
   assert.match(notes, /random 256-bit receipt stays in SecureStore/i);
   assert.match(notes, /server keeps only a keyed-HMAC lookup and status timestamps/i);
   assert.match(notes, /expects completion within 30 days/i);
-  assert.match(notes, /app confirms completion after reopening/i);
-  assert.match(notes, /Staff audits are scheduled for deletion 30 days after creation; Firestore TTL deletion is asynchronous/i);
-  assert.match(notes, /Cloud Functions rate-limits a transient source IP; it stores no raw IP, only a keyed-HMAC bucket with a 30-minute deadline/i);
+  assert.match(notes, /confirms after reopening/i);
+  assert.match(notes, /Staff-audit deletion deadline is 30 days; Firestore TTL is asynchronous/i);
+  assert.match(notes, /Cloud Functions writes no raw IP to Firestore; only keyed-HMAC rate-limit buckets with a 30-minute deadline/i);
+  assert.match(notes, /Google Cloud Logging retains automatic Cloud Run request logs—source IP, method\/URL, user-agent, status, latency, sizes, protocol—for 30 days in `_Default`; no exclusion/i);
+  assert.match(notes, /No health information or sensitive device permission is requested/i);
 });
 
 test('metadata verifier rejects Review Notes regressions in hosting facts or entry behavior', async (t) => {
@@ -134,7 +210,7 @@ test('metadata verifier rejects Review Notes regressions in hosting facts or ent
     [
       'hosting placeholder restored',
       (source) => source.replace(
-        /Prior technical verification observed Hostinger[\s\S]*?no tracking\./u,
+        /Hostinger verification observed[\s\S]*?no tracking\./u,
         '[INSERT VERIFIED HOSTINGER REQUEST-LOG FIELDS, PURPOSE, RETENTION, DELETION, AND FINAL APP PRIVACY MAPPING.]',
       ),
       /obsolete hosting blocker placeholder/i,
@@ -142,7 +218,7 @@ test('metadata verifier rejects Review Notes regressions in hosting facts or ent
     [
       'observed log fields omitted',
       (source) => source.replace(
-        /Prior technical verification observed Hostinger access-log fields: IP address, timestamp, HTTP method, requested resource, device\/user-agent details, country, response bytes, and latency\. /u,
+        /Hostinger verification observed IP, timestamp, method, resource, device\/user-agent, country, bytes, and latency\. /u,
         '',
       ),
       /missing observed Hostinger log fields/i,
@@ -150,15 +226,59 @@ test('metadata verifier rejects Review Notes regressions in hosting facts or ent
     [
       'log fields generalized',
       (source) => source.replace(
-        'Hostinger logs IP address, browser/user-agent, requested URL, and technical errors',
+        'Authorized logs include IP, user-agent, URL, and errors',
         'ordinary request data',
       ),
       /missing owner-authorized Hostinger log fields/i,
     ],
     [
+      'hosting purpose omitted',
+      (source) => source.replace('for delivery/security/troubleshooting', 'for operations'),
+      /missing Hostinger log purpose/i,
+    ],
+    [
       'hPanel duration changed',
-      (source) => source.replace('hPanel shows logs up to 7 days', 'hPanel shows logs for 30 days'),
+      (source) => source.replace('hPanel shows up to 7 days', 'hPanel shows for 30 days'),
       /missing owner-authorized hPanel visibility/i,
+    ],
+    [
+      'Hostinger deletion control generalized',
+      (source) => source.replace('added retention/deletion is Hostinger-controlled', 'retention is handled'),
+      /missing owner-authorized retention\/deletion disclosure/i,
+    ],
+    [
+      'prior-review heading omitted',
+      (source) => source.replace('PRIOR REVIEW RESOLUTION', 'REVIEW HISTORY'),
+      /missing prior-review resolution/i,
+    ],
+    [
+      'former advisory and camera-AI removal omitted',
+      (source) => source.replace('Former advisory and camera-based AI resources are excluded.', 'Former resources changed.'),
+      /missing prior advisory\/camera-AI removal/i,
+    ],
+    [
+      'third-party AI boundary omitted',
+      (source) => source.replace(
+        'No third-party AI is implemented/invoked; app code sends no data to an AI provider.',
+        'AI behavior is limited.',
+      ),
+      /missing no-third-party-AI and no-AI-data disclosure/i,
+    ],
+    [
+      'sensitive permissions exclusion omitted',
+      (source) => source.replace(
+        'No camera, Photos, HealthKit, microphone, or location access; WebViews deny media/geolocation.',
+        'Permissions are limited.',
+      ),
+      /missing exact sensitive-permission exclusion/i,
+    ],
+    [
+      'official editorial sources omitted',
+      (source) => source.replace(
+        'Both public resources show dated Sources/Fuentes with official links.',
+        'Public resources include content.',
+      ),
+      /missing official editorial-source disclosure/i,
     ],
     [
       'automatic entry restored',
@@ -176,7 +296,7 @@ test('metadata verifier rejects Review Notes regressions in hosting facts or ent
     [
       'deletion lifecycle generalized',
       (source) => source.replace(
-        'Durable deletion revokes access on acceptance; expiry/admin revocation queues production cleanup.',
+        'Durable deletion revokes access on acceptance; expiry/admin revocation queues cleanup.',
         'Account removal is available.',
       ),
       /missing exact deletion lifecycle disclosure/i,
@@ -188,7 +308,7 @@ test('metadata verifier rejects Review Notes regressions in hosting facts or ent
     ],
     [
       'deletion status review step omitted',
-      (source) => source.replace('Confirm pending/completed; if pending, reopen it without signing in to receive completion confirmation.', 'Close the app.'),
+      (source) => source.replace('Confirm pending/completed; if pending, reopen it without signing in for completion confirmation.', 'Close the app.'),
       /missing deletion status and completion-confirmation review step/i,
     ],
     [
@@ -208,24 +328,42 @@ test('metadata verifier rejects Review Notes regressions in hosting facts or ent
     ],
     [
       'deletion completion confirmation omitted',
-      (source) => source.replace('the app confirms completion after reopening', 'completion is not shown'),
+      (source) => source.replace('confirms after reopening', 'does not show completion'),
       /missing in-app deletion completion confirmation/i,
     ],
     [
       'audit deadline made synchronous',
       (source) => source.replace(
-        'Staff audits are scheduled for deletion 30 days after creation; Firestore TTL deletion is asynchronous.',
+        'Staff-audit deletion deadline is 30 days; Firestore TTL is asynchronous.',
         'Staff audits are retained for 30 days.',
       ),
       /missing asynchronous audit-deletion disclosure/i,
     ],
     [
-      'Cloud Functions source-IP boundary omitted',
+      'Cloud Functions Firestore source-IP boundary omitted',
       (source) => source.replace(
-        'Cloud Functions rate-limits a transient source IP; it stores no raw IP, only a keyed-HMAC bucket with a 30-minute deadline.',
+        'Cloud Functions writes no raw IP to Firestore; only keyed-HMAC rate-limit buckets with a 30-minute deadline.',
         'Cloud Functions handles technical traffic.',
       ),
-      /missing transient source-IP rate-limit disclosure/i,
+      /missing Firestore source-IP rate-limit boundary/i,
+    ],
+    [
+      'Cloud Run request-log fields omitted',
+      (source) => source.replace(
+        'source IP, method/URL, user-agent, status, latency, sizes, protocol',
+        'technical request data',
+      ),
+      /missing automatic Cloud Run request-log retention disclosure/i,
+    ],
+    [
+      'Cloud Run request-log retention changed',
+      (source) => source.replace('for 30 days in `_Default`; no exclusion', 'for 7 days in `_Default`; no exclusion'),
+      /missing automatic Cloud Run request-log retention disclosure/i,
+    ],
+    [
+      'Cloud Run request-log exclusion invented',
+      (source) => source.replace('in `_Default`; no exclusion', 'in `_Default`; exclusion configured'),
+      /missing automatic Cloud Run request-log retention disclosure/i,
     ],
   ];
 
@@ -234,7 +372,10 @@ test('metadata verifier rejects Review Notes regressions in hosting facts or ent
       withReleaseFixture(
         (root) => {
           const path = join(root, releasePath, 'review-notes.md');
-          writeFileSync(path, mutate(readFileSync(path, 'utf8')));
+          const source = readFileSync(path, 'utf8');
+          const mutated = mutate(source);
+          assert.notEqual(mutated, source, `${name} fixture must mutate the current Review Notes`);
+          writeFileSync(path, mutated);
         },
         (result) => {
           assert.equal(result.status, 1, result.stdout || result.stderr);
@@ -269,7 +410,7 @@ test('App Privacy preserves observed logs separately from the owner-authorized d
     'recipe favorite keys',
     'visit-checklist completion state',
   ]);
-  assert.equal(privacy.schemaVersion, 4);
+  assert.equal(privacy.schemaVersion, 5);
   assert.deepEqual(privacy.deletion, {
     durable: true,
     mechanism: 'transactional deletion tombstone plus idempotent retry worker',
@@ -345,16 +486,38 @@ test('App Privacy preserves observed logs separately from the owner-authorized d
     staleGenerationEligibility: 'immediate',
     retryWorkerMinutes: 5,
     completionTimeGuaranteed: false,
-    status: 'pending-activation-and-staging-e2e',
+    status: 'infrastructure-deployed-pending-credential-valid-flow-and-device-e2e',
   });
   assert.deepEqual(privacy.cloudFunctionRequestSecurity, {
     rawSourceIpProcessedTransiently: true,
-    rawSourceIpStored: false,
+    rawSourceIpStoredInFirestore: false,
+    providerRequestLoggingDocumentedSeparately: true,
     storedRateLimitRepresentation: 'versioned keyed HMAC lookup only',
     purpose: ['rate limiting', 'abuse prevention'],
     rateLimitBucketDeletionDeadlineMinutes: 30,
     physicalTtlDeletionAsynchronous: true,
     tracking: false,
+  });
+  assert.deepEqual(privacy.cloudRunRequestLogs, {
+    provider: 'Google Cloud Logging',
+    automatic: true,
+    observedFields: [
+      'source IP address',
+      'HTTP method',
+      'requested URL',
+      'user-agent',
+      'HTTP status',
+      'latency',
+      'request and response sizes',
+      'protocol',
+    ],
+    purpose: ['service delivery', 'security and troubleshooting'],
+    retentionDays: 30,
+    defaultSinkExclusionConfigured: false,
+    deletionProcess: 'Google Cloud Logging applies the unlocked _Default bucket retention; expiration is provider-enforced and may be eventually consistent.',
+    linkedToIdentity: null,
+    tracking: false,
+    verifiedDate: '2026-08-24',
   });
   assert.deepEqual(privacy.accessArtifacts, {
     redemptionRequestDigestDeadlineMinutes: 5,
@@ -488,8 +651,8 @@ test('metadata verifier rejects an arbitrary third hosted resource in Review Not
       const file = join(root, releasePath, 'review-notes.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        'Only these Universal Links enter;',
-        '4. Meditation Studio — public — https://cabohealth.org/apps/meditation/\n\nOnly these Universal Links enter;',
+        'Only these Universal Links enter.',
+        '4. Meditation Studio — public — https://cabohealth.org/apps/meditation/\n\nOnly these Universal Links enter.',
       ));
     },
     (result) => {
@@ -505,8 +668,8 @@ test('metadata verifier rejects a third Review Notes resource even without a URL
       const file = join(root, releasePath, 'review-notes.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        'Only these Universal Links enter;',
-        '4. Meditation Studio — public\n\nOnly these Universal Links enter;',
+        'Only these Universal Links enter.',
+        '4. Meditation Studio — public\n\nOnly these Universal Links enter.',
       ));
     },
     (result) => {
@@ -646,7 +809,7 @@ test('metadata verifier rejects an external release gate marked ready', () => {
   );
 });
 
-test('metadata verifier permits only the exact grounded completed evidence checkboxes', async (t) => {
+test('metadata verifier preserves exact completed and pending public-web evidence checkboxes', async (t) => {
   await t.test('the completed owner E2E gate cannot be reverted to pending', () => withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'submission-gates.md');
@@ -664,23 +827,37 @@ test('metadata verifier permits only the exact grounded completed evidence check
     },
   ));
 
-  const completedPublicWebGatePrefixes = [
-    ['hosted legal', '- [x] Promote and origin-verify the independently reviewed and repinned Privacy, Terms, Support, and Report Content bytes'],
-    ['AASA origin and CDN', '- [x] Deploy the ordered AASA authority with four launch/API exclusions followed by the three exact allowed roots'],
-    ['public payload', '- [x] Verify the public two-miniapp/legal payload remains exact and no WordPress/unrelated files change.'],
+  await t.test('the completed AASA gate cannot be reverted to pending', () => withReleaseFixture(
+    (root) => {
+      const file = join(root, releasePath, 'submission-gates.md');
+      const source = readFileSync(file, 'utf8');
+      const prefix = '- [x] Deploy the ordered AASA authority with four launch/API exclusions followed by the three exact allowed roots';
+      const mutated = source.replace(prefix, prefix.replace('- [x]', '- [ ]'));
+      assert.notEqual(mutated, source, 'AASA fixture must contain its exact completed gate');
+      writeFileSync(file, mutated);
+    },
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /must retain the exact completed AASA public-web evidence checkbox/iu);
+    },
+  ));
+
+  const pendingRevisedPublicWebGatePrefixes = [
+    ['promotion', '- [ ] Promote and origin-verify the revised Healthy Recipes and Clinic Guide citation bytes plus the updated Privacy disclosure'],
+    ['payload verification', '- [ ] Verify the revised two-miniapp/Privacy payload is exact and no WordPress or unrelated file changes during promotion.'],
   ];
-  for (const [name, prefix] of completedPublicWebGatePrefixes) {
-    await t.test(`the completed ${name} gate cannot be reverted to pending`, () => withReleaseFixture(
+  for (const [name, prefix] of pendingRevisedPublicWebGatePrefixes) {
+    await t.test(`the pending revised ${name} gate cannot be marked completed`, () => withReleaseFixture(
       (root) => {
         const file = join(root, releasePath, 'submission-gates.md');
         const source = readFileSync(file, 'utf8');
-        const mutated = source.replace(prefix, prefix.replace('- [x]', '- [ ]'));
-        assert.notEqual(mutated, source, `${name} fixture must contain its exact completed gate`);
+        const mutated = source.replace(prefix, prefix.replace('- [ ]', '- [x]'));
+        assert.notEqual(mutated, source, `${name} fixture must contain its exact pending gate`);
         writeFileSync(file, mutated);
       },
       (result) => {
         assert.equal(result.status, 1, result.stdout || result.stderr);
-        assert.match(result.stderr, /must retain every exact completed public web evidence checkbox/iu);
+        assert.match(result.stderr, /must retain every exact pending revised public-web checkbox/iu);
       },
     ));
   }
@@ -726,12 +903,15 @@ test('metadata verifier rejects owner, category, territory, platform, rights, an
     ['legacy Content Rights No', (manifest) => {
       manifest.appStoreDraft.contentRights.recommendedAnswer = 'No';
       manifest.appStoreDraft.contentRights.usesThirdPartyMaterial = false;
-    }, /Content Rights recommendation must remain Yes.*third-party material/i],
+    }, /Content Rights recommendation must remain Yes while the revised inventory awaits owner reconfirmation and per-family rights basis/i],
     ['ASC marked saved', (manifest) => { manifest.appStoreDraft.status = 'saved'; }, /App Store draft must remain pending-save/i],
     ['DSA marked saved', (manifest) => { manifest.appStoreDraft.dsa.status = 'saved'; }, /DSA status must remain pending-save/i],
     ['medical-device gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.regulatedMedicalDevice = 'complete'; }, /regulatedMedicalDevice must remain owner-confirmed-pending-exact-rc-review/i],
     ['privacy gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.finalPrivacyDisclosure = 'complete'; }, /finalPrivacyDisclosure must remain pending-final-linkage-category-review-and-save/i],
-    ['rights gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.allContentRights = 'complete'; }, /allContentRights must remain owner-confirmed-scoped-pending-third-party-inventory/i],
+    ['rights gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.allContentRights = 'complete'; }, /allContentRights must remain inventory-revised-pending-owner-reconfirmation-and-per-family-basis/i],
+    ['revised public payload gate completed', (manifest) => { manifest.gates.hostedLegalClientAccess = 'complete'; }, /hostedLegalClientAccess must remain pending-revised-public-payload-redeploy-and-verification/i],
+    ['revised rights inventory gate completed', (manifest) => { manifest.gates.contentRights = 'complete'; }, /contentRights must remain inventory-revised-pending-owner-reconfirmation-and-per-family-basis/i],
+    ['brand and rights gate completed', (manifest) => { manifest.gates.brandAndContentRights = 'complete'; }, /brandAndContentRights must remain pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis/i],
   ];
 
   for (const [name, mutate, expected] of mutations) {
@@ -1094,8 +1274,14 @@ test('metadata verifier rejects unapproved App Privacy purposes and schema keys'
     ['review completion guarantee', (privacy) => {
       privacy.reviewSandbox.completionTimeGuaranteed = true;
     }],
-    ['raw source IP persisted', (privacy) => {
-      privacy.cloudFunctionRequestSecurity.rawSourceIpStored = true;
+    ['raw source IP persisted in Firestore', (privacy) => {
+      privacy.cloudFunctionRequestSecurity.rawSourceIpStoredInFirestore = true;
+    }],
+    ['Cloud Run request-log retention drift', (privacy) => {
+      privacy.cloudRunRequestLogs.retentionDays = 31;
+    }],
+    ['Cloud Run request-log exclusion claim drift', (privacy) => {
+      privacy.cloudRunRequestLogs.defaultSinkExclusionConfigured = true;
     }],
     ['rate-limit representation drift', (privacy) => {
       privacy.cloudFunctionRequestSecurity.storedRateLimitRepresentation = 'raw IP address';

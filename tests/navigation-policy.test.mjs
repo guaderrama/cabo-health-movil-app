@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  APPROVED_EDITORIAL_SOURCE_URLS,
   classifyMiniappNavigation,
   resolvePublicMiniappRouteSlug,
 } from '../.test-build/features/launch/navigationPolicy.js';
@@ -180,6 +181,39 @@ test('opens exact catalog legal destinations only for top-frame iOS clicks', () 
       reason: 'external-not-user-initiated',
     });
   }
+});
+
+test('opens only the exact official editorial citations after an explicit top-frame iOS click', () => {
+  for (const [slug, urls] of Object.entries(APPROVED_EDITORIAL_SOURCE_URLS)) {
+    for (const url of urls) {
+      assert.deepEqual(classify(url, { slug, navigationType: 'click' }), {
+        decision: 'open-external',
+        reason: 'approved-editorial-source-click',
+      });
+      assert.deepEqual(classify(url, { slug, navigationType: 'other' }), {
+        decision: 'block',
+        reason: 'external-not-user-initiated',
+      });
+      assert.deepEqual(classify(url, { slug, navigationType: 'click', isTopFrame: false }), {
+        decision: 'block',
+        reason: 'external-not-user-initiated',
+      });
+    }
+  }
+
+  assert.deepEqual(
+    classify('https://www.who.int/news-room/fact-sheets/detail/healthy-diet?unreviewed=1', {
+      navigationType: 'click',
+    }),
+    { decision: 'block', reason: 'host-not-allowed' },
+  );
+  assert.deepEqual(
+    classify(APPROVED_EDITORIAL_SOURCE_URLS['healthy-recipes'][0], {
+      slug: 'clinic-guide',
+      navigationType: 'click',
+    }),
+    { decision: 'block', reason: 'host-not-allowed' },
+  );
 });
 
 test('opens each exact confirmed contact only for top-frame iOS clicks without normalization', () => {

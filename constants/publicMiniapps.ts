@@ -54,8 +54,8 @@ export const PUBLIC_MINIAPPS: readonly Readonly<PublicMiniapp>[] = Object.freeze
       en: 'CaboHealth editorial team',
       'es-MX': 'Equipo editorial de CaboHealth',
     },
-    reviewedOn: '2026-08-16',
-    contentVersion: '1.0.0',
+    reviewedOn: '2026-08-24',
+    contentVersion: '1.0.1',
     legalUrls: {
       privacy: 'https://cabohealth.org/app/privacy/',
       terms: 'https://cabohealth.org/app/terms/',
@@ -87,8 +87,8 @@ export const PUBLIC_MINIAPPS: readonly Readonly<PublicMiniapp>[] = Object.freeze
       en: 'CaboHealth editorial team',
       'es-MX': 'Equipo editorial de CaboHealth',
     },
-    reviewedOn: '2026-08-16',
-    contentVersion: '1.0.0',
+    reviewedOn: '2026-08-24',
+    contentVersion: '1.0.1',
     legalUrls: {
       privacy: 'https://cabohealth.org/app/privacy/',
       terms: 'https://cabohealth.org/app/terms/',

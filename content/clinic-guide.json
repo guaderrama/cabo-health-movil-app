@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "reviewedOn": "2026-08-16",
+  "version": "1.0.1",
+  "reviewedOn": "2026-08-24",
   "emergency": {
     "en": "This checklist is not medical or emergency guidance and cannot provide urgent help. In Mexico, if there is an emergency or immediate assistance is needed, call 911. Do not wait for a scheduled visit or use this app for emergency help.",
     "es-MX": "Esta lista no es orientación médica ni de emergencia y no puede proporcionar ayuda urgente. En México, si hay una emergencia o se necesita asistencia inmediata, llama al 911. No esperes una cita programada ni uses esta app para solicitar ayuda de emergencia."
@@ -67,7 +67,7 @@
   "sources": [
     {
       "title": "Gobierno de México — ¿Qué es el Número Único de Llamadas de Emergencia 9-1-1?",
-      "url": "https://www.gob.mx/911/articulos/que-es-el-911emergencias?idiom=es"
+      "url": "https://www.gob.mx/911/articulos/que-es-9-1-1-conoce-mas-de-911emergencias?idiom=es"
     }
   ]
 }

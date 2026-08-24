@@ -103,12 +103,12 @@ const SOURCE_FILES = Object.freeze([
 const TASK6A_REVIEWED_SOURCE_SHA256 = Object.freeze({
   'assets/logo.png': 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117',
   'assets/logo-wordmark.png': '42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d',
-  'content/clinic-guide.json': 'ee17b5427fb755385c1b0588b541808923db2e0831a68df5d58e6e0bb7faced6',
-  'content/recipes.json': 'fbc9c338341653e87a744ae11906a1995ea642aa094ef4aaaf418f6bc819b9cf',
+  'content/clinic-guide.json': '1c1b85c54ec94a31d8bef59ce2253dc9f9b6628684658439e1e6bec9e9586916',
+  'content/recipes.json': '238c3c4fd1c9c6a782bc4f4b02f826134fafe01b7b72e6b852ef7ae30ce9541d',
   'miniapps/clinic-guide/app.js': 'f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7',
-  'miniapps/clinic-guide/index.html': 'c2c6d60fd3ed0cad7fd2aa01c5e236f639b6f7561d4e533d086973688b9759d8',
+  'miniapps/clinic-guide/index.html': '7f1b25f055b0dbc3c4587787046e94108ab75f7105cb1e13faa93a6ffda3ff38',
   'miniapps/healthy-recipes/app.js': '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090',
-  'miniapps/healthy-recipes/index.html': '7dcbab26b854952eddc59ac5f95d0d6a1e6110d5a8426ed0ab0b96dc874507d0',
+  'miniapps/healthy-recipes/index.html': 'b04f3cf2e9446cee78e1473ba421059ba2d536829c39cdde9bf806aa172c65ba',
   'miniapps/shared/clinic-map-texture.png': '4b569f0da0cffb9a54dedd93ce672cf7592ae4516dd12663e3b34d731df237c4',
   'miniapps/shared/logo-wordmark.png': '42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d',
   'miniapps/shared/logo.png': 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117',
@@ -270,8 +270,8 @@ function assertBilingualList(value, label, errors) {
 function validateRecipes(content) {
   const errors = [];
   if (!content || typeof content !== 'object' || Array.isArray(content)) return ['recipes content must be an object'];
-  if (content.version !== '1.0.0') errors.push('recipes.version must remain 1.0.0 for this release');
-  if (content.reviewedOn !== '2026-08-16') errors.push('recipes.reviewedOn must match the frozen editorial review');
+  if (content.version !== '1.0.1') errors.push('recipes.version must remain 1.0.1 for this release');
+  if (content.reviewedOn !== '2026-08-24') errors.push('recipes.reviewedOn must match the frozen editorial review');
   assertBilingualText(content.disclaimer, 'recipes.disclaimer', errors);
   assertBilingualText(content.foodSafety, 'recipes.foodSafety', errors);
   if (!Array.isArray(content.recipes)) return [...errors, 'recipes.recipes must be a list'];
@@ -322,8 +322,8 @@ function validateRecipes(content) {
 function validateClinicGuide(content) {
   const errors = [];
   if (!content || typeof content !== 'object' || Array.isArray(content)) return ['clinic guide content must be an object'];
-  if (content.version !== '1.0.0') errors.push('clinicGuide.version must remain 1.0.0 for this release');
-  if (content.reviewedOn !== '2026-08-16') errors.push('clinicGuide.reviewedOn must match the frozen editorial review');
+  if (content.version !== '1.0.1') errors.push('clinicGuide.version must remain 1.0.1 for this release');
+  if (content.reviewedOn !== '2026-08-24') errors.push('clinicGuide.reviewedOn must match the frozen editorial review');
   assertBilingualText(content.emergency, 'clinicGuide.emergency', errors);
   assertBilingualText(content.privacy, 'clinicGuide.privacy', errors);
   const expectedGroups = [
@@ -516,7 +516,7 @@ export function renderHealthyRecipesDocument(template, content) {
     DISCLAIMER_ES: escapeHtml(content.disclaimer['es-MX']),
     REVIEWED_ON: escapeHtml(content.reviewedOn),
     REVIEWED_ON_ISO: escapeHtml(content.reviewedOn),
-    SOURCE_ITEMS: content.sources.map((source) => `            <li>${escapeHtml(source.title)}</li>`).join('\n'),
+    SOURCE_ITEMS: content.sources.map(editorialSourceAction).join('\n'),
   };
   let html = template;
   for (const [token, value] of Object.entries(replacements)) html = replaceToken(html, token, value);
@@ -526,6 +526,10 @@ export function renderHealthyRecipesDocument(template, content) {
 
 function externalAction(href, labelEn, labelEs) {
   return `<a href="${escapeHtml(href)}" data-external-action data-label-en="${escapeHtml(labelEn)}" data-label-es="${escapeHtml(labelEs)}"><span data-external-label>${escapeHtml(labelEn)} / ${escapeHtml(labelEs)}</span> <span class="external-marker" aria-hidden="true">↗</span></a>`;
+}
+
+function editorialSourceAction(source) {
+  return `            <li>${externalAction(source.url, source.title, source.title)}</li>`;
 }
 
 const CONFIRMED_DISPLAY_FACTS_ES = Object.freeze({
@@ -644,7 +648,7 @@ export function renderClinicGuideDocument(template, content, facts) {
     }),
     REVIEWED_ON: escapeHtml(content.reviewedOn),
     REVIEWED_ON_ISO: escapeHtml(content.reviewedOn),
-    SOURCE_ITEMS: content.sources.map((source) => `            <li>${escapeHtml(source.title)}</li>`).join('\n'),
+    SOURCE_ITEMS: content.sources.map(editorialSourceAction).join('\n'),
   };
   let html = template;
   for (const [token, value] of Object.entries(replacements)) html = replaceToken(html, token, value);
@@ -666,8 +670,8 @@ const TASK6A_REVIEWED_ARTIFACTS = Object.freeze({
     sha256: '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090',
   }),
   'apps/healthy-recipes/index.html': Object.freeze({
-    size: 57591,
-    sha256: 'd756583df4e13221bb24dd8bf44d5712b5c1bc6a409af2f6c33d6051f630114b',
+    size: 58398,
+    sha256: 'e7c42084fcfb55e01cbd01ac77bfc8ebc6f8d441a700bf8ae0d2fee45569a7b4',
   }),
   'apps/shared/logo-wordmark.png': Object.freeze({
     size: 12584,
@@ -701,16 +705,16 @@ const TASK6B_REVIEWED_ARTIFACTS = Object.freeze({
     sha256: 'f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7',
   }),
   'apps/clinic-guide/index.html': Object.freeze({
-    size: 28285,
-    sha256: '0a18f4f307e2c58189cf9471b71accd779adbfa0415142ac5be584a9a4ff2c8e',
+    size: 28764,
+    sha256: '8a42f8e12ce5b0a7a425cb4c25d291f4c2b749388780630403ada28c834a2abd',
   }),
   'apps/healthy-recipes/app.js': Object.freeze({
     size: 4049,
     sha256: '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090',
   }),
   'apps/healthy-recipes/index.html': Object.freeze({
-    size: 57591,
-    sha256: 'd756583df4e13221bb24dd8bf44d5712b5c1bc6a409af2f6c33d6051f630114b',
+    size: 58398,
+    sha256: 'e7c42084fcfb55e01cbd01ac77bfc8ebc6f8d441a700bf8ae0d2fee45569a7b4',
   }),
   'apps/shared/clinic-map-texture.png': Object.freeze({
     size: 382740,

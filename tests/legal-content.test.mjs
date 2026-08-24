@@ -37,15 +37,11 @@ function attributeValues(html, attribute) {
 }
 
 const forbiddenReleaseClaims = [
-  /access codes?/i,
-  /códigos? de acceso/i,
   /biometric/i,
   /biométr/i,
   /Keychain/i,
   /patient data/i,
   /datos de pacientes/i,
-  /account deletion/i,
-  /eliminación de cuenta/i,
   /iPad/i,
   /minimum (?:supported )?(?:iOS|version)/i,
   /(?:iOS|versión) mínim[oa]/i,
@@ -107,6 +103,8 @@ function assertNoUnverifiedClaims(html) {
     'Cabo Health responde dentro de 2 días hábiles.',
     'Cabo Health responds to content reports within 2 business days.',
     'Cabo Health responde a los reportes de contenido dentro de 2 días hábiles.',
+    'The current default sink has no request-log exclusion and retains records for 30 days.',
+    'El destino predeterminado actual no tiene una exclusión para esos registros y los conserva durante 30 días.',
   ];
   const unapprovedClaims = approvedFactStatements.reduce(
     (value, statement) => value.replaceAll(statement, '[OWNER-APPROVED FACT]'),
@@ -387,12 +385,16 @@ test('each legal surface has matching English and Spanish policy sections', () =
 test('each bilingual section preserves its locale-specific substantive obligation', () => {
   const obligations = {
     privacy: {
-      scope: [/two public modules/i, /dos módulos públicos/i],
+      scope: [/two public modules and the protected Client Resources area/i, /dos módulos públicos y el área protegida Recursos para Clientes/i],
       operator: [/trade brand owned and operated by Ivan Guaderrama/i, /marca comercial propiedad de Ivan Guaderrama y operada por él/i],
       'data-boundary': [/do not request or collect health information/i, /no solicitan ni recopilan información de salud/i],
+      'client-access': [/pseudonymous Firebase Authentication UID/i, /UID seudónimo de Firebase Authentication/i],
+      'deletion-audit': [/durable cleanup record/i, /registro duradero de limpieza/i],
+      'staff-review': [/only a verified staff email address and a strong password/i, /únicamente un correo del personal verificado y una contraseña fuerte/i],
+      'service-providers': [/Firebase App Check uses Apple App Attest with DeviceCheck fallback/i, /Firebase App Check usa Apple App Attest con DeviceCheck como alternativa/i],
       'local-state': [/remain on your device/i, /permanecen en tu dispositivo/i],
       'hosting-logs': [/visible in hPanel for up to 7 days/i, /visibles en hPanel hasta por 7 días/i],
-      children: [/no way to submit a child's personal or health information/i, /ni una manera de enviar información personal o de salud de un menor/i],
+      children: [/no way to submit a child's personal or health information/i, /no ofrece una manera de enviar información personal o de salud de un menor/i],
       contact: [/Do not include health or other sensitive information/i, /No incluyas información de salud ni otra información sensible/i],
       changes: [/Material changes will be published/i, /cambios materiales se publicarán/i],
     },
@@ -400,6 +402,7 @@ test('each bilingual section preserves its locale-specific substantive obligatio
       scope: [/do not diagnose, treat, or prescribe/i, /No diagnostican, tratan ni prescriben/i],
       emergency: [/Call local emergency services/i, /Llama a los servicios locales de emergencia/i],
       'acceptable-use': [/no user-generated content area/i, /no tienen un área de contenido generado por usuarios/i],
+      'client-access': [/complimentary for eligible existing in-person clients/i, /complementario para clientes presenciales existentes que sean elegibles/i],
       rights: [/owns or is authorized to use the Cabo Health logo/i, /es propietario o cuenta con autorización para usar el logotipo/i],
       'external-services': [/separate services governed by their providers/i, /servicios separados regidos por sus proveedores/i],
       availability: [/initial App Store release is intended only for Mexico and the United States/i, /lanzamiento inicial en App Store está previsto únicamente para México y Estados Unidos/i],
@@ -409,14 +412,15 @@ test('each bilingual section preserves its locale-specific substantive obligatio
       contact: [/responds within 2 business days/i, /responde dentro de 2 días hábiles/i],
       recipes: [/Favorites are local to the device/i, /Los favoritos son locales al dispositivo/i],
       clinic: [/module is not an emergency channel/i, /módulo no es un canal de emergencia/i],
-      privacy: [/do not request or collect health information/i, /no solicitan ni recopilan información de salud/i],
+      'client-access': [/clinic-provided eligibility code/i, /código de elegibilidad proporcionado por la clínica/i],
+      privacy: [/does not request health information/i, /no solicita información de salud/i],
       'report-content': [/without including sensitive information/i, /sin incluir información sensible/i],
       scope: [/does not provide medical advice/i, /No ofrece orientación médica/i],
     },
     reportContent: {
-      scope: [/Healthy Recipes and CaboHealth Clinic Guide/i, /Recetas Saludables y la Guía de la Clínica CaboHealth/i],
+      scope: [/Healthy Recipes, CaboHealth Clinic Guide, and Client Resources/i, /Recetas Saludables, la Guía de la Clínica CaboHealth y Recursos para Clientes/i],
       contact: [/prefix the subject with “Report Content”/i, /comienza el asunto con “Reportar contenido”/i],
-      details: [/module, public page, and concern/i, /módulo, la página pública y el problema/i],
+      details: [/module, visible page, and concern/i, /módulo, la página visible y el problema/i],
       privacy: [/Do not include health or other sensitive information/i, /No incluyas información de salud ni otra información sensible/i],
       review: [/responds to content reports within 2 business days/i, /responde a los reportes de contenido dentro de 2 días hábiles/i],
       support: [/Support page/i, /página de Soporte/i],
@@ -436,30 +440,65 @@ test('each bilingual section preserves its locale-specific substantive obligatio
   }
 });
 
-test('privacy states the exact v1 data boundary in both languages', () => {
+test('privacy states the exact public and protected v3 data boundary in both languages', () => {
   const html = readArtifact(pagePaths.privacy);
   for (const pattern of [
-    /do not request or collect health information/i,
-    /no account/i,
-    /no app-generated identifiers/i,
+    /two public modules and the protected Client Resources area/i,
+    /public modules do not request or collect health information/i,
+    /public modules use no account/i,
+    /pseudonymous Firebase Authentication UID/i,
+    /random app-installation identifier/i,
+    /does not ask for a client name, email address, phone number, profile, diagnosis, treatment information, or other health information/i,
+    /eligibility code is not retained by the app or stored in plaintext by the backend/i,
+    /durable cleanup record/i,
+    /sanitized staff audit events are scheduled for deletion 30 days after creation/i,
+    /isolated App Review namespace exposes only a fixed non-client sample and no production client record/i,
+    /Staff Access uses only a verified staff email address and a strong password/i,
+    /published password policy requires at least 14 characters, including an uppercase letter, a lowercase letter, and a number; a symbol is optional/i,
+    /Email Enumeration Protection limits responses that could reveal whether an address is registered/i,
+    /Firebase App Check protects backend requests/i,
+    /Server-side Functions authorize every administrative request from a recent verified-password session/i,
+    /staff identity remains in Firebase Authentication until the authorized staff account is removed/i,
+    /App Review credential is handled transiently and only a keyed digest is stored/i,
+    /pseudonymous review UID and installation digest/i,
+    /Firebase App Check uses Apple App Attest with DeviceCheck fallback/i,
+    /Google Firebase and Cloud services process authentication, grant, integrity, and audit records/i,
+    /will activate or continue using a provider for this information only while its binding terms require at least the same or equivalent privacy and security protection described in this notice and limit processing to the stated services/i,
     /no analytics/i,
     /no advertising/i,
     /no sensitive permissions/i,
     /favorites and preferences remain on your device/i,
     /WebKit/i,
-    /two public modules/i,
+    /hosted pages/i,
     /IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency/i,
     /IP address, browser or user-agent, requested URL, and technical errors/i,
     /visible in hPanel for up to 7 days/i,
     /additional retention and deletion are controlled by Hostinger/i,
-    /no solicitan ni recopilan información de salud/i,
-    /sin cuenta/i,
-    /sin identificadores generados por la app/i,
-    /sin analítica/i,
-    /sin publicidad/i,
-    /sin permisos sensibles/i,
+    /dos módulos públicos y el área protegida Recursos para Clientes/i,
+    /módulos públicos no solicitan ni recopilan información de salud/i,
+    /módulos públicos funcionan sin cuenta/i,
+    /UID seudónimo de Firebase Authentication/i,
+    /identificador aleatorio de instalación de la app/i,
+    /no solicita el nombre, correo electrónico, teléfono, perfil, diagnóstico, información de tratamiento ni otra información de salud del cliente/i,
+    /código de elegibilidad no se conserva en la app ni se almacena en texto plano en el backend/i,
+    /registro duradero de limpieza/i,
+    /eventos sanitizados de auditoría del personal se programan para eliminación 30 días después de su creación/i,
+    /espacio aislado para la revisión de Apple expone sólo una muestra fija sin datos de clientes y ningún registro de clientes de producción/i,
+    /Acceso del personal usa únicamente un correo del personal verificado y una contraseña fuerte/i,
+    /política de contraseñas publicada exige al menos 14 caracteres, incluida una letra mayúscula, una letra minúscula y un número; el símbolo es opcional/i,
+    /Protección contra la enumeración de correos electrónicos limita las respuestas que podrían revelar si una dirección está registrada/i,
+    /Firebase App Check protege las solicitudes al backend/i,
+    /Cloud Functions del servidor autorizan cada solicitud administrativa desde una sesión reciente con correo verificado y contraseña/i,
+    /identidad del personal permanece en Firebase Authentication hasta que se elimina la cuenta autorizada/i,
+    /credencial para la revisión de Apple se maneja de forma transitoria y sólo se almacena un resumen criptográfico con clave/i,
+    /UID seudónimo de revisión y un resumen del identificador de instalación/i,
+    /Firebase App Check usa Apple App Attest con DeviceCheck como alternativa/i,
+    /servicios de Google Firebase y Cloud procesan registros de autenticación, autorización, integridad y auditoría/i,
+    /activará o seguirá usando un proveedor para esta información sólo mientras sus términos vinculantes exijan al menos la misma protección, o una protección equivalente, de privacidad y seguridad descrita en este aviso y limiten el tratamiento a los servicios indicados/i,
+    /no usa analítica/i,
+    /no usa analítica, publicidad, rastreo ni permisos sensibles/i,
     /favoritos y preferencias permanecen en tu dispositivo/i,
-    /dos módulos públicos/i,
+    /páginas alojadas/i,
     /dirección IP, marca de tiempo, método HTTP, recurso solicitado, detalles del dispositivo y agente de usuario, país, bytes de respuesta y latencia/i,
     /dirección IP, navegador o agente de usuario, URL solicitada y errores técnicos/i,
     /visibles en hPanel hasta por 7 días/i,
@@ -467,10 +506,98 @@ test('privacy states the exact v1 data boundary in both languages', () => {
   ]) assert.match(html, pattern);
 });
 
+test('password-only staff policy does not reintroduce a TOTP or MFA requirement', () => {
+  for (const path of [
+    'release/data-inventory.md',
+    'release/app-store/3.0/testflight-what-to-test.md',
+    'release/app-store/3.0/submission-gates.md',
+    pagePaths.privacy,
+  ]) {
+    const document = readArtifact(path);
+    assert.doesNotMatch(document, /\bTOTP\b/i, `${path} must not require TOTP`);
+    assert.doesNotMatch(document, /\bMFA\b|multi-factor authentication|autenticación multifactor/i, `${path} must remain password-only`);
+  }
+});
+
+test('privacy explains exact deletion paths, asynchronous retention, and ephemeral security records bilingually', () => {
+  const html = readArtifact(pagePaths.privacy);
+  for (const pattern of [
+    /Home[^<]*Client Resources[^<]*Delete access account and data/i,
+    /Inicio[^<]*Recursos para Clientes[^<]*Eliminar cuenta de acceso y datos/i,
+    /random 256-bit deletion receipt[^<]*iOS SecureStore/i,
+    /comprobante aleatorio de eliminación de 256 bits[^<]*SecureStore de iOS/i,
+    /backend acceptance reports pending or completed[^<]*revokes authorization immediately[^<]*expected to complete within 30 days/i,
+    /aceptación del backend informa si el estado está pendiente o completado[^<]*revoca la autorización de inmediato[^<]*dentro de 30 días/i,
+    /server worker normally retries every five minutes[^<]*administrator revocation automatically queues the same production cleanup process/i,
+    /servidor normalmente vuelve a intentar cada cinco minutos[^<]*revocación por un administrador pone en cola automáticamente el mismo proceso de limpieza de producción/i,
+    /check deletion status without signing in[^<]*limited-use App Check[^<]*no Firebase Authentication session/i,
+    /consultar el estado de eliminación sin iniciar sesión[^<]*App Check de uso limitado[^<]*no una sesión de Firebase Authentication/i,
+    /raw receipt is never stored server-side[^<]*separate versioned keyed-HMAC lookups/i,
+    /comprobante sin transformar nunca se almacena en el servidor[^<]*referencias HMAC separadas, con clave y versión/i,
+    /pending receipt has no TTL[^<]*30 days after completion/i,
+    /comprobante pendiente no tiene TTL[^<]*30 días después de completarse/i,
+    /reopened[^<]*pending status and the expected date[^<]*confirm completion[^<]*offers Support/i,
+    /volver a abrir[^<]*estado pendiente y la fecha esperada[^<]*confirmar la finalización[^<]*ofrece Soporte/i,
+    /removes the local receipt only after the completion confirmation is acknowledged/i,
+    /elimina el comprobante local sólo después de que se reconoce la confirmación de finalización/i,
+    /prepared receipt is not yet found[^<]*does not discard it or restore prior access[^<]*same idempotent request/i,
+    /comprobante preparado[^<]*no lo descarta ni restablece el acceso anterior[^<]*misma solicitud idempotente/i,
+    /accepted receipt cannot be found[^<]*access is not restored/i,
+    /comprobante ya aceptado[^<]*acceso tampoco se restablece/i,
+    /Delete review access and data/i,
+    /Eliminar acceso de revisión y datos/i,
+    /30 days of inactivity[^<]*stale credential generation[^<]*five-minute/i,
+    /30 días de inactividad[^<]*generación anterior de la credencial[^<]*cinco minutos/i,
+    /inactivity threshold is an eligibility point, not a guaranteed completion time/i,
+    /umbral de inactividad es un punto de elegibilidad, no un plazo garantizado de finalización/i,
+    /Cloud Functions application code processes the source IP address[^<]*does not write the raw address to Firestore[^<]*versioned keyed HMAC lookup/i,
+    /código de la aplicación en Cloud Functions procesa la dirección IP de origen[^<]*no escribe la dirección sin transformar en Firestore[^<]*referencia HMAC con clave y versión/i,
+    /30-minute deletion deadline[^<]*Firestore TTL deletion is asynchronous/i,
+    /plazo de eliminación de 30 minutos[^<]*eliminación TTL de Firestore es asíncrona/i,
+    /redemption-request digest[^<]*five minutes[^<]*one-use launch nonce[^<]*60 seconds[^<]*web session[^<]*one hour[^<]*broker replay digest[^<]*two minutes/i,
+    /resumen de la solicitud de canje[^<]*cinco minutos[^<]*nonce de apertura de un solo uso[^<]*60 segundos[^<]*sesión web[^<]*una hora[^<]*resumen contra repetición del broker[^<]*dos minutos/i,
+    /security and operational accountability/i,
+    /seguridad y rendición de cuentas operativa/i,
+    /Firestore TTL deletion is asynchronous after that deadline/i,
+    /eliminación TTL de Firestore es asíncrona después de ese plazo/i,
+  ]) assert.match(html, pattern);
+});
+
+test('privacy separates application storage from automatic Cloud Run request logs bilingually', () => {
+  const html = readArtifact(pagePaths.privacy);
+  const englishDeletionAudit = sectionForLocale(html, 'en', 'deletion-audit');
+  const spanishDeletionAudit = sectionForLocale(html, 'es-MX', 'deletion-audit');
+  const englishProviders = sectionForLocale(html, 'en', 'service-providers');
+  const spanishProviders = sectionForLocale(html, 'es-MX', 'service-providers');
+
+  for (const pattern of [
+    /Cloud Functions application code processes the source IP address to limit requests and prevent abuse, but it does not write the raw address to Firestore/i,
+    /Firestore stores only a versioned keyed HMAC lookup in the rate-limit bucket/i,
+    /Separately, Cloud Run creates request logs automatically in Google Cloud Logging/i,
+    /current default sink has no request-log exclusion and retains records for 30 days/i,
+    /provider logs include source IP address, HTTP method, requested URL, user-agent, status, latency, request and response sizes, and protocol/i,
+    /used for service delivery, security, and troubleshooting, not tracking/i,
+    /linkage to an identity is not claimed/i,
+  ]) assert.match(englishDeletionAudit, pattern);
+
+  for (const pattern of [
+    /código de la aplicación en Cloud Functions procesa la dirección IP de origen para limitar solicitudes y evitar abusos, pero no escribe la dirección sin transformar en Firestore/i,
+    /Firestore conserva solamente una referencia HMAC con clave y versión en el registro de límites/i,
+    /Por separado, Cloud Run crea automáticamente registros de solicitudes en Google Cloud Logging/i,
+    /destino predeterminado actual no tiene una exclusión para esos registros y los conserva durante 30 días/i,
+    /registros del proveedor incluyen dirección IP de origen, método HTTP, URL solicitada, agente de usuario, estado, latencia, tamaños de solicitud y respuesta, y protocolo/i,
+    /se usan para entrega del servicio, seguridad y solución de problemas, no para rastreo/i,
+    /no se afirma que estén desvinculados de una identidad/i,
+  ]) assert.match(spanishDeletionAudit, pattern);
+
+  assert.match(englishProviders, /CaboHealth does not use these services for advertising or tracking/i);
+  assert.match(spanishProviders, /CaboHealth no usa estos servicios para publicidad ni rastreo/i);
+});
+
 test('privacy publishes the owner-authorized operator and Hostinger facts in both languages', () => {
   const html = readArtifact(pagePaths.privacy);
 
-  assert.doesNotMatch(html, /\b(?:draft|pending)\b|\b(?:borrador|pendiente)\b/i);
+  assert.doesNotMatch(html, /\b(?:draft notice|pending notice|aviso en borrador|aviso pendiente)\b/i);
   for (const pattern of [
     /Cabo Health is a trade brand owned and operated by Ivan Guaderrama/i,
     /Cabo Health es una marca comercial propiedad de Ivan Guaderrama y operada por él/i,
@@ -497,6 +624,14 @@ test('terms publish the confirmed educational, rights, and initial-territory sco
     /información educativa general y no son dispositivos médicos/i,
     /do not diagnose, treat, or prescribe/i,
     /no diagnostican, tratan ni prescriben/i,
+    /Client Resources is complimentary for eligible existing in-person clients/i,
+    /Recursos para Clientes es complementario para clientes presenciales existentes que sean elegibles/i,
+    /eligibility code verifies access and is not a purchase credential/i,
+    /código de elegibilidad proporcionado por la clínica verifica el acceso y no es una credencial de compra/i,
+    /no price, checkout, in-app purchase, subscription, or paid digital tier/i,
+    /no hay precio, proceso de pago, compra dentro de la app, suscripción ni nivel digital de pago/i,
+    /Resource information may be corrected, withdrawn, or temporarily unavailable/i,
+    /La información de los recursos puede corregirse, retirarse o quedar temporalmente no disponible/i,
     /Cabo Health is a trade brand owned and operated by Ivan Guaderrama/i,
     /Cabo Health es una marca comercial propiedad de Ivan Guaderrama y operada por él/i,
     /owns or is authorized to use the Cabo Health logo, domain, texts, recipes, and images included in public v1/i,
@@ -533,6 +668,8 @@ test('support renders only the frozen contact record and explicit same-window ac
   assert.match(html, /Recetas Saludables/);
   assert.match(html, /Clinic Guide/);
   assert.match(html, /Guía de la Clínica/);
+  assert.match(html, /Client Resources/);
+  assert.match(html, /Recursos para Clientes/);
 });
 
 test('support publishes the confirmed bilingual hours and two-business-day response policy', () => {
@@ -544,6 +681,10 @@ test('support publishes the confirmed bilingual hours and two-business-day respo
   assert.match(html, /lunes a viernes, de 10:00 a\. m\. a 4:00 p\. m\./i);
   assert.doesNotMatch(html, /no response deadline is promised|no se promete un plazo de respuesta/i);
   assert.doesNotMatch(html, /response service level remains pending|nivel de servicio de respuesta sigue pendiente/i);
+  assert.match(html, /Removing access revokes authorization and queues deletion of the pseudonymous access account and linked records/i);
+  assert.match(html, /Quitar el acceso revoca la autorización y pone en cola la eliminación de la cuenta seudónima de acceso y sus registros vinculados/i);
+  assert.match(html, /Deleting the account also removes the app-installation identifier from this iPhone/i);
+  assert.match(html, /Eliminar la cuenta también borra de este iPhone el identificador de instalación de la app/i);
 });
 
 test('Report Content is visible in both languages with an explicit contact path', () => {
@@ -578,6 +719,9 @@ test('Report Content publishes the confirmed review window and response policy b
   assert.match(html, /Reports are reviewed Monday–Friday, 10:00 AM–4:00 PM/i);
   assert.match(html, /Los reportes se revisan de lunes a viernes, de 10:00 a\. m\. a 4:00 p\. m\./i);
   assert.doesNotMatch(html, /no response deadline is promised|no se promete un plazo de respuesta/i);
+  assert.match(html, /identify only its visible location/i);
+  assert.match(html, /identifica sólo su ubicación visible/i);
+  assert.doesNotMatch(html, /public location|ubicación pública/i);
 });
 
 test('Report Content reuses the exact legal-page visual and CSP contract', () => {
@@ -791,11 +935,11 @@ test('operational drafts retain only current Hostinger and release blockers', ()
   const runbook = readArtifact('docs/operations/hostinger-deploy-runbook.md');
   const hostingChecklist = readArtifact('docs/operations/hosting-security-checklist.md');
 
-  assert.match(runbook, /immutable content payload remains exactly 16 files/i);
+  assert.match(runbook, /immutable successor payload is exactly 17 files/i);
   assert.match(runbook, /two approved module roots; and six shared assets/i);
-  assert.match(runbook, /fixed schema and 16-path allowlist/i);
+  assert.match(runbook, /fixed schema and 17-path allowlist/i);
   assert.match(runbook, /exactly five server-environment overlays/i);
-  assert.match(runbook, /do not change the 16-file release inventory or release ID/i);
+  assert.match(runbook, /do not change the 17-file release inventory or release ID/i);
   assert.doesNotMatch(runbook, /exactly 14 files|14-path allowlist|four shared assets/i);
   assert.doesNotMatch(runbook, /11 external compliance facts|final legal copy\/sign-off/i);
   assert.doesNotMatch(hostingChecklist, /Confirm actual Hostinger technical log types, purpose, retention, access, and deletion process/i);

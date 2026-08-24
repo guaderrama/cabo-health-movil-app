@@ -15,7 +15,7 @@ Explora bienestar basado en ciencia. Clientes existentes elegibles pueden verifi
 CaboHealth reúne recursos de bienestar general basados en ciencia en una experiencia tranquila y bilingüe.
 
 RECETAS SALUDABLES
-Explora doce ideas originales de recetas con búsqueda y filtros por categoría. Cada receta incluye ingredientes, pasos, tiempo, porciones, notas de alérgenos y recordatorios de seguridad alimentaria. Tus recetas favoritas permanecen en el dispositivo.
+Explora doce ideas de recetas con búsqueda y filtros por categoría. Cada receta incluye ingredientes, pasos, tiempo, porciones, notas de alérgenos y recordatorios de seguridad alimentaria. Tus recetas favoritas permanecen en el dispositivo.
 
 GUÍA DE LA CLÍNICA CABOHEALTH
 Prepara una visita con ubicación, horario, opciones de contacto, orientación de idioma y accesibilidad, un límite para emergencias y una lista práctica. La lista permanece en el dispositivo y no contiene campos de texto libre ni cargas de archivos.
@@ -41,7 +41,7 @@ https://cabohealth.org/app/support/
 https://cabohealth.org/app/privacy/
 
 ## Marketing URL
-https://cabohealth.org/
+https://cabohealth.org/app/
 
 ## Copyright
 2026 Ivan Guaderrama

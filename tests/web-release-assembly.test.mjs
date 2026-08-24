@@ -372,24 +372,51 @@ test('the real assembler validates the saved age and release-ready compliance wi
 
 test('the real assembler binds materialization to the independently reviewed deployment-readiness record', async () => {
   const artifactPath = join(projectRoot, 'release/web-artifacts.json');
+  const candidateArtifactPath = join(
+    projectRoot,
+    'release/web-artifacts.web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b.json',
+  );
   const bundleRoot = join(projectRoot, 'release/web-bundles');
   const readinessBytes = readFileSync(join(projectRoot, 'release/web-deployment-readiness.json'));
-  const { WEB_DEPLOYMENT_READINESS_SHA256 } = await import('../scripts/assemble-web-release.mjs');
+  const {
+    WEB_DEPLOYMENT_READINESS_SHA256,
+    assertWebDeploymentReadiness,
+  } = await import('../scripts/assemble-web-release.mjs');
   assert.equal(sha256(readinessBytes), WEB_DEPLOYMENT_READINESS_SHA256);
   assert.deepEqual(JSON.parse(readinessBytes), {
-    schemaVersion: 1,
-    artifactKind: 'cabohealth-web-deployment-readiness-v1',
+    schemaVersion: 2,
+    artifactKind: 'cabohealth-web-deployment-readiness-v2',
     status: 'ready',
+    reviewedAt: '2026-08-24',
+    reviewedInputs: {
+      miniappCapsuleSha256: 'b569107971f2db55f900e595e08e4d9a8daa54ef4588850424d60a9a8c089929',
+      privacySha256: 'bee0eaebf10afe3ded626da45a15ee11368e67f11e7d1dc170222405702fbb80',
+      marketingSha256: '8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147',
+      aasaSha256: 'b7625ae96a6391ed5c08519c79053d30b7d26b5109c571e5405433e9098da772',
+    },
+    scope: {
+      localAssemblyAuthorized: true,
+      publicPromotionAuthorized: false,
+      deployed: false,
+      appleReady: false,
+    },
   });
+  assert.equal(assertWebDeploymentReadiness(new Map([
+    ['release/web-deployment-readiness.json', readinessBytes],
+  ])), true);
+  assert.equal(
+    JSON.parse(readFileSync(candidateArtifactPath, 'utf8')).releaseId,
+    'web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b',
+  );
   const artifactBefore = existsSync(artifactPath) ? readFileSync(artifactPath) : null;
   const bundlesBefore = existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null;
-  const result = spawnSync(process.execPath, [assemblerPath, '--assemble'], {
+  const result = spawnSync(process.execPath, [assemblerPath, '--check'], {
     cwd: projectRoot,
     encoding: 'utf8',
   });
 
   assert.equal(result.status, 0, result.stdout || result.stderr);
-  assert.match(result.stdout, /Assembled web-v1-8ff48eacb692ff60889fbd7f6bea26174d9a85761c3a2b4d339a3745efff34ef/u);
+  assert.match(result.stdout, /Checked web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b/u);
   assert.deepEqual(readFileSync(artifactPath), artifactBefore);
   assert.deepEqual(existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null, bundlesBefore);
 });

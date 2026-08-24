@@ -22,14 +22,14 @@ const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const APP_ID = 'DQ8PH2DZ3R.com.cabohealth.app';
 const helperPath = resolve(projectRoot, 'scripts/secure_web_release.py');
 const helperSource = readFileSync(helperPath, 'utf8');
-const CAPSULE_SHA256 = '2c839893cca416fdd471fef037bdfb8fc099960d9855e9d7b47981b13892602b';
-const CAPSULE_SIZE = 719595;
+const CAPSULE_SHA256 = 'b569107971f2db55f900e595e08e4d9a8daa54ef4588850424d60a9a8c089929';
+const CAPSULE_SIZE = 721307;
 export const REVIEWED_MINIAPP_FILE_PINS = Object.freeze([
   Object.freeze({ path: 'apps/.htaccess', size: 568, sha256: '0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da' }),
   Object.freeze({ path: 'apps/clinic-guide/app.js', size: 3868, sha256: 'f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7' }),
-  Object.freeze({ path: 'apps/clinic-guide/index.html', size: 28285, sha256: '0a18f4f307e2c58189cf9471b71accd779adbfa0415142ac5be584a9a4ff2c8e' }),
+  Object.freeze({ path: 'apps/clinic-guide/index.html', size: 28764, sha256: '8a42f8e12ce5b0a7a425cb4c25d291f4c2b749388780630403ada28c834a2abd' }),
   Object.freeze({ path: 'apps/healthy-recipes/app.js', size: 4049, sha256: '70a2537bcf2b858eef98535cc48e691fbd081bd3e180347207aecfc04550e090' }),
-  Object.freeze({ path: 'apps/healthy-recipes/index.html', size: 57591, sha256: 'd756583df4e13221bb24dd8bf44d5712b5c1bc6a409af2f6c33d6051f630114b' }),
+  Object.freeze({ path: 'apps/healthy-recipes/index.html', size: 58398, sha256: 'e7c42084fcfb55e01cbd01ac77bfc8ebc6f8d441a700bf8ae0d2fee45569a7b4' }),
   Object.freeze({ path: 'apps/shared/clinic-map-texture.png', size: 382740, sha256: '4b569f0da0cffb9a54dedd93ce672cf7592ae4516dd12663e3b34d731df237c4' }),
   Object.freeze({ path: 'apps/shared/logo-wordmark.png', size: 12584, sha256: '42012a5550f332e531c8d6ea7a99bb06b9c0bd9f0c0c6a45249106dc940f592d' }),
   Object.freeze({ path: 'apps/shared/logo.png', size: 13598, sha256: 'e835403f38f3420e219396e82455818a3e636600f7b9a865530e365faa168117' }),
@@ -70,14 +70,14 @@ const REVIEWED_MARKETING_LANDING = Object.freeze({
 // Pinned after owner-authorized fact reconciliation and independent byte review.
 // Any later legal-copy edit must fail closed until a new review updates both authorities.
 export const FINAL_LEGAL_SHA256 = Object.freeze({
-  privacy: 'def90b1f4ce575a270b5ab0e47d9963ad73393fc56c233c2a8a8a64248ddec4a',
+  privacy: 'bee0eaebf10afe3ded626da45a15ee11368e67f11e7d1dc170222405702fbb80',
   'report-content': 'f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c',
   support: '06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa',
   terms: 'b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22',
 });
 // Set only after the final legal/AASA/Firebase/Hostinger staging evidence receives
 // a separate byte review. A null pin makes every materialization path fail closed.
-export const WEB_DEPLOYMENT_READINESS_SHA256 = 'edb1856afb0fdc4d39e2f20d593e21bc7ed12553de8563dbad6f6a4b1ddf2a28';
+export const WEB_DEPLOYMENT_READINESS_SHA256 = 'f9dffa59e994449c64fec4f892f0d0f3e38ee641d70e9ea697eb74eeea52dcad';
 export const WEB_RELEASE_PATHS = Object.freeze([
   '.well-known/apple-app-site-association',
   'app/index.html',
@@ -129,7 +129,7 @@ function canonicalJson(value) {
   return `${JSON.stringify(value)}\n`;
 }
 
-function assertWebDeploymentReadiness(complianceBuffers) {
+export function assertWebDeploymentReadiness(complianceBuffers) {
   if (typeof WEB_DEPLOYMENT_READINESS_SHA256 !== 'string'
     || !/^[a-f0-9]{64}$/u.test(WEB_DEPLOYMENT_READINESS_SHA256)) {
     throw new Error('WEB_DEPLOYMENT_GATES_INCOMPLETE');
@@ -144,12 +144,40 @@ function assertWebDeploymentReadiness(complianceBuffers) {
   } catch {
     throw new Error('WEB_DEPLOYMENT_GATES_INCOMPLETE');
   }
-  assertExactKeys(readiness, ['schemaVersion', 'artifactKind', 'status'], 'WEB_DEPLOYMENT_READINESS');
-  if (readiness.schemaVersion !== 1
-    || readiness.artifactKind !== 'cabohealth-web-deployment-readiness-v1'
-    || readiness.status !== 'ready') {
+  assertExactKeys(
+    readiness,
+    ['schemaVersion', 'artifactKind', 'status', 'reviewedAt', 'reviewedInputs', 'scope'],
+    'WEB_DEPLOYMENT_READINESS',
+  );
+  assertExactKeys(
+    readiness.reviewedInputs,
+    ['miniappCapsuleSha256', 'privacySha256', 'marketingSha256', 'aasaSha256'],
+    'WEB_DEPLOYMENT_READINESS_INPUTS',
+  );
+  assertExactKeys(
+    readiness.scope,
+    ['localAssemblyAuthorized', 'publicPromotionAuthorized', 'deployed', 'appleReady'],
+    'WEB_DEPLOYMENT_READINESS_SCOPE',
+  );
+  if (readiness.schemaVersion !== 2
+    || readiness.artifactKind !== 'cabohealth-web-deployment-readiness-v2'
+    || readiness.status !== 'ready'
+    || readiness.reviewedAt !== '2026-08-24'
+    || JSON.stringify(readiness.reviewedInputs) !== JSON.stringify({
+      miniappCapsuleSha256: CAPSULE_SHA256,
+      privacySha256: FINAL_LEGAL_SHA256.privacy,
+      marketingSha256: REVIEWED_MARKETING_LANDING.sha256,
+      aasaSha256: sha256(canonicalAasaBytes(APP_ID)),
+    })
+    || JSON.stringify(readiness.scope) !== JSON.stringify({
+      localAssemblyAuthorized: true,
+      publicPromotionAuthorized: false,
+      deployed: false,
+      appleReady: false,
+  })) {
     throw new Error('WEB_DEPLOYMENT_GATES_INCOMPLETE');
   }
+  return true;
 }
 
 function mediaTypeFor(path) {

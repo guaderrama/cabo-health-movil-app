@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "reviewedOn": "2026-08-16",
+  "version": "1.0.1",
+  "reviewedOn": "2026-08-24",
   "disclaimer": {
     "en": "Recipes are general food inspiration, not medical or dietary treatment. Check ingredient labels and avoid ingredients you are allergic to. For individualized food questions, consult a qualified professional.",
     "es-MX": "Las recetas son ideas generales de alimentación, no tratamiento médico ni dietético. Revisa las etiquetas y evita ingredientes a los que eres alérgico. Para preguntas personalizadas sobre alimentación, consulta a un profesional calificado."
@@ -12,7 +12,7 @@
   "sources": [
     {
       "title": "WHO — Healthy diet",
-      "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet%E2%81%A3%E2%81%A0"
+      "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet"
     },
     {
       "title": "FoodSafety.gov — 4 Steps to Food Safety",
@@ -46,7 +46,7 @@
         "es-MX": "No contiene alérgenos intencionalmente. Revisa los ingredientes del chile envasado."
       },
       "foodSafety": { "en": "Wash produce before preparation.", "es-MX": "Lava los productos antes de prepararlos." },
-      "editorialNote": { "en": "Original general food idea; not medical advice.", "es-MX": "Idea original de alimentación general; no es consejo médico." }
+      "editorialNote": { "en": "General food idea; not medical advice.", "es-MX": "Idea de alimentación general; no es consejo médico." }
     },
     {
       "slug": "oats-berry-yogurt-cup",
@@ -70,7 +70,7 @@
         "es-MX": "Leche o lácteos; la avena puede contener trigo por contacto cruzado; semillas."
       },
       "foodSafety": { "en": "Keep yogurt and thawed berries refrigerated.", "es-MX": "Mantén refrigerados el yogur y los frutos rojos descongelados." },
-      "editorialNote": { "en": "Original general food idea; choose an alternative that fits your needs and check package labels.", "es-MX": "Idea original; elige una alternativa adecuada para ti y revisa las etiquetas." }
+      "editorialNote": { "en": "General food idea; choose an alternative that fits your needs and check package labels.", "es-MX": "Idea general; elige una alternativa adecuada para ti y revisa las etiquetas." }
     },
     {
       "slug": "black-bean-corn-skillet",
@@ -91,7 +91,7 @@
       },
       "allergens": { "en": "None intentionally included. Check canned and packaged ingredients.", "es-MX": "No contiene alérgenos intencionalmente. Revisa los productos envasados." },
       "foodSafety": { "en": "Refrigerate leftovers promptly.", "es-MX": "Refrigera pronto los sobrantes." },
-      "editorialNote": { "en": "Original general food idea; rinse canned beans if desired.", "es-MX": "Idea original; puedes enjuagar los frijoles enlatados si lo deseas." }
+      "editorialNote": { "en": "General food idea; rinse canned beans if desired.", "es-MX": "Idea general; puedes enjuagar los frijoles enlatados si lo deseas." }
     },
     {
       "slug": "chicken-zucchini-tortilla-plates",
@@ -112,7 +112,7 @@
       },
       "allergens": { "en": "None intentionally included; packaged tortillas may contain wheat or other allergens.", "es-MX": "No contiene alérgenos intencionalmente; las tortillas envasadas pueden contener trigo u otros alérgenos." },
       "foodSafety": { "en": "Use a food thermometer and avoid cross-contamination.", "es-MX": "Usa un termómetro de cocina y evita la contaminación cruzada." },
-      "editorialNote": { "en": "Original general food idea.", "es-MX": "Idea original de alimentación general." }
+      "editorialNote": { "en": "General food idea.", "es-MX": "Idea de alimentación general." }
     },
     {
       "slug": "lentil-rice-tomato-bowl",
@@ -133,7 +133,7 @@
       },
       "allergens": { "en": "None intentionally included. Check packaged ingredients.", "es-MX": "No contiene alérgenos intencionalmente. Revisa los ingredientes envasados." },
       "foodSafety": { "en": "Refrigerate leftovers promptly.", "es-MX": "Refrigera los sobrantes de inmediato." },
-      "editorialNote": { "en": "Original general food idea.", "es-MX": "Idea original de alimentación general." }
+      "editorialNote": { "en": "General food idea.", "es-MX": "Idea de alimentación general." }
     },
     {
       "slug": "tuna-avocado-crisp-tostadas",
@@ -154,7 +154,7 @@
       },
       "allergens": { "en": "Fish; packaged tostadas may contain wheat or other allergens.", "es-MX": "Pescado; las tostadas envasadas pueden contener trigo u otros alérgenos." },
       "foodSafety": { "en": "Refrigerate opened tuna and avocado mixture promptly; do not leave perishable foods out.", "es-MX": "Refrigera pronto el atún abierto y la mezcla; no dejes alimentos perecederos fuera." },
-      "editorialNote": { "en": "Original general food idea.", "es-MX": "Idea original de alimentación general." }
+      "editorialNote": { "en": "General food idea.", "es-MX": "Idea de alimentación general." }
     },
     {
       "slug": "spinach-egg-corn-tacos",
@@ -175,7 +175,7 @@
       },
       "allergens": { "en": "Egg; packaged tortillas may contain wheat or other allergens.", "es-MX": "Huevo; las tortillas envasadas pueden contener trigo u otros alérgenos." },
       "foodSafety": { "en": "Wash hands and produce; cook eggs thoroughly; refrigerate leftovers promptly and reheat only once.", "es-MX": "Lávate las manos y lava los productos; cocina bien los huevos; refrigera pronto los sobrantes y recalienta sólo una vez." },
-      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
+      "editorialNote": { "en": "General food idea; not medical or dietary treatment.", "es-MX": "Idea de alimentación general; no es tratamiento médico ni dietético." }
     },
     {
       "slug": "banana-tahini-cinnamon-toast",
@@ -196,7 +196,7 @@
       },
       "allergens": { "en": "Wheat or gluten; sesame; optional seeds. Check package labels.", "es-MX": "Trigo o gluten; sésamo; semillas opcionales. Revisa las etiquetas." },
       "foodSafety": { "en": "Use a clean knife and surface; eat after preparing; refrigerate opened tahini according to its package.", "es-MX": "Usa un cuchillo y una superficie limpios; come después de preparar; refrigera el tahini abierto según su envase." },
-      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
+      "editorialNote": { "en": "General food idea; not medical or dietary treatment.", "es-MX": "Idea de alimentación general; no es tratamiento médico ni dietético." }
     },
     {
       "slug": "roasted-sweet-potato-chickpea-quinoa-bowls",
@@ -217,7 +217,7 @@
       },
       "allergens": { "en": "None intentionally included. Check packaged quinoa, chickpeas, and spices.", "es-MX": "No contiene alérgenos intencionalmente. Revisa la quinoa, los garbanzos y las especias envasados." },
       "foodSafety": { "en": "Wash produce and use clean utensils; refrigerate leftovers promptly in a shallow container.", "es-MX": "Lava los productos y usa utensilios limpios; refrigera pronto los sobrantes en un recipiente poco profundo." },
-      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
+      "editorialNote": { "en": "General food idea; not medical or dietary treatment.", "es-MX": "Idea de alimentación general; no es tratamiento médico ni dietético." }
     },
     {
       "slug": "white-bean-tomato-pasta",
@@ -238,7 +238,7 @@
       },
       "allergens": { "en": "Wheat or gluten; pasta may contain egg depending on the brand.", "es-MX": "Trigo o gluten; la pasta puede contener huevo según la marca." },
       "foodSafety": { "en": "Wash hands and produce; refrigerate leftovers promptly and reheat until steaming.", "es-MX": "Lávate las manos y lava los productos; refrigera pronto los sobrantes y recalienta hasta que estén humeantes." },
-      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
+      "editorialNote": { "en": "General food idea; not medical or dietary treatment.", "es-MX": "Idea de alimentación general; no es tratamiento médico ni dietético." }
     },
     {
       "slug": "jicama-orange-lime-cup",
@@ -259,7 +259,7 @@
       },
       "allergens": { "en": "None intentionally included. Check packaged chili for ingredients.", "es-MX": "No contiene alérgenos intencionalmente. Revisa los ingredientes del chile envasado." },
       "foodSafety": { "en": "Wash produce before cutting; keep chilled and refrigerate leftovers promptly.", "es-MX": "Lava los productos antes de cortarlos; mantén frío y refrigera pronto los sobrantes." },
-      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
+      "editorialNote": { "en": "General food idea; not medical or dietary treatment.", "es-MX": "Idea de alimentación general; no es tratamiento médico ni dietético." }
     },
     {
       "slug": "pineapple-lime-agua-fresca",
@@ -280,7 +280,7 @@
       },
       "allergens": { "en": "None intentionally included.", "es-MX": "No contiene alérgenos intencionalmente." },
       "foodSafety": { "en": "Wash produce and blender parts; serve immediately; refrigerate the remainder and use within 24 hours.", "es-MX": "Lava los productos y las piezas de la licuadora; sirve de inmediato; refrigera el resto y úsalo dentro de 24 horas." },
-      "editorialNote": { "en": "Original general food idea; not medical or dietary treatment.", "es-MX": "Idea original de alimentación general; no es tratamiento médico ni dietético." }
+      "editorialNote": { "en": "General food idea; not medical or dietary treatment.", "es-MX": "Idea de alimentación general; no es tratamiento médico ni dietético." }
     }
   ]
 }

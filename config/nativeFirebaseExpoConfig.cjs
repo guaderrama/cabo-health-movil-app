@@ -78,7 +78,7 @@ function buildNativeFirebaseExpoConfig({
       '@react-native-firebase/app',
       '@react-native-firebase/auth',
       '@react-native-firebase/app-check',
-      'expo-secure-store',
+      ['expo-secure-store', { faceIDPermission: false }],
       ['expo-build-properties', { ios: {
         privacyManifestAggregationEnabled: true,
         useFrameworks: 'static',

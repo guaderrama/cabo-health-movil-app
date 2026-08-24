@@ -30,7 +30,7 @@ function assertBilingualList(value, label, minimumLength = 1) {
   assert.equal(value.en.length, value['es-MX'].length, `${label} must have locale parity`);
 }
 
-test('canonical recipes provide exactly twelve complete original bilingual entries', () => {
+test('canonical recipes provide exactly twelve complete bilingual entries without an authorship claim', () => {
   const recipes = readJson('content/recipes.json');
   const expectedSlugs = [
     'banana-tahini-cinnamon-toast',
@@ -47,7 +47,8 @@ test('canonical recipes provide exactly twelve complete original bilingual entri
     'white-bean-tomato-pasta',
   ];
 
-  assert.equal(recipes.reviewedOn, '2026-08-16');
+  assert.equal(recipes.version, '1.0.1');
+  assert.equal(recipes.reviewedOn, '2026-08-24');
   assertBilingualText(recipes.disclaimer, 'disclaimer');
   assertBilingualText(recipes.foodSafety, 'foodSafety');
   assert.deepEqual(
@@ -71,6 +72,8 @@ test('canonical recipes provide exactly twelve complete original bilingual entri
     assertBilingualText(recipe.allergens, `${recipe.slug}.allergens`);
     assertBilingualText(recipe.foodSafety, `${recipe.slug}.foodSafety`);
     assertBilingualText(recipe.editorialNote, `${recipe.slug}.editorialNote`);
+    assert.doesNotMatch(recipe.editorialNote.en, /\boriginal\b/iu);
+    assert.doesNotMatch(recipe.editorialNote['es-MX'], /\boriginal(?:es)?\b/iu);
   }
 
   for (const requiredCategory of ['breakfast', 'lunch', 'dinner', 'snack']) {
@@ -110,7 +113,8 @@ test('clinic checklist remains bilingual and non-collecting while contact facts 
     'privacy',
   ];
 
-  assert.equal(guide.reviewedOn, '2026-08-16');
+  assert.equal(guide.version, '1.0.1');
+  assert.equal(guide.reviewedOn, '2026-08-24');
   assertBilingualText(guide.emergency, 'clinicGuide.emergency');
   assertBilingualText(guide.privacy, 'clinicGuide.privacy');
   assert.deepEqual(guide.groups.map(({ id }) => id), requiredGroups);

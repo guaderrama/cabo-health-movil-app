@@ -22,8 +22,8 @@ test('the Marketing URL publishes the exact bilingual App Store scope', () => {
   assert.match(html, /<article\b[^>]*\blang="es-MX"/u);
   assert.match(html, /Two public editorial resources/u);
   assert.match(html, /Dos recursos editoriales públicos/u);
-  assert.match(html, /up to four eligible existing in-person clients/u);
-  assert.match(html, /hasta cuatro clientes presenciales existentes que cumplan los requisitos/u);
+  assert.match(html, /existing in-person clients individually authorized by the owner/u);
+  assert.match(html, /clientes presenciales existentes autorizados individualmente por el propietario/u);
 });
 
 test('the Marketing URL has no executable, tracking, form, or cookie surface', () => {
