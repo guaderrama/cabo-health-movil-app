@@ -98,33 +98,38 @@ test('deploy config refuses a drifted or expanded Firestore topology', async () 
   }
 });
 
-test('emulator config creates both closed databases explicitly instead of relying on an open implicit database', async () => {
-  const config = JSON.parse(
-    await readFile(new URL('firebase.emulator.json', repositoryRoot), 'utf8'),
-  );
-
-  assert.deepEqual(config.firestore, [
-    {
-      database: '(default)',
-      indexes: 'firestore.indexes.json',
-      rules: 'firestore.rules',
-    },
-    {
-      database: 'cabohealth-review-emulator',
-      indexes: 'firestore.review.indexes.json',
-      rules: 'firestore.review.rules',
-    },
-  ]);
-  assert.deepEqual(config.emulators, {
+test('emulator configs map each production ruleset to an isolated default database', async () => {
+  const expectedEmulators = {
     firestore: { port: 8080 },
     singleProjectMode: true,
     ui: { enabled: false },
-  });
+  };
+  const cases = [
+    ['firebase.emulator.json', 'firestore.indexes.json', 'firestore.rules'],
+    [
+      'firebase.emulator.review.json',
+      'firestore.review.indexes.json',
+      'firestore.review.rules',
+    ],
+  ];
+
+  for (const [configFile, indexes, rules] of cases) {
+    const config = JSON.parse(
+      await readFile(new URL(configFile, repositoryRoot), 'utf8'),
+    );
+
+    assert.deepEqual(config.firestore, { indexes, rules });
+    assert.deepEqual(config.emulators, expectedEmulators);
+  }
 });
 
-test('the pinned local Firebase CLI runs a deny-all probe against both configured databases', async () => {
+test('the pinned local Firebase CLI probes both rulesets in separate emulator executions', async () => {
   const packageJson = JSON.parse(
     await readFile(new URL('package.json', repositoryRoot), 'utf8'),
+  );
+  const verifier = await readFile(
+    new URL('scripts/verify-firestore-rules-emulator.mjs', repositoryRoot),
+    'utf8',
   );
   const probe = await readFile(
     new URL('tests/emulator/firestore-deny-all.test.mjs', repositoryRoot),
@@ -134,9 +139,18 @@ test('the pinned local Firebase CLI runs a deny-all probe against both configure
   assert.equal(packageJson.devDependencies['firebase-tools'], '15.28.1');
   assert.equal(
     packageJson.scripts['test:firestore-rules:emulator'],
-    'firebase emulators:exec --config firebase.emulator.json --project demo-cabohealth --only firestore "node --test tests/emulator/firestore-deny-all.test.mjs"',
+    'node scripts/verify-firestore-rules-emulator.mjs',
   );
-  assert.match(probe, /\['\(default\)', 'cabohealth-review-emulator'\]/u);
+  assert.match(verifier, /firebase\.emulator\.json/u);
+  assert.match(verifier, /firebase\.emulator\.review\.json/u);
+  assert.match(
+    verifier,
+    /'firebase-tools',\s*'lib',\s*'bin',\s*'firebase\.js'/u,
+  );
+  assert.match(verifier, /demo-cabohealth/u);
+  assert.match(probe, /CABOHEALTH_EMULATOR_RULESET/u);
+  assert.match(probe, /databases\/\$\{DATABASE_ID\}/u);
+  assert.doesNotMatch(probe, /cabohealth-review-emulator/u);
   assert.match(probe, /method: 'PATCH'/u);
   assert.match(probe, /response\.status, 403/u);
 });
@@ -207,6 +221,20 @@ test('deploy config execution writes only a private reviewed artifact and never 
     const rendered = JSON.parse(await readFile(out, 'utf8'));
 
     assert.equal(rendered.firestore[1].database, 'cabohealth-review-production');
+    assert.equal(rendered.functions[0].source, join(temporaryRoot, 'functions'));
+    assert.deepEqual(
+      rendered.firestore.map(({ indexes, rules }) => ({ indexes, rules })),
+      [
+        {
+          indexes: join(temporaryRoot, 'firestore.indexes.json'),
+          rules: join(temporaryRoot, 'firestore.rules'),
+        },
+        {
+          indexes: join(temporaryRoot, 'firestore.review.indexes.json'),
+          rules: join(temporaryRoot, 'firestore.review.rules'),
+        },
+      ],
+    );
     assert.equal(JSON.stringify(rendered).includes(REVIEW_DATABASE_PLACEHOLDER), false);
     assert.equal(evidence.status, 'rendered');
     assert.equal((await stat(out)).mode & 0o077, 0);

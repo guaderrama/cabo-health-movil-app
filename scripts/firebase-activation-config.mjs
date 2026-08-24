@@ -103,11 +103,15 @@ export async function executeFirebaseActivationConfigCommand({ command, reposito
   const baseConfig = JSON.parse(
     await readFile(resolve(repositoryRoot, 'firebase.json'), 'utf8'),
   );
-  const config = buildDeployFirebaseConfig({
+  const projectConfig = buildDeployFirebaseConfig({
     baseConfig,
     environment: command.environment,
     projectId: command.projectId,
     reviewDatabaseId: command.reviewDatabaseId,
+  });
+  const config = bindDeployFirebaseConfigPaths({
+    config: projectConfig,
+    repositoryRoot,
   });
   await writeFile(command.out, serializeFirebaseDeployConfig(config), {
     encoding: 'utf8',
@@ -120,6 +124,46 @@ export async function executeFirebaseActivationConfigCommand({ command, reposito
     projectId: command.projectId,
     reviewDatabaseId: command.reviewDatabaseId,
   });
+}
+
+function bindDeployFirebaseConfigPaths({ config, repositoryRoot }) {
+  const bound = structuredClone(config);
+  for (const functionsTarget of bound.functions ?? []) {
+    functionsTarget.source = absoluteRepositoryConfigPath({
+      repositoryRelativePath: functionsTarget.source,
+      repositoryRoot,
+    });
+  }
+  for (const firestoreTarget of bound.firestore) {
+    firestoreTarget.indexes = absoluteRepositoryConfigPath({
+      repositoryRelativePath: firestoreTarget.indexes,
+      repositoryRoot,
+    });
+    firestoreTarget.rules = absoluteRepositoryConfigPath({
+      repositoryRelativePath: firestoreTarget.rules,
+      repositoryRoot,
+    });
+  }
+  return bound;
+}
+
+function absoluteRepositoryConfigPath({ repositoryRelativePath, repositoryRoot }) {
+  if (
+    typeof repositoryRelativePath !== 'string'
+    || repositoryRelativePath.length === 0
+    || isAbsolute(repositoryRelativePath)
+  ) throw new Error('firebase_activation_config_invalid');
+
+  const exactRepositoryRoot = resolve(repositoryRoot);
+  const target = resolve(exactRepositoryRoot, repositoryRelativePath);
+  const targetDifference = relative(exactRepositoryRoot, target);
+  if (
+    targetDifference === '..'
+    || targetDifference.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)
+    || isAbsolute(targetDifference)
+  ) throw new Error('firebase_activation_config_invalid');
+
+  return target;
 }
 
 const CONFIG_FLAGS = new Set([

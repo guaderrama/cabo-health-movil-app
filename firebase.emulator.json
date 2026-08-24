@@ -1,17 +1,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/firebase/firebase-tools/master/schema/firebase-config.json",
-  "firestore": [
-    {
-      "database": "(default)",
-      "rules": "firestore.rules",
-      "indexes": "firestore.indexes.json"
-    },
-    {
-      "database": "cabohealth-review-emulator",
-      "rules": "firestore.review.rules",
-      "indexes": "firestore.review.indexes.json"
-    }
-  ],
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
   "emulators": {
     "firestore": {
       "port": 8080
