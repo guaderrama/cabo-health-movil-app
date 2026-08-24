@@ -1,22 +1,30 @@
 # CaboHealth Hostinger release and rollback runbook
 
-Status: **the reviewed 16-file release is live; final production verification remains gated.** As of 2026-08-20, the private backup and rollback rehearsal passed, all nine promotion units passed their WordPress control probes, and the descriptor-side 16-file content inventory matched the reviewed release. Live-origin checks found Hostinger-specific response-policy requirements for legal-page headers, AASA MIME, and exact miniapp HTML/JavaScript/CSS/image MIME. Those separately attested overlays, origin/CDN/browser checks, and real-iPhone QA must be green before this release is called complete. This runbook is an execution contract, not blanket authorization for a future release.
+Status: **the reviewed 17-file release is live and fully verified.** Release `web-v1-8ff48eacb692ff60889fbd7f6bea26174d9a85761c3a2b4d339a3745efff34ef` completed the ten-unit promotion, five hosting overlays, exact predecessor/rollback controls, per-unit WordPress probes, descriptor inventory, origin, browser, retained-control, and Apple CDN checks on 2026-08-24. The prior release and private rehearsal receipts remain retained for rollback. Physical-iPhone and Universal Link QA remain iOS release gates, not blockers to the completed public-web activation. This runbook remains the execution contract for any future release and is not blanket authorization for another promotion.
 
 ## Fixed scope
 
-The immutable content payload remains exactly 16 files: canonical AASA; Privacy, Terms, Support, and Report Content HTML; `apps/.htaccess`; the two approved module roots; and six shared assets. The promotion units, in required order, are:
+The immutable successor payload is exactly 17 files: canonical AASA; the marketing, Privacy, Terms, Support, and Report Content HTML; `apps/.htaccess`; the two approved module roots; and six shared assets. The ten promotion units, in required order, are:
 
 1. `public_html/apps/.htaccess`
 2. `public_html/apps/shared/`
-3. `public_html/app/privacy/`
-4. `public_html/app/terms/`
-5. `public_html/app/support/`
-6. `public_html/app/report-content/`
-7. `public_html/apps/healthy-recipes/`
-8. `public_html/apps/clinic-guide/`
-9. `public_html/.well-known/apple-app-site-association`
+3. `public_html/app/index.html`
+4. `public_html/app/privacy/`
+5. `public_html/app/terms/`
+6. `public_html/app/support/`
+7. `public_html/app/report-content/`
+8. `public_html/apps/healthy-recipes/`
+9. `public_html/apps/clinic-guide/`
+10. `public_html/.well-known/apple-app-site-association`
 
-Hostinger additionally requires exactly five server-environment overlays: `public_html/app/.htaccess`, `public_html/.well-known/.htaccess`, and one exact MIME policy in each of `public_html/apps/clinic-guide/`, `public_html/apps/healthy-recipes/`, and `public_html/apps/shared/`. They are checked-in exact policies but are not content-payload files, do not change the 16-file release inventory or release ID, and may be published only by the reviewed helper's hard-link/no-replace overlay operation. The server inventory attests all five independently before accepting the 16 content files. Before a future content promotion, roll back these overlays, promote the new reviewed release, then republish the overlays; this prevents an environment file from moving inside a content rollback slot.
+Hostinger additionally requires exactly five server-environment overlays: `public_html/app/.htaccess`, `public_html/.well-known/.htaccess`, and one exact MIME policy in each of `public_html/apps/clinic-guide/`, `public_html/apps/healthy-recipes/`, and `public_html/apps/shared/`. They are checked-in exact policies but are not content-payload files, do not change the 17-file release inventory or release ID, and may be published only by the reviewed helper's hard-link/no-replace overlay operation. The server inventory attests all five independently before accepting the 17 content files. Before a future content promotion, roll back these overlays, promote the new reviewed release, then republish the overlays; this prevents an environment file from moving inside a content rollback slot.
+
+The independent protected-overlay transaction may add exactly the complete pair
+`public_html/apps/client-resources/` and `public_html/apps/app-review/`. The
+public inventory helper accepts either neither directory or both safe `0755`
+directories; it rejects a lone member, any third sibling, a link, a non-directory,
+or an unsafe mode. It deliberately does not count or attest their bytes: the
+separate signed protected-overlay gate remains their only release authority.
 
 Never change the WordPress root, theme, Media Library/uploads, database content, root `.htaccess`, unrelated assets, or the protected PHI-remediation rule. Never use recursive removal, `mv -f`, `cp -r`, broad `rsync`, tar extraction, manifest-selected paths, or an unreviewed remote script.
 
@@ -30,7 +38,7 @@ node scripts/assemble-web-release.mjs --assemble
 node scripts/verify-production.mjs --check --reviewed-release-id=<reviewed-release-id> --reviewed-artifact-sha256=<reviewed-artifact-sha256> --reviewed-browser-measurement-sha256=<independently-reviewed-browser-evidence-sha256>
 ```
 
-`--check` validates the exact, explicitly blocked v3 draft and prints its deterministic plan without writing outputs. It is not a deployment-readiness verdict. While hosted legal client-access disclosures, AASA, Firebase/Hostinger staging, Apple direction, or any other deployment evidence remains pending, `--assemble` must report `WEB_DEPLOYMENT_GATES_INCOMPLETE` and must not create or replace `release/web-artifacts.json`, `release/production-urls.json`, or `release/web-bundles/`. Final legal and deployment-readiness pins may be populated only after independent review of the exact bytes and evidence; pinning one authority does not bypass another gate. After every gate is independently verified, the assembler snapshots the verified Task 6B capsule through `readVerifiedMiniappArtifact`, captures fixed public inputs through no-follow directory descriptors, materializes the content-addressed bundle, re-verifies it, and exclusively publishes provenance.
+`--check` validates the exact v3 candidate and prints its deterministic plan without writing outputs. It is not by itself a deployment-readiness verdict. While hosted legal client-access disclosures, AASA, Firebase/Hostinger staging, Apple direction, or any other deployment evidence remains pending, `--assemble` must report `WEB_DEPLOYMENT_GATES_INCOMPLETE` and must not create or replace `release/web-artifacts.json`, `release/production-urls.json`, or `release/web-bundles/`. For the current 17-file release, the narrow web-readiness record was pinned only after independent legal, AASA, Firebase, Hostinger-stage, and byte review; it authorized deterministic assembly only. The later public promotion is proven separately by the canonical sanitized production evidence and dated activation record, while protected-overlay activation remains a separate authority. After every assembly gate is independently verified, the assembler snapshots the verified Task 6B capsule through `readVerifiedMiniappArtifact`, captures fixed public inputs through no-follow directory descriptors, materializes the content-addressed bundle, re-verifies it, and exclusively publishes provenance.
 
 The immutable upload object will be:
 
@@ -59,11 +67,11 @@ No credentials, server address, host key, private path, command line, raw log, c
 Transfer only the reviewed transport object and the separately reviewed release ID. Install the checked-in `scripts/secure_web_release.py` only after comparing its hash to the reviewed commit. On the remote filesystem, feed the immutable transport bytes to:
 
 ```text
-python3 secure_web_release.py root-identity <owned-private-root>
-CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py materialize-stage <owned-private-root> <reviewed-release-id> < immutable-transport-object.json
+<reviewed-python-3.11> secure_web_release.py root-identity <owned-private-root>
+CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> <reviewed-python-3.11> secure_web_release.py materialize-stage <owned-private-root> <reviewed-release-id> < immutable-transport-object.json
 ```
 
-The helper accepts only its fixed schema and 16-path allowlist, requires the caller's reviewed release ID, and creates no public path. A collision or partial stage is quarantined in place for manual review; it is never cleaned recursively.
+The helper requires Python 3.11 on the current Hostinger runtime, accepts only its fixed schema and 17-path allowlist, requires the caller's reviewed release ID, and creates no public path. A collision or partial stage is quarantined in place for manual review; it is never cleaned recursively.
 
 Compare the private stage's exact paths, modes, sizes, and hashes to `release/web-artifacts.json`. Serve it on loopback only and inspect it through the authenticated tunnel. Test 390×844 and 320×568, English and es-MX, JavaScript enabled and disabled, Reduce Motion and pause behavior, keyboard/focus, canonical/legal navigation, and zero unexpected console or network activity. Do not create a public staging hostname.
 
@@ -72,7 +80,7 @@ Compare the private stage's exact paths, modes, sizes, and hashes to `release/we
 Before promotion, complete a private-clone rehearsal with the same transport and helper. On the remote filesystem, the reviewed helper entrypoint is:
 
 ```text
-CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py promote-next <owned-deployment-root> <reviewed-release-id> < immutable-transport-object.json
+CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> <reviewed-python-3.11> secure_web_release.py promote-next <owned-deployment-root> <reviewed-release-id> < immutable-transport-object.json
 ```
 
 This command operates only on the filesystem local to the host and promotes exactly one unit. It validates the complete journal on every invocation, reconciles the fixed crash windows, rejects links/special files/unexpected inventory, checks device and ownership, and uses atomic no-replace/exchange operations. The authorized controller must probe the fixed WordPress root after the command returns and before invoking `promote-next` again. On any probe failure, stop and invoke rollback immediately; later units remain staged. The helper never deletes either release.
@@ -80,29 +88,29 @@ This command operates only on the filesystem local to the host and promotes exac
 Manual or rehearsed rollback uses the same reviewed transport bytes:
 
 ```text
-CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py rollback-next <owned-deployment-root> <reviewed-release-id> <expected-reverse-index> < immutable-transport-object.json
+CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> <reviewed-python-3.11> secure_web_release.py rollback-next <owned-deployment-root> <reviewed-release-id> <expected-reverse-index> < immutable-transport-object.json
 ```
 
 Each `rollback-next` invocation reverses exactly one unit and requires the expected reverse index, so a lost response is idempotent and cannot silently reverse the next unit. Re-open and revalidate the reviewed root identity and probe the fixed WordPress root after every reverse unit before invoking the next index. Rollback restores previously present leaves and restores absence for originally absent leaves while preserving the displaced release under the rollback directory. A rollback collision is a hard stop. A live downgrade/upgrade rehearsal requires separate action-time authorization; otherwise record only the verified private rehearsal and leave the live-rehearsal gate pending.
 
 ## Production verification
 
-After each promoted unit, re-open and hash the live leaf, probe the WordPress root, and append only the sanitized journal state. After all nine units, publish the exact Hostinger overlays with the separately reviewed helper:
+After each promoted unit, re-open and hash the live leaf, probe the WordPress root, and append only the sanitized journal state. After all ten units, publish the exact Hostinger overlays with the separately reviewed helper:
 
 ```text
-CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py publish-hosting-overlays <owned-deployment-root>
+CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> <reviewed-python-3.11> secure_web_release.py publish-hosting-overlays <owned-deployment-root>
 ```
 
 The command creates immutable private candidates and atomically hard-links each public name without replacement. It rejects any pre-existing different file, link, altered candidate, or identity mismatch. If the subsequent WordPress/origin checks fail, remove only those five verified public links while retaining their private candidates:
 
 ```text
-CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py rollback-hosting-overlays <owned-deployment-root>
+CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> <reviewed-python-3.11> secure_web_release.py rollback-hosting-overlays <owned-deployment-root>
 ```
 
 Then run the descriptor-side inventory and validate the separately captured browser evidence before purging only exact promoted URLs:
 
 ```text
-CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> python3 secure_web_release.py inventory-live <owned-deployment-root> <reviewed-release-id> < immutable-transport-object.json
+CABOHEALTH_EXPECTED_ROOT_ID=<reviewed-device:inode> <reviewed-python-3.11> secure_web_release.py inventory-live <owned-deployment-root> <reviewed-release-id> < immutable-transport-object.json
 node scripts/verify-production.mjs --measure-browser --confirm-production=cabohealth.org --reviewed-release-id=<reviewed-release-id> --reviewed-artifact-sha256=<reviewed-artifact-sha256> --webdriver-url=http://127.0.0.1:<webdriver-port>/
 node scripts/verify-production.mjs --verify-production-origin --confirm-production=cabohealth.org --reviewed-release-id=<reviewed-release-id> --reviewed-artifact-sha256=<reviewed-artifact-sha256> < noncommitted-sensitive-controls.json
 node scripts/verify-production.mjs --verify-apple-cdn --confirm-production=cabohealth.org --reviewed-release-id=<reviewed-release-id> --reviewed-artifact-sha256=<reviewed-artifact-sha256>

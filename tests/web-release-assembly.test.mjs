@@ -348,8 +348,12 @@ test('server inventory requires exact independently attested hosting overlays', 
 
 test('the real assembler validates the saved age and release-ready compliance without writing in check mode', () => {
   const artifactPath = join(projectRoot, 'release/web-artifacts.json');
+  const productionEvidencePath = join(projectRoot, 'release/production-urls.json');
   const bundleRoot = join(projectRoot, 'release/web-bundles');
   const artifactBefore = existsSync(artifactPath) ? readFileSync(artifactPath) : null;
+  const productionEvidenceBefore = existsSync(productionEvidencePath)
+    ? readFileSync(productionEvidencePath)
+    : null;
   const bundlesBefore = existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null;
   const result = spawnSync(process.execPath, [assemblerPath, '--check'], {
     cwd: projectRoot,
@@ -359,13 +363,24 @@ test('the real assembler validates the saved age and release-ready compliance wi
   assert.equal(result.status, 0, result.stdout || result.stderr);
   assert.match(result.stdout, /Checked web-v1-/u);
   assert.deepEqual(existsSync(artifactPath) ? readFileSync(artifactPath) : null, artifactBefore);
+  assert.deepEqual(
+    existsSync(productionEvidencePath) ? readFileSync(productionEvidencePath) : null,
+    productionEvidenceBefore,
+  );
   assert.deepEqual(existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null, bundlesBefore);
-  assert.equal(existsSync(join(projectRoot, 'release/production-urls.json')), false);
 });
 
-test('the real assembler refuses materialization until independently reviewed deployment readiness is pinned', () => {
+test('the real assembler binds materialization to the independently reviewed deployment-readiness record', async () => {
   const artifactPath = join(projectRoot, 'release/web-artifacts.json');
   const bundleRoot = join(projectRoot, 'release/web-bundles');
+  const readinessBytes = readFileSync(join(projectRoot, 'release/web-deployment-readiness.json'));
+  const { WEB_DEPLOYMENT_READINESS_SHA256 } = await import('../scripts/assemble-web-release.mjs');
+  assert.equal(sha256(readinessBytes), WEB_DEPLOYMENT_READINESS_SHA256);
+  assert.deepEqual(JSON.parse(readinessBytes), {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-web-deployment-readiness-v1',
+    status: 'ready',
+  });
   const artifactBefore = existsSync(artifactPath) ? readFileSync(artifactPath) : null;
   const bundlesBefore = existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null;
   const result = spawnSync(process.execPath, [assemblerPath, '--assemble'], {
@@ -373,9 +388,9 @@ test('the real assembler refuses materialization until independently reviewed de
     encoding: 'utf8',
   });
 
-  assert.equal(result.status, 1, result.stdout || result.stderr);
-  assert.match(result.stderr, /WEB_DEPLOYMENT_GATES_INCOMPLETE/u);
-  assert.deepEqual(existsSync(artifactPath) ? readFileSync(artifactPath) : null, artifactBefore);
+  assert.equal(result.status, 0, result.stdout || result.stderr);
+  assert.match(result.stdout, /Assembled web-v1-8ff48eacb692ff60889fbd7f6bea26174d9a85761c3a2b4d339a3745efff34ef/u);
+  assert.deepEqual(readFileSync(artifactPath), artifactBefore);
   assert.deepEqual(existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null, bundlesBefore);
 });
 

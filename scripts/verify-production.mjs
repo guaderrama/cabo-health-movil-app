@@ -600,6 +600,92 @@ function completedPerformanceRequests(logs, priorRequestIds = new Set()) {
   return [...requests.values()];
 }
 
+function exactBootstrapOrphanLoadingFinishedId(entry) {
+  if (
+    !entry
+    || typeof entry !== 'object'
+    || Array.isArray(entry)
+    || Object.keys(entry).length !== 3
+    || !['level', 'message', 'timestamp'].every((key) => Object.hasOwn(entry, key))
+    || entry.level !== 'INFO'
+    || typeof entry.message !== 'string'
+    || !Number.isFinite(entry.timestamp)
+    || entry.timestamp < 0
+  ) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(entry.message);
+  } catch {
+    return null;
+  }
+  if (
+    !parsed
+    || typeof parsed !== 'object'
+    || Array.isArray(parsed)
+    || Object.keys(parsed).length !== 2
+    || !Object.hasOwn(parsed, 'message')
+    || !Object.hasOwn(parsed, 'webview')
+    || !/^[A-F0-9]{32}$/u.test(parsed.webview)
+    || !parsed.message
+    || typeof parsed.message !== 'object'
+    || Array.isArray(parsed.message)
+    || Object.keys(parsed.message).length !== 2
+    || !Object.hasOwn(parsed.message, 'method')
+    || !Object.hasOwn(parsed.message, 'params')
+    || parsed.message.method !== 'Network.loadingFinished'
+  ) return null;
+  const params = parsed.message.params;
+  if (
+    !params
+    || typeof params !== 'object'
+    || Array.isArray(params)
+    || Object.keys(params).length !== 3
+    || !['encodedDataLength', 'requestId', 'timestamp']
+      .every((key) => Object.hasOwn(params, key))
+    || params.encodedDataLength !== 0
+    || !/^[A-F0-9]{32}$/u.test(params.requestId)
+    || !Number.isFinite(params.timestamp)
+    || params.timestamp < 0
+  ) return null;
+  return params.requestId;
+}
+
+function completedBootstrapPerformanceRequests(logs, priorRequestIds = new Set()) {
+  if (!Array.isArray(logs)) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+  const requestIdsStartedInBatch = new Set();
+  const filtered = [];
+  let orphanRequestId = null;
+  for (const entry of logs) {
+    let parsed;
+    try {
+      parsed = JSON.parse(entry?.message);
+    } catch {
+      parsed = null;
+    }
+    if (parsed?.message?.method === 'Network.requestWillBeSent') {
+      const requestId = parsed?.message?.params?.requestId;
+      if (typeof requestId === 'string') requestIdsStartedInBatch.add(requestId);
+    }
+    const candidateRequestId = exactBootstrapOrphanLoadingFinishedId(entry);
+    if (
+      candidateRequestId !== null
+      && !requestIdsStartedInBatch.has(candidateRequestId)
+      && !priorRequestIds.has(candidateRequestId)
+    ) {
+      if (orphanRequestId !== null) throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+      orphanRequestId = candidateRequestId;
+      continue;
+    }
+    filtered.push(entry);
+  }
+  if (orphanRequestId !== null && requestIdsStartedInBatch.has(orphanRequestId)) {
+    throw new Error('WEBDRIVER_PERFORMANCE_LOG_INVALID');
+  }
+  const completed = completedPerformanceRequests(filtered, priorRequestIds);
+  if (orphanRequestId !== null) priorRequestIds.add(orphanRequestId);
+  return completed;
+}
+
 async function webdriverPerformanceRequests(webdriver, sessionId, priorRequestIds) {
   const logs = [];
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -860,7 +946,7 @@ export async function measureBrowserEvidence({
             cmd: 'Network.enable',
             params: { reportDirectSocketTraffic: true },
           });
-          completedPerformanceRequests(await webdriverCommand(
+          completedBootstrapPerformanceRequests(await webdriverCommand(
             webdriver,
             `/session/${sessionId}/se/log`,
             'POST',
@@ -908,6 +994,7 @@ export async function measureBrowserEvidence({
                 const challenge = arguments[1];
                 const javascriptMode = arguments[2];
                 const requestedLocale = arguments[3];
+                const legalUrls = arguments[4];
                 const miniapp = location.pathname.startsWith('/apps/');
                 const requestedLanguage = requestedLocale === 'es-MX' ? 'es-MX' : 'en';
                 if (miniapp && javascriptMode === 'enabled') {
@@ -943,8 +1030,8 @@ export async function measureBrowserEvidence({
                 const active = document.activeElement;
                 const activeStyle = active && active !== document.body ? getComputedStyle(active) : null;
                 const activeHref = active?.tagName === 'A' ? active.href : null;
-                const navigationHref = typeof activeHref === 'string'
-                  && activeHref.startsWith('https://cabohealth.org/app/') ? activeHref : null;
+                const navigationHref = Array.isArray(legalUrls)
+                  && legalUrls.includes(activeHref) ? activeHref : null;
                 const focusTarget = active?.matches?.('[data-motion-toggle]')
                   ? 'motion-toggle'
                   : (navigationHref ? 'legal-link' : 'other');
@@ -994,7 +1081,7 @@ export async function measureBrowserEvidence({
                   challengeEcho: challenge,
                 };
               })();`,
-                args: [allowedUrls, challenge, javascript, locale],
+                args: [allowedUrls, challenge, javascript, locale, LEGAL_URLS],
               });
               if (measured?.challengeEcho !== challenge) throw new Error('BROWSER_RUNNER_CHALLENGE_INVALID');
               return measured;

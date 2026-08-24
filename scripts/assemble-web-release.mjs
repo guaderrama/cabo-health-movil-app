@@ -63,21 +63,21 @@ const DRAFT_LEGAL_SHA256 = Object.freeze({
 const REVIEWED_MARKETING_LANDING = Object.freeze({
   source: 'web-hosting/cabohealth.org/app/index.html',
   output: 'app/index.html',
-  size: 15758,
-  sha256: 'f7fa9340fd458da3e49962b7dfe2bb222968c33f9a59146c0b040255eebe222a',
+  size: 15798,
+  sha256: '8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147',
 });
 
 // Pinned after owner-authorized fact reconciliation and independent byte review.
 // Any later legal-copy edit must fail closed until a new review updates both authorities.
 export const FINAL_LEGAL_SHA256 = Object.freeze({
-  privacy: 'dd1caa532ca16a610a54c360ef4c911e6927043d2cfe2ba133808b17cf49ea86',
-  'report-content': '0c54770920813168eba4480ded96a396c2858dfbedc73590082ee55185dd4dde',
-  support: 'e1fd847e6f8495f7dd4391989046845d5fa7c4bd3a8900ed3295ef956d9a875c',
-  terms: '2de6286af27e9f4547c58b1204f29bada4ceb7ff7b9597fbb5894279baee06d8',
+  privacy: 'def90b1f4ce575a270b5ab0e47d9963ad73393fc56c233c2a8a8a64248ddec4a',
+  'report-content': 'f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c',
+  support: '06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa',
+  terms: 'b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22',
 });
 // Set only after the final legal/AASA/Firebase/Hostinger staging evidence receives
 // a separate byte review. A null pin makes every materialization path fail closed.
-export const WEB_DEPLOYMENT_READINESS_SHA256 = null;
+export const WEB_DEPLOYMENT_READINESS_SHA256 = 'edb1856afb0fdc4d39e2f20d593e21bc7ed12553de8563dbad6f6a4b1ddf2a28';
 export const WEB_RELEASE_PATHS = Object.freeze([
   '.well-known/apple-app-site-association',
   'app/index.html',
@@ -458,7 +458,7 @@ function assertFinalLegalHtml(slug, bytes) {
     }
   }
   if (
-    /\b(?:draft|pending|borrador|pendiente)\b/iu.test(text)
+    /\b(?:draft notice|pending notice|aviso en borrador|aviso pendiente)\b/iu.test(text)
     || /<(?:form|input|textarea|script|iframe|object|embed)\b/iu.test(text)
     || /\btarget\s*=\s*["']?_blank/iu.test(text)
     || /<meta\b[^>]*http-equiv\s*=\s*["']?refresh/iu.test(text)

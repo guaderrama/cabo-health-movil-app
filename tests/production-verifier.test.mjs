@@ -254,14 +254,20 @@ async function runMutatedOrigin(verifyOrigin, mutate) {
   }
 }
 
-test('normal production check mode is offline and fails closed without sanitized evidence', () => {
-  const result = spawnSync(process.execPath, [verifierPath, '--check'], {
+test('normal production check mode verifies the pinned sanitized evidence without network access', () => {
+  const result = spawnSync(process.execPath, [
+    verifierPath,
+    '--check',
+    '--reviewed-release-id=web-v1-8ff48eacb692ff60889fbd7f6bea26174d9a85761c3a2b4d339a3745efff34ef',
+    '--reviewed-artifact-sha256=b198009b0e54048e0af7858dffedfaca90593ddfce11681fdb28b10768055287',
+    '--reviewed-browser-measurement-sha256=6de601cf854ee6dee867d434c7043939aade5900d2f9842ce0dfc6f91502ad99',
+  ], {
     cwd: projectRoot,
     encoding: 'utf8',
     env: { ...process.env, HTTPS_PROXY: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1' },
   });
-  assert.equal(result.status, 1, result.stdout || result.stderr);
-  assert.match(result.stderr, /PRODUCTION_EVIDENCE_MISSING/u);
+  assert.equal(result.status, 0, result.stdout || result.stderr);
+  assert.match(result.stdout, /Sanitized production evidence verified/u);
 });
 
 test('sanitized production evidence reconciles the exact artifact URL set without raw headers or secrets', async () => {

@@ -10,6 +10,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:http';
@@ -350,6 +351,68 @@ test('descriptor server inventory rejects an extra apps sibling and binds its ex
   }, artifact, authority), /SERVER_INVENTORY/u);
 });
 
+test('descriptor inventory admits only an absent or complete safe protected-overlay pair', async (context) => {
+  const setupLive = () => {
+    const state = setupPromotion('absent');
+    for (let index = 0; index < targets.length; index += 1) {
+      const result = runHelper(state.root, 'promote-next', state.transport, [state.transport.releaseId]);
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+    }
+    const overlays = runHelper(state.root, 'publish-hosting-overlays', state.transport);
+    assert.equal(overlays.status, 0, overlays.stderr || overlays.stdout);
+    return state;
+  };
+
+  await context.test('both protected directories preserve the public 17-file authority', () => {
+    const { root, transport } = setupLive();
+    mkdirSync(join(root, 'public_html/apps/app-review'), { mode: 0o755 });
+    mkdirSync(join(root, 'public_html/apps/client-resources'), { mode: 0o755 });
+    const result = runHelper(root, 'inventory-live', transport, [transport.releaseId]);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const inventory = JSON.parse(result.stdout);
+    assert.equal(inventory.fileCount, 17);
+    assert.deepEqual(inventory.paths, paths);
+  });
+
+  for (const loneName of ['app-review', 'client-resources']) {
+    await context.test(`a lone ${loneName} directory fails closed`, () => {
+      const { root, transport } = setupLive();
+      mkdirSync(join(root, `public_html/apps/${loneName}`), { mode: 0o755 });
+      const result = runHelper(root, 'inventory-live', transport, [transport.releaseId]);
+      assert.equal(result.status, 1, result.stderr || result.stdout);
+    });
+  }
+
+  await context.test('the complete pair plus any third sibling fails closed', () => {
+    const { root, transport } = setupLive();
+    for (const name of ['app-review', 'client-resources', 'unexpected']) {
+      mkdirSync(join(root, `public_html/apps/${name}`), { mode: 0o755 });
+    }
+    const result = runHelper(root, 'inventory-live', transport, [transport.releaseId]);
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+  });
+
+  for (const linkedName of ['app-review', 'client-resources']) {
+    await context.test(`a symlinked ${linkedName} member fails closed`, () => {
+      const { root, transport } = setupLive();
+      const otherName = linkedName === 'app-review' ? 'client-resources' : 'app-review';
+      mkdirSync(join(root, `public_html/apps/${otherName}`), { mode: 0o755 });
+      symlinkSync('shared', join(root, `public_html/apps/${linkedName}`), 'dir');
+      const result = runHelper(root, 'inventory-live', transport, [transport.releaseId]);
+      assert.equal(result.status, 1, result.stderr || result.stdout);
+    });
+  }
+
+  await context.test('an insecure protected directory mode fails closed', () => {
+    const { root, transport } = setupLive();
+    mkdirSync(join(root, 'public_html/apps/app-review'), { mode: 0o755 });
+    mkdirSync(join(root, 'public_html/apps/client-resources'), { mode: 0o755 });
+    chmodSync(join(root, 'public_html/apps/app-review'), 0o775);
+    const result = runHelper(root, 'inventory-live', transport, [transport.releaseId]);
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+  });
+});
+
 test('browser evidence rejects free-standing booleans and stale or cross-release measurements', async () => {
   const { validateBrowserEvidence } = await import('../scripts/verify-production.mjs');
   const artifact = fixtureArtifact();
@@ -383,6 +446,8 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
   let frameTreeCommandCount = 0;
   let networkEnableCommandCount = 0;
   let performanceWaitCount = 0;
+  const bootstrapRequestId = 'A'.repeat(32);
+  const bootstrapWebview = 'B'.repeat(32);
   const addRequest = (session, sessionId, record) => {
     session.requests.push({
       requestId: `${sessionId}-request-${session.nextRequestId++}`,
@@ -466,6 +531,9 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         javascriptEnabled,
         reducedMotion: false,
         activeTarget: null,
+        activeHref: null,
+        navigationCandidateIndex: 0,
+        probedFocusTarget: null,
         pauseActionCount: 0,
         requests: [],
         nextRequestId: 0,
@@ -491,6 +559,9 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         urlCommandCount += 1;
         session.url = body.url;
         session.activeTarget = null;
+        session.activeHref = null;
+        session.navigationCandidateIndex = 0;
+        session.probedFocusTarget = null;
         session.pauseActionCount = 0;
         addDocumentLoad(session, sessionMatch[1], body.url);
       }
@@ -531,9 +602,23 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
               tabActionCount += 1;
               if (driverFault !== 'ignored-focus') {
                 const miniapp = new URL(session.url).pathname.startsWith('/apps/');
-                session.activeTarget = miniapp && session.javascriptEnabled && session.pauseActionCount === 0
-                  ? 'motion-toggle'
-                  : 'legal-link';
+                if (miniapp && session.javascriptEnabled && session.pauseActionCount === 0) {
+                  session.activeTarget = 'motion-toggle';
+                  session.activeHref = null;
+                } else {
+                  const navigationCandidates = [
+                    'https://cabohealth.org/app/',
+                    'https://cabohealth.org/app/privacy/#fragment',
+                    'https://cabohealth.org/app/privacy/lookalike/',
+                    'https://cabohealth.org/app/privacy/',
+                  ];
+                  session.activeTarget = 'link';
+                  session.activeHref = navigationCandidates[Math.min(
+                    session.navigationCandidateIndex,
+                    navigationCandidates.length - 1,
+                  )];
+                  session.navigationCandidateIndex += 1;
+                }
               }
             } else if (action.value === '\uE00D') {
               spaceActionCount += 1;
@@ -544,8 +629,8 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
               ) session.pauseActionCount += 1;
             } else if (action.value === '\uE007') {
               enterActionCount += 1;
-              if (session.activeTarget === 'legal-link' && driverFault !== 'ignored-navigation') {
-                session.url = 'https://cabohealth.org/app/privacy/';
+              if (session.probedFocusTarget === 'legal-link' && driverFault !== 'ignored-navigation') {
+                session.url = session.activeHref;
                 addDocumentLoad(session, sessionMatch[1], session.url, { includeResources: false });
               }
             }
@@ -578,6 +663,20 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
         const attemptsLocaleSelection = body.script.includes('[data-language=')
           && body.script.includes('.click()');
         const ignoresImplicitFavicon = body.script.includes("new URL('/favicon.ico', location.href).href");
+        const legalUrls = body.args?.[4];
+        assert.deepEqual(legalUrls, [
+          'https://cabohealth.org/app/privacy/',
+          'https://cabohealth.org/app/terms/',
+          'https://cabohealth.org/app/support/',
+          'https://cabohealth.org/app/report-content/',
+        ]);
+        assert.equal(body.script.includes('legalUrls.includes(activeHref)'), true);
+        const probedFocusTarget = session.activeTarget === 'motion-toggle'
+          ? 'motion-toggle'
+          : (Array.isArray(legalUrls) && legalUrls.includes(session.activeHref)
+            ? 'legal-link'
+            : 'other');
+        session.probedFocusTarget = probedFocusTarget;
         if (miniapp && session.javascriptEnabled && attemptsLocaleSelection
           && driverFault !== 'ignored-language-selection') {
           session.selectedLanguage = requestedUiLanguage;
@@ -610,9 +709,9 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
             : (session.pauseActionCount % 2 === 1 ? 'paused' : 'playing'),
           motionStatic: !miniapp || reducedMotionBlocksCanvas || !session.javascriptEnabled,
           focusVerified: session.activeTarget !== null,
-          focusTarget: session.activeTarget,
-          navigationHref: session.activeTarget === 'legal-link'
-            ? 'https://cabohealth.org/app/privacy/'
+          focusTarget: probedFocusTarget,
+          navigationHref: probedFocusTarget === 'legal-link'
+            ? session.activeHref
             : null,
           noJsControlsDisabled: !miniapp || session.javascriptEnabled
             || (controlsDisabled && (!clinicGuide || observesClinicControls)),
@@ -630,6 +729,12 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
             ? session.requests.slice(0, 1)
             : session.requests;
           const records = requestLog.map((record) => ({ ...record }));
+          if (
+            driverFault === 'bootstrap-id-reused'
+            && session.url !== null
+            && session.completedObservationCount === 0
+            && records.length > 0
+          ) records[0].requestId = bootstrapRequestId;
           const firstDocumentIndex = records.findIndex(({ type }) => type === 'Document');
           if (driverFault === 'missing-document-request' && firstDocumentIndex >= 0) {
             records.splice(firstDocumentIndex, 1);
@@ -767,6 +872,14 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
             level: 'INFO',
             message: JSON.stringify({ message: { method, params } }),
           });
+          const chromeDriverEvent = (method, params, requestId = bootstrapRequestId) => ({
+            level: 'INFO',
+            message: JSON.stringify({
+              message: { method, params: { ...params, requestId } },
+              webview: bootstrapWebview,
+            }),
+            timestamp: 1,
+          });
           value = [...deferredPerformanceLogs, ...records.flatMap((record, index) => {
             const requestEvent = event('Network.requestWillBeSent', {
               requestId: record.requestId,
@@ -864,6 +977,48 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
             }
             return [requestEvent, responseEvent, finished];
           })];
+          if (session.url === null) {
+            value.unshift(chromeDriverEvent('Network.policyUpdated', {}, undefined));
+            if (driverFault === 'bootstrap-orphan-response') {
+              value.push(chromeDriverEvent('Network.responseReceived', {
+                type: 'Document',
+                frameId: session.mainFrameId,
+                loaderId: `${sessionMatch[1]}-bootstrap-loader`,
+                response: { url: 'data:,', status: 200 },
+              }));
+            } else if (driverFault === 'bootstrap-orphan-loading-failed') {
+              value.push(chromeDriverEvent('Network.loadingFailed', {
+                type: 'Document',
+                errorText: 'bootstrap stopped',
+              }));
+            } else if (driverFault === 'bootstrap-orphan-nonzero') {
+              value.push(chromeDriverEvent('Network.loadingFinished', {
+                encodedDataLength: 1,
+                timestamp: 1,
+              }));
+            } else if (driverFault === 'bootstrap-orphan-duplicate') {
+              value.push(
+                chromeDriverEvent('Network.loadingFinished', {
+                  encodedDataLength: 0,
+                  timestamp: 1,
+                }),
+                chromeDriverEvent('Network.loadingFinished', {
+                  encodedDataLength: 0,
+                  timestamp: 1,
+                }, 'C'.repeat(32)),
+              );
+            } else {
+              value.push(chromeDriverEvent('Network.loadingFinished', {
+                encodedDataLength: 0,
+                timestamp: 1,
+              }));
+            }
+          } else if (driverFault === 'route-orphan-finish') {
+            value.push(chromeDriverEvent('Network.loadingFinished', {
+              encodedDataLength: 0,
+              timestamp: 1,
+            }, 'C'.repeat(32)));
+          }
           if (driverFault === 'websocket-created') {
             value.push(event('Network.webSocketCreated', {
               requestId: `${sessionMatch[1]}-websocket-0`,
@@ -942,7 +1097,7 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       .filter(({ path }) => path.startsWith('/app/'))
       .every(({ bilingualStaticVisible }) => bilingualStaticVisible), true);
     assert.equal(urlCommandCount, 56);
-    assert.equal(tabActionCount, 64);
+    assert.equal(tabActionCount, 232);
     assert.equal(spaceActionCount, 16);
     assert.equal(enterActionCount, 56);
     assert.equal(noPreferenceCommandCount, 8);
@@ -1010,6 +1165,12 @@ test('reviewed browser measurement executes an exact artifact-bound WebDriver ma
       'session-document-loader-reuse',
       'session-main-frame-switch',
       'reused-request-id',
+      'bootstrap-orphan-response',
+      'bootstrap-orphan-loading-failed',
+      'bootstrap-orphan-nonzero',
+      'bootstrap-orphan-duplicate',
+      'bootstrap-id-reused',
+      'route-orphan-finish',
       'resource-before-document',
       'resource-after-navigation',
       'websocket-created',

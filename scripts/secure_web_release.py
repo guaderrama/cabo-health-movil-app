@@ -77,8 +77,8 @@ APP_ID = "DQ8PH2DZ3R.com.cabohealth.app"
 CAPSULE_SIZE = 719595
 CAPSULE_SHA256 = "2c839893cca416fdd471fef037bdfb8fc099960d9855e9d7b47981b13892602b"
 APACHE_SECURITY_SHA256 = "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"
-MARKETING_LANDING_SIZE = 15758
-MARKETING_LANDING_SHA256 = "f7fa9340fd458da3e49962b7dfe2bb222968c33f9a59146c0b040255eebe222a"
+MARKETING_LANDING_SIZE = 15798
+MARKETING_LANDING_SHA256 = "8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147"
 MINIAPP_MIME_OVERLAY = (
     b"Options -Indexes\n"
     b"<FilesMatch \"\\.html$\">\n"
@@ -146,14 +146,14 @@ DRAFT_LEGAL_SHA256 = {
 # Pinned after owner-authorized fact reconciliation and independent byte review.
 # Any later legal-copy edit must fail closed until both authorities are repinned.
 FINAL_LEGAL_SHA256: dict[str, str | None] = {
-    "privacy": "dd1caa532ca16a610a54c360ef4c911e6927043d2cfe2ba133808b17cf49ea86",
-    "report-content": "0c54770920813168eba4480ded96a396c2858dfbedc73590082ee55185dd4dde",
-    "support": "e1fd847e6f8495f7dd4391989046845d5fa7c4bd3a8900ed3295ef956d9a875c",
-    "terms": "2de6286af27e9f4547c58b1204f29bada4ceb7ff7b9597fbb5894279baee06d8",
+    "privacy": "def90b1f4ce575a270b5ab0e47d9963ad73393fc56c233c2a8a8a64248ddec4a",
+    "report-content": "f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c",
+    "support": "06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa",
+    "terms": "b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22",
 }
 # This remains unset until an independently reviewed legal/AASA/Firebase/
 # Hostinger readiness record is pinned in both release authorities.
-WEB_DEPLOYMENT_READINESS_SHA256: str | None = None
+WEB_DEPLOYMENT_READINESS_SHA256: str | None = "edb1856afb0fdc4d39e2f20d593e21bc7ed12553de8563dbad6f6a4b1ddf2a28"
 MINIAPP_FILE_PINS = (
     ("apps/.htaccess", 568, "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"),
     ("apps/clinic-guide/app.js", 3868, "f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7"),
@@ -2199,8 +2199,22 @@ def inventory_live(root_path: str, release_argument: str, raw: bytes) -> dict[st
                 parent_fd = open_directory(parent, public_fd, f"public_html/{parent}", mode=0o755)
                 try:
                     found = tuple(sorted(os.listdir(parent_fd), key=lambda item: item.encode("ascii")))
-                    if found != children:
+                    protected_pair = ("app-review", "client-resources")
+                    allowed = (
+                        children,
+                        tuple(sorted((*children, *protected_pair), key=lambda item: item.encode("ascii"))),
+                    ) if parent == "apps" else (children,)
+                    if found not in allowed:
                         fail(f"SERVER_INVENTORY_PARENT_SET_INVALID: {parent}")
+                    if parent == "apps" and found == allowed[1]:
+                        for protected_name in protected_pair:
+                            protected_fd = open_directory(
+                                protected_name,
+                                parent_fd,
+                                f"public_html/apps/{protected_name}",
+                                mode=0o755,
+                            )
+                            os.close(protected_fd)
                 finally:
                     os.close(parent_fd)
             file_count = 0

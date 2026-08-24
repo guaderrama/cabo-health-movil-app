@@ -41,7 +41,7 @@ const expectedUrls = Object.freeze({
   privacy: 'https://cabohealth.org/app/privacy/',
   terms: 'https://cabohealth.org/app/terms/',
   reportContent: 'https://cabohealth.org/app/report-content/',
-  marketing: 'https://cabohealth.org/',
+  marketing: 'https://cabohealth.org/app/',
   staff: 'https://cabohealth.org/staff/',
 });
 
@@ -132,7 +132,7 @@ const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmeti
 
 const EXACT_REVIEWED_PROSE_SHA256 = Object.freeze({
   'age-rating.md': 'a6f11c4ab2005ec58498931571a2212b3804db2dcfb081d91aa8e40ce07bd023',
-  'app-privacy.md': 'fb3692d04d1473023171eb1b93cd178f4f9e937634766e1866726d20c7f2b285',
+  'app-privacy.md': '0e2981965a5bda91cb886ed68626819c905ad8a05fc4285cc3f0a1a64b933b24',
 });
 
 function read(relativePath) {
@@ -444,7 +444,7 @@ function verifyManifest() {
   if (
     commercial?.complimentary !== true
     || commercial?.existingInPersonClientsOnly !== true
-    || commercial?.maximumActiveClientCodes !== 4
+    || commercial?.maximumActiveClientCodes !== null
     || commercial?.separatelySold !== false
     || commercial?.sale !== false
     || commercial?.price !== null
@@ -452,7 +452,7 @@ function verifyManifest() {
     || commercial?.inAppPurchase !== false
     || commercial?.purchaseCta !== null
     || commercial?.digitalTier !== null
-  ) errors.push('Commercial model must remain complimentary, limited to four existing clients, and contain no digital sale mechanism');
+  ) errors.push('Commercial model must remain complimentary, owner-issued for existing clients without a fixed business-count limit, and contain no digital sale mechanism');
   if (
     scope?.staffAdministration?.visibleSettingsEntry !== true
     || scope?.staffAdministration?.draftOnlyCatalogChanges !== true
@@ -821,7 +821,7 @@ function verifyReviewNotes() {
   const body = notes.slice(markerIndex + marker.length).trim();
   if (countCharacters(body) > 4000) errors.push('Review Notes paste-ready body exceeds 4,000 characters');
   rejectUnapprovedHostedResourceUrls(body, 'Review Notes');
-  const resourceList = body.match(/GUIDELINE 4\.7 — HOSTED RESOURCES\n([\s\S]*?)\n\nThese are the only Universal Link entry points\./u)?.[1]?.trim();
+  const resourceList = body.match(/GUIDELINE 4\.7 — HOSTED RESOURCES\n([\s\S]*?)\n\nOnly these Universal Links enter;/u)?.[1]?.trim();
   const expectedResourceList = [
     ...approvedMiniapps.map((miniapp, index) => `${index + 1}. ${miniapp.title} — public — ${miniapp.url}`),
     `3. ${protectedClientResource.title} — protected existing-client eligibility — ${protectedClientResource.url}`,
@@ -866,22 +866,34 @@ function verifyReviewNotes() {
     [/separate multi-device App Review credential/iu, 'Review Notes missing isolated App Review credential disclosure'],
     [/complimentary.*existing in-person clients/isu, 'Review Notes missing complimentary existing-client eligibility disclosure'],
     [/no price, checkout, in-app purchase, subscription, or paid digital tier/iu, 'Review Notes missing monetization disclosure'],
-    [/maximum of four active production eligibility codes/iu, 'Review Notes missing four-code production limit'],
+    [/each authorized client receives a separate revocable code/iu, 'Review Notes missing individual revocable-code model'],
+    [/no shared master code or fixed four-client business limit/iu, 'Review Notes missing no-master/no-fixed-limit disclosure'],
     [/user-generated content/iu, 'Review Notes missing UGC disclosure'],
     [/native message bridge/iu, 'Review Notes missing native-bridge disclosure'],
     [/drafts cannot publish or change the submitted runtime catalog/iu, 'Review Notes missing draft-only Staff Access disclosure'],
     [/Staff Access is an owner[/]operator surface; reviewer access, if required, is supplied separately in App Store Connect/iu, 'Review Notes must retain the Staff Access review-access disclosure'],
     [/sensitive permission/iu, 'Review Notes missing permission disclosure'],
     [/remains on the introduction until the reviewer taps “Enter CaboHealth”/iu, 'Review Notes missing current manual-entry behavior'],
-    [/Prior technical verification observed Hostinger access-log fields for IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency/iu, 'Review Notes missing observed Hostinger log fields'],
-    [/IP address, browser or user-agent, requested URL, and technical errors/iu, 'Review Notes missing owner-authorized Hostinger log fields'],
-    [/to deliver, secure, and troubleshoot the hosted pages/iu, 'Review Notes missing Hostinger log purpose'],
-    [/visible in hPanel for up to 7 days/iu, 'Review Notes missing owner-authorized hPanel visibility'],
+    [/Prior technical verification observed Hostinger access-log fields: IP address, timestamp, HTTP method, requested resource, device\/user-agent details, country, response bytes, and latency/iu, 'Review Notes missing observed Hostinger log fields'],
+    [/Hostinger logs IP address, browser\/user-agent, requested URL, and technical errors/iu, 'Review Notes missing owner-authorized Hostinger log fields'],
+    [/for page delivery, security, and troubleshooting/iu, 'Review Notes missing Hostinger log purpose'],
+    [/hPanel shows logs up to 7 days/iu, 'Review Notes missing owner-authorized hPanel visibility'],
     [/additional retention and deletion are controlled by Hostinger/iu, 'Review Notes missing owner-authorized retention/deletion disclosure'],
-    [/not used for tracking/iu, 'Review Notes missing non-tracking disclosure'],
+    [/; no tracking\./iu, 'Review Notes missing non-tracking disclosure'],
     [/pseudonymous Firebase UID/iu, 'Review Notes missing pseudonymous Firebase identifier disclosure'],
     [/SecureStore/iu, 'Review Notes missing SecureStore installation disclosure'],
     [/App Check/iu, 'Review Notes missing App Check disclosure'],
+    [/Launch nonces and hosted sessions are short-lived/iu, 'Review Notes missing short-lived launch and hosted-session disclosure'],
+    [/Home > Client Resources > “Delete review access and data”/iu, 'Review Notes missing exact App Review deletion path'],
+    [/Confirm pending\/completed; if pending, reopen it without signing in to receive completion confirmation/iu, 'Review Notes missing deletion status and completion-confirmation review step'],
+    [/Durable deletion revokes access on acceptance; expiry\/admin revocation queues production cleanup/iu, 'Review Notes missing exact deletion lifecycle disclosure'],
+    [/random 256-bit receipt stays in SecureStore/iu, 'Review Notes missing durable deletion receipt disclosure'],
+    [/server keeps only a keyed-HMAC lookup and status timestamps/iu, 'Review Notes missing deletion receipt server-boundary disclosure'],
+    [/expects completion within 30 days/iu, 'Review Notes missing non-guaranteed expected deletion window'],
+    [/retries every five minutes/iu, 'Review Notes missing deletion retry interval'],
+    [/app confirms completion after reopening/iu, 'Review Notes missing in-app deletion completion confirmation'],
+    [/Staff audits are scheduled for deletion 30 days after creation; Firestore TTL deletion is asynchronous/iu, 'Review Notes missing asynchronous audit-deletion disclosure'],
+    [/Cloud Functions rate-limits a transient source IP; it stores no raw IP, only a keyed-HMAC bucket with a 30-minute deadline/iu, 'Review Notes missing transient source-IP rate-limit disclosure'],
     [/durable deletion/iu, 'Review Notes missing durable deletion disclosure'],
     [/30 days/iu, 'Review Notes missing audit retention disclosure'],
   ];
@@ -905,7 +917,10 @@ function verifyPrivacy() {
       'installation',
       'appCheck',
       'backend',
+      'cloudFunctionRequestSecurity',
+      'accessArtifacts',
       'deletion',
+      'deletionReceiptStatus',
       'applicationAudit',
       'reviewSandbox',
       'hostedTechnicalRequestLogs',
@@ -947,9 +962,85 @@ function verifyPrivacy() {
       'clientNamesStored',
       'resourceUrlsReturnedToNative',
     ])
-    && hasExactKeys(privacy.deletion, ['durable', 'mechanism', 'availableAfterGrantRevocationOrExpiry'])
+    && hasExactKeys(privacy.cloudFunctionRequestSecurity, [
+      'rawSourceIpProcessedTransiently',
+      'rawSourceIpStored',
+      'storedRateLimitRepresentation',
+      'purpose',
+      'rateLimitBucketDeletionDeadlineMinutes',
+      'physicalTtlDeletionAsynchronous',
+      'tracking',
+    ])
+    && hasExactKeys(privacy.accessArtifacts, [
+      'redemptionRequestDigestDeadlineMinutes',
+      'launchNonceDeadlineSeconds',
+      'webSessionMaximumMinutes',
+      'brokerReplayDigestDeadlineMinutes',
+      'deletionTombstoneHasTtl',
+      'deletionTombstoneRetention',
+      'containsPlaintextSecrets',
+    ])
+    && hasExactKeys(privacy.deletion, [
+      'durable',
+      'mechanism',
+      'activeUserPath',
+      'responseStatuses',
+      'authorizationRevokedWhenAccepted',
+      'grantExpiryQueuesDeletion',
+      'administratorRevocationQueuesDeletion',
+      'retryWorkerMinutes',
+      'completionTimeGuaranteed',
+    ])
+    && hasExactKeys(privacy.deletionReceiptStatus, [
+      'receiptEntropyBits',
+      'receiptEncoding',
+      'receiptEncodedLength',
+      'nativeStorage',
+      'localStates',
+      'preparedBeforeDeletionRequest',
+      'deleteRequestFields',
+      'productionStatusCallable',
+      'reviewStatusCallable',
+      'statusRequestFields',
+      'statusResponse',
+      'limitedUseAppCheckRequired',
+      'firebaseAuthenticationRequired',
+      'rawReceiptStoredServerSide',
+      'serverLookupRepresentation',
+      'productionCollection',
+      'reviewCollection',
+      'separateRealmPeppers',
+      'statusRecordContainsUid',
+      'statusRecordContainsCode',
+      'statusRecordContainsResourceUrl',
+      'expectedCompletionDays',
+      'expectedCompletionGuaranteed',
+      'retryWorkerMinutes',
+      'pendingHasTtl',
+      'pendingRetention',
+      'completedRecordContainsOnlyStatusTimestamps',
+      'completedRetentionDays',
+      'completedRetentionStartsAt',
+      'completedPhysicalTtlDeletionAsynchronous',
+      'checksOnClientResourcesReopen',
+      'completionConfirmationInApp',
+      'localReceiptClearedAfterCompletedAcknowledgement',
+      'preparedNotFoundClearsReceipt',
+      'preparedNotFoundRestoresAccess',
+      'preparedNotFoundResubmitsSameReceipt',
+      'acceptedNotFoundRestoresAccess',
+    ])
+    && hasExactKeys(privacy.deletionReceiptStatus?.statusResponse, [
+      'schemaVersion',
+      'exactFields',
+      'statuses',
+      'pendingCompletedAtMs',
+      'timestampsAreIntegers',
+    ])
     && hasExactKeys(privacy.applicationAudit, [
-      'retentionDays',
+      'purpose',
+      'deletionDeadlineDays',
+      'physicalTtlDeletionAsynchronous',
       'actorLabel',
       'containsActorUid',
       'containsCodes',
@@ -961,6 +1052,14 @@ function verifyPrivacy() {
       'multiDevice',
       'fixedNonClientSample',
       'productionClientRecordsExposed',
+      'userInitiatedDeletion',
+      'activeUserPath',
+      'responseStatuses',
+      'authorizationRevokedWhenAccepted',
+      'currentIdentityInactivityEligibilityDays',
+      'staleGenerationEligibility',
+      'retryWorkerMinutes',
+      'completionTimeGuaranteed',
       'status',
     ])
     && hasExactKeys(conditionalRecommendation, [
@@ -975,7 +1074,7 @@ function verifyPrivacy() {
     errors.push('App Privacy schemas and hosting purposes must be exact');
   }
   if (
-    privacy.schemaVersion !== 2
+    privacy.schemaVersion !== 4
     || privacy.status !== 'pending-final-linkage-category-review-and-save'
     || privacy.architectureStatus !== 'implemented-locally-pending-external-configuration-and-e2e'
     || privacy.recommendedAppPrivacyAnswer !== 'Yes, we collect data from this app'
@@ -1008,9 +1107,79 @@ function verifyPrivacy() {
     || privacy.appCheck?.required !== true
     || privacy.backend?.codesStoredPlaintext !== false
     || privacy.backend?.clientNamesStored !== false
+    || privacy.cloudFunctionRequestSecurity?.rawSourceIpProcessedTransiently !== true
+    || privacy.cloudFunctionRequestSecurity?.rawSourceIpStored !== false
+    || privacy.cloudFunctionRequestSecurity?.storedRateLimitRepresentation !== 'versioned keyed HMAC lookup only'
+    || !equalJson(privacy.cloudFunctionRequestSecurity?.purpose, ['rate limiting', 'abuse prevention'])
+    || privacy.cloudFunctionRequestSecurity?.rateLimitBucketDeletionDeadlineMinutes !== 30
+    || privacy.cloudFunctionRequestSecurity?.physicalTtlDeletionAsynchronous !== true
+    || privacy.cloudFunctionRequestSecurity?.tracking !== false
+    || privacy.accessArtifacts?.redemptionRequestDigestDeadlineMinutes !== 5
+    || privacy.accessArtifacts?.launchNonceDeadlineSeconds !== 60
+    || privacy.accessArtifacts?.webSessionMaximumMinutes !== 60
+    || privacy.accessArtifacts?.brokerReplayDigestDeadlineMinutes !== 2
+    || privacy.accessArtifacts?.deletionTombstoneHasTtl !== false
+    || privacy.accessArtifacts?.deletionTombstoneRetention !== 'until linked-data and Firebase Auth cleanup completes'
+    || privacy.accessArtifacts?.containsPlaintextSecrets !== false
     || privacy.deletion?.durable !== true
-    || privacy.deletion?.availableAfterGrantRevocationOrExpiry !== true
-    || privacy.applicationAudit?.retentionDays !== 30
+    || privacy.deletion?.mechanism !== 'transactional deletion tombstone plus idempotent retry worker'
+    || privacy.deletion?.activeUserPath !== 'Home > Client Resources > Delete access account and data'
+    || !equalJson(privacy.deletion?.responseStatuses, ['pending', 'completed'])
+    || privacy.deletion?.authorizationRevokedWhenAccepted !== true
+    || privacy.deletion?.grantExpiryQueuesDeletion !== true
+    || privacy.deletion?.administratorRevocationQueuesDeletion !== true
+    || privacy.deletion?.retryWorkerMinutes !== 5
+    || privacy.deletion?.completionTimeGuaranteed !== false
+    || privacy.deletionReceiptStatus?.receiptEntropyBits !== 256
+    || privacy.deletionReceiptStatus?.receiptEncoding !== 'base64url'
+    || privacy.deletionReceiptStatus?.receiptEncodedLength !== 43
+    || privacy.deletionReceiptStatus?.nativeStorage !== 'SecureStore'
+    || !equalJson(privacy.deletionReceiptStatus?.localStates, ['prepared', 'accepted'])
+    || privacy.deletionReceiptStatus?.preparedBeforeDeletionRequest !== true
+    || !equalJson(privacy.deletionReceiptStatus?.deleteRequestFields, ['installationId', 'deletionReceipt'])
+    || privacy.deletionReceiptStatus?.productionStatusCallable !== 'getClientAccountDeletionStatus'
+    || privacy.deletionReceiptStatus?.reviewStatusCallable !== 'getAppReviewAccountDeletionStatus'
+    || !equalJson(privacy.deletionReceiptStatus?.statusRequestFields, ['deletionReceipt'])
+    || privacy.deletionReceiptStatus?.statusResponse?.schemaVersion !== 1
+    || !equalJson(privacy.deletionReceiptStatus?.statusResponse?.exactFields, [
+      'schemaVersion',
+      'status',
+      'requestedAtMs',
+      'expectedCompletionByMs',
+      'completedAtMs',
+    ])
+    || !equalJson(privacy.deletionReceiptStatus?.statusResponse?.statuses, ['pending', 'completed'])
+    || privacy.deletionReceiptStatus?.statusResponse?.pendingCompletedAtMs !== null
+    || privacy.deletionReceiptStatus?.statusResponse?.timestampsAreIntegers !== true
+    || privacy.deletionReceiptStatus?.limitedUseAppCheckRequired !== true
+    || privacy.deletionReceiptStatus?.firebaseAuthenticationRequired !== false
+    || privacy.deletionReceiptStatus?.rawReceiptStoredServerSide !== false
+    || privacy.deletionReceiptStatus?.serverLookupRepresentation !== 'versioned keyed HMAC lookup only'
+    || privacy.deletionReceiptStatus?.productionCollection !== '_private_account_deletion_receipts'
+    || privacy.deletionReceiptStatus?.reviewCollection !== 'review_sandbox_account_deletion_receipts'
+    || privacy.deletionReceiptStatus?.separateRealmPeppers !== true
+    || privacy.deletionReceiptStatus?.statusRecordContainsUid !== false
+    || privacy.deletionReceiptStatus?.statusRecordContainsCode !== false
+    || privacy.deletionReceiptStatus?.statusRecordContainsResourceUrl !== false
+    || privacy.deletionReceiptStatus?.expectedCompletionDays !== 30
+    || privacy.deletionReceiptStatus?.expectedCompletionGuaranteed !== false
+    || privacy.deletionReceiptStatus?.retryWorkerMinutes !== 5
+    || privacy.deletionReceiptStatus?.pendingHasTtl !== false
+    || privacy.deletionReceiptStatus?.pendingRetention !== 'until cleanup completes'
+    || privacy.deletionReceiptStatus?.completedRecordContainsOnlyStatusTimestamps !== true
+    || privacy.deletionReceiptStatus?.completedRetentionDays !== 30
+    || privacy.deletionReceiptStatus?.completedRetentionStartsAt !== 'completedAtMs'
+    || privacy.deletionReceiptStatus?.completedPhysicalTtlDeletionAsynchronous !== true
+    || privacy.deletionReceiptStatus?.checksOnClientResourcesReopen !== true
+    || privacy.deletionReceiptStatus?.completionConfirmationInApp !== true
+    || privacy.deletionReceiptStatus?.localReceiptClearedAfterCompletedAcknowledgement !== true
+    || privacy.deletionReceiptStatus?.preparedNotFoundClearsReceipt !== false
+    || privacy.deletionReceiptStatus?.preparedNotFoundRestoresAccess !== false
+    || privacy.deletionReceiptStatus?.preparedNotFoundResubmitsSameReceipt !== true
+    || privacy.deletionReceiptStatus?.acceptedNotFoundRestoresAccess !== false
+    || privacy.applicationAudit?.purpose !== 'security and operational accountability'
+    || privacy.applicationAudit?.deletionDeadlineDays !== 30
+    || privacy.applicationAudit?.physicalTtlDeletionAsynchronous !== true
     || privacy.applicationAudit?.actorLabel !== 'Staff'
     || privacy.applicationAudit?.containsActorUid !== false
     || privacy.applicationAudit?.containsCodes !== false
@@ -1020,8 +1189,16 @@ function verifyPrivacy() {
     || privacy.reviewSandbox?.multiDevice !== true
     || privacy.reviewSandbox?.fixedNonClientSample !== true
     || privacy.reviewSandbox?.productionClientRecordsExposed !== false
+    || privacy.reviewSandbox?.userInitiatedDeletion !== true
+    || privacy.reviewSandbox?.activeUserPath !== 'Home > Client Resources > Delete review access and data'
+    || !equalJson(privacy.reviewSandbox?.responseStatuses, ['pending', 'completed'])
+    || privacy.reviewSandbox?.authorizationRevokedWhenAccepted !== true
+    || privacy.reviewSandbox?.currentIdentityInactivityEligibilityDays !== 30
+    || privacy.reviewSandbox?.staleGenerationEligibility !== 'immediate'
+    || privacy.reviewSandbox?.retryWorkerMinutes !== 5
+    || privacy.reviewSandbox?.completionTimeGuaranteed !== false
     || privacy.reviewSandbox?.status !== 'pending-activation-and-staging-e2e'
-  ) errors.push('App Privacy client-access architecture must remain pseudonymous, device-bound, App-Check protected, durably deletable, and sanitized');
+  ) errors.push('App Privacy client-access architecture must remain pseudonymous, device-bound, App-Check protected, transiently HMAC rate-limited, durably deletable in both realms, short-lived, and sanitized');
   if (
     logs?.provider !== 'Hostinger'
     || !equalJson(logs.observedFields, [
@@ -1216,6 +1393,12 @@ function verifyScreenshots() {
 }
 
 function verifyHumanChecklists() {
+  const completedOwnerE2eGate = '- [x] Run a controlled production end-to-end check proving verified-email password-only sign-in, App Check, recent authentication, server-side permission enforcement, and no second-factor challenge.';
+  const completedPublicWebGates = [
+    '- [x] Promote and origin-verify the independently reviewed and repinned Privacy, Terms, Support, and Report Content bytes as part of the exact 17-file Hostinger release.',
+    '- [x] Deploy the ordered AASA authority with four launch/API exclusions followed by the three exact allowed roots; verify origin bytes and Apple CDN bytes before Universal Link QA.',
+    '- [x] Verify the public two-miniapp/legal payload remains exact and no WordPress/unrelated files change.',
+  ];
   const required = [
     'testflight-what-to-test.md',
     'accessibility-nutrition-label-evidence.md',
@@ -1235,7 +1418,22 @@ function verifyHumanChecklists() {
   for (const file of required) {
     const source = read(file);
     rejectContradictoryCaboHealthEntityClaims(source, labels[file]);
-    if (/\[[xX]\]/u.test(source)) errors.push(`${file} contains an unsupported completed evidence checkbox`);
+    let unsupportedCompletedEvidence = source;
+    if (file === 'submission-gates.md') {
+      if (!source.includes(completedOwnerE2eGate)) {
+        errors.push('submission-gates.md must retain the exact completed owner Staff Access E2E checkbox');
+      }
+      for (const completedPublicWebGate of completedPublicWebGates) {
+        if (!source.includes(completedPublicWebGate)) {
+          errors.push('submission-gates.md must retain every exact completed public web evidence checkbox');
+        }
+      }
+      unsupportedCompletedEvidence = [completedOwnerE2eGate, ...completedPublicWebGates]
+        .reduce((remaining, completedGate) => remaining.replace(completedGate, ''), source);
+    }
+    if (/\[[xX]\]/u.test(unsupportedCompletedEvidence)) {
+      errors.push(`${file} contains an unsupported completed evidence checkbox`);
+    }
   }
   const accessibility = read('accessibility-nutrition-label-evidence.md');
   requireText(accessibility, /NO ACCESSIBILITY SUPPORT CLAIM IS APPROVED YET/u, 'Accessibility Nutrition Label checklist must remain unapproved');
