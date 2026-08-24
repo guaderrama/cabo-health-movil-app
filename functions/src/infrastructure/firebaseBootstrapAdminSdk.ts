@@ -44,9 +44,9 @@ export async function createFirebaseBootstrapAdminBoundary(
           return Object.freeze({
             customClaims: Object.freeze({ ...(user.customClaims ?? {}) }),
             disabled: user.disabled,
-            factorIds: Object.freeze(
-              (user.multiFactor?.enrolledFactors ?? []).map((factor) => factor.factorId),
-            ),
+            emailVerified: user.emailVerified,
+            factorCount: user.multiFactor?.enrolledFactors.length ?? 0,
+            providerIds: Object.freeze(user.providerData.map((provider) => provider.providerId)),
           });
         } catch (error) {
           if (isRecord(error) && error.code === 'auth/user-not-found') return undefined;

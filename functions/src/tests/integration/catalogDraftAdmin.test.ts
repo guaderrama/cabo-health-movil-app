@@ -151,7 +151,6 @@ test('exposes only successful create/revoke code audit with the one-time suffix'
   const issued = await issuer.issue({
     expiresAtMs: nowMs + 86_400_000,
     resourceIds: [resource.id],
-    slot: 1,
   });
   await clientStore.revokeAccessCode(issued.summary.codeId, nowMs + 1);
 

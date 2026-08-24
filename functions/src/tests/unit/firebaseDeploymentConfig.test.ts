@@ -65,6 +65,32 @@ test('App Review named-database rules and TTL policy are isolated and default-de
   assert.doesNotMatch(JSON.stringify(parsed), /_private_|client_|cabohealth_apps/u);
 });
 
+test('every deployed Function uses the dedicated least-privilege runtime identity', async () => {
+  const source = await readFile('src/index.ts', 'utf8');
+  const expectedServiceAccount =
+    'cabohealth-functions@cabohealth-owner-prod.iam.gserviceaccount.com';
+
+  assert.equal(
+    source.includes(
+      `const FUNCTIONS_SERVICE_ACCOUNT =\n  '${expectedServiceAccount}';`,
+    ),
+    true,
+  );
+  assert.match(extractObject(source, 'const baseCallableOptions = {'), /serviceAccount: FUNCTIONS_SERVICE_ACCOUNT/u);
+  assert.match(extractObject(source, 'export const retryClientAccountDeletions = onSchedule({'), /serviceAccount: FUNCTIONS_SERVICE_ACCOUNT/u);
+  assert.match(extractObject(source, 'export const cleanupAppReviewData = onSchedule({'), /serviceAccount: FUNCTIONS_SERVICE_ACCOUNT/u);
+  assert.match(extractObject(source, 'export const brokerApi = onRequest({'), /serviceAccount: FUNCTIONS_SERVICE_ACCOUNT/u);
+  assert.match(extractObject(source, 'export const appReviewBrokerApi = onRequest({'), /serviceAccount: FUNCTIONS_SERVICE_ACCOUNT/u);
+});
+
+function extractObject(source: string, marker: string): string {
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `missing deployment marker: ${marker}`);
+  const end = source.indexOf('\n}', start);
+  assert.notEqual(end, -1, `unterminated deployment options: ${marker}`);
+  return source.slice(start, end + 2);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

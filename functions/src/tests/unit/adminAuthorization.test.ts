@@ -11,7 +11,8 @@ const validAuth = Object.freeze({
   token: Object.freeze({
     auth_time: Math.floor(nowMs / 1_000) - 60,
     catalogAdmin: true,
-    firebase: Object.freeze({ sign_in_second_factor: 'totp' }),
+    email_verified: true,
+    firebase: Object.freeze({ sign_in_provider: 'password' }),
   }),
   uid: 'owner_uid',
 });
@@ -28,7 +29,10 @@ test('production admin authorization rejects stale auth and every incomplete ser
   }));
 
   const cases = [
+    { auth: undefined, document: validDocument },
+    { auth: { ...validAuth, uid: '' }, document: validDocument },
     { auth: { ...validAuth, token: { ...validAuth.token, auth_time: Math.floor(nowMs / 1_000) - 901 } }, document: validDocument },
+    { auth: { ...validAuth, token: { ...validAuth.token, auth_time: Math.floor(nowMs / 1_000) + 31 } }, document: validDocument },
     { auth: validAuth, document: undefined },
     { auth: validAuth, document: { ...validDocument, active: false } },
     { auth: validAuth, document: { ...validDocument, permissions: ['drafts'] } },
@@ -38,8 +42,23 @@ test('production admin authorization rejects stale auth and every incomplete ser
       auth: {
         ...validAuth,
         token: {
+          auth_time: validAuth.token.auth_time,
+          catalogAdmin: true,
+          firebase: validAuth.token.firebase,
+        },
+      },
+      document: validDocument,
+    },
+    { auth: { ...validAuth, token: { ...validAuth.token, email_verified: false } }, document: validDocument },
+    { auth: { ...validAuth, token: { ...validAuth.token, firebase: undefined } }, document: validDocument },
+    { auth: { ...validAuth, token: { ...validAuth.token, firebase: 'password' } }, document: validDocument },
+    { auth: { ...validAuth, token: { ...validAuth.token, firebase: {} } }, document: validDocument },
+    {
+      auth: {
+        ...validAuth,
+        token: {
           ...validAuth.token,
-          firebase: { sign_in_second_factor: 'phone' },
+          firebase: { sign_in_provider: 'custom' },
         },
       },
       document: validDocument,

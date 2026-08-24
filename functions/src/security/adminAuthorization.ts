@@ -42,10 +42,9 @@ export async function authorizeProductionStaff(
   if (!Number.isSafeInteger(authTimeSeconds)) throw failure();
   const authAgeMs = input.nowMs - (authTimeSeconds as number) * 1_000;
   if (authAgeMs < -MAX_CLOCK_SKEW_MS || authAgeMs > MAX_AUTH_AGE_MS) throw failure();
-  if (
-    !isRecord(auth.token.firebase)
-    || auth.token.firebase.sign_in_second_factor !== 'totp'
-  ) throw failure();
+  if (auth.token.email_verified !== true) throw failure();
+  if (!isRecord(auth.token.firebase)
+    || auth.token.firebase.sign_in_provider !== 'password') throw failure();
 
   const admin = await input.loadAdmin(auth.uid);
   if (

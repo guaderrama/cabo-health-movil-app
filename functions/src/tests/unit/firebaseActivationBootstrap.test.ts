@@ -21,13 +21,15 @@ test('bootstrap plan contains only the fixed owner authority and reviewed client
 
   assert.deepEqual(plan, {
     artifactKind: 'cabohealth-firebase-bootstrap-plan',
-    schemaVersion: 1,
+    schemaVersion: 2,
     environment: 'production',
     projectId: 'cabohealth-owner-prod',
     reviewDatabaseId: 'cabohealth-review-production',
     owner: {
       uid: 'owner_uid_0123456789',
-      requiredFactorId: 'totp',
+      requiredEmailVerified: true,
+      requiredProviderId: 'password',
+      requiredFactorCount: 0,
       customClaims: { catalogAdmin: true },
       adminDocument: {
         path: '_private_admins/owner_uid_0123456789',
@@ -72,7 +74,7 @@ test('dry-run evidence is useful but omits the owner UID and document contents',
   const serialized = JSON.stringify(evidence);
 
   assert.deepEqual(evidence.operations, [
-    'verify-owner-enabled-and-totp',
+    'verify-owner-enabled-verified-password-no-mfa',
     'ensure-production-admin-document',
     'ensure-client-resources-document',
     'ensure-catalogAdmin-claim',
@@ -175,7 +177,7 @@ test('apply requires the reviewed plan hash and exact repeated environment ident
   assert.equal(boundaryLoads, 0);
 });
 
-test('apply verifies an enabled TOTP owner, creates exact documents, and preserves unrelated claims', async () => {
+test('apply verifies an enabled, verified password owner without MFA and preserves unrelated claims', async () => {
   const plan = createFirebaseBootstrapPlan(input);
   const calls: string[] = [];
 
@@ -192,7 +194,9 @@ test('apply verifies an enabled TOTP owner, creates exact documents, and preserv
           return {
             customClaims: { existingClaim: 'preserved' },
             disabled: false,
-            factorIds: ['totp'],
+            emailVerified: true,
+            factorCount: 0,
+            providerIds: ['password'],
           };
         },
         ensureDocumentsExact: async (documents) => {
@@ -222,4 +226,40 @@ test('apply verifies an enabled TOTP owner, creates exact documents, and preserv
   assert.deepEqual(calls, ['boundary', 'owner', 'documents', 'claims']);
   assert.equal(evidence.status, 'applied');
   assert.equal(JSON.stringify(evidence).includes(input.ownerUid), false);
+});
+
+test('apply rejects every incomplete password-only owner before any write', async () => {
+  const plan = createFirebaseBootstrapPlan(input);
+  const readyOwner = {
+    customClaims: {},
+    disabled: false,
+    emailVerified: true,
+    factorCount: 0,
+    providerIds: ['password'],
+  } as const;
+
+  for (const owner of [
+    undefined,
+    { ...readyOwner, disabled: true },
+    { ...readyOwner, emailVerified: false },
+    { ...readyOwner, factorCount: 1 },
+    { ...readyOwner, providerIds: [] },
+  ]) {
+    let writes = 0;
+    await assert.rejects(applyFirebaseBootstrapPlan({
+      apply: true,
+      boundary: async () => ({
+        projectId: input.projectId,
+        loadOwner: async () => owner,
+        ensureDocumentsExact: async () => { writes += 1; },
+        setCustomClaims: async () => { writes += 1; },
+      }),
+      expectedEnvironment: input.environment,
+      expectedProjectId: input.projectId,
+      expectedReviewDatabaseId: input.reviewDatabaseId,
+      plan,
+      reviewedPlanSha256: hashFirebaseBootstrapPlan(plan),
+    }), /firebase_bootstrap_owner_not_ready/u);
+    assert.equal(writes, 0);
+  }
 });

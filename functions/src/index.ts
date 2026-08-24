@@ -13,7 +13,6 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import {
   AccessCodeInputError,
   AccessCodeIssuer,
-  AccessCodeLimitError,
 } from './domain/accessCodeIssuer.js';
 import {
   ClientAccessPublicError,
@@ -70,6 +69,8 @@ import {
 import { authorizeAppCheckSurface } from './security/appCheckAuthorization.js';
 
 const REGION = 'us-central1';
+const FUNCTIONS_SERVICE_ACCOUNT =
+  'cabohealth-functions@cabohealth-owner-prod.iam.gserviceaccount.com';
 const CODE_PEPPER_RING = defineSecret('CLIENT_CODE_PEPPER_RING');
 const INSTALLATION_PEPPER_RING = defineSecret('CLIENT_INSTALLATION_PEPPER_RING');
 const CLIENT_DELETION_RECEIPT_PEPPER_RING = defineSecret('CLIENT_DELETION_RECEIPT_PEPPER_RING');
@@ -98,6 +99,7 @@ const baseCallableOptions = {
   maxInstances: 10,
   memory: '256MiB' as const,
   region: REGION,
+  serviceAccount: FUNCTIONS_SERVICE_ACCOUNT,
   timeoutSeconds: 30,
 };
 
@@ -119,9 +121,6 @@ export const adminCreateClientAccessCode = onCall({
   } catch (error) {
     if (error instanceof AccessCodeInputError) {
       throw new HttpsError('invalid-argument', 'invalid_admin_input');
-    }
-    if (error instanceof AccessCodeLimitError) {
-      throw new HttpsError('failed-precondition', 'active_code_limit');
     }
     throw new HttpsError('internal', 'client_access_operation_failed');
   }
@@ -495,6 +494,7 @@ export const retryClientAccountDeletions = onSchedule({
   memory: '256MiB',
   region: REGION,
   schedule: 'every 5 minutes',
+  serviceAccount: FUNCTIONS_SERVICE_ACCOUNT,
   secrets: [INSTALLATION_PEPPER_RING, CLIENT_DELETION_RECEIPT_PEPPER_RING],
   timeoutSeconds: 120,
 }, async () => {
@@ -507,6 +507,7 @@ export const cleanupAppReviewData = onSchedule({
   memory: '256MiB',
   region: REGION,
   schedule: 'every 5 minutes',
+  serviceAccount: FUNCTIONS_SERVICE_ACCOUNT,
   timeoutSeconds: 120,
 }, async () => {
   await createAppReviewDataRetentionService().runScheduled();
@@ -532,6 +533,7 @@ export const brokerApi = onRequest({
   maxInstances: 10,
   memory: '256MiB',
   region: REGION,
+  serviceAccount: FUNCTIONS_SERVICE_ACCOUNT,
   secrets: [
     BROKER_HMAC_KEY_RING,
     LAUNCH_NONCE_PEPPER_RING,
@@ -588,6 +590,7 @@ export const appReviewBrokerApi = onRequest({
   maxInstances: 5,
   memory: '256MiB',
   region: REGION,
+  serviceAccount: FUNCTIONS_SERVICE_ACCOUNT,
   secrets: [
     APP_REVIEW_BROKER_HMAC_KEY_RING,
     APP_REVIEW_LAUNCH_NONCE_PEPPER_RING,
@@ -919,20 +922,17 @@ function requireAppReviewDatabaseId(): string {
 function parseIssueInput(value: unknown): {
   expiresAtMs: number;
   resourceIds: readonly string[];
-  slot: 1 | 2 | 3 | 4;
 } {
   if (
     !isRecord(value)
-    || !hasExactKeys(value, ['expiresAtMs', 'resourceIds', 'slot'])
+    || !hasExactKeys(value, ['expiresAtMs', 'resourceIds'])
     || typeof value.expiresAtMs !== 'number'
     || !Array.isArray(value.resourceIds)
     || value.resourceIds.some((resourceId) => typeof resourceId !== 'string')
-    || ![1, 2, 3, 4].includes(value.slot as number)
   ) throw new HttpsError('invalid-argument', 'invalid_admin_input');
   return {
     expiresAtMs: value.expiresAtMs,
     resourceIds: value.resourceIds as string[],
-    slot: value.slot as 1 | 2 | 3 | 4,
   };
 }
 

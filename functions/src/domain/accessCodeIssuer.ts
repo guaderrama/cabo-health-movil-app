@@ -6,12 +6,9 @@ import {
 } from '../security/accessCodeGenerator.js';
 import { VersionedHmac } from '../security/versionedHmac.js';
 
-export const MAX_ACTIVE_CLIENT_CODES = 4;
 const MAX_RESOURCE_IDS = 12;
 const MAX_CODE_LIFETIME_MS = 366 * 24 * 60 * 60 * 1_000;
 const RESOURCE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
-
-export type ClientSlot = 1 | 2 | 3 | 4;
 
 export interface AccessCodeCreateRecord {
   readonly codeId: string;
@@ -23,15 +20,11 @@ export interface AccessCodeCreateRecord {
   readonly purpose: 'cabohealth_client';
   readonly resourceIds: readonly string[];
   readonly scope: 'production_client';
-  readonly slot: ClientSlot;
   readonly status: 'active';
 }
 
 export interface AccessCodeStore {
-  createActiveCode(
-    record: AccessCodeCreateRecord,
-    maximumActive: number,
-  ): Promise<'created' | 'collision' | 'invalid_resource' | 'limit'>;
+  createActiveCode(record: AccessCodeCreateRecord): Promise<'created' | 'collision' | 'invalid_resource'>;
 }
 
 export interface IssuedAccessCode {
@@ -43,15 +36,6 @@ export interface IssuedAccessCode {
     readonly resourceIds: readonly string[];
     readonly status: 'active';
   };
-}
-
-export class AccessCodeLimitError extends Error {
-  readonly code = 'active_code_limit';
-
-  constructor() {
-    super('active_code_limit');
-    this.name = 'AccessCodeLimitError';
-  }
 }
 
 export class AccessCodeInputError extends Error {
@@ -84,13 +68,11 @@ export class AccessCodeIssuer {
   async issue(input: {
     readonly expiresAtMs: number;
     readonly resourceIds: readonly string[];
-    readonly slot: ClientSlot;
   }): Promise<Readonly<IssuedAccessCode>> {
     const nowMs = this.#nowMs();
     const resourceIds = [...new Set(input.resourceIds)];
     if (
-      ![1, 2, 3, 4].includes(input.slot)
-      || !Number.isSafeInteger(input.expiresAtMs)
+      !Number.isSafeInteger(input.expiresAtMs)
       || input.expiresAtMs <= nowMs
       || input.expiresAtMs > nowMs + MAX_CODE_LIFETIME_MS
       || resourceIds.length === 0
@@ -115,13 +97,11 @@ export class AccessCodeIssuer {
       purpose: 'cabohealth_client',
       resourceIds: Object.freeze(resourceIds),
       scope: 'production_client',
-      slot: input.slot,
       status: 'active',
     });
 
-    const result = await this.#store.createActiveCode(record, MAX_ACTIVE_CLIENT_CODES);
+    const result = await this.#store.createActiveCode(record);
     if (result === 'invalid_resource') throw new AccessCodeInputError();
-    if (result === 'limit') throw new AccessCodeLimitError();
     if (result === 'collision') throw new Error('access_code_collision');
 
     return Object.freeze({

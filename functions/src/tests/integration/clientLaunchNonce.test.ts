@@ -27,7 +27,7 @@ test('a 60-second launch nonce reveals no target, is stored hashed, and can be c
     randomSource: () => Buffer.alloc(16, 7), store,
   });
   const issued = await issuer.issue({
-    expiresAtMs: nowMs + 86_400_000, resourceIds: [resourceId], slot: 1,
+    expiresAtMs: nowMs + 86_400_000, resourceIds: [resourceId],
   });
   let subjectUid = '';
   const redeemer = new ClientAccessRedeemer({

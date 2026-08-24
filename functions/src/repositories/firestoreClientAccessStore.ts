@@ -32,12 +32,10 @@ import {
 import { type WebSessionStore } from '../domain/webSessionBroker.js';
 import type { HmacDigest } from '../security/versionedHmac.js';
 
-const ACTIVE_CODE_COUNTER_PATH = '_private_admin_counters/active_client_codes';
 const ACCESS_CODE_PREFIX = '_private_access_codes';
 const ACCESS_CODE_LOOKUP_PREFIX = '_private_access_code_lookups';
 const CLIENT_GRANT_PREFIX = '_private_client_grants';
 const CLIENT_RESOURCE_PREFIX = '_private_client_resources';
-const CLIENT_SLOT_PREFIX = '_private_client_slots';
 const RATE_LIMIT_PREFIX = '_private_rate_limits';
 const REDEMPTION_REQUEST_PREFIX = '_private_redemption_requests';
 const AUDIT_EVENT_PREFIX = '_private_audit_events';
@@ -70,18 +68,27 @@ export interface AdminAccessCodeSummary {
   readonly createdAtMs: number;
   readonly displaySuffix: string;
   readonly expiresAtMs: number;
-  readonly slot: 1 | 2 | 3 | 4;
   readonly status: 'active' | 'revoked';
 }
 
-interface StoredAccessCode extends Omit<AccessCodeCreateRecord, 'status'> {
+interface StoredAccessCodeCommon extends Omit<AccessCodeCreateRecord, 'status'> {
   readonly boundInstallationLookupId: string | null;
   readonly redeemedAtMs: number | null;
-  readonly schemaVersion: 1;
   readonly subjectUid: string | null;
   readonly updatedAtMs: number;
   readonly status: 'active' | 'revoked';
 }
+
+type StoredAccessCode = Readonly<
+  | (StoredAccessCodeCommon & {
+    readonly schemaVersion: 1;
+    readonly slot: 1 | 2 | 3 | 4;
+  })
+  | (StoredAccessCodeCommon & {
+    readonly schemaVersion: 2;
+    readonly slot?: never;
+  })
+>;
 
 interface StoredRateLimit {
   readonly blockedUntilMs: number;
@@ -168,10 +175,8 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
 
   createActiveCode(
     record: AccessCodeCreateRecord,
-    maximumActive: number,
-  ): Promise<'created' | 'collision' | 'invalid_resource' | 'limit'> {
+  ): Promise<'created' | 'collision' | 'invalid_resource'> {
     return this.#database.runTransaction(async (transaction) => {
-      parseCounter(await transaction.get(ACTIVE_CODE_COUNTER_PATH));
       const resources = await Promise.all(record.resourceIds.map(async (resourceId) => (
         parseClientResource(await transaction.get(clientResourcePath(resourceId)))
       )));
@@ -180,106 +185,17 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       ))) return 'invalid_resource';
       const lookupPath = `${ACCESS_CODE_LOOKUP_PREFIX}/${record.lookupId}`;
       const codePath = `${ACCESS_CODE_PREFIX}/${record.codeId}`;
-      const slotDocuments = await Promise.all([1, 2, 3, 4].map(async (slot) => ({
-        path: `${CLIENT_SLOT_PREFIX}/${slot}`,
-        slot,
-        value: await transaction.get(`${CLIENT_SLOT_PREFIX}/${slot}`),
-      })));
       const [existingLookup, existingCode] = await Promise.all([
         transaction.get(lookupPath),
         transaction.get(codePath),
       ]);
       if (existingLookup !== undefined || existingCode !== undefined) return 'collision';
 
-      const occupied = await Promise.all(slotDocuments.flatMap(({ path, slot, value }) => {
-        if (value === undefined) return [];
-        const slotDocument = parseSlotDocument(value, slot);
-        if (!slotDocument) throw new Error('invalid_client_slot_record');
-        return [transaction.get(`${ACCESS_CODE_PREFIX}/${slotDocument.codeId}`).then((codeValue) => {
-          const code = parseStoredAccessCode(codeValue);
-          if (!code || code.slot !== slot) throw new Error('invalid_client_slot_record');
-          return Object.freeze({ code, path });
-        })];
-      }));
-      const active = occupied.filter(({ code }) => (
-        code.status === 'active' && code.expiresAtMs > record.createdAtMs
-      ));
-      if (active.some(({ code }) => code.slot === record.slot)) return 'collision';
-      if (active.length >= maximumActive) return 'limit';
-      const activeCodeIds = new Set(active.map(({ code }) => code.codeId));
-      const stale = occupied.filter(({ code }) => !activeCodeIds.has(code.codeId));
-      const staleGrants = await Promise.all(stale.map(async ({ code }) => {
-        const grantPath = code.subjectUid ? `${CLIENT_GRANT_PREFIX}/${code.subjectUid}` : null;
-        const deletionPath = code.subjectUid
-          ? `${ACCOUNT_DELETION_PREFIX}/${code.subjectUid}`
-          : null;
-        const [grant, deletion] = await Promise.all([
-          grantPath ? transaction.get(grantPath) : undefined,
-          deletionPath ? transaction.get(deletionPath) : undefined,
-        ]);
-        return Object.freeze({ code, deletion, deletionPath, grant, grantPath });
-      }));
-
-      for (const { code, deletion, deletionPath, grant, grantPath } of staleGrants) {
-        const parsedGrant = parseStoredClientGrant(grant);
-        const parsedDeletion = parseStoredAccountDeletion(deletion);
-        if (code.subjectUid && (
-          !grantPath
-          || !deletionPath
-          || !parsedGrant
-          || parsedGrant.codeId !== code.codeId
-        )) throw new Error('invalid_client_grant_record');
-        if (deletion !== undefined && (!parsedDeletion
-          || parsedDeletion.subjectUid !== code.subjectUid
-          || parsedDeletion.codeId !== code.codeId
-        )) throw new Error('invalid_account_deletion_record');
-        transaction.set(`${ACCESS_CODE_PREFIX}/${code.codeId}`, Object.freeze({
-          ...code,
-          status: 'revoked',
-          updatedAtMs: record.createdAtMs,
-        }));
-        transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${code.lookupId}`);
-        if (code.slot !== record.slot) {
-          transaction.delete(`${CLIENT_SLOT_PREFIX}/${code.slot}`);
-        }
-        if (code.subjectUid && parsedGrant && grantPath && deletionPath) {
-          transaction.set(grantPath, Object.freeze({
-            ...parsedGrant,
-            status: 'revoked',
-            updatedAtMs: record.createdAtMs,
-          }));
-          if (!parsedDeletion) {
-            transaction.create(deletionPath, Object.freeze({
-              attempts: 0,
-              cleanupCompletedAtMs: null,
-              codeId: code.codeId,
-              createdAtMs: record.createdAtMs,
-              deletionReceiptLookupId: null,
-              installationLookupId: parsedGrant.installationLookupId,
-              lastAttemptAtMs: null,
-              rateLimitLookupIds: parsedGrant.rateLimitLookupIds,
-              schemaVersion: 1,
-              status: 'pending',
-              subjectUid: code.subjectUid,
-              updatedAtMs: record.createdAtMs,
-            } satisfies StoredAccountDeletion));
-            transaction.create(
-              `${AUDIT_EVENT_PREFIX}/delete_request_${subjectAuditId(code.subjectUid)}_${record.createdAtMs}`,
-              sanitizedAudit('client_account_deletion_requested', record.createdAtMs),
-            );
-          }
-        }
-        transaction.create(
-          `${AUDIT_EVENT_PREFIX}/expire_${code.codeId}_${record.createdAtMs}`,
-          sanitizedAudit('access_code_expired', record.createdAtMs, code.codeId),
-        );
-      }
-
       const storedCode: Readonly<StoredAccessCode> = Object.freeze({
         ...record,
         boundInstallationLookupId: null,
         redeemedAtMs: null,
-        schemaVersion: 1,
+        schemaVersion: 2,
         subjectUid: null,
         updatedAtMs: record.createdAtMs,
       });
@@ -289,19 +205,6 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         createdAtMs: record.createdAtMs,
         hashVersion: record.hashVersion,
         schemaVersion: 1,
-      }));
-      // The slot document was read above, so a concurrent writer makes Firestore
-      // retry. `set` is also a single final mutation when replacing an expired
-      // occupant; delete+create on the same path has ambiguous preconditions.
-      transaction.set(`${CLIENT_SLOT_PREFIX}/${record.slot}`, Object.freeze({
-        codeId: record.codeId,
-        schemaVersion: 1,
-        slot: record.slot,
-      }));
-      transaction.set(ACTIVE_CODE_COUNTER_PATH, Object.freeze({
-        activeCount: active.length + 1,
-        schemaVersion: 1,
-        updatedAtMs: record.createdAtMs,
       }));
       const createdEventId = staffAuditEventId('client_code.created', record.codeId, record.createdAtMs);
       transaction.create(
@@ -319,9 +222,7 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
 
   async listAccessCodes(nowMs: number): Promise<readonly Readonly<AdminAccessCodeSummary>[]> {
     if (!isNonnegativeSafeInteger(nowMs)) throw new Error('invalid_reconciliation_time');
-    await this.#database.runTransaction(async (transaction) => {
-      await reconcileExpiredSlots(transaction, nowMs);
-    });
+    await this.reconcileExpiredClientAccess(nowMs);
     const documents = await this.#database.listCollection(ACCESS_CODE_PREFIX);
     const summaries = documents.flatMap(({ value }) => {
       const code = parseStoredAccessCode(value);
@@ -331,18 +232,27 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         createdAtMs: code.createdAtMs,
         displaySuffix: code.displaySuffix,
         expiresAtMs: code.expiresAtMs,
-        slot: code.slot,
         status: code.status,
       })];
     });
-    return Object.freeze(summaries.sort((left, right) => left.slot - right.slot));
+    return Object.freeze(summaries
+      .filter(({ status }) => status === 'active')
+      .sort((left, right) => right.createdAtMs - left.createdAtMs));
   }
 
   async reconcileExpiredClientAccess(nowMs: number): Promise<void> {
     if (!isNonnegativeSafeInteger(nowMs)) throw new Error('invalid_reconciliation_time');
-    await this.#database.runTransaction(async (transaction) => {
-      await reconcileExpiredSlots(transaction, nowMs);
+    const documents = await this.#database.listCollection(ACCESS_CODE_PREFIX);
+    const expiredCodeIds = documents.flatMap(({ value }) => {
+      const code = parseStoredAccessCode(value);
+      if (!code) throw new Error('invalid_access_code_record');
+      return code.status === 'active' && code.expiresAtMs <= nowMs ? [code.codeId] : [];
     });
+    for (const codeId of expiredCodeIds) {
+      await this.#database.runTransaction(async (transaction) => {
+        await expireAccessCode(transaction, codeId, nowMs);
+      });
+    }
   }
 
   revokeAccessCode(
@@ -367,24 +277,21 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       if (deletionValue !== undefined && !deletion) {
         throw new Error('invalid_account_deletion_record');
       }
-      const activeCount = await reconcileExpiredSlots(transaction, nowMs, false);
       if (code?.status === 'revoked' && code.subjectUid && deletion) {
         if (
           deletion.subjectUid !== code.subjectUid
           || deletion.codeId !== code.codeId
         ) throw new Error('invalid_account_deletion_record');
-        writeActiveCodeCounter(transaction, activeCount, nowMs);
         return Object.freeze({
           kind: 'revoked' as const,
           subjectUid: code.subjectUid,
         });
       }
       if (!code || code.status !== 'active') {
-        writeActiveCodeCounter(transaction, activeCount, nowMs);
         return Object.freeze({ kind: 'not_active' as const });
       }
       if (code.expiresAtMs <= nowMs) {
-        writeActiveCodeCounter(transaction, activeCount, nowMs);
+        await expireAccessCode(transaction, code.codeId, nowMs);
         return Object.freeze({ kind: 'not_active' as const });
       }
 
@@ -394,8 +301,6 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         updatedAtMs: nowMs,
       }));
       transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${code.lookupId}`);
-      transaction.delete(`${CLIENT_SLOT_PREFIX}/${code.slot}`);
-      writeActiveCodeCounter(transaction, Math.max(0, activeCount - 1), nowMs);
       if (grantPath && parsedGrant) {
         transaction.set(grantPath, Object.freeze({
           ...parsedGrant,
@@ -478,7 +383,6 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       }
       const session = await readLiveSession(transaction, command, false);
       if (!session) return Object.freeze({ kind: 'invalid' as const });
-      const counter = parseCounter(await transaction.get(ACTIVE_CODE_COUNTER_PATH));
       transaction.create(deletionPath, Object.freeze({
         attempts: 0,
         cleanupCompletedAtMs: null,
@@ -504,12 +408,6 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         updatedAtMs: command.nowMs,
       }));
       transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${session.code.lookupId}`);
-      transaction.delete(`${CLIENT_SLOT_PREFIX}/${session.code.slot}`);
-      transaction.set(ACTIVE_CODE_COUNTER_PATH, Object.freeze({
-        activeCount: Math.max(0, counter - 1),
-        schemaVersion: 1,
-        updatedAtMs: command.nowMs,
-      }));
       transaction.create(
         `${AUDIT_EVENT_PREFIX}/remove_${session.code.codeId}_${command.nowMs}`,
         sanitizedAudit('client_access_removed', command.nowMs, session.code.codeId),
@@ -596,12 +494,6 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         || code.boundInstallationLookupId === null
         || !acceptedInstallations.has(code.boundInstallationLookupId)
       ) return Object.freeze({ kind: 'invalid' as const });
-      const slotPath = `${CLIENT_SLOT_PREFIX}/${code.slot}`;
-      const slotValue = await transaction.get(slotPath);
-      const slot = slotValue === undefined ? null : parseSlotDocument(slotValue, code.slot);
-      if (slotValue !== undefined && !slot) throw new Error('invalid_client_slot_record');
-      const counter = parseCounter(await transaction.get(ACTIVE_CODE_COUNTER_PATH));
-
       transaction.create(deletionPath, Object.freeze({
         attempts: 0,
         cleanupCompletedAtMs: null,
@@ -631,14 +523,6 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         updatedAtMs: command.nowMs,
       }));
       transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${code.lookupId}`);
-      if (slot?.codeId === code.codeId) {
-        transaction.delete(slotPath);
-        transaction.set(ACTIVE_CODE_COUNTER_PATH, Object.freeze({
-          activeCount: Math.max(0, counter - 1),
-          schemaVersion: 1,
-          updatedAtMs: command.nowMs,
-        }));
-      }
       transaction.create(
         `${AUDIT_EVENT_PREFIX}/delete_request_${subjectAuditId(command.subjectUid)}_${command.nowMs}`,
         sanitizedAudit('client_account_deletion_requested', command.nowMs),
@@ -764,17 +648,9 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
           || parsedGrant.status === 'active'
         )
       ) throw new Error('invalid_client_grant_record');
-      const slotPath = parsedCode ? `${CLIENT_SLOT_PREFIX}/${parsedCode.slot}` : null;
-      const slotValue = slotPath ? await transaction.get(slotPath) : undefined;
-      const slot = parsedCode && slotValue !== undefined
-        ? parseSlotDocument(slotValue, parsedCode.slot)
-        : null;
-      if (slotValue !== undefined && !slot) throw new Error('invalid_client_slot_record');
-
       if (parsedCode?.lookupId) {
         transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${parsedCode.lookupId}`);
       }
-      if (slotPath && slot?.codeId === deletion.codeId) transaction.delete(slotPath);
       if (parsedCode) transaction.delete(codePath);
       if (parsedGrant) transaction.delete(grantPath);
       if (receiptPath && receipt?.status === 'pending') {
@@ -1218,132 +1094,74 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
   }
 }
 
-async function reconcileExpiredSlots(
+async function expireAccessCode(
   transaction: DocumentTransaction,
+  codeId: string,
   nowMs: number,
-  updateCounter = true,
-): Promise<number> {
-  parseCounter(await transaction.get(ACTIVE_CODE_COUNTER_PATH));
-  const slotDocuments = await Promise.all([1, 2, 3, 4].map(async (slot) => ({
-    path: `${CLIENT_SLOT_PREFIX}/${slot}`,
-    slot,
-    value: await transaction.get(`${CLIENT_SLOT_PREFIX}/${slot}`),
-  })));
-  const occupied = await Promise.all(slotDocuments.flatMap(({ path, slot, value }) => {
-    if (value === undefined) return [];
-    const slotDocument = parseSlotDocument(value, slot);
-    if (!slotDocument) throw new Error('invalid_client_slot_record');
-    return [transaction.get(`${ACCESS_CODE_PREFIX}/${slotDocument.codeId}`).then((codeValue) => {
-      const code = parseStoredAccessCode(codeValue);
-      if (!code || code.slot !== slot) throw new Error('invalid_client_slot_record');
-      return Object.freeze({ code, path });
-    })];
-  }));
-  const active = occupied.filter(({ code }) => (
-    code.status === 'active' && code.expiresAtMs > nowMs
-  ));
-  const activeIds = new Set(active.map(({ code }) => code.codeId));
-  const stale = occupied.filter(({ code }) => !activeIds.has(code.codeId));
-  const staleGrants = await Promise.all(stale.map(async ({ code }) => {
-    const grantPath = code.subjectUid ? `${CLIENT_GRANT_PREFIX}/${code.subjectUid}` : null;
-    const deletionPath = code.subjectUid ? `${ACCOUNT_DELETION_PREFIX}/${code.subjectUid}` : null;
-    const [grant, deletion] = await Promise.all([
-      grantPath ? transaction.get(grantPath) : undefined,
-      deletionPath ? transaction.get(deletionPath) : undefined,
-    ]);
-    return Object.freeze({ code, deletion, deletionPath, grant, grantPath });
-  }));
+): Promise<boolean> {
+  const codePath = `${ACCESS_CODE_PREFIX}/${codeId}`;
+  const codeValue = await transaction.get(codePath);
+  const code = parseStoredAccessCode(codeValue);
+  if (codeValue !== undefined && !code) throw new Error('invalid_access_code_record');
+  if (!code || code.status !== 'active' || code.expiresAtMs > nowMs) return false;
 
-  for (const { code, deletion, deletionPath, grant, grantPath } of staleGrants) {
-    const parsedGrant = parseStoredClientGrant(grant);
-    const parsedDeletion = parseStoredAccountDeletion(deletion);
-    if (code.subjectUid && (
-      !grantPath
-      || !deletionPath
-      || !parsedGrant
-      || parsedGrant.codeId !== code.codeId
-    )) throw new Error('invalid_client_grant_record');
-    if (deletion !== undefined && (!parsedDeletion
-      || parsedDeletion.subjectUid !== code.subjectUid
-      || parsedDeletion.codeId !== code.codeId
-    )) throw new Error('invalid_account_deletion_record');
-    transaction.set(`${ACCESS_CODE_PREFIX}/${code.codeId}`, Object.freeze({
-      ...code,
+  const grantPath = code.subjectUid ? `${CLIENT_GRANT_PREFIX}/${code.subjectUid}` : null;
+  const deletionPath = code.subjectUid ? `${ACCOUNT_DELETION_PREFIX}/${code.subjectUid}` : null;
+  const [grantValue, deletionValue] = await Promise.all([
+    grantPath ? transaction.get(grantPath) : undefined,
+    deletionPath ? transaction.get(deletionPath) : undefined,
+  ]);
+  const grant = parseStoredClientGrant(grantValue);
+  const deletion = parseStoredAccountDeletion(deletionValue);
+  if (code.subjectUid && (
+    !grantPath
+    || !deletionPath
+    || !grant
+    || grant.codeId !== code.codeId
+  )) throw new Error('invalid_client_grant_record');
+  if (deletionValue !== undefined && (!deletion
+    || deletion.subjectUid !== code.subjectUid
+    || deletion.codeId !== code.codeId
+  )) throw new Error('invalid_account_deletion_record');
+
+  transaction.set(codePath, Object.freeze({
+    ...code,
+    status: 'revoked',
+    updatedAtMs: nowMs,
+  }));
+  transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${code.lookupId}`);
+  if (code.subjectUid && grant && grantPath && deletionPath) {
+    transaction.set(grantPath, Object.freeze({
+      ...grant,
       status: 'revoked',
       updatedAtMs: nowMs,
     }));
-    transaction.delete(`${ACCESS_CODE_LOOKUP_PREFIX}/${code.lookupId}`);
-    transaction.delete(`${CLIENT_SLOT_PREFIX}/${code.slot}`);
-    if (code.subjectUid && parsedGrant && grantPath && deletionPath) {
-      transaction.set(grantPath, Object.freeze({
-        ...parsedGrant,
-        status: 'revoked',
+    if (!deletion) {
+      transaction.create(deletionPath, Object.freeze({
+        attempts: 0,
+        cleanupCompletedAtMs: null,
+        codeId: code.codeId,
+        createdAtMs: nowMs,
+        deletionReceiptLookupId: null,
+        installationLookupId: grant.installationLookupId,
+        lastAttemptAtMs: null,
+        rateLimitLookupIds: grant.rateLimitLookupIds,
+        schemaVersion: 1,
+        status: 'pending',
+        subjectUid: code.subjectUid,
         updatedAtMs: nowMs,
-      }));
-      if (!parsedDeletion) {
-        transaction.create(deletionPath, Object.freeze({
-          attempts: 0,
-          cleanupCompletedAtMs: null,
-          codeId: code.codeId,
-          createdAtMs: nowMs,
-          deletionReceiptLookupId: null,
-          installationLookupId: parsedGrant.installationLookupId,
-          lastAttemptAtMs: null,
-          rateLimitLookupIds: parsedGrant.rateLimitLookupIds,
-          schemaVersion: 1,
-          status: 'pending',
-          subjectUid: code.subjectUid,
-          updatedAtMs: nowMs,
-        } satisfies StoredAccountDeletion));
-        transaction.create(
-          `${AUDIT_EVENT_PREFIX}/delete_request_${subjectAuditId(code.subjectUid)}_${nowMs}`,
-          sanitizedAudit('client_account_deletion_requested', nowMs),
-        );
-      }
+      } satisfies StoredAccountDeletion));
+      transaction.create(
+        `${AUDIT_EVENT_PREFIX}/delete_request_${subjectAuditId(code.subjectUid)}_${nowMs}`,
+        sanitizedAudit('client_account_deletion_requested', nowMs),
+      );
     }
-    transaction.create(
-      `${AUDIT_EVENT_PREFIX}/expire_${code.codeId}_${nowMs}`,
-      sanitizedAudit('access_code_expired', nowMs, code.codeId),
-    );
   }
-  if (updateCounter) writeActiveCodeCounter(transaction, active.length, nowMs);
-  return active.length;
-}
-
-function writeActiveCodeCounter(
-  transaction: DocumentTransaction,
-  activeCount: number,
-  nowMs: number,
-): void {
-  transaction.set(ACTIVE_CODE_COUNTER_PATH, Object.freeze({
-    activeCount,
-    schemaVersion: 1,
-    updatedAtMs: nowMs,
-  }));
-}
-
-function parseCounter(value: unknown): number {
-  if (value === undefined) return 0;
-  if (!isRecord(value) || value.schemaVersion !== 1 || !Number.isSafeInteger(value.activeCount)) {
-    throw new Error('invalid_active_code_counter');
-  }
-  const activeCount = value.activeCount as number;
-  if (activeCount < 0) throw new Error('invalid_active_code_counter');
-  return activeCount;
-}
-
-function parseSlotDocument(
-  value: unknown,
-  expectedSlot: number,
-): Readonly<{ codeId: string; slot: number }> | null {
-  if (
-    !isRecord(value)
-    || value.schemaVersion !== 1
-    || value.slot !== expectedSlot
-    || typeof value.codeId !== 'string'
-    || !/^ac_[A-Za-z0-9_-]{32}$/u.test(value.codeId)
-  ) return null;
-  return Object.freeze({ codeId: value.codeId, slot: expectedSlot });
+  transaction.create(
+    `${AUDIT_EVENT_PREFIX}/expire_${code.codeId}_${nowMs}`,
+    sanitizedAudit('access_code_expired', nowMs, code.codeId),
+  );
+  return true;
 }
 
 function parseRateLimit(value: unknown): Readonly<StoredRateLimit> | null {
@@ -1408,7 +1226,7 @@ function isLookupDocument(value: unknown): value is Readonly<{
 }
 
 function parseStoredAccessCode(value: unknown): Readonly<StoredAccessCode> | null {
-  if (!isRecord(value) || value.schemaVersion !== 1) return null;
+  if (!isRecord(value) || ![1, 2].includes(value.schemaVersion as number)) return null;
   const candidate = value as Partial<StoredAccessCode>;
   if (
     typeof candidate.codeId !== 'string'
@@ -1422,11 +1240,14 @@ function parseStoredAccessCode(value: unknown): Readonly<StoredAccessCode> | nul
     || candidate.resourceIds.some((id) => typeof id !== 'string')
     || !['active', 'revoked'].includes(candidate.status as string)
     || candidate.scope !== 'production_client'
-    || ![1, 2, 3, 4].includes(candidate.slot as number)
     || !(candidate.boundInstallationLookupId === null || typeof candidate.boundInstallationLookupId === 'string')
     || !(candidate.redeemedAtMs === null || isNonnegativeSafeInteger(candidate.redeemedAtMs))
     || !(candidate.subjectUid === null || typeof candidate.subjectUid === 'string')
     || !isNonnegativeSafeInteger(candidate.updatedAtMs)
+  ) return null;
+  if (
+    (candidate.schemaVersion === 1 && ![1, 2, 3, 4].includes(candidate.slot as number))
+    || (candidate.schemaVersion === 2 && Object.hasOwn(candidate, 'slot'))
   ) return null;
   return candidate as StoredAccessCode;
 }

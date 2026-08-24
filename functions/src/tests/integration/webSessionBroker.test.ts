@@ -28,7 +28,7 @@ test('broker exchanges one launch nonce for a hashed one-hour web session with l
     randomSource: () => Buffer.alloc(16, 41), store,
   });
   const issued = await issuer.issue({
-    expiresAtMs: nowMs + 2 * 60 * 60 * 1_000, resourceIds: [resourceId], slot: 1,
+    expiresAtMs: nowMs + 2 * 60 * 60 * 1_000, resourceIds: [resourceId],
   });
   let subjectUid = '';
   await new ClientAccessRedeemer({
@@ -112,7 +112,7 @@ test('a live web session fails closed as soon as its production code is revoked'
   const issued = await new AccessCodeIssuer({
     codeHasher: hasher('code'), nowMs: () => nowMs,
     randomSource: () => Buffer.alloc(16, 51), store,
-  }).issue({ expiresAtMs: nowMs + 7_200_000, resourceIds: [resourceId], slot: 1 });
+  }).issue({ expiresAtMs: nowMs + 7_200_000, resourceIds: [resourceId] });
   let subjectUid = '';
   await new ClientAccessRedeemer({
     codeHasher: hasher('code'), installationHasher: hasher('installation'),

@@ -7,7 +7,9 @@ interface FirebaseBootstrapAuthPort {
   getUser(uid: string): Promise<Readonly<{
     customClaims: Readonly<Record<string, unknown>>;
     disabled: boolean;
-    factorIds: readonly string[];
+    emailVerified: boolean;
+    factorCount: number;
+    providerIds: readonly string[];
   }> | undefined>;
   setCustomClaims(uid: string, claims: Readonly<Record<string, unknown>>): Promise<void>;
 }
@@ -30,14 +32,18 @@ export class AdminFirebaseBootstrapBoundary implements FirebaseBootstrapAdminBou
   async loadOwner(uid: string): Promise<Readonly<{
     customClaims: Readonly<Record<string, unknown>>;
     disabled: boolean;
-    factorIds: readonly string[];
+    emailVerified: boolean;
+    factorCount: number;
+    providerIds: readonly string[];
   }> | undefined> {
     const owner = await this.#auth.getUser(uid);
     if (!owner) return undefined;
     return Object.freeze({
       customClaims: Object.freeze({ ...owner.customClaims }),
       disabled: owner.disabled,
-      factorIds: Object.freeze([...owner.factorIds]),
+      emailVerified: owner.emailVerified,
+      factorCount: owner.factorCount,
+      providerIds: Object.freeze([...owner.providerIds]),
     });
   }
 

@@ -20,7 +20,9 @@ test('Admin boundary maps the existing Auth owner and creates both fixed documen
       getUser: async () => ({
         customClaims: { existingClaim: 'preserved' },
         disabled: false,
-        factorIds: ['totp'],
+        emailVerified: true,
+        factorCount: 0,
+        providerIds: ['password'],
       }),
       setCustomClaims: async (uid, claims) => {
         claimWrites.push({ uid, claims });
@@ -33,7 +35,9 @@ test('Admin boundary maps the existing Auth owner and creates both fixed documen
   assert.deepEqual(await boundary.loadOwner(plan.owner.uid), {
     customClaims: { existingClaim: 'preserved' },
     disabled: false,
-    factorIds: ['totp'],
+    emailVerified: true,
+    factorCount: 0,
+    providerIds: ['password'],
   });
   await boundary.ensureDocumentsExact([
     plan.owner.adminDocument,

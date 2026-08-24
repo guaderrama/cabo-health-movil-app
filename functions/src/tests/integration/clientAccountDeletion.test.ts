@@ -379,7 +379,7 @@ test('natural expiry durably queues and completes cleanup for a redeemed client 
   assert.deepEqual(await harness.database.listCollection('_private_account_deletions'), []);
 });
 
-test('replacing an expired redeemed slot cannot bypass durable identity cleanup', async () => {
+test('issuing another code after expiry cannot bypass durable identity cleanup', async () => {
   const harness = await createRedeemedHarness(nowMs + 1_000);
 
   await new AccessCodeIssuer({
@@ -390,8 +390,8 @@ test('replacing an expired redeemed slot cannot bypass durable identity cleanup'
   }).issue({
     expiresAtMs: nowMs + 30 * 24 * 60 * 60 * 1_000,
     resourceIds: [resourceId],
-    slot: 1,
   });
+  await harness.store.reconcileExpiredClientAccess(nowMs + 2_000);
 
   const queued = await harness.database.listCollection('_private_account_deletions');
   assert.equal(queued.length, 1);
@@ -406,7 +406,7 @@ test('natural expiry of an unredeemed code creates no account-deletion job', asy
     nowMs: () => nowMs,
     randomSource: () => Buffer.alloc(16, 3),
     store,
-  }).issue({ expiresAtMs: nowMs + 1_000, resourceIds: [resourceId], slot: 1 });
+  }).issue({ expiresAtMs: nowMs + 1_000, resourceIds: [resourceId] });
 
   await store.reconcileExpiredClientAccess(nowMs + 2_000);
 
@@ -624,7 +624,7 @@ test('scheduled maintenance completes an existing deletion before reporting malf
     nowMs: () => nowMs,
     randomSource: () => Buffer.alloc(16, 2),
     store: harness.store,
-  }).issue({ expiresAtMs: nowMs + 1_000, resourceIds: [resourceId], slot: 1 });
+  }).issue({ expiresAtMs: nowMs + 1_000, resourceIds: [resourceId] });
   let expiringSubject = '';
   await new ClientAccessRedeemer({
     codeHasher: hasher('code'),
@@ -695,7 +695,7 @@ async function createRedeemedHarness(expiresAtMs: number) {
     nowMs: () => nowMs,
     randomSource: () => Buffer.alloc(16, 1),
     store,
-  }).issue({ expiresAtMs, resourceIds: [resourceId], slot: 1 });
+  }).issue({ expiresAtMs, resourceIds: [resourceId] });
   let subjectUid = '';
   const redeemer = new ClientAccessRedeemer({
     codeHasher: hasher('code'),

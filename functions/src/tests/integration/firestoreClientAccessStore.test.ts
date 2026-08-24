@@ -39,7 +39,6 @@ test('the first successful redemption binds a code to one installation and misma
   const issued = await issuer.issue({
     expiresAtMs: nowMs + 30 * 24 * 60 * 60 * 1_000,
     resourceIds: [resource.id],
-    slot: 1,
   });
   const redeemer = new ClientAccessRedeemer({
     codeHasher: hasher('code'),
@@ -75,7 +74,6 @@ test('code creation fails closed when a requested client resource is not in the 
   await assert.rejects(issuer.issue({
     expiresAtMs: nowMs + 86_400_000,
     resourceIds: ['not-reviewed-resource'],
-    slot: 1,
   }), (error: unknown) => error instanceof AccessCodeInputError);
   assert.equal(database.serializedState().includes('_private_access_codes/'), false);
 });
@@ -94,7 +92,6 @@ test('five malformed attempts lock only their hashed source-and-installation buc
   const issued = await issuer.issue({
     expiresAtMs: nowMs + 30 * 24 * 60 * 60 * 1_000,
     resourceIds: [resource.id],
-    slot: 1,
   });
   const redeemer = new ClientAccessRedeemer({
     codeHasher: hasher('code'),
@@ -128,7 +125,7 @@ test('five malformed attempts lock only their hashed source-and-installation buc
   );
 });
 
-test('admin list exposes only slot and suffix, and revoking frees that production slot', async () => {
+test('admin list exposes only active code summaries and revocation removes one chosen access', async () => {
   const database = new InMemoryDocumentDatabase({
     [clientResourcePath(resource.id)]: resource,
   });
@@ -143,7 +140,6 @@ test('admin list exposes only slot and suffix, and revoking frees that productio
   const issued = await issuer.issue({
     expiresAtMs: nowMs + 30 * 24 * 60 * 60 * 1_000,
     resourceIds: [resource.id],
-    slot: 1,
   });
 
   assert.deepEqual(await store.listAccessCodes(nowMs), [{
@@ -151,7 +147,6 @@ test('admin list exposes only slot and suffix, and revoking frees that productio
     createdAtMs: nowMs,
     displaySuffix: issued.summary.displaySuffix,
     expiresAtMs: issued.summary.expiresAtMs,
-    slot: 1,
     status: 'active',
   }]);
   const listed = JSON.stringify(await store.listAccessCodes(nowMs));
@@ -165,9 +160,91 @@ test('admin list exposes only slot and suffix, and revoking frees that productio
   const replacement = await issuer.issue({
     expiresAtMs: nowMs + 60 * 24 * 60 * 60 * 1_000,
     resourceIds: [resource.id],
-    slot: 1,
   });
   assert.notEqual(replacement.summary.codeId, issued.summary.codeId);
+});
+
+test('slotless access codes use schema v2 while legacy schema v1 remains readable only with a valid slot', async () => {
+  const legacyCodeId = `ac_${'a'.repeat(32)}`;
+  const legacyCode = {
+    boundInstallationLookupId: null,
+    codeId: legacyCodeId,
+    createdAtMs: nowMs - 1,
+    displaySuffix: 'AAAA',
+    expiresAtMs: nowMs + 86_400_000,
+    hashVersion: '2026-08',
+    lookupId: 'legacy-lookup',
+    purpose: 'cabohealth_client',
+    redeemedAtMs: null,
+    resourceIds: [resource.id],
+    schemaVersion: 1,
+    scope: 'production_client',
+    slot: 1,
+    status: 'active',
+    subjectUid: null,
+    updatedAtMs: nowMs - 1,
+  };
+  const database = new InMemoryDocumentDatabase({
+    [clientResourcePath(resource.id)]: resource,
+    [`_private_access_codes/${legacyCodeId}`]: legacyCode,
+  });
+  const store = new FirestoreClientAccessStore(database);
+  const issuer = new AccessCodeIssuer({
+    codeHasher: hasher('code'),
+    nowMs: () => nowMs,
+    randomSource: () => Buffer.alloc(16, 99),
+    store,
+  });
+
+  const issued = await issuer.issue({
+    expiresAtMs: nowMs + 86_400_000,
+    resourceIds: [resource.id],
+  });
+  const state = JSON.parse(database.serializedState()) as Record<string, Record<string, unknown>>;
+  assert.equal(state[`_private_access_codes/${issued.summary.codeId}`]?.schemaVersion, 2);
+  assert.equal('slot' in state[`_private_access_codes/${issued.summary.codeId}`]!, false);
+  assert.deepEqual(
+    (await store.listAccessCodes(nowMs)).map(({ codeId }) => codeId).sort(),
+    [issued.summary.codeId, legacyCodeId].sort(),
+  );
+});
+
+test('access-code schema versions reject ambiguous slot shapes', async (t) => {
+  const baseCode = {
+    boundInstallationLookupId: null,
+    codeId: `ac_${'b'.repeat(32)}`,
+    createdAtMs: nowMs,
+    displaySuffix: 'BBBB',
+    expiresAtMs: nowMs + 86_400_000,
+    hashVersion: '2026-08',
+    lookupId: 'ambiguous-lookup',
+    purpose: 'cabohealth_client',
+    redeemedAtMs: null,
+    resourceIds: [resource.id],
+    scope: 'production_client',
+    status: 'active',
+    subjectUid: null,
+    updatedAtMs: nowMs,
+  };
+  for (const [name, malformed] of [
+    ['schema v1 without a slot', { ...baseCode, schemaVersion: 1 }],
+    ['schema v2 with a legacy slot', { ...baseCode, schemaVersion: 2, slot: 1 }],
+    ['schema v2 with an explicit undefined slot', {
+      ...baseCode,
+      schemaVersion: 2,
+      slot: undefined,
+    }],
+  ] as const) {
+    await t.test(name, async () => {
+      const database = new InMemoryDocumentDatabase({
+        [`_private_access_codes/${baseCode.codeId}`]: malformed,
+      });
+      await assert.rejects(
+        new FirestoreClientAccessStore(database).listAccessCodes(nowMs),
+        /invalid_access_code_record/u,
+      );
+    });
+  }
 });
 
 test('an IP-only bucket stops callers that rotate installation identifiers', async () => {
@@ -197,7 +274,7 @@ test('an IP-only bucket stops callers that rotate installation identifiers', asy
   );
 });
 
-test('expired codes are reconciled transactionally so they cannot lock all four slots', async () => {
+test('more than four active codes are supported and expired codes are reconciled independently', async () => {
   const database = new InMemoryDocumentDatabase(
     { [clientResourcePath(resource.id)]: resource },
     { rejectDuplicateWrites: true },
@@ -211,11 +288,10 @@ test('expired codes are reconciled transactionally so they cannot lock all four 
     randomSource: () => Buffer.alloc(16, sequence++),
     store,
   });
-  for (const slot of [1, 2, 3, 4] as const) {
+  for (let index = 0; index < 12; index += 1) {
     await issuer.issue({
       expiresAtMs: clock + 1_000,
       resourceIds: [resource.id],
-      slot,
     });
   }
 
@@ -223,16 +299,12 @@ test('expired codes are reconciled transactionally so they cannot lock all four 
   const replacement = await issuer.issue({
     expiresAtMs: clock + 86_400_000,
     resourceIds: [resource.id],
-    slot: 1,
   });
-  const active = (await store.listAccessCodes(clock)).filter(({ status }) => status === 'active');
-  assert.deepEqual(active.map(({ codeId, slot }) => ({ codeId, slot })), [{
-    codeId: replacement.summary.codeId,
-    slot: 1,
-  }]);
+  const active = await store.listAccessCodes(clock);
+  assert.deepEqual(active.map(({ codeId }) => codeId), [replacement.summary.codeId]);
 });
 
-test('admin list itself reconciles expired slots and counter before another create', async () => {
+test('admin list reconciles expired codes and hides revoked history from active access', async () => {
   const database = new InMemoryDocumentDatabase({ [clientResourcePath(resource.id)]: resource });
   const store = new FirestoreClientAccessStore(database);
   let sequence = 60;
@@ -241,23 +313,16 @@ test('admin list itself reconciles expired slots and counter before another crea
     randomSource: () => Buffer.alloc(16, sequence++), store,
   });
   const issued = await issuer.issue({
-    expiresAtMs: nowMs + 1_000, resourceIds: [resource.id], slot: 1,
+    expiresAtMs: nowMs + 1_000, resourceIds: [resource.id],
   });
 
-  assert.deepEqual(await store.listAccessCodes(nowMs + 2_000), [{
-    codeId: issued.summary.codeId,
-    createdAtMs: nowMs,
-    displaySuffix: issued.summary.displaySuffix,
-    expiresAtMs: issued.summary.expiresAtMs,
-    slot: 1,
-    status: 'revoked',
-  }]);
+  assert.deepEqual(await store.listAccessCodes(nowMs + 2_000), []);
   const state = JSON.parse(database.serializedState()) as Record<string, Record<string, unknown>>;
-  assert.equal(state['_private_admin_counters/active_client_codes']?.activeCount, 0);
-  assert.equal(state['_private_client_slots/1'], undefined);
+  assert.equal(state[`_private_access_codes/${issued.summary.codeId}`]?.status, 'revoked');
+  assert.equal(Object.keys(state).some((path) => path.startsWith('_private_client_slots/')), false);
 });
 
-test('admin revoke reconciles every other expired slot in the same transaction', async () => {
+test('scheduled reconciliation expires every selected client code without a fixed slot ledger', async () => {
   const database = new InMemoryDocumentDatabase(
     { [clientResourcePath(resource.id)]: resource },
     { rejectDuplicateWrites: true },
@@ -269,19 +334,22 @@ test('admin revoke reconciles every other expired slot in the same transaction',
     randomSource: () => Buffer.alloc(16, sequence++), store,
   });
   const retained = await issuer.issue({
-    expiresAtMs: nowMs + 86_400_000, resourceIds: [resource.id], slot: 1,
+    expiresAtMs: nowMs + 86_400_000, resourceIds: [resource.id],
   });
-  for (const slot of [2, 3, 4] as const) {
+  for (let index = 0; index < 6; index += 1) {
     await issuer.issue({
-      expiresAtMs: nowMs + 1_000, resourceIds: [resource.id], slot,
+      expiresAtMs: nowMs + 1_000, resourceIds: [resource.id],
     });
   }
 
+  await store.reconcileExpiredClientAccess(nowMs + 2_000);
   assert.deepEqual(await store.revokeAccessCode(retained.summary.codeId, nowMs + 2_000), {
     kind: 'revoked', subjectUid: null,
   });
   const state = JSON.parse(database.serializedState()) as Record<string, Record<string, unknown>>;
-  assert.equal(state['_private_admin_counters/active_client_codes']?.activeCount, 0);
+  assert.equal(Object.entries(state).filter(([path, value]) => (
+    path.startsWith('_private_access_codes/') && value.status === 'active'
+  )).length, 0);
   assert.equal(Object.keys(state).some((path) => path.startsWith('_private_client_slots/')), false);
 });
 
@@ -294,7 +362,7 @@ test('retrying the same request id reuses one subject without repeating redempti
     randomSource: () => Buffer.alloc(16, 31), store,
   });
   const issued = await issuer.issue({
-    expiresAtMs: clock + 86_400_000, resourceIds: [resource.id], slot: 1,
+    expiresAtMs: clock + 86_400_000, resourceIds: [resource.id],
   });
   const subjects: string[] = [];
   const redeemer = new ClientAccessRedeemer({

@@ -27,13 +27,15 @@ export type FirebaseActivationEnvironment = 'production' | 'staging';
 
 export interface FirebaseBootstrapPlan {
   readonly artifactKind: 'cabohealth-firebase-bootstrap-plan';
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly environment: FirebaseActivationEnvironment;
   readonly projectId: string;
   readonly reviewDatabaseId: string;
   readonly owner: Readonly<{
     uid: string;
-    requiredFactorId: 'totp';
+    requiredEmailVerified: true;
+    requiredProviderId: 'password';
+    requiredFactorCount: 0;
     customClaims: Readonly<{ catalogAdmin: true }>;
     adminDocument: Readonly<{
       path: string;
@@ -59,7 +61,9 @@ export interface FirebaseBootstrapAdminBoundary {
   loadOwner(uid: string): Promise<Readonly<{
     customClaims: Readonly<Record<string, unknown>>;
     disabled: boolean;
-    factorIds: readonly string[];
+    emailVerified: boolean;
+    factorCount: number;
+    providerIds: readonly string[];
   }> | undefined>;
   ensureDocumentsExact(documents: readonly FirebaseBootstrapDocument[]): Promise<void>;
   setCustomClaims(uid: string, claims: Readonly<Record<string, unknown>>): Promise<void>;
@@ -74,13 +78,15 @@ export function createFirebaseBootstrapPlan(input: Readonly<{
   assertBootstrapIdentity(input);
   return Object.freeze({
     artifactKind: 'cabohealth-firebase-bootstrap-plan' as const,
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     environment: input.environment,
     projectId: input.projectId,
     reviewDatabaseId: input.reviewDatabaseId,
     owner: Object.freeze({
       uid: input.ownerUid,
-      requiredFactorId: 'totp' as const,
+      requiredEmailVerified: true as const,
+      requiredProviderId: 'password' as const,
+      requiredFactorCount: 0 as const,
       customClaims: Object.freeze({ catalogAdmin: true as const }),
       adminDocument: Object.freeze({
         path: `_private_admins/${input.ownerUid}`,
@@ -152,7 +158,9 @@ export async function applyFirebaseBootstrapPlan(input: Readonly<{
   if (
     !owner
     || owner.disabled
-    || !owner.factorIds.includes(plan.owner.requiredFactorId)
+    || owner.emailVerified !== plan.owner.requiredEmailVerified
+    || !owner.providerIds.includes(plan.owner.requiredProviderId)
+    || owner.factorCount !== plan.owner.requiredFactorCount
     || !isRecord(owner.customClaims)
   ) throw new Error('firebase_bootstrap_owner_not_ready');
 
@@ -193,7 +201,7 @@ export function sanitizeFirebaseBootstrapEvidence(
     planSha256: hashFirebaseBootstrapPlan(plan),
     containsSensitiveValues: false as const,
     operations: Object.freeze([
-      'verify-owner-enabled-and-totp',
+      'verify-owner-enabled-verified-password-no-mfa',
       'ensure-production-admin-document',
       'ensure-client-resources-document',
       'ensure-catalogAdmin-claim',

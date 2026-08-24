@@ -50,19 +50,18 @@ test('refresh revalidates the live grant and remove revokes that code and sessio
   );
 });
 
-async function createRedeemedHarness(slot: 1 | 2 | 3 | 4, installationId: string) {
+async function createRedeemedHarness(seed: 1 | 2 | 3 | 4, installationId: string) {
   const database = new InMemoryDocumentDatabase({ [clientResourcePath(resourceId)]: resource });
   const store = new FirestoreClientAccessStore(database);
   const issuer = new AccessCodeIssuer({
     codeHasher: hasher('code'),
     nowMs: () => nowMs,
-    randomSource: () => Buffer.alloc(16, slot),
+    randomSource: () => Buffer.alloc(16, seed),
     store,
   });
   const issued = await issuer.issue({
     expiresAtMs: nowMs + 30 * 24 * 60 * 60 * 1_000,
     resourceIds: [resourceId],
-    slot,
   });
   let subjectUid = '';
   const redeemer = new ClientAccessRedeemer({
