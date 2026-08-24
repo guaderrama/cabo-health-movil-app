@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomBytes } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   closeSync,
   constants as FS_CONSTANTS,
@@ -49,6 +49,7 @@ const INVOKER_ROLES = new Set([
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PRIVATE_DIRECTORY = resolve(PROJECT_ROOT, 'release/private');
 const PRIVATE_PLAN_PATH = resolve(PRIVATE_DIRECTORY, 'access-code-writer-gate-plan.v1.json');
+export const WRITER_GATE_LOCK_FILENAME = 'access-code-writer-gate.lock';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/u;
 const ALLOWED_POLICY_KEYS = new Set(['auditConfigs', 'bindings', 'etag', 'version']);
@@ -65,11 +66,15 @@ const SCHEDULER_VOLATILE_FIELDS = new Set([
 ]);
 const UNSAFE_ENVIRONMENT_NAMES = Object.freeze([
   'CLOUDSDK_AUTH_ACCESS_TOKEN',
+  'CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE',
+  'CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT',
+  'CLOUDSDK_CONFIG',
   'CLOUDSDK_CORE_ACCOUNT',
   'CLOUDSDK_CORE_PROJECT',
   'FIREBASE_CONFIG',
   'GCLOUD_PROJECT',
   'GOOGLE_CLOUD_PROJECT',
+  'GOOGLE_APPLICATION_CREDENTIALS',
 ]);
 
 export const WRITER_GATE_SCOPE = Object.freeze({
@@ -305,8 +310,28 @@ function hasInvokerBinding(policy) {
   return normalizeIamPolicy(policy).bindings.some((binding) => INVOKER_ROLES.has(binding.role));
 }
 
+function assertExpectedRunningWriterPolicy(serviceName, policy) {
+  const normalized = normalizeIamPolicy(policy);
+  const expectedMember = serviceName === SCHEDULED_SERVICE
+    ? `serviceAccount:${EXPECTED_RUNTIME_SERVICE_ACCOUNT}`
+    : 'allUsers';
+  if (
+    normalized.version !== 1
+    || normalized.auditConfigs.length !== 0
+    || normalized.bindings.length !== 1
+    || normalized.bindings[0].role !== 'roles/run.invoker'
+    || Object.hasOwn(normalized.bindings[0], 'condition')
+    || normalized.bindings[0].members.length !== 1
+    || normalized.bindings[0].members[0] !== expectedMember
+  ) reject('unexpected_writer_service_policy');
+}
+
 function assertNoProjectWideInvoker(policy) {
-  if (hasInvokerBinding(policy)) reject('project_wide_invoker_detected');
+  const normalized = normalizeIamPolicy(policy);
+  if (hasInvokerBinding(normalized)) reject('project_wide_invoker_detected');
+  if (normalized.bindings.some(({ members }) => (
+    members.some((member) => ['allUsers', 'allAuthenticatedUsers'].includes(member))
+  ))) reject('project_wide_public_principal_detected');
 }
 
 function normalizeServiceObservation(value, expectedName) {
@@ -409,6 +434,7 @@ export function buildWriterGatePlan({
   const normalized = normalizeRemoteObservation(observation);
   if (normalized.schedulerJob.state !== 'ENABLED') reject('plan_requires_running_scheduler');
   const services = normalized.services.map(({ iamPolicy, serviceName }) => {
+    assertExpectedRunningWriterPolicy(serviceName, iamPolicy);
     if (!hasInvokerBinding(iamPolicy)) reject('plan_requires_running_service');
     if (serviceName === SCHEDULED_SERVICE) {
       const publicInvoker = iamPolicy.bindings.some((binding) => (
@@ -843,16 +869,146 @@ async function setSchedulerState(token, plan, targetState) {
   return true;
 }
 
-function assertPrivateDirectory() {
-  const lexical = lstatSync(PRIVATE_DIRECTORY);
+function assertPrivateDirectory(privateDirectory = PRIVATE_DIRECTORY) {
+  const absoluteDirectory = resolve(privateDirectory);
+  const lexical = lstatSync(absoluteDirectory);
   const currentUid = typeof process.getuid === 'function' ? process.getuid() : lexical.uid;
   if (
     !lexical.isDirectory()
     || lexical.isSymbolicLink()
     || (lexical.mode & 0o777) !== 0o700
     || lexical.uid !== currentUid
-    || realpathSync(PRIVATE_DIRECTORY) !== PRIVATE_DIRECTORY
+    || realpathSync(absoluteDirectory) !== absoluteDirectory
   ) reject('private_directory_invalid');
+  return absoluteDirectory;
+}
+
+function fsyncDirectory(directory) {
+  const descriptor = openSync(directory, FS_CONSTANTS.O_RDONLY);
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+export async function withWriterGateProcessLock(
+  operation,
+  { privateDirectory = PRIVATE_DIRECTORY } = {},
+) {
+  if (typeof operation !== 'function') reject('writer_gate_lock_operation_invalid');
+  const absoluteDirectory = assertPrivateDirectory(privateDirectory);
+  const lockPath = resolve(absoluteDirectory, WRITER_GATE_LOCK_FILENAME);
+  if (dirname(lockPath) !== absoluteDirectory) reject('writer_gate_lock_configuration_invalid');
+  const previousUmask = process.umask(0o077);
+  let holder;
+  try {
+    holder = spawn('/usr/bin/lockf', [
+      '-k',
+      '-s',
+      '-w',
+      '-t',
+      '0',
+      lockPath,
+      process.execPath,
+      '--input-type=module',
+      '--eval',
+      'process.stdout.write("ready\\n");process.stdin.resume();',
+    ], {
+      encoding: 'utf8',
+      env: Object.freeze({ LANG: 'C', PATH: '/usr/bin:/bin' }),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } finally {
+    process.umask(previousUmask);
+  }
+  const exit = new Promise((resolveExit) => {
+    holder.once('exit', (code, signal) => resolveExit({ code, signal }));
+  });
+  await new Promise((resolveReady, rejectReady) => {
+    let output = '';
+    let settled = false;
+    const finish = (operation_) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      operation_();
+    };
+    const timeout = setTimeout(() => {
+      holder.kill('SIGTERM');
+      finish(() => rejectReady(new WriterGateFailure('writer_gate_lock_start_timeout')));
+    }, 5_000);
+    holder.once('error', () => {
+      finish(() => rejectReady(new WriterGateFailure('writer_gate_lock_start_failed')));
+    });
+    holder.stdout.on('data', (chunk) => {
+      output += chunk.toString('utf8');
+      if (output === 'ready\n') finish(resolveReady);
+      else if (output.length > 6 || !'ready\n'.startsWith(output)) {
+        holder.kill('SIGTERM');
+        finish(() => rejectReady(new WriterGateFailure('writer_gate_lock_handshake_invalid')));
+      }
+    });
+    exit.then(({ code }) => {
+      finish(() => rejectReady(new WriterGateFailure(
+        code === 75 ? 'writer_gate_locked' : 'writer_gate_lock_start_failed',
+      )));
+    });
+  });
+  const acquired = lstatSync(lockPath);
+  const currentUid = typeof process.getuid === 'function' ? process.getuid() : acquired.uid;
+  const acquiredIdentityInvalid = (
+    !acquired.isFile()
+    || acquired.isSymbolicLink()
+    || acquired.nlink !== 1
+    || acquired.uid !== currentUid
+    || (acquired.mode & 0o777) !== 0o600
+    || acquired.size !== 0
+  );
+  if (acquiredIdentityInvalid) {
+    holder.stdin.end();
+    await exit;
+    reject('writer_gate_lock_identity_invalid');
+  }
+  fsyncDirectory(absoluteDirectory);
+  let releaseRequested = false;
+  const lost = exit.then(({ code, signal }) => {
+    if (!releaseRequested) throw new WriterGateFailure('writer_gate_lock_lost');
+    return { code, signal };
+  });
+  try {
+    return await Promise.race([Promise.resolve().then(operation), lost]);
+  } finally {
+    const current = lstatSync(lockPath);
+    if (
+      !current.isFile()
+      || current.isSymbolicLink()
+      || current.nlink !== 1
+      || current.uid !== currentUid
+      || current.dev !== acquired.dev
+      || current.ino !== acquired.ino
+      || (current.mode & 0o777) !== 0o600
+      || current.size !== 0
+    ) reject('writer_gate_lock_identity_changed');
+    releaseRequested = true;
+    holder.stdin.end();
+    const completion = await exit;
+    if (completion.code !== 0 || completion.signal !== null) {
+      reject('writer_gate_lock_release_failed');
+    }
+    const released = lstatSync(lockPath);
+    if (
+      !released.isFile()
+      || released.isSymbolicLink()
+      || released.nlink !== 1
+      || released.uid !== currentUid
+      || released.dev !== acquired.dev
+      || released.ino !== acquired.ino
+      || (released.mode & 0o777) !== 0o600
+      || released.size !== 0
+    ) reject('writer_gate_lock_release_identity_changed');
+    fsyncDirectory(absoluteDirectory);
+  }
 }
 
 export function writePrivateSnapshotExclusive(path, value, { privateDirectory = PRIVATE_DIRECTORY } = {}) {
@@ -1056,7 +1212,7 @@ async function main() {
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  main().catch((error) => {
+  withWriterGateProcessLock(() => main()).catch((error) => {
     const code = error instanceof WriterGateFailure ? error.code : 'unexpected_failure';
     process.stderr.write(`${canonicalJson({ code, status: 'failed' })}\n`);
     process.exitCode = 1;

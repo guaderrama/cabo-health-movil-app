@@ -29,9 +29,13 @@ const LEGACY_SLOT_COLLECTION = '_private_client_slots';
 const LEGACY_COUNTER_PATH = '_private_admin_counters/active_client_codes';
 const BRIDGE_SOURCE_PATH = 'functions/src/repositories/firestoreClientAccessStore.ts';
 const BRIDGE_BUILD_PATH = 'functions/lib';
+const FUNCTION_SOURCE_CONTROL_PATHS = Object.freeze([
+  'functions/package.json',
+  'functions/package-lock.json',
+]);
 const PRIVATE_JOURNAL_PATH = 'release/private/access-code-schema-transition.journal.json';
 const PRIVATE_PAUSE_OBSERVATION_PATH = 'release/private/access-code-writer-pause-observation.json';
-const REQUIRED_WRITER_DRAIN_MS = 130_000;
+const REQUIRED_WRITER_DRAIN_MS = 9 * 60 * 1000;
 const RETRY_SCHEDULER_JOB = 'firebase-schedule-retryClientAccountDeletions-us-central1';
 const BRIDGE_FUNCTIONS = Object.freeze([
   'adminCreateClientAccessCode',
@@ -46,15 +50,25 @@ const BRIDGE_FUNCTIONS = Object.freeze([
   'removeClientAccess',
   'retryClientAccountDeletions',
 ]);
-const HTTPS_WRITER_SERVICES = Object.freeze([
-  'admincreateclientaccesscode',
-  'adminlistclientaccesscodes',
-  'adminrevokeclientaccesscode',
-  'deleteclientaccount',
-  'redeemclientaccesscode',
-  'refreshclientaccess',
-  'removeclientaccess',
+const HTTPS_WRITERS = Object.freeze([
+  Object.freeze({
+    functionName: 'adminCreateClientAccessCode',
+    serviceName: 'admincreateclientaccesscode',
+  }),
+  Object.freeze({
+    functionName: 'adminListClientAccessCodes',
+    serviceName: 'adminlistclientaccesscodes',
+  }),
+  Object.freeze({
+    functionName: 'adminRevokeClientAccessCode',
+    serviceName: 'adminrevokeclientaccesscode',
+  }),
+  Object.freeze({ functionName: 'deleteClientAccount', serviceName: 'deleteclientaccount' }),
+  Object.freeze({ functionName: 'redeemClientAccessCode', serviceName: 'redeemclientaccesscode' }),
+  Object.freeze({ functionName: 'refreshClientAccess', serviceName: 'refreshclientaccess' }),
+  Object.freeze({ functionName: 'removeClientAccess', serviceName: 'removeclientaccess' }),
 ]);
+const HTTPS_WRITER_SERVICES = Object.freeze(HTTPS_WRITERS.map(({ serviceName }) => serviceName));
 const SCHEDULED_WRITER_SERVICE = 'retryclientaccountdeletions';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 
@@ -100,6 +114,41 @@ function sha256DirectoryTree(directoryPath) {
   visit(root, '');
   if (fileCount === 0) failure('build_tree_is_empty');
   return Object.freeze({ fileCount, sha256: digest.digest('hex') });
+}
+
+function captureLocalFunctionSourceControls() {
+  const files = FUNCTION_SOURCE_CONTROL_PATHS.map((relativePath) => {
+    const absolutePath = resolve(process.cwd(), relativePath);
+    const stat = lstatSync(absolutePath);
+    if (
+      !stat.isFile()
+      || stat.isSymbolicLink()
+      || stat.size < 2
+      || stat.size > 2 * 1024 * 1024
+    ) failure('local_function_source_control_invalid');
+    const bytes = readFileSync(absolutePath);
+    return Object.freeze({
+      archivePath: relativePath.slice('functions/'.length),
+      sha256: sha256(bytes),
+    });
+  });
+  let packageJson;
+  try {
+    packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'functions/package.json'), 'utf8'));
+  } catch {
+    failure('local_function_package_invalid');
+  }
+  const packageRecord = assertPlainObject(packageJson, 'local_function_package_invalid');
+  const engines = assertPlainObject(packageRecord.engines, 'local_function_package_invalid');
+  if (
+    packageRecord.main !== 'lib/index.js'
+    || packageRecord.type !== 'module'
+    || engines.node !== '22'
+  ) failure('local_function_package_invalid');
+  return Object.freeze({
+    files,
+    sha256: sha256(canonicalJson(files)),
+  });
 }
 
 function canonicalJson(value) {
@@ -522,7 +571,7 @@ function captureCloudRunDeployment(functionName, options) {
   });
 }
 
-function inspectDeployedSourceArchive(source, options) {
+function inspectDeployedSourceArchive(source, options, localSourceControls) {
   const archiveBytes = runGcloudBytes([
     'storage',
     'cat',
@@ -547,6 +596,7 @@ function inspectDeployedSourceArchive(source, options) {
     );
     const entries = listing.split('\n').filter(Boolean);
     if (entries.length === 0) failure('deployed_source_archive_empty');
+    if (new Set(entries).size !== entries.length) failure('deployed_source_entry_duplicate');
     for (const entry of entries) {
       const segments = entry.replace(/\/$/u, '').split('/');
       if (
@@ -559,17 +609,42 @@ function inspectDeployedSourceArchive(source, options) {
     if (
       !entries.includes('lib/index.js')
       || !entries.includes('lib/repositories/firestoreClientAccessStore.js')
+      || localSourceControls.files.some(({ archivePath }) => !entries.includes(archivePath))
     ) failure('deployed_source_build_missing');
     runLocalBinary(
       '/usr/bin/unzip',
-      ['-qq', archivePath, 'lib/*', '-d', extractionPath],
+      [
+        '-qq',
+        archivePath,
+        'lib/*',
+        ...localSourceControls.files.map(({ archivePath }) => archivePath),
+        '-d',
+        extractionPath,
+      ],
       'deployed_source_extraction_failed',
     );
     const buildTree = sha256DirectoryTree(resolve(extractionPath, 'lib'));
+    const deployedSourceControls = localSourceControls.files.map((expected) => {
+      const extractedPath = resolve(extractionPath, expected.archivePath);
+      const stat = lstatSync(extractedPath);
+      if (
+        !stat.isFile()
+        || stat.isSymbolicLink()
+        || stat.size < 2
+        || stat.size > 2 * 1024 * 1024
+      ) failure('deployed_source_control_invalid');
+      return Object.freeze({
+        archivePath: expected.archivePath,
+        sha256: sha256(readFileSync(extractedPath)),
+      });
+    });
+    const sourceControlSha256 = sha256(canonicalJson(deployedSourceControls));
     return Object.freeze({
       archiveSha256: sha256(archiveBytes),
       buildFileCount: buildTree.fileCount,
       buildTreeSha256: buildTree.sha256,
+      sourceControlMatchesLocal: sourceControlSha256 === localSourceControls.sha256,
+      sourceControlSha256,
       sourceIdentitySha256: sha256(canonicalJson(source)),
     });
   } finally {
@@ -578,6 +653,7 @@ function inspectDeployedSourceArchive(source, options) {
 }
 
 function captureBridgeRuntimeSnapshot(options, expectedBuildTreeSha256, requireBuildMatch) {
+  const localSourceControls = captureLocalFunctionSourceControls();
   const deployments = BRIDGE_FUNCTIONS.map((functionName) => Object.freeze({
     function: captureFunctionDeployment(functionName, options),
     run: captureCloudRunDeployment(functionName, options),
@@ -586,7 +662,10 @@ function captureBridgeRuntimeSnapshot(options, expectedBuildTreeSha256, requireB
   for (const deployment of deployments) {
     const key = canonicalJson(deployment.function.source);
     if (!artifacts.has(key)) {
-      artifacts.set(key, inspectDeployedSourceArchive(deployment.function.source, options));
+      artifacts.set(
+        key,
+        inspectDeployedSourceArchive(deployment.function.source, options, localSourceControls),
+      );
     }
   }
   const functions = deployments.map((deployment) => {
@@ -598,20 +677,32 @@ function captureBridgeRuntimeSnapshot(options, expectedBuildTreeSha256, requireB
       deployedSourceBuildFileCount: artifact.buildFileCount,
       deployedSourceBuildTreeSha256: artifact.buildTreeSha256,
       deployedSourceIdentitySha256: artifact.sourceIdentitySha256,
+      deployedSourceControlMatchesLocal: artifact.sourceControlMatchesLocal,
+      deployedSourceControlSha256: artifact.sourceControlSha256,
     });
   });
-  const deployedBuildMatchesExpected = typeof expectedBuildTreeSha256 === 'string'
+  const deployedBuildTreesMatchExpected = typeof expectedBuildTreeSha256 === 'string'
     && functions.every(({ deployedSourceBuildTreeSha256 }) => (
       deployedSourceBuildTreeSha256 === expectedBuildTreeSha256
     ));
-  if (requireBuildMatch && !deployedBuildMatchesExpected) {
+  const deployedSourceControlsMatchLocal = functions.every((entry) => (
+    entry.deployedSourceControlMatchesLocal === true
+  ));
+  if (requireBuildMatch && !deployedBuildTreesMatchExpected) {
     failure('deployed_bridge_build_tree_mismatch');
   }
+  if (requireBuildMatch && !deployedSourceControlsMatchLocal) {
+    failure('deployed_bridge_source_control_mismatch');
+  }
+  const deployedBuildMatchesExpected = deployedBuildTreesMatchExpected
+    && deployedSourceControlsMatchLocal;
   const artifactSet = [...artifacts.values()]
     .map((artifact) => Object.freeze({
       archiveSha256: artifact.archiveSha256,
       buildFileCount: artifact.buildFileCount,
       buildTreeSha256: artifact.buildTreeSha256,
+      sourceControlMatchesLocal: artifact.sourceControlMatchesLocal,
+      sourceControlSha256: artifact.sourceControlSha256,
       sourceIdentitySha256: artifact.sourceIdentitySha256,
     }))
     .sort((left, right) => left.sourceIdentitySha256.localeCompare(right.sourceIdentitySha256));
@@ -619,6 +710,7 @@ function captureBridgeRuntimeSnapshot(options, expectedBuildTreeSha256, requireB
     artifactKind: 'cabohealth-access-code-bridge-runtime-v1',
     deployedArtifactSetSha256: sha256(canonicalJson(artifactSet)),
     functions,
+    localSourceControlSha256: localSourceControls.sha256,
     project: options.project,
     region: EXPECTED_REGION,
     runtimeServiceAccountSha256: sha256(EXPECTED_RUNTIME_SERVICE_ACCOUNT),
@@ -628,6 +720,7 @@ function captureBridgeRuntimeSnapshot(options, expectedBuildTreeSha256, requireB
     deployedArtifactCount: artifactSet.length,
     deployedArtifactSetSha256: snapshot.deployedArtifactSetSha256,
     deployedBuildMatchesExpected,
+    localSourceControlSha256: localSourceControls.sha256,
     sanitizedState: snapshot,
     sha256: sha256(canonicalJson(snapshot)),
   });
@@ -738,42 +831,114 @@ function assertNoProjectWideInvoker(options) {
     'get-iam-policy',
     options.project,
     `--account=${options.operatorAccount}`,
-    '--flatten=bindings[].members',
-    '--filter=bindings.role:(roles/run.invoker roles/cloudfunctions.invoker)',
-    '--format=json(bindings.role,bindings.members)',
+    '--format=json(bindings,etag,version)',
   ], 'project_invoker_policy_unavailable'), 'project_invoker_policy_invalid');
-  if (!Array.isArray(raw)) failure('project_invoker_policy_invalid');
-  if (raw.length !== 0) failure('project_wide_invoker_not_paused');
-  const metadataRaw = parseJsonOutput(runGcloud([
-    'projects',
-    'get-iam-policy',
-    options.project,
-    `--account=${options.operatorAccount}`,
-    '--format=json(etag,version)',
-  ], 'project_invoker_policy_unavailable'), 'project_invoker_policy_invalid');
-  const metadata = assertPlainObject(metadataRaw, 'project_invoker_policy_invalid');
+  const policy = assertPlainObject(raw, 'project_invoker_policy_invalid');
+  const bindings = policy.bindings ?? [];
+  if (!Array.isArray(bindings)) failure('project_invoker_policy_invalid');
+  for (const value of bindings) {
+    const binding = assertPlainObject(value, 'project_invoker_policy_invalid');
+    if (
+      typeof binding.role !== 'string'
+      || !Array.isArray(binding.members)
+      || binding.members.some((member) => typeof member !== 'string')
+    ) failure('project_invoker_policy_invalid');
+    if (
+      (['roles/run.invoker', 'roles/cloudfunctions.invoker'].includes(binding.role)
+        && binding.members.length > 0)
+      || binding.members.some((member) => (
+        ['allUsers', 'allAuthenticatedUsers'].includes(member)
+      ))
+    ) failure('project_wide_invoker_not_paused');
+  }
   if (
-    typeof metadata.etag !== 'string'
-    || metadata.etag.length < 4
-    || !Number.isSafeInteger(metadata.version)
-    || metadata.version < 1
+    typeof policy.etag !== 'string'
+    || policy.etag.length < 4
+    || !Number.isSafeInteger(policy.version)
+    || policy.version < 1
   ) failure('project_invoker_policy_invalid');
   return Object.freeze({
-    policyEtagSha256: sha256(metadata.etag),
-    policyVersion: metadata.version,
+    policyEtagSha256: sha256(policy.etag),
+    policyVersion: policy.version,
   });
 }
 
-function assertAllWritersPaused(options) {
-  const httpsWriters = HTTPS_WRITER_SERVICES.map((serviceName) => (
-    assertRunServiceNotPublic(serviceName, options)
-  ));
+function assertProjectHierarchyIsolated(options) {
+  const raw = parseJsonOutput(runGcloud([
+    'projects',
+    'get-ancestors',
+    options.project,
+    `--account=${options.operatorAccount}`,
+    '--format=json(id,type)',
+  ], 'project_hierarchy_unavailable'), 'project_hierarchy_invalid');
+  if (
+    !Array.isArray(raw)
+    || raw.length !== 1
+    || raw[0]?.type !== 'project'
+    || typeof raw[0]?.id !== 'string'
+    || raw[0].id.length === 0
+  ) failure('project_hierarchy_not_isolated');
+  return Object.freeze({
+    ancestorCount: 1,
+    projectIdentitySha256: sha256(raw[0].id),
+  });
+}
+
+async function probeHttpsWriterDenied({ functionName, serviceName }, options) {
+  let response;
+  try {
+    response = await fetch(
+      `https://${EXPECTED_REGION}-${options.project}.cloudfunctions.net/${functionName}`,
+      {
+        body: '{}',
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        redirect: 'manual',
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+  } catch {
+    failure('https_writer_data_plane_probe_failed');
+  }
+  let body;
+  try {
+    body = await response.text();
+  } catch {
+    failure('https_writer_data_plane_probe_failed');
+  }
+  const contentType = response.headers?.get?.('content-type');
+  if (
+    response.status !== 403
+    || typeof contentType !== 'string'
+    || !contentType.toLowerCase().startsWith('text/html')
+    || typeof body !== 'string'
+    || body.length < 20
+    || body.length > 64 * 1024
+    || !body.includes('<title>403 Forbidden</title>')
+  ) failure('https_writer_data_plane_not_denied');
+  return Object.freeze({
+    denialBodySha256: sha256(body),
+    denialStatus: response.status,
+    serviceName,
+  });
+}
+
+async function assertAllWritersPaused(options) {
+  const httpsWriters = [];
+  for (const writer of HTTPS_WRITERS) {
+    httpsWriters.push(Object.freeze({
+      ...assertRunServiceNotPublic(writer.serviceName, options),
+      ...await probeHttpsWriterDenied(writer, options),
+    }));
+  }
   const scheduledWriter = assertScheduledWriterPaused(options);
   const projectPolicy = assertNoProjectWideInvoker(options);
+  const projectHierarchy = assertProjectHierarchyIsolated(options);
   const state = Object.freeze({
     artifactKind: 'cabohealth-access-code-writer-pause-v1',
     httpsWriters,
     project: options.project,
+    projectHierarchy,
     projectPolicy,
     region: EXPECTED_REGION,
     scheduledWriter,
@@ -901,14 +1066,18 @@ function acquireAccessToken(account) {
   return token;
 }
 
-function assertRuntimePins(options) {
+async function assertRuntimePins(options) {
   for (const name of [
     'FIRESTORE_EMULATOR_HOST',
     'FIREBASE_AUTH_EMULATOR_HOST',
     'FIREBASE_DATABASE_EMULATOR_HOST',
     'GCLOUD_PROJECT',
     'GOOGLE_CLOUD_PROJECT',
+    'GOOGLE_APPLICATION_CREDENTIALS',
     'CLOUDSDK_AUTH_ACCESS_TOKEN',
+    'CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE',
+    'CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT',
+    'CLOUDSDK_CONFIG',
     'CLOUDSDK_CORE_ACCOUNT',
     'CLOUDSDK_CORE_PROJECT',
   ]) {
@@ -947,7 +1116,7 @@ function assertRuntimePins(options) {
   if (runtime.sha256 !== options.reviewedBridgeRuntimeSha256) {
     failure('reviewed_bridge_runtime_sha256_mismatch');
   }
-  const pauseState = assertAllWritersPaused(boundOptions);
+  const pauseState = await assertAllWritersPaused(boundOptions);
   const pauseObservedAt = assertWriterDrain({
     pauseStateSha256: pauseState.sha256,
     runtimeSha256: runtime.sha256,
@@ -962,7 +1131,7 @@ function assertRuntimePins(options) {
   });
 }
 
-function assertRuntimePinsStillHold(options, runtimePins) {
+async function assertRuntimePinsStillHold(options, runtimePins) {
   if (activeOperatorIdentity() !== runtimePins.account) failure('active_operator_changed');
   const boundOptions = Object.freeze({ ...options, operatorAccount: runtimePins.account });
   const runtime = captureBridgeRuntimeSnapshot(
@@ -971,7 +1140,7 @@ function assertRuntimePinsStillHold(options, runtimePins) {
     true,
   );
   if (runtime.sha256 !== runtimePins.runtimeSha256) failure('bridge_runtime_changed_during_migration');
-  const pauseState = assertAllWritersPaused(boundOptions);
+  const pauseState = await assertAllWritersPaused(boundOptions);
   if (pauseState.sha256 !== runtimePins.pauseStateSha256) {
     failure('writer_pause_changed_during_migration');
   }
@@ -1194,6 +1363,7 @@ function sanitizedCheckEvidence(snapshot, expected, identity) {
     deployedArtifactCount: identity.deployedArtifactCount,
     deployedArtifactSetSha256: identity.deployedArtifactSetSha256,
     deployedBuildMatchesLocal: identity.deployedBuildMatchesLocal,
+    functionSourceControlSha256: identity.functionSourceControlSha256,
     gcloudVersion: identity.gcloudVersion,
     nodeVersion: process.versions.node,
     observedAt: new Date().toISOString(),
@@ -1230,6 +1400,7 @@ async function executeCheck(options) {
     deployedArtifactCount: runtime.deployedArtifactCount,
     deployedArtifactSetSha256: runtime.deployedArtifactSetSha256,
     deployedBuildMatchesLocal: runtime.deployedBuildMatchesExpected,
+    functionSourceControlSha256: runtime.localSourceControlSha256,
     gcloudVersion,
     operatorAccountSha256: sha256(account),
     scriptSha256: sha256(readFileSync(scriptPath)),
@@ -1359,7 +1530,7 @@ function migrationEvidence({ after, journal, recovered }) {
 }
 
 async function executeMigration(options) {
-  const runtimePins = assertRuntimePins(options);
+  const runtimePins = await assertRuntimePins(options);
   const boundOptions = Object.freeze({ ...options, operatorAccount: runtimePins.account });
   const token = acquireAccessToken(runtimePins.account);
   const observed = await captureRemoteSnapshot(boundOptions, token);
@@ -1370,7 +1541,7 @@ async function executeMigration(options) {
     if (sha256(observed.internalTransition.name) !== journal.transitionDocumentNameSha256) {
       failure('migration_recovery_identity_mismatch');
     }
-    assertRuntimePinsStillHold(options, runtimePins);
+    await assertRuntimePinsStillHold(options, runtimePins);
     return migrationEvidence({ after: observed, journal, recovered: true });
   }
   assertExpectedTransitionState(observed, 'before');
@@ -1397,7 +1568,7 @@ async function executeMigration(options) {
       isExpectedTransitionState(recovery, 'after')
       && sha256(recovery.internalTransition.name) === journal.transitionDocumentNameSha256
     ) {
-      assertRuntimePinsStillHold(options, runtimePins);
+      await assertRuntimePinsStillHold(options, runtimePins);
       return migrationEvidence({ after: recovery, journal, recovered: true });
     }
     throw error;
@@ -1416,7 +1587,7 @@ async function executeMigration(options) {
     after.internalTransition.name !== transition.name
     || after.internalTransition.updateTime !== updated.updateTime
   ) failure('transition_postcondition_changed');
-  assertRuntimePinsStillHold(options, runtimePins);
+  await assertRuntimePinsStillHold(options, runtimePins);
   return migrationEvidence({ after, journal, recovered: false });
 }
 

@@ -1,8 +1,19 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
   WRITER_GATE_SCOPE,
+  WRITER_GATE_LOCK_FILENAME,
   assertExpectedWriterGateState,
   buildCloudRunSetIamPolicyRequest,
   buildWriterGateMutationPlan,
@@ -13,6 +24,7 @@ import {
   parseGcloudVersionOutput,
   parseWriterGateArguments,
   validateWriterGatePlan,
+  withWriterGateProcessLock,
 } from '../scripts/access-code-writer-gate.mjs';
 
 const project = 'cabohealth-owner-prod';
@@ -29,10 +41,6 @@ function iamPolicy(serviceName, state = 'running', etagSuffix = 'baseline') {
     : 'allUsers';
   return {
     bindings: [
-      {
-        members: [`serviceAccount:observer@${project}.iam.gserviceaccount.com`],
-        role: 'roles/viewer',
-      },
       ...(state === 'running'
         ? [{ members: [invokerMember], role: 'roles/run.invoker' }]
         : []),
@@ -177,6 +185,49 @@ test('argument parser keeps plan/check read-only and mutations explicitly applie
   ]), /invalid_expected_state/u);
 });
 
+test('process lock rejects overlap and safely reuses its persistent sentinel', async () => {
+  const privateDirectory = realpathSync(
+    mkdtempSync(join(tmpdir(), 'cabohealth-writer-gate-lock-')),
+  );
+  chmodSync(privateDirectory, 0o700);
+  const lockPath = join(privateDirectory, WRITER_GATE_LOCK_FILENAME);
+  try {
+    await withWriterGateProcessLock(async () => {
+      assert.equal(existsSync(lockPath), true);
+      const moduleUrl = new URL('../scripts/access-code-writer-gate.mjs', import.meta.url).href;
+      const childSource = `
+        import { withWriterGateProcessLock } from ${JSON.stringify(moduleUrl)};
+        try {
+          await withWriterGateProcessLock(async () => {}, {
+            privateDirectory: ${JSON.stringify(privateDirectory)},
+          });
+          process.exit(0);
+        } catch (error) {
+          process.exit(error?.code === 'writer_gate_locked' ? 23 : 24);
+        }
+      `;
+      const child = spawnSync(
+        process.execPath,
+        ['--input-type=module', '--eval', childSource],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      assert.equal(child.status, 23);
+      await assert.rejects(
+        withWriterGateProcessLock(async () => {}, { privateDirectory }),
+        /writer_gate_locked/u,
+      );
+      assert.equal(existsSync(lockPath), true);
+    }, { privateDirectory });
+    assert.equal(existsSync(lockPath), true);
+    await withWriterGateProcessLock(async () => {
+      assert.equal(existsSync(lockPath), true);
+    }, { privateDirectory });
+    assert.equal(existsSync(lockPath), true);
+  } finally {
+    rmSync(privateDirectory, { force: true, recursive: true });
+  }
+});
+
 test('gcloud pin is accepted only from validated JSON output', () => {
   assert.equal(parseGcloudVersionOutput(JSON.stringify({
     'Google Cloud SDK': '567.0.0',
@@ -310,10 +361,7 @@ test('Cloud Run v2 setIamPolicy request uses the just-fetched etag as preconditi
   assert.deepEqual(JSON.parse(request.body), {
     policy: {
       auditConfigs: [],
-      bindings: [{
-        members: [`serviceAccount:observer@${project}.iam.gserviceaccount.com`],
-        role: 'roles/viewer',
-      }],
+      bindings: [],
       etag: 'Bw-newly-fetched-etag',
       version: 1,
     },
@@ -337,6 +385,39 @@ test('plan and execution fail closed on project-wide invoker, disabled checks, o
     operatorAccountSha256: 'a'.repeat(64),
     scriptSha256: 'b'.repeat(64),
   }), /project_wide_invoker_detected/u);
+
+  const publicCustomRole = observation({
+    projectPolicy: {
+      bindings: [{
+        members: ['allAuthenticatedUsers'],
+        role: `projects/${project}/roles/customMaybeInvoker`,
+      }],
+      etag: 'Bw-project-custom-public',
+      version: 1,
+    },
+  });
+  assert.throws(() => buildWriterGatePlan({
+    createdAt: '2026-08-24T20:01:00.000Z',
+    gcloudVersion: '567.0.0',
+    nodeVersion: '22.22.3',
+    observation: publicCustomRole,
+    operatorAccountSha256: 'a'.repeat(64),
+    scriptSha256: 'b'.repeat(64),
+  }), /project_wide_public_principal_detected/u);
+
+  const customServicePolicy = observation();
+  customServicePolicy.services[0].iamPolicy.bindings.push({
+    members: ['serviceAccount:unexpected@example.test'],
+    role: `projects/${project}/roles/customInvoker`,
+  });
+  assert.throws(() => buildWriterGatePlan({
+    createdAt: '2026-08-24T20:01:00.000Z',
+    gcloudVersion: '567.0.0',
+    nodeVersion: '22.22.3',
+    observation: customServicePolicy,
+    operatorAccountSha256: 'a'.repeat(64),
+    scriptSha256: 'b'.repeat(64),
+  }), /unexpected_writer_service_policy/u);
 
   const disabled = observation();
   disabled.services[0].service.invokerIamDisabled = true;

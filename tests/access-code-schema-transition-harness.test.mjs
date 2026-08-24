@@ -37,8 +37,12 @@ const unsafeEnvironmentNames = [
   'GCLOUD_PROJECT',
   'GOOGLE_CLOUD_PROJECT',
   'CLOUDSDK_AUTH_ACCESS_TOKEN',
+  'CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE',
+  'CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT',
+  'CLOUDSDK_CONFIG',
   'CLOUDSDK_CORE_ACCOUNT',
   'CLOUDSDK_CORE_PROJECT',
+  'GOOGLE_APPLICATION_CREDENTIALS',
 ];
 
 function sha256(value) {
@@ -152,13 +156,25 @@ function fakeGcloudProgram() {
     return;
   }
   if (args[0] === 'projects' && args[1] === 'get-iam-policy') {
-    if (args.some((argument) => argument.startsWith('--flatten='))) {
-      outputJson(control.projectWideInvoker
-        ? [{ bindings: { members: ['allUsers'], role: 'roles/run.invoker' } }]
-        : []);
-    } else {
-      outputJson({ etag: 'project-etag', version: 1 });
-    }
+    outputJson({
+      bindings: [
+        ...(control.projectWideInvoker
+          ? [{ members: ['allUsers'], role: 'roles/run.invoker' }]
+          : []),
+        ...(control.projectWidePublicCustom
+          ? [{ members: ['allAuthenticatedUsers'], role: `projects/${project}/roles/customInvoker` }]
+          : []),
+      ],
+      etag: 'project-etag',
+      version: 1,
+    });
+    return;
+  }
+  if (args[0] === 'projects' && args[1] === 'get-ancestors') {
+    outputJson([
+      { id: project, type: 'project' },
+      ...(control.hasParent ? [{ id: 'parent-folder', type: 'folder' }] : []),
+    ]);
     return;
   }
   if (args[0] === 'storage' && args[1] === 'cat') {
@@ -179,13 +195,23 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-function response(status, value, { sequence = false } = {}) {
+function response(status, value, {
+  contentType = 'application/json; charset=utf-8',
+  rawText = null,
+  sequence = false,
+} = {}) {
   return {
+    headers: {
+      get(name) {
+        return name.toLowerCase() === 'content-type' ? contentType : null;
+      },
+    },
     status,
     async json() {
       return value;
     },
     async text() {
+      if (rawText !== null) return rawText;
       return sequence
         ? value.map((item) => JSON.stringify(item)).join('\n')
         : JSON.stringify(value);
@@ -212,6 +238,16 @@ function createFirestoreFake(controlPath) {
       method: request.method,
       url: url.toString(),
     });
+    if (url.hostname.endsWith('.cloudfunctions.net')) {
+      const control = readJson(controlPath);
+      if (control.dataPlaneDenied) {
+        return response(403, null, {
+          contentType: 'text/html; charset=UTF-8',
+          rawText: '<html><head><title>403 Forbidden</title></head><body>Forbidden</body></html>',
+        });
+      }
+      return response(401, { error: 'application-level rejection' });
+    }
     if (url.pathname.endsWith(':beginTransaction')) {
       return response(200, { transaction });
     }
@@ -266,6 +302,8 @@ function createHarness() {
   const controlPath = join(root, 'fake-gcloud-control.json');
   const logPath = join(root, 'fake-gcloud-log.jsonl');
   const archivePath = join(root, 'function-source.zip');
+  const packageJsonPath = join(functionsDirectory, 'package.json');
+  const packageLockPath = join(functionsDirectory, 'package-lock.json');
   const fakeGcloudPath = join(binDirectory, 'gcloud');
   const originalCwd = process.cwd();
   const originalFetch = globalThis.fetch;
@@ -289,11 +327,42 @@ function createHarness() {
     'export const acceptedSchemaVersions = [1, 2];\n',
     { mode: 0o600 },
   );
-  execFileSync('/usr/bin/zip', ['-q', '-r', archivePath, 'lib'], {
+  const packageJson = {
+    dependencies: { 'firebase-admin': '14.3.0', 'firebase-functions': '7.3.2' },
+    devDependencies: { typescript: '5.9.2' },
+    engines: { node: '22' },
+    main: 'lib/index.js',
+    name: 'cabohealth-secure-functions',
+    scripts: { build: 'tsc' },
+    type: 'module',
+    version: '1.0.0',
+  };
+  const packageLock = {
+    lockfileVersion: 3,
+    name: packageJson.name,
+    packages: {
+      '': {
+        dependencies: packageJson.dependencies,
+        devDependencies: packageJson.devDependencies,
+        engines: packageJson.engines,
+        name: packageJson.name,
+        version: packageJson.version,
+      },
+    },
+    requires: true,
+    version: packageJson.version,
+  };
+  writeFileSync(packageJsonPath, `${JSON.stringify(packageJson)}\n`, { mode: 0o600 });
+  writeFileSync(packageLockPath, `${JSON.stringify(packageLock)}\n`, { mode: 0o600 });
+  execFileSync(
+    '/usr/bin/zip',
+    ['-q', '-r', archivePath, 'lib', 'package.json', 'package-lock.json'],
+    {
     cwd: functionsDirectory,
     env: { LANG: 'C', PATH: '/usr/bin:/bin' },
     stdio: 'ignore',
-  });
+    },
+  );
   writeFileSync(
     fakeGcloudPath,
     `#!${process.execPath}\n(${fakeGcloudProgram.toString()})();\n`,
@@ -303,9 +372,12 @@ function createHarness() {
   writeFileSync(logPath, '', { mode: 0o600 });
   writeJson(controlPath, {
     accessToken,
+    dataPlaneDenied: true,
     gcloudVersion: '567.0.0',
+    hasParent: false,
     observedGeneration: 7,
     operatorAccount,
+    projectWidePublicCustom: false,
     projectWideInvoker: false,
     publicServices: [],
     runtimeRevision: '00001-abc',
@@ -330,6 +402,8 @@ function createHarness() {
     journalPath: join(privateDirectory, 'access-code-schema-transition.journal.json'),
     logPath,
     observationPath: join(privateDirectory, 'access-code-writer-pause-observation.json'),
+    packageJsonPath,
+    packageLockPath,
     privateDirectory,
     async check(expected = 'before') {
       return runTransition([
@@ -447,7 +521,7 @@ async function prepareMigration(harness, { assertDrain = false } = {}) {
   const observation = readJson(harness.observationPath);
   writeJson(harness.observationPath, {
     ...observation,
-    observedAt: new Date(Date.now() - 140_000).toISOString(),
+    observedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
   });
   return { checkEvidence, migrationArguments };
 }
@@ -617,6 +691,27 @@ test('runTransition is end-to-end fail-closed with fake gcloud, Firestore, archi
         name: 'scheduler resumed',
       },
       {
+        code: 'https_writer_data_plane_not_denied',
+        mutate(harness) {
+          harness.setControl({ dataPlaneDenied: false });
+        },
+        name: 'writer data-plane still reachable',
+      },
+      {
+        code: 'project_hierarchy_not_isolated',
+        mutate(harness) {
+          harness.setControl({ hasParent: true });
+        },
+        name: 'inherited project hierarchy',
+      },
+      {
+        code: 'project_wide_invoker_not_paused',
+        mutate(harness) {
+          harness.setControl({ projectWidePublicCustom: true });
+        },
+        name: 'public principal through a custom project role',
+      },
+      {
         code: 'reviewed_bridge_build_tree_sha256_mismatch',
         mutate(harness) {
           writeFileSync(
@@ -644,6 +739,51 @@ test('runTransition is end-to-end fail-closed with fake gcloud, Firestore, archi
           });
         },
         name: 'deployed source archive',
+      },
+      {
+        code: 'deployed_bridge_source_control_mismatch',
+        mutate(harness) {
+          const driftDirectory = join(dirname(harness.archivePath), 'package-drift');
+          mkdirSync(driftDirectory);
+          writeFileSync(
+            join(driftDirectory, 'package.json'),
+            `${JSON.stringify({
+              dependencies: { 'firebase-admin': '14.3.0', 'firebase-functions': '7.3.2' },
+              devDependencies: { typescript: '5.9.2' },
+              engines: { node: '22' },
+              main: 'different-entry.js',
+              name: 'cabohealth-secure-functions',
+              scripts: { build: 'tsc' },
+              type: 'module',
+              version: '1.0.0',
+            })}\n`,
+            { mode: 0o600 },
+          );
+          execFileSync('/usr/bin/zip', ['-q', harness.archivePath, 'package.json'], {
+            cwd: driftDirectory,
+            env: { LANG: 'C', PATH: '/usr/bin:/bin' },
+            stdio: 'ignore',
+          });
+        },
+        name: 'deployed package entry point',
+      },
+      {
+        code: 'deployed_bridge_source_control_mismatch',
+        mutate(harness) {
+          const driftDirectory = join(dirname(harness.archivePath), 'lock-drift');
+          mkdirSync(driftDirectory);
+          writeFileSync(
+            join(driftDirectory, 'package-lock.json'),
+            `${JSON.stringify({ lockfileVersion: 3, packages: {}, requires: true })}\n`,
+            { mode: 0o600 },
+          );
+          execFileSync('/usr/bin/zip', ['-q', harness.archivePath, 'package-lock.json'], {
+            cwd: driftDirectory,
+            env: { LANG: 'C', PATH: '/usr/bin:/bin' },
+            stdio: 'ignore',
+          });
+        },
+        name: 'deployed dependency lockfile',
       },
     ];
 
