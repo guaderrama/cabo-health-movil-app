@@ -254,7 +254,9 @@ test('test-only transaction barrier holds a real process until explicitly resume
   const fixture = makeMoveTransactionFixture();
   context.after(() => rmSync(fixture, { recursive: true, force: true }));
   const readyPath = join(fixture, 'checkpoint.ready');
-  const resumePath = join(fixture, 'checkpoint.resume');
+  const resumeRoot = join(fixture, 'resume-signals');
+  mkdirSync(resumeRoot, { mode: 0o700 });
+  const resumePath = join(resumeRoot, 'checkpoint.resume');
   const worker = spawn(process.execPath, [journalWorkerPath, 'execute', fixture], {
     cwd: projectRoot,
     encoding: 'utf8',
@@ -268,7 +270,13 @@ test('test-only transaction barrier holds a real process until explicitly resume
   });
   const output = collectChildOutput(worker);
 
-  await waitForFileContents(readyPath, 'journal-prepared\n');
+  await waitForFileContentsWhileRunning(
+    readyPath,
+    'journal-prepared\n',
+    worker,
+    output,
+    30_000,
+  );
   assert.equal(worker.exitCode, null);
   assert.equal(readFileSync(readyPath, 'utf8'), 'journal-prepared\n');
 
@@ -1023,10 +1031,20 @@ async function waitForPath(path) {
   }
 }
 
-async function waitForFileContents(path, expected) {
-  const deadline = Date.now() + 5_000;
+async function waitForFileContentsWhileRunning(
+  path,
+  expected,
+  child,
+  output,
+  timeoutMs = 5_000,
+) {
+  const deadline = Date.now() + timeoutMs;
   for (;;) {
     if (existsSync(path) && readFileSync(path, 'utf8') === expected) return;
+    if (child.exitCode !== null) {
+      const result = await output;
+      throw new Error(`child exited before ${path}: ${result.stderr || result.stdout}`);
+    }
     if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
   }
