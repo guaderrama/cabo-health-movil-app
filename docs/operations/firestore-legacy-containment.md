@@ -9,7 +9,10 @@ as `CREATING`; a later read on the same date confirmed every field `ACTIVE`.
 The production database now contains only the separately reviewed bootstrap and
 controlled access state; the App Review database remains empty until its gated
 credential rotation. No backup bucket was created during initial provisioning.
-See
+Before the 2026-08-24 access-code mutation, a complete export was subsequently
+created in a dedicated private recovery bucket and verified for Public Access
+Prevention, uniform bucket-level access, versioning, retention, soft delete,
+restricted IAM, completed operation state, and metadata-object existence. See
 [`firebase-activation.md`](firebase-activation.md) for the authoritative
 provisioning state and exact deployment command.
 
@@ -95,39 +98,44 @@ service-account key in the app, repository, shell history, or backup log.
 The owner-approved access model removed the historical fixed four-slot ledger.
 New slotless `_private_access_codes` records use `schemaVersion: 2`. The final
 strict reader accepts schema 1 only when a valid legacy slot `1..4` is present
-and schema 2 only when `slot` is absent. That strict reader is committed but
-must not be deployed until the transition below is complete.
+and schema 2 only when `slot` is absent. The transition completed on
+2026-08-24; the strict reader is deployed and verified.
 
-A field-mask-only production read on 2026-08-24 returned sanitized counts only:
-one schema-1 slotless transitional record, zero schema-1 records with a legacy
-slot, zero schema-2 records, zero invalid records, zero slot-ledger documents,
-and no active-code counter. It did not read or retain a code, document ID,
-suffix, timestamp, client field, or resource field.
+A field-mask-only preflight read returned sanitized counts only: one schema-1
+slotless transitional record, zero schema-1 records with a legacy slot, zero
+schema-2 records, zero invalid records, zero slot-ledger documents, and no
+active-code counter. It did not retain a code, raw document ID, suffix,
+timestamp, client field, or resource field. The pre-mutation sanitized state
+SHA-256 was
+`77ebbb47acda14c1004cd143ea617effd69c0ef95e890f4a61eff35e6622d74d`.
 
-The currently deployed transitional slotless-v1 Functions binary created that
-record. It is not a verified schema-v2 reader and therefore is neither the
-bridge nor a safe rollback after the first schema-v2 write.
+The serialized maintenance sequence then completed in this order:
 
-Use one serialized maintenance window in this exact order:
+1. The reviewed bridge was deployed and its 11 immutable deployed artifacts
+   were matched against the reviewed local package, lockfile, and build tree.
+2. Eight writer services and the deletion scheduler were paused under the
+   exclusive writer gate; the nine-minute maximum request drain and independent
+   public data-plane denial probes completed.
+3. One preconditioned Firestore patch changed exactly `schemaVersion` from 1 to
+   2. A transient response-path failure was recovered from the durable private
+   journal by an exact postcondition read and an idempotent rerun; no second
+   patch occurred.
+4. The sanitized read-back returned exactly one schema-2 slotless record and
+   zero legacy-slot, schema-1, invalid, slot-ledger, or active-counter records.
+   Its state SHA-256 is
+   `9bbf504ce5ecbc462760122b660ec98d75165e1005f99d02c01f433f14066e3c`.
+5. The strict reader was deployed to the exact same 11 Functions. Its deployed
+   artifact set matched the clean local build, all 26 Functions were `ACTIVE`,
+   all 26 Cloud Run services were `Ready` with 100% latest-revision traffic,
+   and the eight writer services plus scheduler were restored to their exact
+   reviewed running policies.
 
-1. Pause owner code issuance and revocation. Deploy the reviewed temporary
-   bridge reader. It must accept only schema 1 with a valid legacy slot, the
-   known schema-1 slotless transitional shape, and schema 2 without `slot`.
-   New codes must be written only as schema 2 without `slot`.
-2. Confirm the bridge is healthy. Then, and only with explicit owner
-   authorization, update only the transitional record's `schemaVersion` from 1
-   to 2 using its exact `updateTime` precondition. Do not rewrite any other
-   field.
-3. Re-read only `schemaVersion` and `slot` and require exactly one schema-2
-   slotless record, zero schema-1 slotless records, and zero invalid or
-   ambiguous records.
-4. Deploy the final strict reader, repeat the sanitized aggregate read, and
-   resume owner issuance and revocation.
-
-Until step 4 completes, rollback only to the reviewed bridge. Afterwards,
-rollback only to the bridge or another reviewed schema-v2-compatible build.
-Never roll back to the currently deployed transitional slotless-v1 binary, and
-never silently treat a schema-1 record without a slot as a permanent format.
+The permanent sanitized record is
+[`access-code-schema-transition-2026-08-24.md`](access-code-schema-transition-2026-08-24.md).
+Rollback is now allowed only to the reviewed bridge or another reviewed
+schema-v2-compatible build. Never roll back to the former transitional
+slotless-v1 binary, and never treat a schema-1 record without a slot as a
+permanent format.
 
 ## 2. Create and verify the private remote backup
 

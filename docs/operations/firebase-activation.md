@@ -115,11 +115,12 @@ password-only migration deployment was gated by the then-current portal 42/42
 and Functions 104/104 suites. Eleven affected Functions were deployed to
 `us-central1`; this was a targeted update inside the historical 26-Function
 inventory, not a claim that only 11 Functions exist. The current local portal
-suite passes 43/43. The committed final strict backend passes 109/109, and its
-separately committed temporary access-code schema bridge passes 110/110; these
-newer local results are not a claim that either backend commit is deployed.
-The immutable portal artifact, live verification, and rollback evidence are recorded in
-`staff-portal-production-activation-2026-08-23.md`.
+suite passes 43/43. The deployed final strict backend passes 111/111; its
+temporary bridge predecessor passed 110/110 before the controlled migration.
+The strict deployment and production read-back are recorded in
+`access-code-schema-transition-2026-08-24.md`.
+The immutable portal artifact, live verification, and rollback evidence are
+recorded in `staff-portal-production-activation-2026-08-23.md`.
 
 The owner personally completed the strong-password reset on 2026-08-23. The
 guarded migration then required a newer password-update timestamp, removed only
@@ -333,23 +334,23 @@ and an independent Artifact Registry read verified action `DELETE`, tag state
 `ANY`, and `olderThan: 604800s`. This bounds old-image storage cost while
 retaining a seven-day rollback window.
 
-### Current source-to-production delta
+### Completed access-code schema transition
 
-Production still runs the transitional slotless-v1 access-code binary within
-the verified 26-Function inventory. Two later states are committed and locally
-tested but not deployed:
+On 2026-08-24 the temporary bridge was deployed, all access-code writers were
+paused and drained, the one transitional record was changed only from
+`schemaVersion: 1` to `schemaVersion: 2` under its exact update precondition,
+and the strict reader was promoted to the same 11 Functions. The sanitized
+postcondition is one schema-2 slotless record with zero schema-1, legacy-slot,
+invalid, slot-ledger, or active-counter records.
 
-1. the temporary bridge accepts legacy schema 1 with slot `1..4`, the single
-   known schema-1 slotless transitional shape, and schema 2 without `slot`,
-   while every newly issued code uses schema 2;
-2. the final strict reader rejects schema 1 without a valid legacy slot and
-   accepts schema 2 only without `slot`.
-
-The bridge must be deployed first. Then an explicitly authorized operation may
-change only the known record's `schemaVersion` from 1 to 2 with an exact
-`updateTime` precondition and a sanitized aggregate read-back. Only after that
-verification may the strict reader be promoted. Neither the bridge nor the
-strict source commit is described here as already active.
+The deployed 11-artifact set exactly matches the clean local strict build. An
+independent provider read returned 26/26 Functions `ACTIVE` on Node.js 22 and
+26/26 Cloud Run services `Ready`, each serving 100% latest-revision traffic.
+The writer gate then restored the exact eight invocation policies and resumed
+the scheduler. The authoritative sanitized evidence and rollback boundary are
+in `access-code-schema-transition-2026-08-24.md`. Rollback is limited to the
+reviewed bridge or another schema-v2-compatible build; the former transitional
+slotless-v1 binary is prohibited.
 
 ## Plan and apply the owner bootstrap v2
 
@@ -421,10 +422,9 @@ npm run firebase:bootstrap -- \
 Run and verify the dry-run sequence locally before requesting each separate
 production mutation approval. IAM, database creation, parameters, secrets,
 rules/TTL deployment, bootstrap application, and the password-only owner E2E
-are complete. Current external gates are the schema bridge/migration/strict
-promotion, physical-iPhone App Check/App Attest, App Review credential and
-valid-flow E2E, and the exact RC/TestFlight evidence. Do not create a staging
-project without a superseding owner-approved ADR. The owner completed the final
-password-only migration check on 2026-08-23 as recorded in the dated Staff
-Portal activation record; that check does not complete the separate Apple and
-release gates.
+and access-code schema transition are complete. Current external gates are
+physical-iPhone App Check/App Attest, App Review credential and valid-flow E2E,
+and the exact RC/TestFlight evidence. Do not create a staging project without a
+superseding owner-approved ADR. The owner completed the final password-only
+migration check on 2026-08-23 as recorded in the dated Staff Portal activation
+record; that check does not complete the separate Apple and release gates.
