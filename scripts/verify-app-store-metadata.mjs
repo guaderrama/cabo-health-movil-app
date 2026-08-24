@@ -132,7 +132,7 @@ const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmeti
 
 const EXACT_REVIEWED_PROSE_SHA256 = Object.freeze({
   'age-rating.md': 'a6f11c4ab2005ec58498931571a2212b3804db2dcfb081d91aa8e40ce07bd023',
-  'app-privacy.md': 'dcee032db9324354ded2220f899130be96d376b531c83bb1624dd03b9750457e',
+  'app-privacy.md': '5a7f7208dc4325ba58bf4227ce62d71be940cba51239d45a1661bdce7a81e29b',
   'content-rights-inventory.md': '61c1554019b352042eac0aa9ab18f0f7c08385c92fac82f387f2110247794c07',
 });
 

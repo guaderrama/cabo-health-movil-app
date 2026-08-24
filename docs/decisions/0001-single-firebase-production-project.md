@@ -53,6 +53,10 @@ Do not point an internal preview build at real production client records. Produc
 ## Firestore location decision
 
 Owner approval was recorded on 2026-08-22, after acknowledging that the location cannot be changed afterward. Both Firestore Native databases were then created in Standard edition in `nam5`, with deletion protection enabled: `(default)` for production and `cabohealth-review-production` for the isolated Apple Review realm. Point-in-time recovery remains disabled. On 2026-08-23 the 26-Function production baseline was deployed to `us-central1` and independently verified `ACTIVE` under the dedicated runtime identity. Later committed bridge and strict-reader source changes are not included in that deployed baseline.
+On 2026-08-24 the bridge was promoted temporarily, the single sanitized
+slotless record was changed only from schema 1 to schema 2 under its exact
+update-time precondition, and the final strict reader was deployed and
+independently verified across the 26-Function inventory.
 
 The two databases now permanently use the same approved United States multi-region. Any later residency or topology change requires a new project/database migration and a separate ADR; it cannot mutate these database locations.
 
@@ -81,7 +85,12 @@ Completed:
 - Exact deny-all Firestore rules compiled and were released to `(default)` and `cabohealth-review-production`. Both index definitions were accepted; a later provider read confirmed all seven production and six review TTL field operations `ACTIVE`.
 - Sixteen independent production/review Secret Manager key rings were created with version label `2026-08`; no secret value was written to the repository or terminal transcript.
 - Dedicated Functions runtime identity `cabohealth-functions@cabohealth-owner-prod.iam.gserviceaccount.com` was created. On 2026-08-23 the owner authorized and provider re-reads verified conditional `roles/datastore.user` for exactly the two approved database names, custom role `cabohealthAuthUserDeletion` containing only `firebaseauth.users.delete`, self-resource `roles/iam.serviceAccountTokenCreator`, `roles/logging.logWriter`, and per-resource accessor bindings on exactly the 16 runtime secrets. Source and regression tests require every callable, scheduled job, and HTTP broker to use this identity.
-- The 26-Function Node.js 22 production baseline was deployed to `us-central1`; Google Cloud and Firebase inventories returned 26 `ACTIVE` Functions on the exact runtime identity, both five-minute Scheduler jobs `ENABLED`, and configured maximum instance counts of 1, 5, or 10. Both HTTP brokers rejected unauthenticated requests with 403. This is the deployed transitional slotless-v1 baseline, not the later bridge or final strict reader committed in Git.
+- The final strict Node.js 22 backend is deployed to `us-central1`; provider
+  inventories returned 26/26 Functions `ACTIVE` and 26/26 Cloud Run services
+  `Ready` with 100% latest-revision traffic. The eight writer services and
+  deletion scheduler were restored to their exact reviewed running state after
+  the serialized schema transition. Both HTTP brokers remain fail-closed to
+  unauthenticated callers.
 - Owner authorized seven-day Artifact Registry retention on 2026-08-23. Provider verification returned cleanup action `DELETE` for any Functions container image older than `604800s` in `us-central1/gcf-artifacts`.
 - The owner Auth identity, password-only bootstrap, zero-factor migration, fresh
   Staff Portal sign-in, and authenticated `adminGetStaffSession` HTTP 200 are
@@ -93,10 +102,6 @@ Completed:
 
 Not completed:
 
-- The reviewed temporary schema bridge is committed but not deployed. One
-  sanitized schema-1 slotless access-code record must be migrated, with explicit
-  owner authorization and an update-time precondition, before the committed
-  final strict reader can be deployed.
 - DeviceCheck fallback is not configured, and production App Attest enforcement
   and physical-iPhone proof remain pending.
 - No App Review credential has been issued; valid-credential, reciprocal-realm,

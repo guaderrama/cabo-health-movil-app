@@ -2,11 +2,11 @@
 
 Status: implemented and unit/integration tested. The two Firestore rulesets,
 indexes, all 13 TTL policies, 16 independent secret rings, the 26-Function
-2026-08-23 transitional baseline, the initial owner bootstrap, and the
-password-only Staff Portal are deployed with the verified dedicated runtime
-identity. The later temporary schema bridge and final strict reader are
-committed but not deployed; production still runs the transitional slotless-v1
-binary pending the ordered bridge, one-record migration, and strict promotion.
+backend, the initial owner bootstrap, and the password-only Staff Portal are
+deployed with the verified dedicated runtime identity. On 2026-08-24 the
+temporary schema bridge, exact one-field migration, and final strict reader
+promotion completed; all 26 Functions and Cloud Run services were re-read as
+healthy and the exact writer policies and scheduler were restored.
 **The owner's strong-password
 reset, exact legacy-factor removal, refresh-token revocation, and sanitized
 account read-back are complete. The fresh personal password-only live-portal
@@ -520,12 +520,12 @@ Do not call this Apple-ready or production-ready until all are complete:
    deployment.
 4. Preserve the completed Firestore rules gate: the pinned emulator rejected
    both production probes (2/2) and both App Review probes (2/2). Re-run it for
-   every future rules change. Before the backend schema update, deploy the
-   reviewed bridge, migrate only the one known schema-1 slotless record under
-   explicit authorization and an update-time precondition, verify sanitized
-   aggregate counts, and only then deploy the strict reader. Separately migrate
-   or remove any verified historical numeric `expiresAtMs` value and require
-   every retained TTL deadline to be a Firestore `Timestamp`.
+   every future rules change. Preserve the completed 2026-08-24 schema
+   transition: the reviewed bridge preceded the exact update-time-preconditioned
+   `schemaVersion` 1-to-2 patch, the strict reader followed the sanitized
+   read-back, and rollback is limited to a reviewed schema-2-compatible build.
+   Separately migrate or remove any verified historical numeric `expiresAtMs`
+   value and require every retained TTL deadline to be a Firestore `Timestamp`.
 5. Integrate and test the native adapter against all six production client
    callables—redeem, refresh, remove, delete, deletion status, and launch—plus
    the staff portal and PHP broker adapter end-to-end. Verify the 256-bit
@@ -555,9 +555,9 @@ Do not call this Apple-ready or production-ready until all are complete:
    there are no high or critical findings in this package audit.
 
 Firestore rules/indexes/TTL, the independent Secret Manager rings, runtime IAM,
-and the 26-Function 2026-08-23 baseline have been provisioned in the exact
-production project. This does not claim that the committed bridge or strict
-reader is active.
+and the final strict 26-Function backend have been provisioned in the exact
+production project. The exact transition and rollback evidence is recorded in
+`access-code-schema-transition-2026-08-24.md`.
 The fixed active owner-admin record and the fixed Client Resources runtime
 record are present and match the reviewed bootstrap authority exactly; do not
 rerun the bootstrap against the historical local schema-1 plan. The isolated

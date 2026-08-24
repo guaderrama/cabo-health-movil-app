@@ -1,5 +1,12 @@
 # CaboHealth Miniapps and Hosting Implementation Plan
 
+> **Current-state note (2026-08-24):** This file preserves the historical
+> implementation plan and its original checkboxes. Production status is
+> authoritative only in the dated activation records under `docs/operations/`.
+> The public web, protected overlays, Firestore schema-2 migration, and final
+> strict Functions reader are deployed and verified; unchecked historical
+> steps below must not be read as current deployment state.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Construir y desplegar las tres miniapps iniciales y la superficie web de soporte con el estilo cinematográfico CaboHealth aprobado, contenido bilingüe útil, accesibilidad, navegación estable, Client Resources protegido y Universal Links válidos.
