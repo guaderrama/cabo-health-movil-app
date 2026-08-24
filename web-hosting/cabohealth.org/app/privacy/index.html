@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
   <title>Privacy / Privacidad · CaboHealth</title>
-  <meta name="description" content="Bilingual privacy information for the two CaboHealth public modules.">
+  <meta name="description" content="Bilingual privacy information for CaboHealth public and protected resources.">
   <link rel="canonical" href="https://cabohealth.org/app/privacy/">
   <style>
     :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: #173638; background: #f4f8f6; }
@@ -26,7 +26,7 @@
     <div>
       <p>CaboHealth</p>
       <h1>Privacy / Privacidad</h1>
-      <p>Two public modules / Dos módulos públicos</p>
+      <p>Public and protected resources / Recursos públicos y protegidos</p>
     </div>
   </header>
   <main>
@@ -34,7 +34,7 @@
       <h2 id="privacy-en">Privacy notice</h2>
       <section data-policy-section="scope">
         <h3>What this covers</h3>
-        <p>This notice covers the two public modules, Healthy Recipes and CaboHealth Clinic Guide, when delivered inside the CaboHealth app through WebKit or opened on the public website.</p>
+        <p>This notice covers the two public modules and the protected Client Resources area in CaboHealth, including their hosted pages. It also covers the fixed, isolated non-client sample used only for App Review and the visible Staff Access portal.</p>
       </section>
       <section data-policy-section="operator">
         <h3>Operator</h3>
@@ -42,19 +42,41 @@
       </section>
       <section data-policy-section="data-boundary">
         <h3>Information boundary</h3>
-        <p>The two public miniapps do not request or collect health information. They use no account, no app-generated identifiers, no analytics, no advertising, and no sensitive permissions. There is no field or form for personal or clinical details.</p>
+        <p>The public modules do not request or collect health information. The public modules use no account. CaboHealth uses no analytics, no advertising, no tracking, and no sensitive permissions. No public or protected resource provides a field for personal or clinical details.</p>
+      </section>
+      <section data-policy-section="client-access">
+        <h3>Protected client access</h3>
+        <p>Client Resources uses a pseudonymous Firebase Authentication UID and a random app-installation identifier to verify complimentary eligibility and limit code sharing. CaboHealth does not ask for a client name, email address, phone number, profile, diagnosis, treatment information, or other health information. The eligibility code is not retained by the app or stored in plaintext by the backend.</p>
+      </section>
+      <section data-policy-section="deletion-audit">
+        <h3>Removal, deletion, and audit</h3>
+        <p>While Client Resources access is active, choose Home → Client Resources → “Delete access account and data”. Before sending the request, the app creates a random 256-bit deletion receipt and saves it in iOS SecureStore. Backend acceptance reports pending or completed, revokes authorization immediately, and creates a durable cleanup record. Deletion is expected to complete within 30 days; that expected date is not a guaranteed physical-completion deadline. A server worker normally retries every five minutes. Expiration or administrator revocation automatically queues the same production cleanup process.</p>
+        <p>After authorization ends, the app can check deletion status without signing in. The status request requires a fresh limited-use App Check assertion but no Firebase Authentication session. The raw receipt is never stored server-side; production and App Review store only separate versioned keyed-HMAC lookups and status timestamps. A pending receipt has no TTL while cleanup continues. After completion, the receipt-status record contains only timestamps and is scheduled for asynchronous Firestore TTL deletion 30 days after completion.</p>
+        <p>When Client Resources is reopened, the app uses the SecureStore receipt to show pending status and the expected date, or to confirm completion. If the expected date has passed, status remains pending and the app offers Support. If a prepared receipt is not yet found, the app does not discard it or restore prior access; while the authenticated installation remains available, it re-submits only the same idempotent request. The app removes the local receipt only after the completion confirmation is acknowledged. If an accepted receipt cannot be found, access is not restored.</p>
+        <p>Sanitized staff audit events are scheduled for deletion 30 days after creation and are used for security and operational accountability. They contain no client name, actor UID, plaintext code, health information, or protected resource URL. Firestore TTL deletion is asynchronous after that deadline.</p>
+        <p>Cloud Functions processes the source IP address transiently to limit requests and prevent abuse. It does not store the raw address; Firestore stores only a versioned keyed HMAC lookup in the rate-limit bucket. That bucket has a 30-minute deletion deadline, and Firestore TTL deletion is asynchronous.</p>
+        <p>Other short-lived security records are a redemption-request digest scheduled for deletion after five minutes, a one-use launch nonce valid for 60 seconds, a keyed web session valid for no more than one hour, and a broker replay digest scheduled for deletion after two minutes. A deletion tombstone and retry timestamps remain only until linked-data and Firebase Authentication cleanup completes.</p>
+      </section>
+      <section data-policy-section="staff-review">
+        <h3>Staff Access and App Review</h3>
+        <p>Staff Access uses only a verified staff email address and a strong password through Firebase Authentication. The published password policy requires at least 14 characters, including an uppercase letter, a lowercase letter, and a number; a symbol is optional. Email Enumeration Protection limits responses that could reveal whether an address is registered, and Firebase App Check protects backend requests. Server-side Functions authorize every administrative request from a recent verified-password session against the active private staff record and assigned permission. The staff identity remains in Firebase Authentication until the authorized staff account is removed. The portal administers individual client access codes, unpublished resource proposals, and sanitized activity; it cannot publish runtime resources and does not request client health information. The App Review credential is handled transiently and only a keyed digest is stored. A pseudonymous review UID and installation digest authorize the fixed sample in a separate review database. The isolated App Review namespace exposes only a fixed non-client sample and no production client record.</p>
+        <p>While the review sample is active, choose Home → Client Resources → “Delete review access and data”. This uses the same receipt, status, expected-completion, and confirmation process in the separate App Review namespace. Without a user request, a current review identity becomes eligible for scheduled deletion after 30 days of inactivity, or immediately when it belongs to a stale credential generation. The five-minute worker retries failures. The inactivity threshold is an eligibility point, not a guaranteed completion time.</p>
+      </section>
+      <section data-policy-section="service-providers">
+        <h3>Service providers</h3>
+        <p>Google Firebase and Cloud services process authentication, grant, integrity, and audit records for the functions described above. Firebase App Check uses Apple App Attest with DeviceCheck fallback to protect backend requests. Hostinger delivers the hosted pages and processes the technical request logs described below. CaboHealth will activate or continue using a provider for this information only while its binding terms require at least the same or equivalent privacy and security protection described in this notice and limit processing to the stated services. CaboHealth does not use these services for advertising or tracking.</p>
       </section>
       <section data-policy-section="local-state">
         <h3>On-device choices</h3>
-        <p>Favorites and preferences remain on your device. They support local interface choices and are not sent to CaboHealth by either public module.</p>
+        <p>Favorites and preferences remain on your device. Recipe favorites and checklist choices remain in the local WebKit context. The device-bound installation identifier is kept in iOS SecureStore, and Firebase Authentication maintains the authenticated Client Resources session.</p>
       </section>
       <section data-policy-section="hosting-logs">
         <h3>Hosting logs</h3>
-        <p>Prior technical verification observed Hostinger access-log fields for IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency. The owner separately confirmed that Hostinger logs IP address, browser or user-agent, requested URL, and technical errors. These records are used to deliver, secure, and troubleshoot the public pages. They are visible in hPanel for up to 7 days. Any additional retention and deletion are controlled by Hostinger.</p>
+        <p>Prior technical verification observed Hostinger access-log fields for IP address, timestamp, HTTP method, requested resource, device and user-agent details, country, response bytes, and latency. The owner separately confirmed that Hostinger logs IP address, browser or user-agent, requested URL, and technical errors. These records are used to deliver, secure, and troubleshoot the hosted pages. They are visible in hPanel for up to 7 days. Any additional retention and deletion are controlled by Hostinger.</p>
       </section>
       <section data-policy-section="children">
         <h3>Children and age</h3>
-        <p>The two public modules are general educational resources. They offer no account and no way to submit a child's personal or health information.</p>
+        <p>The resources are general educational content. The public modules offer no account, and Client Resources provides no way to submit a child's personal or health information.</p>
       </section>
       <section data-policy-section="contact">
         <h3>Questions and content reports</h3>
@@ -70,7 +92,7 @@
       <h2 id="privacy-es">Aviso de privacidad</h2>
       <section data-policy-section="scope">
         <h3>Qué cubre este aviso</h3>
-        <p>Este aviso cubre los dos módulos públicos, Recetas Saludables y la Guía de la Clínica CaboHealth, cuando se muestran dentro de la app CaboHealth mediante WebKit o se abren en el sitio público.</p>
+        <p>Este aviso cubre los dos módulos públicos y el área protegida Recursos para Clientes de CaboHealth, incluidas sus páginas alojadas. También cubre la muestra fija y aislada, sin datos de clientes, usada sólo para la revisión de Apple y el portal visible Acceso del personal.</p>
       </section>
       <section data-policy-section="operator">
         <h3>Responsable</h3>
@@ -78,19 +100,41 @@
       </section>
       <section data-policy-section="data-boundary">
         <h3>Límite de información</h3>
-        <p>Las dos miniapps públicas no solicitan ni recopilan información de salud. Funcionan sin cuenta, sin identificadores generados por la app, sin analítica, sin publicidad y sin permisos sensibles. No hay campos ni formularios para datos personales o clínicos.</p>
+        <p>Los módulos públicos no solicitan ni recopilan información de salud. Los módulos públicos funcionan sin cuenta. CaboHealth no usa analítica, publicidad, rastreo ni permisos sensibles. Ningún recurso público o protegido ofrece un campo para datos personales o clínicos.</p>
+      </section>
+      <section data-policy-section="client-access">
+        <h3>Acceso protegido para clientes</h3>
+        <p>Recursos para Clientes usa un UID seudónimo de Firebase Authentication y un identificador aleatorio de instalación de la app para verificar la elegibilidad complementaria y limitar que se comparta el código. CaboHealth no solicita el nombre, correo electrónico, teléfono, perfil, diagnóstico, información de tratamiento ni otra información de salud del cliente. El código de elegibilidad no se conserva en la app ni se almacena en texto plano en el backend.</p>
+      </section>
+      <section data-policy-section="deletion-audit">
+        <h3>Retiro, eliminación y auditoría</h3>
+        <p>Mientras el acceso a Recursos para Clientes está activo, elige Inicio → Recursos para Clientes → “Eliminar cuenta de acceso y datos”. Antes de enviar la solicitud, la app crea un comprobante aleatorio de eliminación de 256 bits y lo guarda en SecureStore de iOS. La aceptación del backend informa si el estado está pendiente o completado, revoca la autorización de inmediato y crea un registro duradero de limpieza. Se espera completar la eliminación dentro de 30 días; esa fecha esperada no es un plazo garantizado de finalización física. Un proceso del servidor normalmente vuelve a intentar cada cinco minutos. El vencimiento o la revocación por un administrador pone en cola automáticamente el mismo proceso de limpieza de producción.</p>
+        <p>Después de terminar la autorización, la app puede consultar el estado de eliminación sin iniciar sesión. La consulta exige una verificación reciente de App Check de uso limitado, pero no una sesión de Firebase Authentication. El comprobante sin transformar nunca se almacena en el servidor; producción y revisión de Apple conservan solamente referencias HMAC separadas, con clave y versión, y marcas de tiempo de estado. Un comprobante pendiente no tiene TTL mientras continúa la limpieza. Después de completarse, el registro de estado conserva sólo marcas de tiempo y se programa para eliminación TTL asíncrona de Firestore 30 días después de completarse.</p>
+        <p>Al volver a abrir Recursos para Clientes, la app usa el comprobante de SecureStore para mostrar el estado pendiente y la fecha esperada, o para confirmar la finalización. Si pasó la fecha esperada, el estado sigue pendiente y la app ofrece Soporte. Si todavía no se encuentra un comprobante preparado, la app no lo descarta ni restablece el acceso anterior; mientras siga disponible la instalación autenticada, vuelve a enviar únicamente la misma solicitud idempotente. La app elimina el comprobante local sólo después de que se reconoce la confirmación de finalización. Si no se encuentra un comprobante ya aceptado, el acceso tampoco se restablece.</p>
+        <p>Los eventos sanitizados de auditoría del personal se programan para eliminación 30 días después de su creación y se usan para seguridad y rendición de cuentas operativa. No contienen nombre del cliente, UID del actor, código en texto plano, información de salud ni URL del recurso protegido. La eliminación TTL de Firestore es asíncrona después de ese plazo.</p>
+        <p>Cloud Functions procesa la dirección IP de origen de forma transitoria para limitar solicitudes y evitar abusos. No almacena la dirección sin transformar; Firestore conserva solamente una referencia HMAC con clave y versión en el registro de límites. Ese registro tiene un plazo de eliminación de 30 minutos y la eliminación TTL de Firestore es asíncrona.</p>
+        <p>Otros registros de seguridad de corta duración son un resumen de la solicitud de canje con plazo de cinco minutos, un nonce de apertura de un solo uso válido por 60 segundos, una sesión web con clave válida por no más de una hora y un resumen contra repetición del broker con plazo de dos minutos. La orden duradera de eliminación y las marcas de tiempo de reintento permanecen sólo hasta completar la limpieza de los datos vinculados y Firebase Authentication.</p>
+      </section>
+      <section data-policy-section="staff-review">
+        <h3>Acceso del personal y revisión de Apple</h3>
+        <p>Acceso del personal usa únicamente un correo del personal verificado y una contraseña fuerte mediante Firebase Authentication. La política de contraseñas publicada exige al menos 14 caracteres, incluida una letra mayúscula, una letra minúscula y un número; el símbolo es opcional. La Protección contra la enumeración de correos electrónicos limita las respuestas que podrían revelar si una dirección está registrada, y Firebase App Check protege las solicitudes al backend. Las Cloud Functions del servidor autorizan cada solicitud administrativa desde una sesión reciente con correo verificado y contraseña contra el registro privado y activo del personal y el permiso asignado. La identidad del personal permanece en Firebase Authentication hasta que se elimina la cuenta autorizada. El portal administra códigos individuales de acceso para clientes, propuestas de recursos sin publicar y actividad sanitizada; no puede publicar recursos en la app ni solicita información de salud del cliente. La credencial para la revisión de Apple se maneja de forma transitoria y sólo se almacena un resumen criptográfico con clave. Un UID seudónimo de revisión y un resumen del identificador de instalación autorizan la muestra fija en una base de datos separada. El espacio aislado para la revisión de Apple expone sólo una muestra fija sin datos de clientes y ningún registro de clientes de producción.</p>
+        <p>Mientras la muestra de revisión está activa, elige Inicio → Recursos para Clientes → “Eliminar acceso de revisión y datos”. Esta acción usa el mismo proceso de comprobante, estado, fecha esperada y confirmación dentro del espacio separado para la revisión de Apple. Sin una solicitud del usuario, una identidad vigente de revisión se vuelve elegible para eliminación programada después de 30 días de inactividad, o de inmediato cuando pertenece a una generación anterior de la credencial. El proceso de cinco minutos vuelve a intentar los fallos. El umbral de inactividad es un punto de elegibilidad, no un plazo garantizado de finalización.</p>
+      </section>
+      <section data-policy-section="service-providers">
+        <h3>Proveedores de servicios</h3>
+        <p>Los servicios de Google Firebase y Cloud procesan registros de autenticación, autorización, integridad y auditoría para las funciones descritas arriba. Firebase App Check usa Apple App Attest con DeviceCheck como alternativa para proteger las solicitudes al backend. Hostinger entrega las páginas alojadas y procesa los registros técnicos descritos abajo. CaboHealth activará o seguirá usando un proveedor para esta información sólo mientras sus términos vinculantes exijan al menos la misma protección, o una protección equivalente, de privacidad y seguridad descrita en este aviso y limiten el tratamiento a los servicios indicados. CaboHealth no usa estos servicios para publicidad ni rastreo.</p>
       </section>
       <section data-policy-section="local-state">
         <h3>Opciones en el dispositivo</h3>
-        <p>Los favoritos y preferencias permanecen en tu dispositivo. Sirven para opciones locales de la interfaz y ninguno de los módulos públicos los envía a CaboHealth.</p>
+        <p>Los favoritos y preferencias permanecen en tu dispositivo. Los favoritos de recetas y la lista de visita permanecen en el contexto local de WebKit. El identificador de instalación ligado al dispositivo se guarda en SecureStore de iOS y Firebase Authentication mantiene la sesión autenticada de Recursos para Clientes.</p>
       </section>
       <section data-policy-section="hosting-logs">
         <h3>Registros del alojamiento</h3>
-        <p>Una verificación técnica previa observó campos de registro de Hostinger para dirección IP, marca de tiempo, método HTTP, recurso solicitado, detalles del dispositivo y agente de usuario, país, bytes de respuesta y latencia. El propietario confirmó por separado que Hostinger registra dirección IP, navegador o agente de usuario, URL solicitada y errores técnicos. Estos registros se usan para entregar, proteger y solucionar problemas de las páginas públicas. Son visibles en hPanel hasta por 7 días. Cualquier retención adicional y la eliminación están bajo el control de Hostinger.</p>
+        <p>Una verificación técnica previa observó campos de registro de Hostinger para dirección IP, marca de tiempo, método HTTP, recurso solicitado, detalles del dispositivo y agente de usuario, país, bytes de respuesta y latencia. El propietario confirmó por separado que Hostinger registra dirección IP, navegador o agente de usuario, URL solicitada y errores técnicos. Estos registros se usan para entregar, proteger y solucionar problemas de las páginas alojadas. Son visibles en hPanel hasta por 7 días. Cualquier retención adicional y la eliminación están bajo el control de Hostinger.</p>
       </section>
       <section data-policy-section="children">
         <h3>Niñez y edad</h3>
-        <p>Los dos módulos públicos son recursos educativos generales. No ofrecen una cuenta ni una manera de enviar información personal o de salud de un menor.</p>
+        <p>Los recursos son contenido educativo general. Los módulos públicos no ofrecen una cuenta y Recursos para Clientes no ofrece una manera de enviar información personal o de salud de un menor.</p>
       </section>
       <section data-policy-section="contact">
         <h3>Preguntas y reportes de contenido</h3>
