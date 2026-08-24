@@ -29,7 +29,7 @@ const EXACT_AUTHORITY_SHA256 = Object.freeze({
   'app.json': '4b9e83ac28c05b229531570f4ddfd3acac916f8f79337a7a5e8fff1ffae82eab',
   'constants/config.ts': '56658ce4a607ee3f29e2f92929dca04141d5c87f2e274279d2e16f072b7d6692',
   'constants/publicMiniapps.ts': '803818464ef0663340d557b28fefd4dd6860abc3203fcbee7cbb14e7ef775a5e',
-  'release/app-store/3.0/release-manifest.json': '466b9a707ef8111900e02e6347da63fe258e0a1c17ee5b0cfb7b3d8197f0401d',
+  'release/app-store/3.0/release-manifest.json': '3946c6b8e5332e51210f11931bcfda6b7bfb6559be354e395054f31fcb3c9012',
   'release/app-store/3.0/age-rating.json': 'b2bd2fdd9a5109a600923dee82eb0186df99a446128f3b05a37d54e2428e19bb',
   'release/app-store/3.0/app-privacy.json': 'b24bb112b6eb678711d6de080de77ae9c53bde91bb9f6f8cabb832bb13cca45c',
 });
@@ -354,7 +354,7 @@ export function verifyCapturedReleaseV3(files) {
       medicalDevice: 'owner-confirmed-pending-exact-rc-review',
       exportCompliance: 'owner-confirmed-pending-exact-rc-review',
       firebaseAndHosting: 'core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e',
-      hostedLegalClientAccess: 'pending-revised-public-payload-redeploy-and-verification',
+      hostedLegalClientAccess: 'deployed-and-verified-revised-public-payload',
       aasa: 'deployed-and-verified-origin-and-apple-cdn',
       appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
       staffReviewAccess: 'pending-isolated-review-access-or-written-apple-direction',

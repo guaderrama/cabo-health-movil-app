@@ -809,7 +809,7 @@ test('metadata verifier rejects an external release gate marked ready', () => {
   );
 });
 
-test('metadata verifier preserves exact completed and pending public-web evidence checkboxes', async (t) => {
+test('metadata verifier preserves exact completed public-web evidence checkboxes', async (t) => {
   await t.test('the completed owner E2E gate cannot be reverted to pending', () => withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'submission-gates.md');
@@ -842,22 +842,22 @@ test('metadata verifier preserves exact completed and pending public-web evidenc
     },
   ));
 
-  const pendingRevisedPublicWebGatePrefixes = [
-    ['promotion', '- [ ] Promote and origin-verify the revised Healthy Recipes and Clinic Guide citation bytes plus the updated Privacy disclosure'],
-    ['payload verification', '- [ ] Verify the revised two-miniapp/Privacy payload is exact and no WordPress or unrelated file changes during promotion.'],
+  const completedRevisedPublicWebGatePrefixes = [
+    ['promotion', '- [x] Promote and origin-verify the revised Healthy Recipes and Clinic Guide citation bytes plus the updated Privacy disclosure'],
+    ['payload verification', '- [x] Verify the revised two-miniapp/Privacy payload is exact and no WordPress or unrelated file changes occurred during promotion.'],
   ];
-  for (const [name, prefix] of pendingRevisedPublicWebGatePrefixes) {
-    await t.test(`the pending revised ${name} gate cannot be marked completed`, () => withReleaseFixture(
+  for (const [name, prefix] of completedRevisedPublicWebGatePrefixes) {
+    await t.test(`the completed revised ${name} gate cannot be reverted to pending`, () => withReleaseFixture(
       (root) => {
         const file = join(root, releasePath, 'submission-gates.md');
         const source = readFileSync(file, 'utf8');
-        const mutated = source.replace(prefix, prefix.replace('- [ ]', '- [x]'));
-        assert.notEqual(mutated, source, `${name} fixture must contain its exact pending gate`);
+        const mutated = source.replace(prefix, prefix.replace('- [x]', '- [ ]'));
+        assert.notEqual(mutated, source, `${name} fixture must contain its exact completed gate`);
         writeFileSync(file, mutated);
       },
       (result) => {
         assert.equal(result.status, 1, result.stdout || result.stderr);
-        assert.match(result.stderr, /must retain every exact pending revised public-web checkbox/iu);
+        assert.match(result.stderr, /must retain every exact completed revised public-web checkbox/iu);
       },
     ));
   }
@@ -909,7 +909,8 @@ test('metadata verifier rejects owner, category, territory, platform, rights, an
     ['medical-device gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.regulatedMedicalDevice = 'complete'; }, /regulatedMedicalDevice must remain owner-confirmed-pending-exact-rc-review/i],
     ['privacy gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.finalPrivacyDisclosure = 'complete'; }, /finalPrivacyDisclosure must remain pending-final-linkage-category-review-and-save/i],
     ['rights gate completed', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.allContentRights = 'complete'; }, /allContentRights must remain inventory-revised-pending-owner-reconfirmation-and-per-family-basis/i],
-    ['revised public payload gate completed', (manifest) => { manifest.gates.hostedLegalClientAccess = 'complete'; }, /hostedLegalClientAccess must remain pending-revised-public-payload-redeploy-and-verification/i],
+    ['revised public payload gate reverted', (manifest) => { manifest.gates.hostedLegalClientAccess = 'pending-revised-public-payload-redeploy-and-verification'; }, /hostedLegalClientAccess must remain deployed-and-verified-revised-public-payload/i],
+    ['revised public payload unresolved record reverted', (manifest) => { manifest.appStoreDraft.unresolvedExternalGates.hostedLegalClientAccess = 'pending-revised-public-payload-redeploy-and-verification'; }, /hostedLegalClientAccess must remain deployed-and-verified-revised-public-payload/i],
     ['revised rights inventory gate completed', (manifest) => { manifest.gates.contentRights = 'complete'; }, /contentRights must remain inventory-revised-pending-owner-reconfirmation-and-per-family-basis/i],
     ['brand and rights gate completed', (manifest) => { manifest.gates.brandAndContentRights = 'complete'; }, /brandAndContentRights must remain pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis/i],
   ];

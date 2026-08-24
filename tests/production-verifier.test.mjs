@@ -258,9 +258,9 @@ test('normal production check mode verifies the pinned sanitized evidence withou
   const result = spawnSync(process.execPath, [
     verifierPath,
     '--check',
-    '--reviewed-release-id=web-v1-8ff48eacb692ff60889fbd7f6bea26174d9a85761c3a2b4d339a3745efff34ef',
-    '--reviewed-artifact-sha256=b198009b0e54048e0af7858dffedfaca90593ddfce11681fdb28b10768055287',
-    '--reviewed-browser-measurement-sha256=6de601cf854ee6dee867d434c7043939aade5900d2f9842ce0dfc6f91502ad99',
+    '--reviewed-release-id=web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b',
+    '--reviewed-artifact-sha256=79699e2a0b82ea24d8861cad67e7ee252320aec3777693a0c374a90312c7b943',
+    '--reviewed-browser-measurement-sha256=c656a1676fadd7cdf970fba91d0499934f9bf7f97bc8b25a926b8232ac7c473e',
   ], {
     cwd: projectRoot,
     encoding: 'utf8',

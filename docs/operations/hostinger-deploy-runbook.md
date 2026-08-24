@@ -1,6 +1,6 @@
 # CaboHealth Hostinger release and rollback runbook
 
-Status: **the reviewed 17-file release is live and fully verified.** Release `web-v1-8ff48eacb692ff60889fbd7f6bea26174d9a85761c3a2b4d339a3745efff34ef` completed the ten-unit promotion, five hosting overlays, exact predecessor/rollback controls, per-unit WordPress probes, descriptor inventory, origin, browser, retained-control, and Apple CDN checks on 2026-08-24. The prior release and private rehearsal receipts remain retained for rollback. Physical-iPhone and Universal Link QA remain iOS release gates, not blockers to the completed public-web activation. This runbook remains the execution contract for any future release and is not blanket authorization for another promotion.
+Status: **the reviewed 17-file release is live and fully verified.** Release `web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b` completed the ten-unit promotion, five hosting overlays, exact predecessor/rollback controls, per-unit WordPress probes, descriptor inventory, origin, 56-observation browser matrix, retained-control, and Apple CDN checks on 2026-08-24. The prior release and private rehearsal receipts remain retained for rollback. Physical-iPhone and Universal Link QA remain iOS release gates, not blockers to the completed public-web activation. This runbook remains the execution contract for any future release and is not blanket authorization for another promotion.
 
 ## Fixed scope
 

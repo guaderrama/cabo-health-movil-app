@@ -59,7 +59,7 @@ const expectedGateStates = Object.freeze({
   medicalDevice: 'owner-confirmed-pending-exact-rc-review',
   exportCompliance: 'owner-confirmed-pending-exact-rc-review',
   firebaseAndHosting: 'core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e',
-  hostedLegalClientAccess: 'pending-revised-public-payload-redeploy-and-verification',
+  hostedLegalClientAccess: 'deployed-and-verified-revised-public-payload',
   aasa: 'deployed-and-verified-origin-and-apple-cdn',
   appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
   staffReviewAccess: 'pending-isolated-review-access-or-written-apple-direction',
@@ -107,7 +107,7 @@ const expectedUnresolvedExternalGates = Object.freeze({
   allContentRights: 'inventory-revised-pending-owner-reconfirmation-and-per-family-basis',
   brandEvidenceAttachment: 'pending-signed-owner-declaration',
   firebaseAndHosting: 'core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e',
-  hostedLegalClientAccess: 'pending-revised-public-payload-redeploy-and-verification',
+  hostedLegalClientAccess: 'deployed-and-verified-revised-public-payload',
   aasa: 'deployed-and-verified-origin-and-apple-cdn',
   appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
   staffReviewAccess: 'pending-isolated-review-access-or-written-apple-direction',
@@ -1596,9 +1596,9 @@ function verifyHumanChecklists() {
   const completedPublicWebGates = [
     '- [x] Deploy the ordered AASA authority with four launch/API exclusions followed by the three exact allowed roots; verify origin bytes and Apple CDN bytes before Universal Link QA.',
   ];
-  const pendingRevisedPublicWebGates = [
-    '- [ ] Promote and origin-verify the revised Healthy Recipes and Clinic Guide citation bytes plus the updated Privacy disclosure, then regenerate the exact public-release evidence. Marketing, Terms, Support, Report Content, and AASA remain unchanged from the preceding 17-file release.',
-    '- [ ] Verify the revised two-miniapp/Privacy payload is exact and no WordPress or unrelated file changes during promotion. The preceding release remains verified until replacement.',
+  const completedRevisedPublicWebGates = [
+    '- [x] Promote and origin-verify the revised Healthy Recipes and Clinic Guide citation bytes plus the updated Privacy disclosure, then regenerate the exact public-release evidence. Marketing, Terms, Support, Report Content, and AASA remained byte-identical to the preceding 17-file release.',
+    '- [x] Verify the revised two-miniapp/Privacy payload is exact and no WordPress or unrelated file changes occurred during promotion. The preceding release remains retained as rollback.',
   ];
   const required = [
     'testflight-what-to-test.md',
@@ -1629,12 +1629,16 @@ function verifyHumanChecklists() {
           errors.push('submission-gates.md must retain the exact completed AASA public-web evidence checkbox');
         }
       }
-      for (const pendingRevisedPublicWebGate of pendingRevisedPublicWebGates) {
-        if (!source.includes(pendingRevisedPublicWebGate)) {
-          errors.push('submission-gates.md must retain every exact pending revised public-web checkbox');
+      for (const completedRevisedPublicWebGate of completedRevisedPublicWebGates) {
+        if (!source.includes(completedRevisedPublicWebGate)) {
+          errors.push('submission-gates.md must retain every exact completed revised public-web checkbox');
         }
       }
-      unsupportedCompletedEvidence = [completedOwnerE2eGate, ...completedPublicWebGates]
+      unsupportedCompletedEvidence = [
+        completedOwnerE2eGate,
+        ...completedPublicWebGates,
+        ...completedRevisedPublicWebGates,
+      ]
         .reduce((remaining, completedGate) => remaining.replace(completedGate, ''), source);
     }
     if (/\[[xX]\]/u.test(unsupportedCompletedEvidence)) {
