@@ -50,9 +50,11 @@ function schedulerJob(state = 'ENABLED', updateTime = '2026-08-24T20:00:00.000Z'
       oidcToken: { serviceAccountEmail: runtimeServiceAccount },
       uri: `https://${region}-${project}.cloudfunctions.net/retryClientAccountDeletions`,
     },
+    lastAttemptTime: '2026-08-24T19:59:00.000Z',
     name: `projects/${project}/locations/${region}/jobs/${WRITER_GATE_SCOPE.schedulerJob}`,
     retryConfig: { maxBackoffDuration: '3600s', maxDoublings: 5 },
     schedule: 'every 5 minutes',
+    scheduleTime: '2026-08-24T20:04:00.000Z',
     state,
     timeZone: 'UTC',
     userUpdateTime: updateTime,
@@ -106,7 +108,13 @@ function observationFromPlan(plan, {
 } = {}) {
   return {
     projectIamPolicy: projectPolicy,
-    schedulerJob: { ...plan.schedulerJob, state: schedulerState, userUpdateTime: schedulerUpdateTime },
+    schedulerJob: {
+      ...plan.schedulerJob,
+      lastAttemptTime: '2026-08-24T20:04:00.000Z',
+      scheduleTime: '2026-08-24T20:09:00.000Z',
+      state: schedulerState,
+      userUpdateTime: schedulerUpdateTime,
+    },
     services: plan.services.map((service) => {
       const state = serviceStates[service.serviceName] ?? 'running';
       const semantic = state === 'running'

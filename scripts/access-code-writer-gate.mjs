@@ -56,7 +56,13 @@ const ALLOWED_BINDING_KEYS = new Set(['condition', 'members', 'role']);
 const ALLOWED_CONDITION_KEYS = new Set(['description', 'expression', 'location', 'title']);
 const ALLOWED_AUDIT_CONFIG_KEYS = new Set(['auditLogConfigs', 'service']);
 const ALLOWED_AUDIT_LOG_KEYS = new Set(['exemptedMembers', 'logType']);
-const SCHEDULER_VOLATILE_FIELDS = new Set(['state', 'status', 'userUpdateTime']);
+const SCHEDULER_VOLATILE_FIELDS = new Set([
+  'lastAttemptTime',
+  'scheduleTime',
+  'state',
+  'status',
+  'userUpdateTime',
+]);
 const UNSAFE_ENVIRONMENT_NAMES = Object.freeze([
   'CLOUDSDK_AUTH_ACCESS_TOKEN',
   'CLOUDSDK_CORE_ACCOUNT',
