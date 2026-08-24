@@ -55,7 +55,7 @@ interface AppReviewHttpTransport
 final class CurlAppReviewHttpTransport implements AppReviewHttpTransport
 {
     private const CONNECT_TIMEOUT_MS = 1500;
-    private const TOTAL_TIMEOUT_MS = 4000;
+    private const TOTAL_TIMEOUT_MS = 12000;
     private const MAX_RESPONSE_BYTES = 16384;
 
     public function post(string $url, array $headers, string $body): AppReviewTransportResponse

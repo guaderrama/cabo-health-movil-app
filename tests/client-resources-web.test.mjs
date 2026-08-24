@@ -188,6 +188,7 @@ test('the broker surface is POST-only and uses a valid path-scoped secure cookie
   ]) assert.match(runtime, new RegExp(header, 'u'));
   assert.match(runtime, /x-cabohealth-response-signature/u);
   assert.match(runtime, /hash_equals\(\$expectedResponseSignature, \$responseSignature\)/u);
+  assert.match(runtime, /TOTAL_TIMEOUT_MS\s*=\s*12000/u);
   assert.match(runtime, /CURLOPT_FOLLOWLOCATION\s*=>\s*false/u);
   assert.doesNotMatch(runtime, /error_log\s*\(|trigger_error\s*\(/u);
   const apache = readFileSync('web-hosting/cabohealth.org/apps/client-resources/.htaccess', 'utf8');
@@ -211,7 +212,7 @@ test('the PHP broker behavior suite is present and runs when PHP 8 is available'
   assert.match(result.stdout, /client resource broker: ok/u);
 });
 
-test('production activation remains fail closed until private broker configuration is installed', () => {
+test('production activation record remains fail closed and binds the verified private deployment', () => {
   const factory = readFileSync('client-resources-private/config/backend-factory.php.example', 'utf8');
   const schema = JSON.parse(readFileSync('client-resources-private/config/broker-config.schema.json', 'utf8'));
   const runbook = readFileSync('docs/operations/client-resources-web-broker.md', 'utf8');
@@ -222,22 +223,27 @@ test('production activation remains fail closed until private broker configurati
   assert.doesNotMatch(factory, /hmacKeyBase64\s*['"]?\s*=>/u);
   assert.equal(schema.additionalProperties, false);
   assert.deepEqual(schema.required, ['schemaVersion', 'baseUrl', 'expectedHost', 'keyId', 'hmacKeyBase64']);
-  assert.match(runbook, /NOT ACTIVE/u);
+  assert.match(runbook, /ACTIVE \/ HOSTING BOUNDARY VERIFIED 2026-08-24/u);
+  assert.match(runbook, /protected-overlays-v1-f3fc2ffb500f41dbfbf16dd4141eef3ccf87ef7055df63a2054b9cbe042b8213/u);
   assert.match(runbook, /outside.*docroot/iu);
   assert.match(runbook, /0600/u);
-  assert.match(runbook, /no\s+deployment was performed/iu);
   assert.match(runbook, /exactly eight rings/iu);
   assert.match(runbook, /CLIENT_DELETION_RECEIPT_PEPPER_RING/u);
   assert.match(runbook, /CLIENT_BROKER_HMAC_KEY_RING/u);
   assert.match(runbook, /protected-overlay-attestor\.php/u);
   assert.match(runbook, /c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68/u);
-  assert.match(runbook, /same PHP-FPM pool or Apache handler/iu);
+  assert.match(runbook, /same effective web PHP handler/iu);
+  assert.match(runbook, /LiteSpeed LSAPI runtime/iu);
+  assert.match(runbook, /lowercase value `litespeed`/iu);
   assert.match(runbook, /phpCliPath/u);
   assert.match(runbook, /phpCliVersionId/u);
   assert.match(runbook, /never invokes[\s\S]*PHP_BINARY/iu);
   assert.match(runbook, /never inherit attestation-key, broker-HMAC/iu);
   assert.match(runbook, /SSH command[\s\S]*negative test/iu);
-  assert.match(runbook, /Current external gate:\s*\*\*BLOCKED\*\*/u);
+  assert.match(runbook, /Current external gate:\s*\*\*COMPLETED\/VERIFIED 2026-08-24\*\*/u);
+  assert.match(runbook, /763bb35ce0a7b320aabc8e8bcbb7231d91d375e4b3161fce33c6ad319ade657d/u);
+  assert.match(runbook, /protected-overlays:release deactivate-first/u);
+  assert.match(runbook, /protected-overlays:release verify-absence/u);
   assert.match(gitignore, /^\/client-resources-private\/config\/broker-config\.json$/mu);
   assert.match(gitignore, /^\/client-resources-private\/config\/backend-factory\.php$/mu);
 });

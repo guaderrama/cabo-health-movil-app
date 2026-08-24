@@ -1,8 +1,11 @@
 # App Review web broker
 
-Status: **NOT ACTIVE**. This is source and test coverage for a separate App
-Review web realm. It is not included in the reviewed 16-file public release,
-and no deployment was performed as part of this change.
+Status: **ACTIVE / HOSTING BOUNDARY VERIFIED 2026-08-24**. This separate App
+Review realm is installed atomically with production in protected release
+`protected-overlays-v1-f3fc2ffb500f41dbfbf16dd4141eef3ccf87ef7055df63a2054b9cbe042b8213`.
+It remains outside the independent 17-file public release authority. The fixed
+sample, configuration, and keys remain outside the docroot. Credential rotation,
+replay/revocation, and two-physical-iPhone E2E remain submission gates.
 
 ## Fixed boundary
 
@@ -33,7 +36,9 @@ and no deployment was performed as part of this change.
 Hostinger must call only the exported `appReviewBrokerApi`, never `brokerApi`.
 Its exact HTTPS base URL ends in `/appReviewBrokerApi`; redirects are disabled,
 TLS peer and host verification are mandatory, response size is bounded, and
-all schema or transport drift fails closed.
+all schema or transport drift fails closed. Connect timeout is 1.5 seconds and
+total timeout is 12 seconds, leaving margin for a measured Cloud Run cold start
+while still failing before the broker's 15-second server timeout.
 
 The three POST routes and bodies are:
 
@@ -127,9 +132,11 @@ real, externally pinned Hostinger evidence:
    release capsule.
 2. Create a canonical read-only trust policy with the two distinct public
    keys, exact production/review Firebase Function URLs, and each realm's exact
-   serving `runtimeIdentity`: canonical `DOCUMENT_ROOT` plus `PHP_SAPI`
-   (`fpm-fcgi` or `apache2handler`, never `cli`), plus the exact absolute
-   `phpCliPath`, SHA-256, size, owner UID, mode `0755`, and exact numeric
+   serving `runtimeIdentity`: canonical `DOCUMENT_ROOT` plus exact `PHP_SAPI`
+   (`fpm-fcgi`, `apache2handler`, or the lowercase value `litespeed`, never
+   `cli`, `cgi-fcgi`, or an alias). Accept `litespeed` only after a one-shot
+   probe from the real serving runtime reports that exact value. Also pin the
+   exact absolute `phpCliPath`, SHA-256, size, owner UID, mode `0755`, and exact numeric
    `phpCliVersionId` for a real PHP 8.2+ CLI outside the docroot. Pin
    `tools/hosting/protected-overlay-attestor.php` at SHA-256
    `c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68`.
@@ -137,8 +144,9 @@ real, externally pinned Hostinger evidence:
    capsule, then pass that independent pin to `create-activation` and
    `create-evidence-request`.
 3. Have Hostinger map the pinned attestor through an authenticated,
-   internal-only, one-shot route in the **same PHP-FPM pool or Apache handler**
-   as the protected endpoints. Server configuration—not request input—sets
+   internal-only, one-shot route in the **same effective web PHP handler** as
+   the protected endpoints: the measured PHP-FPM pool, Apache handler, or
+   LiteSpeed LSAPI runtime. Server configuration—not request input—sets
    `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_REQUEST`,
    `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_REALM`,
    `CABOHEALTH_PROTECTED_OVERLAY_PROJECT_ROOT`, and
@@ -166,10 +174,37 @@ real, externally pinned Hostinger evidence:
    `promote` and `verify-deployment`. Do not derive the expected digest from
    the capsule being accepted.
 
-Current external gate: **BLOCKED** until Hostinger proves the internal mapping,
-exact effective `PHP_SAPI`/`DOCUMENT_ROOT`, and both realm attestations from the
-serving pool. If that binding is unavailable, App Review activation remains
-forbidden.
+Current external gate: **COMPLETED/VERIFIED 2026-08-24**. Hostinger proved the
+exact LiteSpeed serving identity, document root, pinned PHP CLI, immutable
+private inputs, distinct signing realms, and both harnesses through signed
+one-shot attestations. The authenticated mappings and credentials were removed
+immediately and returned 404 afterward. The independently reassembled evidence
+pin is `763bb35ce0a7b320aabc8e8bcbb7231d91d375e4b3161fce33c6ad319ade657d`.
+
+## First-release deactivation to absence
+
+The App Review and production realms are one protected release transaction. If
+that live release records `predecessorReleaseId: "absent"`, deactivate both
+together with `protected-overlays:release deactivate-first` and the exact
+current release, inventory, artifact, activation, evidence, and trust-policy
+pins. The command cannot be used as a general downgrade and rejects predecessor
+arguments. It moves both public realm directories back to their existing
+private candidate archive under a durable rollback journal, commits managed
+state `null`, and never recursively deletes the realm trees. Before the journal,
+it stores an immutable receipt and durably replaces the private
+`current-deactivation.json` authority with the exact current pins and receipt
+digest.
+
+Run `protected-overlays:release verify-absence` with the same release,
+inventory, artifact, activation, and evidence pins before changing private
+configuration or continuing a public release. The verification requires both
+public targets to be absent and the archived bytes to match the immutable
+artifact. It also requires that exact receipt to be the current authority, so a
+historical receipt cannot be replayed after the same release bytes are
+reactivated with different activation or evidence pins. An identical
+`deactivate-first` retry is safe after a crash or lost response. If the
+predecessor is another protected release, use the separately pinned general
+rollback operation instead.
 
 Missing variables, files, permissions, PHP/cURL, host mismatch, response drift,
 or an unconfigured backend must return a generic unavailable/denied response.

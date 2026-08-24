@@ -48,6 +48,7 @@ test('Hostinger signs App Review broker calls in a separate realm', () => {
   ]) assert.match(runtime, new RegExp(header, 'u'));
   assert.match(runtime, /x-cabohealth-response-signature/u);
   assert.match(runtime, /hash_equals\(\$expectedResponseSignature, \$responseSignature\)/u);
+  assert.match(runtime, /TOTAL_TIMEOUT_MS\s*=\s*12000/u);
 
   assert.match(factory, /CABOHEALTH_APP_REVIEW_SIGNING_CONFIG/u);
   assert.match(runtime, /Private App Review backend factory must use mode 0600/u);
@@ -151,14 +152,14 @@ test('the PHP harness covers review-session lifecycle and cross-realm denial', (
   assert.match(harness, /production-realm response signature must fail/iu);
 });
 
-test('App Review web activation is fail-closed and separate from the public release', () => {
+test('App Review activation record is fail-closed and separate from the public release', () => {
   const runbook = readFileSync('docs/operations/app-review-web-broker.md', 'utf8');
   const privateIgnore = readFileSync('app-review-private/.gitignore', 'utf8');
   const factory = readFileSync('app-review-private/config/backend-factory.php.example', 'utf8');
   const publicAssembler = readFileSync('scripts/assemble-web-release.mjs', 'utf8');
 
-  assert.match(runbook, /NOT ACTIVE/u);
-  assert.match(runbook, /no deployment was performed/iu);
+  assert.match(runbook, /ACTIVE \/ HOSTING BOUNDARY VERIFIED 2026-08-24/u);
+  assert.match(runbook, /protected-overlays-v1-f3fc2ffb500f41dbfbf16dd4141eef3ccf87ef7055df63a2054b9cbe042b8213/u);
   assert.match(runbook, /outside.*docroot/iu);
   assert.match(runbook, /0600/u);
   assert.match(runbook, /appReviewBrokerApi/u);
@@ -171,13 +172,18 @@ test('App Review web activation is fail-closed and separate from the public rele
   assert.match(runbook, /APP_REVIEW_BROKER_HMAC_KEY_RING/u);
   assert.match(runbook, /protected-overlay-attestor\.php/u);
   assert.match(runbook, /c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68/u);
-  assert.match(runbook, /same PHP-FPM pool or Apache handler/iu);
+  assert.match(runbook, /same effective web PHP handler/iu);
+  assert.match(runbook, /LiteSpeed LSAPI runtime/iu);
+  assert.match(runbook, /lowercase value `litespeed`/iu);
   assert.match(runbook, /phpCliPath/u);
   assert.match(runbook, /phpCliVersionId/u);
   assert.match(runbook, /not[\s\S]{0,80}FPM\/CGI `PHP_BINARY`/iu);
   assert.match(runbook, /no attestation-key, broker-HMAC/iu);
   assert.match(runbook, /manually exported SSH\/CLI/iu);
-  assert.match(runbook, /Current external gate:\s*\*\*BLOCKED\*\*/u);
+  assert.match(runbook, /Current external gate:\s*\*\*COMPLETED\/VERIFIED 2026-08-24\*\*/u);
+  assert.match(runbook, /763bb35ce0a7b320aabc8e8bcbb7231d91d375e4b3161fce33c6ad319ade657d/u);
+  assert.match(runbook, /protected-overlays:release deactivate-first/u);
+  assert.match(runbook, /protected-overlays:release verify-absence/u);
 
   assert.match(privateIgnore, /^config\/broker-config\.json$/mu);
   assert.match(privateIgnore, /^config\/backend-factory\.php$/mu);

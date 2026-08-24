@@ -1,9 +1,12 @@
 # Client Resources web broker
 
-Status: **NOT ACTIVE**. This source implements the web-side contract, but it is
-fail-closed until the matching production `brokerApi`, private signing
-configuration, and private content release are installed and verified. No
-deployment was performed as part of this change.
+Status: **ACTIVE / HOSTING BOUNDARY VERIFIED 2026-08-24**. Production and App
+Review are installed as one atomic protected release,
+`protected-overlays-v1-f3fc2ffb500f41dbfbf16dd4141eef3ccf87ef7055df63a2054b9cbe042b8213`.
+The matching broker configuration and bilingual content remain outside the
+docroot. The PHP harness, signed LiteSpeed attestations, exact deployment gate,
+and live invalid-nonce denial passed. Native credential, replay, revocation,
+and physical-iPhone E2E remain separate Apple-submission gates.
 
 ## Trust boundary
 
@@ -26,7 +29,7 @@ deployment was performed as part of this change.
 
 All three calls are HTTPS `POST` requests to the exact configured
 `brokerApi` host. Redirects are disabled. Connect timeout is 1.5 seconds,
-total timeout is 4 seconds, TLS peer/host verification is mandatory, and a
+total timeout is 12 seconds, TLS peer/host verification is mandatory, and a
 response larger than 16 KiB is rejected.
 
 Routes and exact bodies:
@@ -138,9 +141,11 @@ The release gate does not trust a typed `status: passed`. Before activation:
    production Firebase project URL and the exact App Review project URL, their
    two distinct Ed25519 SPKI public keys, and, for each realm, the exact
    `runtimeIdentity.documentRoot` returned by the serving web runtime and its
-   exact `runtimeIdentity.phpSapi` (`fpm-fcgi` or `apache2handler`, never
-   `cli`). Also pin `phpCliPath`, `phpCliSha256`, `phpCliSize`,
-   `phpCliMode: "0755"`, `phpCliOwnerUid`, and the exact numeric
+   exact `runtimeIdentity.phpSapi` (`fpm-fcgi`, `apache2handler`, or the exact
+   lowercase value `litespeed`; never `cli`, `cgi-fcgi`, or an alias). The
+   `litespeed` value may be recorded only after a one-shot probe from the real
+   serving runtime confirms it. Also pin `phpCliPath`, `phpCliSha256`,
+   `phpCliSize`, `phpCliMode: "0755"`, `phpCliOwnerUid`, and the exact numeric
    `phpCliVersionId` for a real PHP 8.2+ CLI binary
    outside the docroot. [Hostinger documents the versioned CLI pattern](https://www.hostinger.com/support/5792082-how-to-solve-common-composer-issues-at-hostinger/)
    `/opt/alt/[php-version]/usr/bin/php`; discover and measure the actual binary
@@ -158,8 +163,9 @@ The release gate does not trust a typed `status: passed`. Before activation:
 4. Run `create-evidence-request` for the exact artifact and activation pins.
    Copy that read-only request to Hostinger without editing it.
 5. Have Hostinger create an authenticated, internal-only, one-shot mapping to
-   the pinned attestor in the **same PHP-FPM pool or Apache handler** that
-   serves the protected endpoints. The mapping supplies
+   the pinned attestor in the **same effective web PHP handler** that serves
+   the protected endpoints: the measured PHP-FPM pool, Apache handler, or
+   LiteSpeed LSAPI runtime. The mapping supplies
    `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_REQUEST`,
    `CABOHEALTH_PROTECTED_OVERLAY_ATTESTATION_REALM`,
    `CABOHEALTH_PROTECTED_OVERLAY_PROJECT_ROOT`, and
@@ -196,10 +202,38 @@ The release gate does not trust a typed `status: passed`. Before activation:
    to `promote` and `verify-deployment`. Never derive the expected pin from the
    same capsule inside the promotion command.
 
-Current external gate: **BLOCKED** until Hostinger demonstrates the internal
-mapping, the exact effective `PHP_SAPI`/`DOCUMENT_ROOT`, and both attestations
-from the serving pool. If Hostinger cannot provide that binding, do not create
-or accept deployment evidence and do not activate either overlay.
+Current external gate: **COMPLETED/VERIFIED 2026-08-24**. Hostinger proved the
+exact LiteSpeed serving identity, document root, pinned PHP CLI, immutable
+private inputs, both distinct signing realms, and both harnesses through signed
+one-shot attestations. The authenticated mappings and credentials were removed
+immediately and returned 404 afterward. The independently reassembled evidence
+pin is `763bb35ce0a7b320aabc8e8bcbb7231d91d375e4b3161fce33c6ad319ade657d`.
+
+## First-release deactivation to absence
+
+When the managed state records the live protected release's predecessor as the
+literal `absent`, use only `protected-overlays:release deactivate-first` with
+the exact current release, inventory, artifact, activation, evidence, and trust
+policy pins. The command rejects predecessor-release arguments: it is not a
+general downgrade. Under the exclusive deployment lock it recovers any durable
+journal, verifies the current activation and both live realms, records an
+immutable private deactivation receipt, then durably replaces the private
+`current-deactivation.json` authority with the exact current pins and receipt
+digest before starting the rollback journal. It sets the committed managed
+state to `null` and durably renames each live realm back into the existing
+private `candidates/<releaseId>/` archive. It does not recursively delete either
+realm.
+
+After the command, run `protected-overlays:release verify-absence` with the
+same current release, inventory, artifact, activation, and evidence pins. This
+proves that both public targets are absent and that the exact archived bytes
+remain available for a later promotion. It also requires the exact receipt to
+be the current deactivation authority, so a historical receipt cannot be
+replayed after the same release bytes are reactivated with new activation or
+evidence pins. Retrying `deactivate-first` with the same pins is idempotent,
+including after a lost response or process crash. A release whose recorded
+predecessor is another release must use the separately pinned general rollback
+path; `deactivate-first` fails closed in that state.
 
 If any variable, file, permission, host, key, content release, response schema,
 or PHP dependency is missing, the entry points return a sanitized 503 and no
