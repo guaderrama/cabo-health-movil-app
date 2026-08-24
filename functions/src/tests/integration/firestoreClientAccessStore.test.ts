@@ -164,7 +164,7 @@ test('admin list exposes only active code summaries and revocation removes one c
   assert.notEqual(replacement.summary.codeId, issued.summary.codeId);
 });
 
-test('slotless access codes use schema v2 while legacy schema v1 remains readable only with a valid slot', async () => {
+test('bridge reader accepts legacy and transitional schema v1 while new slotless codes use schema v2', async () => {
   const legacyCodeId = `ac_${'a'.repeat(32)}`;
   const legacyCode = {
     boundInstallationLookupId: null,
@@ -184,9 +184,18 @@ test('slotless access codes use schema v2 while legacy schema v1 remains readabl
     subjectUid: null,
     updatedAtMs: nowMs - 1,
   };
+  const transitionalCodeId = `ac_${'c'.repeat(32)}`;
+  const transitionalCode = {
+    ...legacyCode,
+    codeId: transitionalCodeId,
+    displaySuffix: 'CCCC',
+    lookupId: 'transitional-lookup',
+  };
+  delete (transitionalCode as Partial<typeof legacyCode>).slot;
   const database = new InMemoryDocumentDatabase({
     [clientResourcePath(resource.id)]: resource,
     [`_private_access_codes/${legacyCodeId}`]: legacyCode,
+    [`_private_access_codes/${transitionalCodeId}`]: transitionalCode,
   });
   const store = new FirestoreClientAccessStore(database);
   const issuer = new AccessCodeIssuer({
@@ -205,7 +214,7 @@ test('slotless access codes use schema v2 while legacy schema v1 remains readabl
   assert.equal('slot' in state[`_private_access_codes/${issued.summary.codeId}`]!, false);
   assert.deepEqual(
     (await store.listAccessCodes(nowMs)).map(({ codeId }) => codeId).sort(),
-    [issued.summary.codeId, legacyCodeId].sort(),
+    [issued.summary.codeId, legacyCodeId, transitionalCodeId].sort(),
   );
 });
 
@@ -227,7 +236,8 @@ test('access-code schema versions reject ambiguous slot shapes', async (t) => {
     updatedAtMs: nowMs,
   };
   for (const [name, malformed] of [
-    ['schema v1 without a slot', { ...baseCode, schemaVersion: 1 }],
+    ['schema v1 with an explicit undefined slot', { ...baseCode, schemaVersion: 1, slot: undefined }],
+    ['schema v1 with an invalid slot', { ...baseCode, schemaVersion: 1, slot: 5 }],
     ['schema v2 with a legacy slot', { ...baseCode, schemaVersion: 2, slot: 1 }],
     ['schema v2 with an explicit undefined slot', {
       ...baseCode,
