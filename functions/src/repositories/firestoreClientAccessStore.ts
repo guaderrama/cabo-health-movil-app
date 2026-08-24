@@ -85,10 +85,6 @@ type StoredAccessCode = Readonly<
     readonly slot: 1 | 2 | 3 | 4;
   })
   | (StoredAccessCodeCommon & {
-    readonly schemaVersion: 1;
-    readonly slot?: never;
-  })
-  | (StoredAccessCodeCommon & {
     readonly schemaVersion: 2;
     readonly slot?: never;
   })
@@ -1251,7 +1247,8 @@ function parseStoredAccessCode(value: unknown): Readonly<StoredAccessCode> | nul
   ) return null;
   const ownsSlot = Object.hasOwn(candidate, 'slot');
   if (
-    (candidate.schemaVersion === 1 && ownsSlot && ![1, 2, 3, 4].includes(candidate.slot as number))
+    (candidate.schemaVersion === 1
+      && (!ownsSlot || ![1, 2, 3, 4].includes(candidate.slot as number)))
     || (candidate.schemaVersion === 2 && ownsSlot)
   ) return null;
   return candidate as StoredAccessCode;
