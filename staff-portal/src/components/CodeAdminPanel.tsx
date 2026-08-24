@@ -20,7 +20,7 @@ export function CodeAdminPanel({ gateway, language, t }: CodeAdminPanelProps) {
   const model = useMemo(() => createCodeAdminModel(gateway), [gateway]);
   const [snapshot, setSnapshot] = useState<CodeAdminSnapshot>(EMPTY);
   const [expiration, setExpiration] = useState(defaultExpirationDate);
-  const [busySlot, setBusySlot] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
   const [revokeCandidate, setRevokeCandidate] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState(false);
@@ -38,13 +38,12 @@ export function CodeAdminPanel({ gateway, language, t }: CodeAdminPanelProps) {
 
   useEffect(() => { void load(); }, [model]);
 
-  const create = async (slot: 1 | 2 | 3 | 4) => {
-    setBusySlot(slot);
+  const create = async () => {
+    setCreating(true);
     setError(false);
     setCopied(false);
     try {
       await model.create({
-        slot,
         expiresAtMs: dateInputToUtcMs(expiration),
         resourceIds: REVIEWED_CLIENT_RESOURCE_IDS,
       });
@@ -52,7 +51,7 @@ export function CodeAdminPanel({ gateway, language, t }: CodeAdminPanelProps) {
     } catch {
       setError(true);
     } finally {
-      setBusySlot(null);
+      setCreating(false);
     }
   };
 
@@ -89,7 +88,7 @@ export function CodeAdminPanel({ gateway, language, t }: CodeAdminPanelProps) {
     <section aria-labelledby="codes-title" className="workspace-panel">
       <header className="panel-heading">
         <div>
-          <p className="eyebrow">01 — 04</p>
+          <p className="eyebrow">01</p>
           <h2 id="codes-title">{t('codes.title')}</h2>
           <p>{t('codes.subtitle')}</p>
         </div>
@@ -97,6 +96,9 @@ export function CodeAdminPanel({ gateway, language, t }: CodeAdminPanelProps) {
           <span>{t('codes.expiration')}</span>
           <input type="date" value={expiration} min={todayDate()} onChange={(event) => setExpiration(event.target.value)} />
         </label>
+        <button className="button primary" disabled={creating || !expiration || snapshot.oneTimeCode !== null} type="button" onClick={() => void create()}>
+          {creating ? t('common.loading') : t('codes.create')}
+        </button>
       </header>
 
       {error ? (
@@ -106,29 +108,23 @@ export function CodeAdminPanel({ gateway, language, t }: CodeAdminPanelProps) {
         </div>
       ) : null}
 
-      <div className="code-slot-grid">
-        {model.getSlots().map(({ slot, availability, code }) => (
-          <article className={`code-slot ${availability}`} key={slot}>
-            <div className="slot-number" aria-hidden="true">{String(slot).padStart(2, '0')}</div>
-            <div className="slot-copy">
-              <p className="eyebrow">{t('codes.slot')} {slot}</p>
-              <h3>{availability === 'active' ? t('codes.active') : t('codes.available')}</h3>
-              {code ? (
-                <dl className="code-facts">
-                  <div><dt>{t('codes.suffix')}</dt><dd>•••• {code.displaySuffix}</dd></div>
-                  <div><dt>{t('codes.expires')}</dt><dd>{formatDate(code.expiresAtMs, language)}</dd></div>
-                </dl>
-              ) : <p>{t('codes.empty')}</p>}
+      <div className="code-access-grid">
+        {snapshot.codes.length === 0 ? (
+          <p className="notice">{t('codes.empty')}</p>
+        ) : snapshot.codes.map((code, index) => (
+          <article className="code-access active" key={code.codeId}>
+            <div className="access-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</div>
+            <div className="access-copy">
+              <p className="eyebrow">{t('codes.access')} {index + 1}</p>
+              <h3>{t('codes.active')}</h3>
+              <dl className="code-facts">
+                <div><dt>{t('codes.suffix')}</dt><dd>•••• {code.displaySuffix}</dd></div>
+                <div><dt>{t('codes.expires')}</dt><dd>{formatDate(code.expiresAtMs, language)}</dd></div>
+              </dl>
             </div>
-            {code ? (
-              <button className="text-button danger-text" type="button" onClick={() => setRevokeCandidate(code.codeId)}>
-                {t('codes.revoke')}
-              </button>
-            ) : (
-              <button className="button primary" disabled={busySlot !== null || !expiration || snapshot.oneTimeCode !== null} type="button" onClick={() => void create(slot)}>
-                {busySlot === slot ? t('common.loading') : t('codes.create')}
-              </button>
-            )}
+            <button className="text-button danger-text" type="button" onClick={() => setRevokeCandidate(code.codeId)}>
+              {t('codes.revoke')}
+            </button>
           </article>
         ))}
       </div>

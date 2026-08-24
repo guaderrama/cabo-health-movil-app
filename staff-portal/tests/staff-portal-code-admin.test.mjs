@@ -37,7 +37,6 @@ test('a newly issued code is held only until staff acknowledges copying it', asy
 
   await model.load();
   await model.create({
-    slot: 1,
     expiresAtMs: 1_800_000_000_000,
     resourceIds: ['client-resources'],
   });
@@ -45,7 +44,6 @@ test('a newly issued code is held only until staff acknowledges copying it', asy
   assert.equal(model.getSnapshot().oneTimeCode, 'CABO-ONLY-ONCE');
   assert.equal(listCalls, 2);
   await assert.rejects(model.create({
-    slot: 2,
     expiresAtMs: 1_800_000_000_000,
     resourceIds: ['client-resources'],
   }), /code_acknowledgment_required/u);
@@ -57,13 +55,18 @@ test('a newly issued code is held only until staff acknowledges copying it', asy
   assert.equal(model.getSnapshot().oneTimeCode, null);
 });
 
-test('code administration always exposes four slots and a revoked slot becomes available', async () => {
+test('code administration exposes a dynamic active list and revokes one chosen access', async () => {
   let codes = [{
     codeId: 'code_2',
-    slot: 2,
     displaySuffix: 'A2B2',
     createdAtMs: 1_700_000_000_000,
     expiresAtMs: 1_800_000_000_000,
+    status: 'active',
+  }, {
+    codeId: 'code_3',
+    displaySuffix: 'A3B3',
+    createdAtMs: 1_710_000_000_000,
+    expiresAtMs: 1_810_000_000_000,
     status: 'active',
   }];
   const gateway = {
@@ -71,21 +74,16 @@ test('code administration always exposes four slots and a revoked slot becomes a
     async listCodes() { return codes; },
     async createCode() { throw new Error('not used'); },
     async revokeCode(codeId) {
-      codes = codes.map((code) => code.codeId === codeId ? { ...code, status: 'revoked' } : code);
+      codes = codes.filter((code) => code.codeId !== codeId);
     },
   };
   const model = createCodeAdminModel(gateway);
 
   await model.load();
-  assert.deepEqual(model.getSlots().map(({ slot, availability }) => ({ slot, availability })), [
-    { slot: 1, availability: 'available' },
-    { slot: 2, availability: 'active' },
-    { slot: 3, availability: 'available' },
-    { slot: 4, availability: 'available' },
-  ]);
+  assert.deepEqual(model.getSnapshot().codes.map(({ codeId }) => codeId), ['code_2', 'code_3']);
 
   await model.revoke('code_2');
-  assert.equal(model.getSlots()[1].availability, 'available');
+  assert.deepEqual(model.getSnapshot().codes.map(({ codeId }) => codeId), ['code_3']);
 });
 
 test('concurrent issuance is rejected so one-time plaintext can never be overwritten', async () => {
@@ -100,13 +98,12 @@ test('concurrent issuance is rejected so one-time plaintext can never be overwri
   };
   const model = createCodeAdminModel(gateway);
   const request = {
-    slot: 1,
     expiresAtMs: 1_800_000_000_000,
     resourceIds: ['client-resources'],
   };
 
   const first = model.create(request);
-  await assert.rejects(model.create({ ...request, slot: 2 }), /code_creation_in_progress/u);
+  await assert.rejects(model.create(request), /code_creation_in_progress/u);
   finishCreate({
     oneTimeCode: 'FIRST-ONLY',
     summary: {
@@ -143,7 +140,6 @@ test('a successful one-time code remains revealable if the follow-up list refres
   const model = createCodeAdminModel(gateway);
 
   await model.create({
-    slot: 1,
     expiresAtMs: 1_800_000_000_000,
     resourceIds: ['client-resources'],
   });

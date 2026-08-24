@@ -4,10 +4,11 @@ import { readFileSync } from 'node:fs';
 
 const read = (path) => readFileSync(path, 'utf8');
 
-test('the code surface shows four slots and requires copy acknowledgment before hiding plaintext', () => {
+test('the code surface supports a dynamic access list and requires copy acknowledgment before hiding plaintext', () => {
   const source = read('src/components/CodeAdminPanel.tsx');
 
-  assert.match(source, /model\.getSlots\(\)/u);
+  assert.match(source, /snapshot\.codes\.map/u);
+  assert.doesNotMatch(source, /\[1, 2, 3, 4\]|01 — 04/u);
   assert.match(source, /navigator\.clipboard\.writeText/u);
   assert.match(source, /model\.acknowledgeCodeCopied\(\)/u);
   assert.match(source, /disabled=\{!copied\}/u);
@@ -44,11 +45,14 @@ test('the activity surface is read-only, sanitized, and visibly fail-closed', ()
   assert.doesNotMatch(source, /<form|<input|create\(|delete\(/iu);
 });
 
-test('the portal has visible sign-in, TOTP, scope, language, and four explicit work areas', () => {
+test('the portal has visible password sign-in, password recovery, scope, language, and four explicit work areas', () => {
   const app = read('src/App.tsx');
 
   assert.match(app, /services\.signIn/u);
-  assert.match(app, /services\.completeTotp/u);
+  assert.match(app, /services\.requestPasswordReset/u);
+  assert.match(app, /auth\.verificationSent/u);
+  assert.match(app, /auth\.passwordResetSent/u);
+  assert.match(app, /auth\.resetPassword/u);
   assert.match(app, /session\.scope/u);
   assert.match(app, /CodeAdminPanel/u);
   assert.match(app, /CatalogDraftPanel/u);
@@ -56,15 +60,16 @@ test('the portal has visible sign-in, TOTP, scope, language, and four explicit w
   assert.match(app, /aria-label="Portal language"/u);
   assert.match(app, /document\.documentElement\.lang\s*=\s*language/u);
   assert.match(app, /services\.onAuthorizationLost/u);
+  assert.match(app, /isStaffAuthorizationBoundaryError/u);
+  assert.match(app, /t\(authError\)/u);
   for (const reset of [
     /setAuthenticated\(null\)/u,
     /setEmail\(''\)/u,
     /setPassword\(''\)/u,
-    /setTotp\(''\)/u,
-    /setMfaLabel\('Authenticator'\)/u,
     /setStage\('sign-in'\)/u,
   ]) assert.match(app, reset);
-  assert.doesNotMatch(app, /tapCount|longPress|PIN|localStorage|sessionStorage|location\.search/iu);
+  assert.doesNotMatch(app, /completeTotp|totp-enroll|Authenticator|one-time-code/u);
+  assert.doesNotMatch(app, /tapCount|longPress|PIN|localStorage|sessionStorage|indexedDB|location\.search|console\./iu);
   assert.doesNotMatch(app, /select[^>]+scope|scope[^\n]+onChange/iu);
 });
 

@@ -109,7 +109,7 @@ test('artifact creation rejects unexpected files and verification rejects malfor
   }), /staff_release_artifact_invalid/u);
 });
 
-test('live verification pins bytes and exact headers on HTML, JS, CSS, and a closed fallback', async (context) => {
+test('live verification pins bytes and semantic content types on HTML, JS, CSS, and a closed fallback', async (context) => {
   const root = makeFixture();
   context.after(() => rmSync(root, { recursive: true, force: true }));
   const artifact = createStaffReleaseArtifact({ distDir: root, identity });
@@ -123,7 +123,10 @@ test('live verification pins bytes and exact headers on HTML, JS, CSS, and a clo
     assert.ok(file);
     return new Response(byPath.get(file.path), {
       status: isFallback ? 404 : 200,
-      headers: { ...securityHeaders, 'content-type': file.mediaType },
+      headers: {
+        ...securityHeaders,
+        'content-type': file.mediaType.replace('charset=utf-8', 'charset=UTF-8'),
+      },
     });
   };
 
@@ -142,6 +145,17 @@ test('live verification pins bytes and exact headers on HTML, JS, CSS, and a clo
   };
   await assert.rejects(
     () => verifyLiveStaffRelease({ artifact, baseUrl: STAFF_PRODUCTION_URL, fetchImpl: missingCspFetch, ...pins }),
+    /staff_live_header_mismatch/u,
+  );
+
+  const wrongCharsetFetch = async (url) => {
+    const response = await fetchImpl(url);
+    const headers = Object.fromEntries(response.headers.entries());
+    headers['content-type'] = headers['content-type'].replace('charset=UTF-8', 'charset=iso-8859-1');
+    return new Response(await response.arrayBuffer(), { status: response.status, headers });
+  };
+  await assert.rejects(
+    () => verifyLiveStaffRelease({ artifact, baseUrl: STAFF_PRODUCTION_URL, fetchImpl: wrongCharsetFetch, ...pins }),
     /staff_live_header_mismatch/u,
   );
 });

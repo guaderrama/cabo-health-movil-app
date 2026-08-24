@@ -1,16 +1,13 @@
 import { FirebaseError, initializeApp } from 'firebase/app';
 import {
-  FactorId,
-  TotpMultiFactorGenerator,
+  ProviderId,
   browserSessionPersistence,
   getAuth,
-  getMultiFactorResolver,
-  multiFactor,
+  sendEmailVerification,
+  sendPasswordResetEmail,
   setPersistence,
   signInWithEmailAndPassword,
   signOut,
-  type MultiFactorError,
-  type MultiFactorResolver,
   type User,
 } from 'firebase/auth';
 import {
@@ -45,7 +42,7 @@ import {
 import type { StaffFirebaseConfig } from './staffFirebaseConfig.js';
 
 export type StaffSignInResult =
-  | Readonly<{ kind: 'mfa-required'; enrollmentId: string; displayName: string }>
+  | Readonly<{ kind: 'email-verification-required' }>
   | Readonly<{
     kind: 'authenticated';
     session: ServerStaffSession;
@@ -57,7 +54,7 @@ export type StaffSignInResult =
 
 export interface FirebaseStaffServices {
   signIn(email: string, password: string): Promise<StaffSignInResult>;
-  completeTotp(oneTimePassword: string): Promise<Extract<StaffSignInResult, { kind: 'authenticated' }>>;
+  requestPasswordReset(email: string): Promise<void>;
   restore(): Promise<Extract<StaffSignInResult, { kind: 'authenticated' }> | null>;
   signOut(): Promise<void>;
   onAuthorizationLost(listener: () => void): () => void;
@@ -80,8 +77,6 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
   const review: CallableTransport = async () => {
     throw new Error('review_sandbox_backend_unavailable');
   };
-  let pendingResolver: MultiFactorResolver | null = null;
-  let pendingEnrollmentId: string | null = null;
   const authorizationLostListeners = new Set<() => void>();
   let authorizationInvalidation: Promise<void> | null = null;
   let sessionExpiryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -94,8 +89,6 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
   const invalidateAuthorization = (): Promise<void> => {
     if (authorizationInvalidation) return authorizationInvalidation;
     clearSessionExpiryTimer();
-    pendingResolver = null;
-    pendingEnrollmentId = null;
     authorizationInvalidation = (async () => {
       try {
         await signOut(auth);
@@ -122,7 +115,7 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
   };
 
   const finishAuthenticated = async (user: User): Promise<Extract<StaffSignInResult, { kind: 'authenticated' }>> => {
-    const expiresAtMs = await assertTotpMfaSession(user);
+    const expiresAtMs = await assertVerifiedPasswordSession(user);
     const rawSession = await production('adminGetStaffSession', {});
     const session = parseServerStaffSession(rawSession);
     await armSessionExpiry(expiresAtMs);
@@ -140,44 +133,26 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
     signIn: async (email: string, password: string) => {
       clearSessionExpiryTimer();
       await setPersistence(auth, browserSessionPersistence);
-      pendingResolver = null;
-      pendingEnrollmentId = null;
       try {
         const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
-        return await finishAuthenticated(credential.user);
-      } catch (error) {
-        if (!isMfaRequired(error)) {
+        if (!credential.user.emailVerified) {
+          await sendEmailVerification(credential.user);
           await signOut(auth);
-          throw error;
+          return Object.freeze({ kind: 'email-verification-required' });
         }
-        const resolver = getMultiFactorResolver(auth, error as MultiFactorError);
-        const hint = resolver.hints.find((candidate) => candidate.factorId === FactorId.TOTP);
-        if (!hint) throw new Error('totp_factor_required');
-        pendingResolver = resolver;
-        pendingEnrollmentId = hint.uid;
-        return Object.freeze({
-          kind: 'mfa-required',
-          enrollmentId: hint.uid,
-          displayName: hint.displayName?.trim() || 'Authenticator',
-        });
-      }
-    },
-    completeTotp: async (oneTimePassword: string) => {
-      if (!pendingResolver || !pendingEnrollmentId) throw new Error('mfa_challenge_missing');
-      const resolver = pendingResolver;
-      const enrollmentId = pendingEnrollmentId;
-      const assertion = TotpMultiFactorGenerator.assertionForSignIn(
-        enrollmentId,
-        oneTimePassword.trim(),
-      );
-      const credential = await resolver.resolveSignIn(assertion);
-      pendingResolver = null;
-      pendingEnrollmentId = null;
-      try {
         return await finishAuthenticated(credential.user);
       } catch (error) {
         await signOut(auth);
         throw error;
+      }
+    },
+    requestPasswordReset: async (email: string) => {
+      try {
+        await sendPasswordResetEmail(auth, email.trim(), {
+          url: 'https://cabohealth.org/staff/',
+        });
+      } catch (error) {
+        if (!(error instanceof FirebaseError && error.code === 'auth/user-not-found')) throw error;
       }
     },
     restore: async () => {
@@ -192,8 +167,6 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
     },
     signOut: async () => {
       clearSessionExpiryTimer();
-      pendingResolver = null;
-      pendingEnrollmentId = null;
       await signOut(auth);
     },
     onAuthorizationLost: (listener: () => void) => {
@@ -203,25 +176,14 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
   });
 }
 
-async function assertTotpMfaSession(user: User): Promise<number> {
-  const enrolled = multiFactor(user).enrolledFactors.some((factor) => factor.factorId === FactorId.TOTP);
-  const token = await user.getIdTokenResult(true);
-  const firebaseClaim = token.claims.firebase;
-  const secondFactor = isRecord(firebaseClaim) ? firebaseClaim.sign_in_second_factor : undefined;
-  if (!enrolled || secondFactor !== FactorId.TOTP) {
-    throw new Error('totp_mfa_required');
+async function assertVerifiedPasswordSession(user: User): Promise<number> {
+  const token = await user.getIdTokenResult();
+  if (!user.emailVerified || token.signInProvider !== ProviderId.PASSWORD) {
+    throw new Error('verified_password_required');
   }
-  return calculateStaffSessionExpiryMs(token.claims.auth_time);
+  return calculateStaffSessionExpiryMs(Date.parse(token.authTime) / 1000);
 }
 
 function authorizationExpiredError(): Error & { code: string } {
   return Object.assign(new Error('staff_session_expired'), { code: 'auth/requires-recent-login' });
-}
-
-function isMfaRequired(error: unknown): boolean {
-  return error instanceof FirebaseError && error.code === 'auth/multi-factor-auth-required';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

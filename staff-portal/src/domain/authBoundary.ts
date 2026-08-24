@@ -9,7 +9,6 @@ const AUTHORIZATION_BOUNDARY_CODES = new Set([
   'auth/user-token-expired',
   'auth/requires-recent-login',
 ]);
-
 export function isStaffAuthorizationBoundaryError(error: unknown): boolean {
   return isRecord(error)
     && typeof error.code === 'string'

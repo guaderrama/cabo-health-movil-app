@@ -1,6 +1,5 @@
 export type StaffScope = 'production' | 'review-sandbox';
 export type StaffPermission = 'client_codes' | 'client_resource_drafts' | 'app_review_credential';
-export type ClientCodeSlot = 1 | 2 | 3 | 4;
 
 // Release-reviewed entitlement. Keep this fixed until a server-authoritative
 // resource-list callable exists; the browser must never accept arbitrary IDs.
@@ -8,7 +7,6 @@ export const REVIEWED_CLIENT_RESOURCE_IDS = Object.freeze(['client-resources'] a
 
 export interface ClientCodeSummary {
   readonly codeId: string;
-  readonly slot: ClientCodeSlot;
   readonly displaySuffix: string;
   readonly createdAtMs: number;
   readonly expiresAtMs: number;
@@ -16,7 +14,6 @@ export interface ClientCodeSummary {
 }
 
 export interface CreateClientCodeInput {
-  readonly slot: ClientCodeSlot;
   readonly expiresAtMs: number;
   readonly resourceIds: readonly string[];
 }
@@ -86,7 +83,6 @@ export function createScopedStaffGateway(input: Readonly<{
     scope: input.session.scope,
     listCodes: async () => parseCodeList(await transport(listCodesName, {})),
     createCode: async (request: CreateClientCodeInput) => parseCreatedCode(await transport(createCodeName, {
-      slot: request.slot,
       expiresAtMs: request.expiresAtMs,
       resourceIds: [...request.resourceIds],
     })),
@@ -109,7 +105,6 @@ function parseCodeList(value: unknown): readonly ClientCodeSummary[] {
 function parseCodeSummary(value: unknown): ClientCodeSummary {
   if (!isRecord(value)
     || typeof value.codeId !== 'string'
-    || !isSlot(value.slot)
     || typeof value.displaySuffix !== 'string'
     || typeof value.createdAtMs !== 'number'
     || typeof value.expiresAtMs !== 'number'
@@ -118,7 +113,6 @@ function parseCodeSummary(value: unknown): ClientCodeSummary {
   }
   return Object.freeze({
     codeId: value.codeId,
-    slot: value.slot,
     displaySuffix: value.displaySuffix,
     createdAtMs: value.createdAtMs,
     expiresAtMs: value.expiresAtMs,
@@ -148,10 +142,6 @@ function parseCreatedCode(value: unknown): CreatedClientCode {
       status: 'active',
     }),
   });
-}
-
-function isSlot(value: unknown): value is ClientCodeSlot {
-  return value === 1 || value === 2 || value === 3 || value === 4;
 }
 
 function isPermission(value: unknown): value is StaffPermission {

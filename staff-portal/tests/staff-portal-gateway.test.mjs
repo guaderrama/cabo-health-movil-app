@@ -64,7 +64,6 @@ test('production code administration uses only the implemented callables and nev
 
   await gateway.listCodes();
   const created = await gateway.createCode({
-    slot: 2,
     expiresAtMs: 1_800_000_000_000,
     resourceIds: ['client-resources'],
   });
@@ -76,7 +75,6 @@ test('production code administration uses only the implemented callables and nev
     {
       name: 'adminCreateClientAccessCode',
       payload: {
-        slot: 2,
         expiresAtMs: 1_800_000_000_000,
         resourceIds: ['client-resources'],
       },

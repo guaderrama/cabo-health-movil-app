@@ -64,6 +64,26 @@ test('the staff build has a restrictive CSP and emits no source maps', () => {
   assert.equal(readdirSync('dist', { recursive: true }).some((path) => String(path).endsWith('.map')), false);
 });
 
+test('the staff CSP permits every pinned Firebase App Check exchange origin', () => {
+  const appCheckSdk = read('node_modules/firebase/firebase-app-check.js');
+  const exchangeOrigins = [...new Set(
+    [...appCheckSdk.matchAll(/https:\/\/[a-z-]*firebaseappcheck\.googleapis\.com/gu)]
+      .map((match) => match[0]),
+  )];
+  assert.deepEqual(exchangeOrigins, ['https://content-firebaseappcheck.googleapis.com']);
+
+  for (const [name, source] of Object.entries({
+    html: read('index.html'),
+    headers: read('public/_headers'),
+    apache: read('public/.htaccess'),
+    releaseGate: read('scripts/staff-release-gate.mjs'),
+  })) {
+    for (const origin of exchangeOrigins) {
+      assert.ok(source.includes(origin), `${name} must allow the pinned App Check exchange origin`);
+    }
+  }
+});
+
 test('the portal owns its web dependencies and root scripts only delegate by prefix', () => {
   const rootPackage = JSON.parse(read('../package.json'));
   const rootTypeScript = JSON.parse(read('../tsconfig.json'));

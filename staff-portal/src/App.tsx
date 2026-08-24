@@ -4,6 +4,7 @@ import { AppReviewCredentialPanel } from './components/AppReviewCredentialPanel.
 import { AuditPanel } from './components/AuditPanel.js';
 import { CatalogDraftPanel } from './components/CatalogDraftPanel.js';
 import { CodeAdminPanel } from './components/CodeAdminPanel.js';
+import { isStaffAuthorizationBoundaryError } from './domain/authBoundary.js';
 import type {
   FirebaseStaffServices,
   StaffSignInResult,
@@ -20,17 +21,19 @@ interface AppProps {
 
 type PortalTab = 'codes' | 'drafts' | 'audit' | 'app-review';
 type Authenticated = Extract<StaffSignInResult, { kind: 'authenticated' }>;
+type AuthStage = 'restoring' | 'sign-in' | 'authenticated';
+type AuthNotice = 'verification-sent' | 'password-reset-sent' | null;
+type AuthError = 'auth.denied' | 'auth.failed' | null;
 
 export function App({ services }: AppProps) {
   const [language, setLanguage] = useState<StaffLanguage>('en');
-  const [stage, setStage] = useState<'restoring' | 'sign-in' | 'mfa' | 'authenticated'>('restoring');
+  const [stage, setStage] = useState<AuthStage>('restoring');
   const [authenticated, setAuthenticated] = useState<Authenticated | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [totp, setTotp] = useState('');
-  const [mfaLabel, setMfaLabel] = useState('Authenticator');
   const [busy, setBusy] = useState(false);
-  const [authError, setAuthError] = useState(false);
+  const [authError, setAuthError] = useState<AuthError>(null);
+  const [authNotice, setAuthNotice] = useState<AuthNotice>(null);
   const [tab, setTab] = useState<PortalTab>('codes');
   const t = useMemo(() => (
     (key: StaffMessageKey): string => STAFF_MESSAGES[language][key]
@@ -40,10 +43,9 @@ export function App({ services }: AppProps) {
     setAuthenticated(null);
     setEmail('');
     setPassword('');
-    setTotp('');
-    setMfaLabel('Authenticator');
     setBusy(false);
-    setAuthError(true);
+    setAuthError('auth.denied');
+    setAuthNotice(null);
     setTab('codes');
     setStage('sign-in');
   }, []);
@@ -72,40 +74,37 @@ export function App({ services }: AppProps) {
   const submitCredentials = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
-    setAuthError(false);
+    setAuthError(null);
+    setAuthNotice(null);
     const submittedPassword = password;
     setPassword('');
     try {
       const result = await services.signIn(email, submittedPassword);
-      if (result.kind === 'mfa-required') {
-        setMfaLabel(result.displayName);
-        setStage('mfa');
+      if (result.kind === 'email-verification-required') {
+        setAuthNotice('verification-sent');
+        setStage('sign-in');
       } else {
         setAuthenticated(result);
         setTab(firstPortalTab(result));
         setStage('authenticated');
       }
-    } catch {
-      setAuthError(true);
+    } catch (error) {
+      setAuthError(isStaffAuthorizationBoundaryError(error) ? 'auth.denied' : 'auth.failed');
       setStage('sign-in');
     } finally {
       setBusy(false);
     }
   };
 
-  const submitTotp = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const requestPasswordReset = async () => {
     setBusy(true);
-    setAuthError(false);
-    const submittedTotp = totp;
-    setTotp('');
+    setAuthError(null);
+    setAuthNotice(null);
     try {
-      const result = await services.completeTotp(submittedTotp);
-      setAuthenticated(result);
-      setTab(firstPortalTab(result));
-      setStage('authenticated');
+      await services.requestPasswordReset(email);
+      setAuthNotice('password-reset-sent');
     } catch {
-      setAuthError(true);
+      setAuthError('auth.failed');
     } finally {
       setBusy(false);
     }
@@ -116,9 +115,8 @@ export function App({ services }: AppProps) {
     setAuthenticated(null);
     setEmail('');
     setPassword('');
-    setTotp('');
-    setMfaLabel('Authenticator');
-    setAuthError(false);
+    setAuthError(null);
+    setAuthNotice(null);
     setTab('codes');
     setStage('sign-in');
   };
@@ -127,7 +125,7 @@ export function App({ services }: AppProps) {
     return <main className="auth-layout"><Brand /><p aria-live="polite">{t('common.loading')}</p></main>;
   }
 
-  if (stage === 'sign-in' || stage === 'mfa') {
+  if (stage === 'sign-in') {
     return (
       <main className="auth-layout">
         <div className="language-control">
@@ -138,21 +136,18 @@ export function App({ services }: AppProps) {
         <section className="auth-card" aria-labelledby="auth-title">
           <Brand />
           <p className="eyebrow">{t('portal.eyebrow')}</p>
-          <h1 id="auth-title">{stage === 'mfa' ? t('auth.mfaTitle') : t('auth.title')}</h1>
-          <p>{stage === 'mfa' ? t('auth.mfaRequired') : t('auth.subtitle')}</p>
-          {authError ? <div className="notice error" role="alert">{t('auth.failed')}</div> : null}
-          {stage === 'sign-in' ? (
-            <form className="auth-form" onSubmit={(event) => void submitCredentials(event)}>
-              <label className="field"><span>{t('auth.email')}</span><input autoComplete="username" inputMode="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-              <label className="field"><span>{t('auth.password')}</span><input autoComplete="current-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-              <button className="button primary full" disabled={busy} type="submit">{busy ? t('common.loading') : t('auth.signIn')}</button>
-            </form>
-          ) : (
-            <form className="auth-form" onSubmit={(event) => void submitTotp(event)}>
-              <label className="field"><span>{t('auth.mfaCode')} · {mfaLabel}</span><input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" required value={totp} onChange={(event) => setTotp(event.target.value.replace(/\D/gu, '').slice(0, 6))} /></label>
-              <button className="button primary full" disabled={busy || totp.length !== 6} type="submit">{busy ? t('common.loading') : t('auth.verify')}</button>
-            </form>
-          )}
+          <h1 id="auth-title">{t('auth.title')}</h1>
+          <p>{t('auth.subtitle')}</p>
+          {authError ? <div className="notice error" role="alert">{t(authError)}</div> : null}
+          {authNotice === 'verification-sent' ? <div className="notice" role="status">{t('auth.verificationSent')}</div> : null}
+          {authNotice === 'password-reset-sent' ? <div className="notice" role="status">{t('auth.passwordResetSent')}</div> : null}
+          <form className="auth-form" onSubmit={(event) => void submitCredentials(event)}>
+            <label className="field"><span>{t('auth.email')}</span><input autoComplete="username" inputMode="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+            <label className="field"><span>{t('auth.password')}</span><input autoComplete="current-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+            <p className="password-policy">{t('auth.passwordPolicy')}</p>
+            <button className="button primary full" disabled={busy} type="submit">{busy ? t('common.loading') : t('auth.signIn')}</button>
+            <button className="text-button" disabled={busy || email.trim() === ''} type="button" onClick={() => void requestPasswordReset()}>{t('auth.resetPassword')}</button>
+          </form>
         </section>
       </main>
     );

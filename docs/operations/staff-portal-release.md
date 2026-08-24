@@ -33,6 +33,16 @@ the public site-key value from the owner-controlled project at build time. Do
 not copy that value into Git, documentation, tickets, or release logs, and do
 not add `localhost` to this production key.
 
+The pinned Firebase SDK is also a security-policy input. The release test must
+extract every `firebaseappcheck.googleapis.com` exchange origin from the
+installed `firebase-app-check.js` bundle and require those exact origins in the
+HTML CSP, `_headers`, `.htaccess`, and expected live CSP. For the current pinned
+SDK, the required exchange origin is
+`https://content-firebaseappcheck.googleapis.com`;
+`https://firebaseappcheck.googleapis.com` is not an equivalent substitute. An
+SDK endpoint change must fail closed until the reviewed CSP and verifier advance
+together.
+
 The build fails unless the public project/App ID, external expected pins, and
 backend `STAFF_WEB_FIREBASE_APP_ID` all match. The Auth domain must be exactly
 `<projectId>.firebaseapp.com`. Confirm independently that Functions were
@@ -94,7 +104,8 @@ redirect, an unprotected error page, or any mismatched byte fails closed.
 The required live headers on every checked response are:
 
 - `Cache-Control: no-store`
-- the artifact's exact CSP with only the pinned Functions origin
+- the artifact's exact CSP containing only the reviewed Firebase Auth, Secure
+  Token, Firebase App Check exchange, reCAPTCHA, and pinned Functions origins
 - `Cross-Origin-Opener-Policy: same-origin`
 - `Cross-Origin-Resource-Policy: same-origin`
 - `Permissions-Policy: camera=(), geolocation=(), microphone=(), payment=(), usb=()`
@@ -102,6 +113,11 @@ The required live headers on every checked response are:
 - `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
+
+The verifier compares the media type and an explicit `charset` semantically:
+HTTP case differences such as `charset=UTF-8` versus `charset=utf-8` are
+equivalent. A different media type, a different charset, an added parameter,
+or a missing `Content-Type` still fails closed.
 
 Retain the manifest, all three pins, build logs, local verification result, and
 live verification result together. A rollback must restore a previously pinned

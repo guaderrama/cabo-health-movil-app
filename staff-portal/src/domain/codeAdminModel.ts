@@ -9,15 +9,8 @@ export interface CodeAdminSnapshot {
   readonly oneTimeCode: string | null;
 }
 
-export interface CodeSlotView {
-  readonly slot: 1 | 2 | 3 | 4;
-  readonly availability: 'available' | 'active';
-  readonly code: ClientCodeSummary | null;
-}
-
 export interface CodeAdminModel {
   getSnapshot(): CodeAdminSnapshot;
-  getSlots(): readonly CodeSlotView[];
   load(): Promise<void>;
   create(input: CreateClientCodeInput): Promise<void>;
   revoke(codeId: string): Promise<void>;
@@ -35,16 +28,6 @@ export function createCodeAdminModel(gateway: StaffGateway): CodeAdminModel {
 
   return Object.freeze({
     getSnapshot: () => snapshot,
-    getSlots: () => Object.freeze(([1, 2, 3, 4] as const).map((slot) => {
-      const code = snapshot.codes.find((candidate) => (
-        candidate.slot === slot && candidate.status === 'active'
-      )) ?? null;
-      return Object.freeze({
-        slot,
-        availability: code ? 'active' as const : 'available' as const,
-        code,
-      });
-    })),
     load: refreshCodes,
     create: async (input: CreateClientCodeInput) => {
       if (snapshot.oneTimeCode !== null) {

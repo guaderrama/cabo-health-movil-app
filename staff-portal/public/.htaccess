@@ -6,7 +6,7 @@ ErrorDocument 404 /staff/404.html
 
 <IfModule mod_headers.c>
   Header always set Cache-Control "no-store"
-  Header always set Content-Security-Policy "default-src 'none'; base-uri 'self'; connect-src 'self' https://firebaseappcheck.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com __CABOHEALTH_FUNCTIONS_ORIGIN__ https://www.google.com/recaptcha/; font-src 'self'; form-action 'self'; frame-ancestors 'none'; frame-src https://www.google.com/recaptcha/; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; style-src 'self'; upgrade-insecure-requests"
+  Header always set Content-Security-Policy "default-src 'none'; base-uri 'self'; connect-src 'self' https://content-firebaseappcheck.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com __CABOHEALTH_FUNCTIONS_ORIGIN__ https://www.google.com/recaptcha/; font-src 'self'; form-action 'self'; frame-ancestors 'none'; frame-src https://www.google.com/recaptcha/; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; style-src 'self'; upgrade-insecure-requests"
   Header always set Cross-Origin-Opener-Policy "same-origin"
   Header always set Cross-Origin-Resource-Policy "same-origin"
   Header always set Permissions-Policy "camera=(), geolocation=(), microphone=(), payment=(), usb=()"

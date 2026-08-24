@@ -100,7 +100,7 @@ p { color: var(--muted); line-height: 1.55; }
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: var(--shadow);
-  max-width: 460px;
+  max-width: 500px;
   padding: clamp(2rem, 6vw, 4rem);
   position: relative;
   width: 100%;
@@ -110,6 +110,7 @@ p { color: var(--muted); line-height: 1.55; }
 .auth-card .brand-mark { margin-bottom: 3.5rem; }
 .auth-card h1 { font-size: 2.55rem; margin-bottom: 1rem; }
 .auth-form { display: grid; gap: 1rem; margin-top: 2rem; }
+.password-policy { font-size: .8rem; margin: 0; }
 
 .portal-shell { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 100vh; }
 
@@ -243,8 +244,8 @@ p { color: var(--muted); line-height: 1.55; }
 .review-facts dd { color: var(--ink); margin: 0; text-align: right; }
 .review-one-time { margin-top: 1.5rem; }
 
-.code-slot-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.code-slot {
+.code-access-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.code-access {
   align-items: end;
   background: var(--white);
   border: 1px solid var(--border);
@@ -256,11 +257,10 @@ p { color: var(--muted); line-height: 1.55; }
   padding: 1.4rem;
   position: relative;
 }
-.code-slot.active { border-top: 3px solid var(--sea); }
-.code-slot.available { border-top: 3px solid var(--bronze); }
-.slot-number { align-self: start; color: #b9cbd1; font-family: Georgia, serif; font-size: 2rem; }
-.slot-copy { align-self: start; }
-.slot-copy > p:last-child { margin-bottom: 0; }
+.code-access.active { border-top: 3px solid var(--sea); }
+.access-number { align-self: start; color: #b9cbd1; font-family: Georgia, serif; font-size: 2rem; }
+.access-copy { align-self: start; }
+.access-copy > p:last-child { margin-bottom: 0; }
 .code-facts { display: grid; gap: .35rem; margin: .85rem 0 0; }
 .code-facts div { display: flex; gap: .5rem; }
 .code-facts dt { color: var(--muted); }
@@ -318,7 +318,7 @@ td { color: var(--ink); font-size: .88rem; }
   .portal-shell { grid-template-columns: 250px minmax(0, 1fr); }
   .portal-sidebar { padding: 1.6rem 1.35rem; }
   .portal-main { padding: 2rem 1.3rem; }
-  .code-slot-grid { grid-template-columns: 1fr; }
+  .code-access-grid { grid-template-columns: 1fr; }
   .review-status-card { align-items: start; grid-template-columns: 1fr; }
 }
 
@@ -346,8 +346,8 @@ td { color: var(--ink); font-size: .88rem; }
   .auth-layout { padding: 1rem; }
   .auth-layout::before { display: none; }
   .auth-card { padding: 2rem 1.25rem; }
-  .code-slot { align-items: start; grid-template-columns: 42px 1fr; padding: 1rem; }
-  .code-slot > button { grid-column: 2; justify-self: start; }
+  .code-access { align-items: start; grid-template-columns: 42px 1fr; padding: 1rem; }
+  .code-access > button { grid-column: 2; justify-self: start; }
   .one-time-code { grid-template-columns: 1fr; }
   .one-time-code .inline-actions { grid-column: auto; }
   .sidebar-footer { align-items: stretch; flex-direction: column; }

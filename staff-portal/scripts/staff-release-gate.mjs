@@ -79,7 +79,7 @@ export function expectedStaffSecurityHeaders(functionsOrigin) {
   }
   return Object.freeze({
     'cache-control': 'no-store',
-    'content-security-policy': `default-src 'none'; base-uri 'self'; connect-src 'self' https://firebaseappcheck.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com ${functionsOrigin} https://www.google.com/recaptcha/; font-src 'self'; form-action 'self'; frame-ancestors 'none'; frame-src https://www.google.com/recaptcha/; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; style-src 'self'; upgrade-insecure-requests`,
+    'content-security-policy': `default-src 'none'; base-uri 'self'; connect-src 'self' https://content-firebaseappcheck.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com ${functionsOrigin} https://www.google.com/recaptcha/; font-src 'self'; form-action 'self'; frame-ancestors 'none'; frame-src https://www.google.com/recaptcha/; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; style-src 'self'; upgrade-insecure-requests`,
     'cross-origin-opener-policy': 'same-origin',
     'cross-origin-resource-policy': 'same-origin',
     'permissions-policy': 'camera=(), geolocation=(), microphone=(), payment=(), usb=()',
@@ -141,7 +141,7 @@ async function verifyLiveResponse(response, file, expectedHeaders, expectedStatu
   for (const [name, value] of Object.entries(expectedHeaders)) {
     if (response.headers.get(name) !== value) throw new Error('staff_live_header_mismatch');
   }
-  if (response.headers.get('content-type') !== file.mediaType
+  if (!hasExpectedContentType(response.headers.get('content-type'), file.mediaType)
     || response.headers.get('set-cookie') !== null) {
     throw new Error('staff_live_header_mismatch');
   }
@@ -149,6 +149,17 @@ async function verifyLiveResponse(response, file, expectedHeaders, expectedStatu
   if (bytes.length !== file.size || sha256(bytes) !== file.sha256) {
     throw new Error('staff_live_bytes_mismatch');
   }
+}
+
+function hasExpectedContentType(actual, expected) {
+  if (typeof actual !== 'string' || typeof expected !== 'string') return false;
+  return normalizeContentType(actual) === normalizeContentType(expected);
+}
+
+function normalizeContentType(value) {
+  const match = /^([^;\s]+)\s*;\s*charset\s*=\s*([^;\s]+)$/iu.exec(value);
+  if (!match) return value;
+  return `${match[1].toLowerCase()}; charset=${match[2].toLowerCase()}`;
 }
 
 function assertArtifactManifest(artifact) {
