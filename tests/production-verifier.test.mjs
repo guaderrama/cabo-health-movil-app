@@ -255,21 +255,21 @@ async function runMutatedOrigin(verifyOrigin, mutate) {
   }
 }
 
-test('normal production check mode verifies the archived live release while a successor is assembled', async () => {
+test('normal production check mode verifies the exact current live release', async () => {
   const { resolveProductionArtifact } = await import('../scripts/verify-production.mjs');
   const liveArtifact = resolveProductionArtifact(
     projectRoot,
-    'web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b',
+    'web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693',
   );
-  assert.equal(liveArtifact.releaseId, 'web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b');
-  assert.equal(sha256(Buffer.from(`${JSON.stringify(liveArtifact)}\n`)), '79699e2a0b82ea24d8861cad67e7ee252320aec3777693a0c374a90312c7b943');
-  assert.notEqual(JSON.parse(readFileSync(join(projectRoot, 'release/web-artifacts.json'), 'utf8')).releaseId, liveArtifact.releaseId);
+  assert.equal(liveArtifact.releaseId, 'web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693');
+  assert.equal(sha256(Buffer.from(`${JSON.stringify(liveArtifact)}\n`)), '68c804d83c4444d9c54d399ea632ae570d13e9b76298e5ca64b63c0f7da486f6');
+  assert.equal(JSON.parse(readFileSync(join(projectRoot, 'release/web-artifacts.json'), 'utf8')).releaseId, liveArtifact.releaseId);
   const result = spawnSync(process.execPath, [
     verifierPath,
     '--check',
-    '--reviewed-release-id=web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b',
-    '--reviewed-artifact-sha256=79699e2a0b82ea24d8861cad67e7ee252320aec3777693a0c374a90312c7b943',
-    '--reviewed-browser-measurement-sha256=c656a1676fadd7cdf970fba91d0499934f9bf7f97bc8b25a926b8232ac7c473e',
+    '--reviewed-release-id=web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693',
+    '--reviewed-artifact-sha256=68c804d83c4444d9c54d399ea632ae570d13e9b76298e5ca64b63c0f7da486f6',
+    '--reviewed-browser-measurement-sha256=79436edc68a90f19b85708be09cc65aa3e3a84854bc7e627ef38d7d85accaf97',
   ], {
     cwd: projectRoot,
     encoding: 'utf8',
