@@ -1,0 +1,10 @@
+diff --git a/node_modules/@react-native-firebase/auth/ios/RNFBAuth/RNFBAuthModule.mm b/node_modules/@react-native-firebase/auth/ios/RNFBAuth/RNFBAuthModule.mm
+index c031751..5c1cedf 100644
+--- a/node_modules/@react-native-firebase/auth/ios/RNFBAuth/RNFBAuthModule.mm
++++ b/node_modules/@react-native-firebase/auth/ios/RNFBAuth/RNFBAuthModule.mm
+@@ -580 +580 @@ - (void)useEmulator:(NSString *)appName host:(nonnull NSString *)host port:(double
+-- (facebook::react::ModuleConstants<JS::NativeRNFBTurboAuth::Constants::Builder>)constantsToExport {
++- (facebook::react::ModuleConstants<JS::NativeRNFBTurboAuth::Constants>)constantsToExport {
+@@ -585 +585 @@ - (facebook::react::ModuleConstants<JS::NativeRNFBTurboAuth::Constants::Builder>)c
+-- (facebook::react::ModuleConstants<JS::NativeRNFBTurboAuth::Constants::Builder>)getConstants {
++- (facebook::react::ModuleConstants<JS::NativeRNFBTurboAuth::Constants>)getConstants {

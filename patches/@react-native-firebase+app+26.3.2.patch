@@ -1,0 +1,20 @@
+diff --git a/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBAppModule.mm b/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBAppModule.mm
+index ba1a750..0246500 100644
+--- a/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBAppModule.mm
++++ b/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBAppModule.mm
+@@ -105 +105 @@ - (NSDictionary *)appConstantsDictionary {
+-- (facebook::react::ModuleConstants<JS::NativeRNFBTurboApp::Constants::Builder>)constantsToExport {
++- (facebook::react::ModuleConstants<JS::NativeRNFBTurboApp::Constants>)constantsToExport {
+@@ -109 +109 @@ - (facebook::react::ModuleConstants<JS::NativeRNFBTurboApp::Constants::Builder>)c
+-- (facebook::react::ModuleConstants<JS::NativeRNFBTurboApp::Constants::Builder>)getConstants {
++- (facebook::react::ModuleConstants<JS::NativeRNFBTurboApp::Constants>)getConstants {
+diff --git a/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBUtilsModule.mm b/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBUtilsModule.mm
+index 55cf75e..84edf37 100644
+--- a/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBUtilsModule.mm
++++ b/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBUtilsModule.mm
+@@ -72 +72 @@ - (NSDictionary *)utilsConstantsDictionary {
+-- (facebook::react::ModuleConstants<JS::NativeRNFBTurboUtils::Constants::Builder>)
++- (facebook::react::ModuleConstants<JS::NativeRNFBTurboUtils::Constants>)
+@@ -77 +77 @@ - (facebook::react::ModuleConstants<JS::NativeRNFBTurboUtils::Constants::Builder>)
+-- (facebook::react::ModuleConstants<JS::NativeRNFBTurboUtils::Constants::Builder>)getConstants {
++- (facebook::react::ModuleConstants<JS::NativeRNFBTurboUtils::Constants>)getConstants {

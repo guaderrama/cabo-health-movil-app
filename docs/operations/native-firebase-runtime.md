@@ -48,6 +48,21 @@ contain `$RNFirebaseDisableSPM = true` before the application target while
 regression test pins both settings. Do not remove either side or switch linkage
 without a new native build review.
 
+React Native Firebase `26.3.2` is deliberately kept instead of rolling back to
+`26.2.0`: version `26.3` contains the framework-module include correction needed
+by this static-framework setup. Its published iOS sources have a separate
+TurboModule constants return-type regression: the App, Utils, and Auth
+implementations still use `Constants::Builder`, while their generated protocols
+require `Constants`. The two version-scoped files in `patches/` align those six
+signatures without changing the constants dictionaries or runtime behavior.
+`postinstall` applies them with warnings and failures treated as fatal, and the
+iOS codegen parity test prevents an unpatched EAS install. Remove these patches
+only after adopting a published upstream release that contains the same App,
+Utils, and Auth corrections and completing a new native build review. See
+upstream issues [#9206](https://github.com/invertase/react-native-firebase/issues/9206),
+[#9212](https://github.com/invertase/react-native-firebase/issues/9212), and
+the still-open App/Utils fix [#9220](https://github.com/invertase/react-native-firebase/pull/9220).
+
 The native bundle also imports the frozen public contact record at
 `release/public-contact-facts.json`. `.easignore` must retain exactly that
 public runtime file while continuing to exclude `release/private/`, App Store

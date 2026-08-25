@@ -36,6 +36,8 @@ test('the native EAS upload retains required app source and assets', () => {
     'eas.json',
     'package.json',
     'package-lock.json',
+    'patches/@react-native-firebase+app+26.3.2.patch',
+    'patches/@react-native-firebase+auth+26.3.2.patch',
     'release/public-contact-facts.json',
   ];
   for (const path of retained) {

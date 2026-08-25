@@ -10,6 +10,7 @@
     "build:dev": "eas build --platform ios --profile development",
     "build:dev-device": "eas build --platform ios --profile development-device",
     "build:preview": "eas build --platform ios --profile preview",
+    "postinstall": "patch-package --error-on-fail --error-on-warn",
     "build:prod": "node scripts/release-command-guard.mjs build",
     "upload:testflight": "node scripts/release-command-guard.mjs upload-testflight",
     "submit": "node scripts/release-command-guard.mjs submit-review",
@@ -81,6 +82,7 @@
     "babel-preset-expo": "^54.0.10",
     "eas-cli": "22.2.0",
     "firebase-tools": "15.28.1",
+    "patch-package": "8.0.1",
     "typescript": "~5.9.2"
   },
   "overrides": {
