@@ -81,7 +81,7 @@ test('a matching dedicated service plist enables the native plugins and runtime 
   });
   assert.deepEqual(config.plugins, [
     'expo-router',
-    '@react-native-firebase/app',
+    ['@react-native-firebase/app', { ios: { disableSPM: true } }],
     '@react-native-firebase/auth',
     '@react-native-firebase/app-check',
     ['expo-secure-store', { faceIDPermission: false }],

@@ -38,6 +38,16 @@ exact `cabohealth-owner-prod`; no staging credentials are authorized. The EAS
 production profile explicitly selects the `production` variable environment
 and Node `22.22.3`.
 
+The iOS build intentionally keeps React Native Firebase on CocoaPods with
+static framework linkage. React Native Firebase 26 defaults to Swift Package
+Manager, but its Firebase products cannot be combined with
+`use_frameworks! :linkage => :static` without duplicate native symbols. The
+Expo app plugin therefore sets `ios.disableSPM: true`; generated Podfiles must
+contain `$RNFirebaseDisableSPM = true` before the application target while
+`expo-build-properties` retains `useFrameworks: static`. The native-config
+regression test pins both settings. Do not remove either side or switch linkage
+without a new native build review.
+
 Both Expo configuration and the release guard use the same strict XML plist
 reader. It requires one root dictionary, one ordinary-text `PROJECT_ID`, and
 one ordinary-text `BUNDLE_ID`; duplicate, nested, non-string, commented/CDATA-
