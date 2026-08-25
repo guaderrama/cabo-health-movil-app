@@ -390,7 +390,7 @@ test('purpose strings and protected-resource references are independently reject
     ['AVAudioRecorder', 'IPA_FORBIDDEN_MICROPHONE_REFERENCE'],
     ['CLLocationManager', 'IPA_FORBIDDEN_LOCATION_REFERENCE'],
     ['HKHealthStore', 'IPA_FORBIDDEN_HEALTH_KIT_REFERENCE'],
-    ['ExpoFileSystem', 'IPA_FORBIDDEN_EXPO_FILE_SYSTEM_REFERENCE'],
+    ['PodsDummy_ExpoFileSystem', 'IPA_FORBIDDEN_EXPO_FILE_SYSTEM_REFERENCE'],
     ['Miniapp test panel', 'IPA_FORBIDDEN_DEV_PANEL_REFERENCE'],
     ['https://cabohealth.org/staff/', 'IPA_FORBIDDEN_STAFF_URL_REFERENCE'],
   ]) {
@@ -400,6 +400,38 @@ test('purpose strings and protected-resource references are independently reject
       ), marker);
     });
   }
+});
+
+test('concrete Expo FileSystem module signatures are independently rejected', () => {
+  for (const marker of [
+    'EXFileSystemLocalFileHandler',
+    'ExponentFileSystem',
+    'ExpoFileSystem/FileSystemModule.swift',
+    'ExpoFileSystem_privacy.bundle',
+    'PodsDummy_ExpoFileSystem',
+    '_TtC14ExpoFileSystem16FileSystemModule',
+  ]) {
+    withFixture({ binary: Buffer.from(`binary:${marker}`) }, (root) => {
+      assert.throws(() => auditFixture(root), (error) => (
+        error instanceof IpaAuditError
+          && error.message === 'IPA_FORBIDDEN_EXPO_FILE_SYSTEM_REFERENCE'
+      ), marker);
+    });
+  }
+});
+
+test('ExpoModulesCore filesystem interfaces do not impersonate the excluded module', () => {
+  const coreOnlyMarkers = [
+    'EXFileSystemInterface',
+    'EXFileSystemLegacyUtilities',
+    "FileSystem module not found, make sure 'expo-file-system' is linked correctly",
+    'FileSystemModuleNotFound',
+    'So21EXFileSystemInterface_p',
+    '_TtCV15ExpoModulesCore10Exceptions24FileSystemModuleNotFound',
+  ];
+  withFixture({ binary: Buffer.from(coreOnlyMarkers.join('\0')) }, (root) => {
+    assert.equal(auditFixture(root).evidence.status, 'passed');
+  });
 });
 
 test('privacy inventory rejects tracking and protected-resource data declarations', () => {

@@ -137,6 +137,14 @@ and associated-domain mismatch, every forbidden capability category, tracking,
 privacy-manifest inventory, private output permissions, exclusive creation,
 and temporary-directory cleanup.
 
+ExpoModulesCore itself contains the `EXFileSystemInterface` protocol, legacy
+utilities, and a diagnostic telling developers to link `expo-file-system`.
+Those core-only strings are not evidence that the optional module is present.
+The payload gate therefore rejects concrete module-owned signatures such as
+its CocoaPods dummy class, Swift module type, source-path marker, and privacy
+bundle. The focused suite proves both sides: the core-only strings pass, while
+an actual module signature fails closed.
+
 The already-built diagnostic IPA is a useful negative control only. The auditor
 must reject it and must create no evidence output; it is known to contain both
-`ExpoFileSystem` and dormant PhotoKit code.
+the linked Expo FileSystem module and dormant PhotoKit code.

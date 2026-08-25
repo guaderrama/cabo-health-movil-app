@@ -23,6 +23,14 @@ autolinking. CaboHealth does not declare or import this module; it is installed
 only as a transitive Expo dependency. The exclusion removes the entire unused
 native module instead of carrying modified SDK code.
 
+ExpoModulesCore still embeds its `EXFileSystemInterface` protocol, legacy
+utilities, and a diagnostic that names `expo-file-system`; those strings exist
+even when the optional pod is absent. The signed-IPA gate therefore keys on six
+module-owned SDK 54 signatures rather than those shared core strings. A known
+linked diagnostic IPA contains all six, while the excluded production graph
+contains none. Regression fixtures require every concrete signature to fail
+closed and require the unavoidable core-only strings to pass.
+
 `tests/ios-protected-resource-scope.test.mjs` binds the exclusion to the exact
 19.0.21 transitive version, rejects a direct application dependency or import,
 and runs Expo's own autolinking resolver to prove the package is absent from

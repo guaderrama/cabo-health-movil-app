@@ -103,9 +103,16 @@ const FORBIDDEN_MARKERS = Object.freeze({
     'home.testMiniapps',
   ],
   expoFileSystem: [
-    'EXFileSystem',
-    'ExpoFileSystem',
-    'expo-file-system',
+    // ExpoModulesCore always carries the EXFileSystemInterface protocol,
+    // legacy utilities, and a "module not found" error string even when the
+    // optional expo-file-system pod is not linked. Match signatures owned by
+    // the concrete SDK 54 module instead of those unavoidable core strings.
+    'EXFileSystemLocalFileHandler',
+    'ExponentFileSystem',
+    'ExpoFileSystem/FileSystemModule.swift',
+    'ExpoFileSystem_privacy.bundle',
+    'PodsDummy_ExpoFileSystem',
+    '_TtC14ExpoFileSystem16FileSystemModule',
   ],
   healthKit: [
     'HealthKit.framework',
