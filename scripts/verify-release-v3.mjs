@@ -37,7 +37,7 @@ const EXACT_AUTHORITY_SHA256 = Object.freeze({
   'eas.json': '9c8f655dcdfa32af3e588ce5b269fffc5eca8a7dd6cd7bd18f6fc80abf497a59',
   'constants/config.ts': '53d80e4cff7899a52717a284467a90a23dd9c3d604b14a4e0b7342934b072371',
   'constants/publicMiniapps.ts': '803818464ef0663340d557b28fefd4dd6860abc3203fcbee7cbb14e7ef775a5e',
-  'release/app-store/3.0/release-manifest.json': '6d2dd0749ec5d8590de65ed8cc64f716d41c06f46c2591ef8d99dbaa0cdd43b8',
+  'release/app-store/3.0/release-manifest.json': '768c2d5d58f06234188fc36bcd89349c71c9077085dbe4361e0e94240f08f835',
   'release/app-store/3.0/age-rating.json': 'b2bd2fdd9a5109a600923dee82eb0186df99a446128f3b05a37d54e2428e19bb',
   'release/app-store/3.0/app-privacy.json': 'b24bb112b6eb678711d6de080de77ae9c53bde91bb9f6f8cabb832bb13cca45c',
 });
@@ -409,7 +409,7 @@ export function verifyCapturedReleaseV3(files) {
       ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
       privacyMapping: 'pending-final-linkage-category-review-and-save',
       brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-      exactReleaseCandidate: 'version-and-build-configured-pending-build-input-attestation-and-qa',
+      exactReleaseCandidate: 'version-build-and-input-attested-pending-eas-environment-build-and-qa',
       testFlight: 'pending-build-upload-selection-and-physical-iphone-qa',
       screenshots: 'pending-exact-rc-capture',
       accessibilityLabels: 'pending-exact-rc-evidence',

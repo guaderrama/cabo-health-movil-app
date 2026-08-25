@@ -75,7 +75,7 @@ const expectedGateStates = Object.freeze({
   ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
   privacyMapping: 'pending-final-linkage-category-review-and-save',
   brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-  exactReleaseCandidate: 'version-and-build-configured-pending-build-input-attestation-and-qa',
+  exactReleaseCandidate: 'version-build-and-input-attested-pending-eas-environment-build-and-qa',
   testFlight: 'pending-build-upload-selection-and-physical-iphone-qa',
   accessibilityLabels: 'pending-exact-rc-evidence',
   screenshots: 'pending-exact-rc-capture',
@@ -120,7 +120,7 @@ const expectedUnresolvedExternalGates = Object.freeze({
   appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
   staffReviewAccess: 'owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested',
   clientAccessModel: 'pending-apple-review-determination',
-  exactReleaseCandidate: 'version-and-build-configured-pending-build-input-attestation-and-qa',
+  exactReleaseCandidate: 'version-build-and-input-attested-pending-eas-environment-build-and-qa',
   screenshots: 'pending-exact-rc-capture',
   appStoreConnectSave: 'pending-final-save',
 });
@@ -1674,6 +1674,7 @@ function verifyHumanChecklists() {
     '- [x] Verify the revised two-miniapp/Privacy payload is exact and no WordPress or unrelated file changes occurred during promotion. The preceding release remains retained as rollback.',
   ];
   const completedVersionConfigurationGate = '- [x] Reconcile live App Store Connect and update `app.json` and `constants/config.ts` together to 3.0/build 4 for the pre-build configuration; no RC, build, IPA, or TestFlight upload exists yet.';
+  const completedBuildInputAttestationGate = '- [x] Freeze and independently review the canonical build-input attestation; bind the exact external mode-0600 production plist hash, sanitized resolved Expo config, `cabohealth-owner-prod`, source/lock/manifests/verifiers, recursive clean `node_modules` runtime, and Node executable bytes/version. Pin those authorities so `build:prod` can run with `--freeze-credentials` from a unique private snapshot outside Dropbox whose parent `node_modules` resolves every Expo plugin.';
   const required = [
     'apple-review-remediation-2026-08-24.md',
     'testflight-what-to-test.md',
@@ -1713,11 +1714,15 @@ function verifyHumanChecklists() {
       if (!source.includes(completedVersionConfigurationGate)) {
         errors.push('submission-gates.md must retain the exact completed pre-build version configuration checkbox');
       }
+      if (!source.includes(completedBuildInputAttestationGate)) {
+        errors.push('submission-gates.md must retain the exact completed build-input attestation checkbox');
+      }
       unsupportedCompletedEvidence = [
         completedOwnerE2eGate,
         ...completedPublicWebGates,
         ...completedRevisedPublicWebGates,
         completedVersionConfigurationGate,
+        completedBuildInputAttestationGate,
       ]
         .reduce((remaining, completedGate) => remaining.replace(completedGate, ''), source);
     }

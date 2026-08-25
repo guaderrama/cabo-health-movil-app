@@ -620,6 +620,23 @@ test('metadata verifier keeps the live-reconciled pre-build configuration gate c
   );
 });
 
+test('metadata verifier keeps the independently reviewed build-input gate completed', () => {
+  withReleaseFixture(
+    (root) => {
+      const file = join(root, releasePath, 'submission-gates.md');
+      const source = readFileSync(file, 'utf8');
+      writeFileSync(file, source.replace(
+        '- [x] Freeze and independently review the canonical build-input attestation;',
+        '- [ ] Freeze and independently review the canonical build-input attestation;',
+      ));
+    },
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /must retain the exact completed build-input attestation checkbox/i);
+    },
+  );
+});
+
 test('metadata verifier keeps the Staff Portal outside the consumer binary', () => {
   withReleaseFixture(
     (root) => {

@@ -153,22 +153,59 @@ test('release guard rejects ambiguous Firebase plist identities with the exact g
   assert.deepEqual(result.bytes, canonicalBytes);
 });
 
-test('each release phase refuses to run while its independently reviewed authority is unpinned', async (t) => {
-  for (const [action, error] of [
-    ['build', 'EXACT_BUILD_INPUT_ATTESTATION_MISSING'],
-    ['upload-testflight', 'EXACT_BUILD_ARTIFACT_ATTESTATION_MISSING'],
-    ['submit-review', 'EXACT_RC_ATTESTATION_MISSING'],
-  ]) {
-    await t.test(action, () => {
-      const result = spawnSync(process.execPath, [guardPath, action], {
-        cwd: projectRoot,
-        encoding: 'utf8',
-      });
-      assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, new RegExp(error, 'u'));
-      assert.doesNotMatch(`${result.stdout}${result.stderr}`, /EAS command started/iu);
-    });
-  }
+test('the build authority is pinned while unfinished artifact and RC phases stay blocked', async () => {
+  const {
+    decodePinnedNodeToolAuthority,
+    resolvePinnedNodeTool,
+    verifyBuildArtifactAttestation,
+    verifyRcAttestation,
+  } = await import(guardPath);
+  const source = readFileSync(guardPath, 'utf8');
+  const buildInputPin = source.match(
+    /^const BUILD_INPUT_ATTESTATION_SHA256 = '([a-f0-9]{64})';$/mu,
+  )?.[1];
+  const easPin = source.match(
+    /^const PINNED_EAS_CLI = '([A-Za-z0-9+/]+={0,2})';$/mu,
+  )?.[1];
+  assert.match(buildInputPin ?? '', /^[a-f0-9]{64}$/u);
+  assert.match(easPin ?? '', /^[A-Za-z0-9+/]+={0,2}$/u);
+  assert.equal(
+    hash(readFileSync(join(
+      projectRoot,
+      'release/app-store/3.0/build-input-attestation.json',
+    ))),
+    buildInputPin,
+  );
+  const decodedEasPin = decodePinnedNodeToolAuthority(
+    easPin,
+    'EAS_CLI_NOT_PINNED',
+    'EAS_CLI_PIN_INVALID',
+  );
+  assert.equal(decodedEasPin.packageVersion, '22.2.0');
+  assert.ok(resolvePinnedNodeTool(
+    projectRoot,
+    decodedEasPin,
+    'EAS_CLI_NOT_PINNED',
+    'EAS_CLI_PIN_INVALID',
+  ).executable.endsWith('/node_modules/eas-cli/bin/run'));
+  assert.match(source, /^const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;$/mu);
+  assert.match(source, /^const RC_ATTESTATION_SHA256 = null;$/mu);
+  assert.match(source, /^const PINNED_APP_STORE_SUBMIT_ADAPTER = null;$/mu);
+  assert.throws(
+    () => verifyBuildArtifactAttestation(projectRoot, {
+      buildInputSha256: buildInputPin,
+      buildArtifactSha256: null,
+    }),
+    /EXACT_BUILD_ARTIFACT_ATTESTATION_MISSING/u,
+  );
+  assert.throws(
+    () => verifyRcAttestation(projectRoot, {
+      buildInputSha256: buildInputPin,
+      buildArtifactSha256: null,
+      rcSha256: null,
+    }),
+    /EXACT_RC_ATTESTATION_MISSING/u,
+  );
 });
 
 test('release guard separates source, built artifact, and final reviewed RC authorities', () => {
