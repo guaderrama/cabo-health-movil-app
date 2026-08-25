@@ -22,9 +22,14 @@ import {
 import { tmpdir } from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+const {
+  parseGoogleServicesPlistIdentity,
+} = require('../config/nativeFirebaseExpoConfig.cjs');
 
 const ATTESTATION_PATHS = Object.freeze({
   buildInput: 'release/app-store/3.0/build-input-attestation.json',
@@ -35,6 +40,9 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
   ipa: 'release/private/rc/CaboHealth-3.0-build-4.ipa',
   signedEntitlements: 'release/private/rc/signed-entitlements.plist',
   privacyReport: 'release/private/rc/privacy-report.json',
+  embeddedGoogleServicesPlist: 'release/private/rc/embedded-GoogleService-Info.plist',
+  signingCertificate: 'release/private/rc/signing-certificate.der',
+  embeddedProvisioningProfile: 'release/private/rc/embedded.mobileprovision',
   physicalIphoneQa: 'release/private/rc/physical-iphone-qa.json',
   appStoreConnectEvidence: 'release/private/rc/app-store-connect-evidence.json',
 });
@@ -69,6 +77,8 @@ const CANDIDATE = Object.freeze({
   marketingVersion: '3.0',
   buildNumber: '4',
 });
+const PRODUCTION_FIREBASE_PROJECT_ID = 'cabohealth-owner-prod';
+const PRIVATE_GOOGLE_SERVICES_PLIST_MARKER = '<PRIVATE_GOOGLE_SERVICES_PLIST>';
 const CANDIDATE_KEYS = Object.keys(CANDIDATE);
 const BUILD_INPUT_KEYS = [
   'schemaVersion',
@@ -81,6 +91,9 @@ const BUILD_INPUT_KEYS = [
   'releaseManifestSha256',
   'releaseVerifierSha256',
   'metadataVerifierSha256',
+  'firebaseProjectId',
+  'googleServicesPlistSha256',
+  'resolvedProductionExpoConfigSha256',
   'reviewedAt',
 ];
 const BUILD_ARTIFACT_KEYS = [
@@ -93,6 +106,9 @@ const BUILD_ARTIFACT_KEYS = [
   'ipaSha256',
   'signedEntitlementsSha256',
   'privacyReportSha256',
+  'embeddedGoogleServicesPlistSha256',
+  'signingCertificateSha256',
+  'embeddedProvisioningProfileSha256',
   'reviewedAt',
 ];
 const RC_KEYS = [
@@ -363,6 +379,84 @@ function hashPrivateEvidenceFile(root, relativePath, code) {
     invalidCode: code,
     privateMode: 0o600,
   }));
+}
+
+export function readProductionGoogleServicesPlist(environment = process.env) {
+  const code = 'EXACT_BUILD_INPUT_GOOGLE_SERVICES_PLIST_INVALID';
+  const plistPath = environment.CABOHEALTH_GOOGLE_SERVICES_PLIST;
+  if (typeof plistPath !== 'string'
+    || !isAbsolute(plistPath)
+    || synchronizedWorkspaceAncestor(plistPath) !== null
+    || environment.CABOHEALTH_FIREBASE_PROJECT_ID !== PRODUCTION_FIREBASE_PROJECT_ID) {
+    reject(code);
+  }
+  const bytes = readBoundRegularFile(plistPath, {
+    missingCode: 'EXACT_BUILD_INPUT_GOOGLE_SERVICES_PLIST_MISSING',
+    invalidCode: code,
+    privateMode: 0o600,
+    maxBytes: 256 * 1024,
+  });
+  const source = bytes.toString('utf8');
+  let identity;
+  try {
+    identity = parseGoogleServicesPlistIdentity(source);
+  } catch {
+    reject(code);
+  }
+  if (!Buffer.from(source, 'utf8').equals(bytes)
+    || identity.projectId !== PRODUCTION_FIREBASE_PROJECT_ID
+    || identity.bundleId !== CANDIDATE.bundleIdentifier) {
+    reject(code);
+  }
+  return Object.freeze({ bytes, path: plistPath, sha256: sha256(bytes) });
+}
+
+export function computeResolvedProductionExpoConfigSha256(root, plistBytes) {
+  const code = 'EXACT_BUILD_INPUT_RESOLVED_CONFIG_INVALID';
+  const absoluteRoot = realpathSync(resolve(root));
+  if (!Buffer.isBuffer(plistBytes)) reject(code);
+  let baseConfig;
+  let buildNativeFirebaseExpoConfig;
+  try {
+    baseConfig = parseExactJson(readBoundRegularFile(join(absoluteRoot, 'app.json'), {
+      missingCode: code,
+      invalidCode: code,
+      maxBytes: 256 * 1024,
+    }), code).expo;
+    const requireFromProject = createRequire(join(absoluteRoot, 'app.config.js'));
+    ({ buildNativeFirebaseExpoConfig } = requireFromProject('./config/nativeFirebaseExpoConfig.cjs'));
+  } catch (error) {
+    if (error instanceof ReleaseGuardError) throw error;
+    reject(code);
+  }
+  if (typeof buildNativeFirebaseExpoConfig !== 'function') reject(code);
+  let resolvedConfig;
+  try {
+    resolvedConfig = buildNativeFirebaseExpoConfig({
+      baseConfig,
+      env: {
+        APP_ENV: 'production',
+        CABOHEALTH_FIREBASE_PROJECT_ID: PRODUCTION_FIREBASE_PROJECT_ID,
+        CABOHEALTH_GOOGLE_SERVICES_PLIST: PRIVATE_GOOGLE_SERVICES_PLIST_MARKER,
+      },
+      fileExists: (path) => path === PRIVATE_GOOGLE_SERVICES_PLIST_MARKER,
+      readFile: (path) => {
+        if (path !== PRIVATE_GOOGLE_SERVICES_PLIST_MARKER) throw new Error(code);
+        return plistBytes.toString('utf8');
+      },
+      projectRoot: absoluteRoot,
+    });
+  } catch {
+    reject(code);
+  }
+  if (resolvedConfig?.ios?.googleServicesFile !== PRIVATE_GOOGLE_SERVICES_PLIST_MARKER
+    || resolvedConfig?.extra?.clientAccessRuntime?.expectedProjectId
+      !== PRODUCTION_FIREBASE_PROJECT_ID
+    || resolvedConfig?.extra?.clientAccessRuntime?.appEnvironment !== 'production'
+    || resolvedConfig?.extra?.clientAccessRuntime?.enabled !== true) {
+    reject(code);
+  }
+  return sha256(Buffer.from(JSON.stringify(resolvedConfig), 'utf8'));
 }
 
 function runGit(root, args, code) {
@@ -744,7 +838,12 @@ export function snapshotPinnedNodeTool(operationRoot, resolvedTool, pin) {
   if (isWithin(absoluteOperationRoot, resolvedTool.runtimeRoot)) {
     reject('PRIVATE_TOOL_SNAPSHOT_INVALID');
   }
-  const runtimeRoot = join(absoluteOperationRoot, 'tool-runtime');
+  // Place the reviewed dependency closure at the standard parent node_modules
+  // location. The tracked workspace snapshot intentionally contains no
+  // dependencies; Expo app.config/plugin resolution must therefore resolve
+  // through this private, rehashed runtime rather than Dropbox or the source
+  // worktree.
+  const runtimeRoot = join(absoluteOperationRoot, 'node_modules');
   copyRuntimeTree(resolvedTool.runtimeRoot, runtimeRoot);
   const nodeDirectory = join(absoluteOperationRoot, 'node-runtime');
   mkdirSync(nodeDirectory, { mode: 0o700 });
@@ -800,6 +899,7 @@ export function verifyBuildInputAttestation(root, expectedSha256) {
   for (const key of BUILD_INPUT_KEYS.filter((key) => key.endsWith('Sha256'))) {
     assertSha256(attestation[key], code);
   }
+  const googleServicesPlist = readProductionGoogleServicesPlist();
   if (attestation.sourceTreeSha256 !== computeTrackedSourceSha256(root)
     || attestation.appJsonSha256 !== hashProjectFile(root, 'app.json', code)
     || attestation.configSha256 !== hashProjectFile(root, 'constants/config.ts', code)
@@ -818,7 +918,11 @@ export function verifyBuildInputAttestation(root, expectedSha256) {
       root,
       'scripts/verify-app-store-metadata.mjs',
       code,
-    )) {
+    )
+    || attestation.firebaseProjectId !== PRODUCTION_FIREBASE_PROJECT_ID
+    || attestation.googleServicesPlistSha256 !== googleServicesPlist.sha256
+    || attestation.resolvedProductionExpoConfigSha256
+      !== computeResolvedProductionExpoConfigSha256(root, googleServicesPlist.bytes)) {
     reject(code);
   }
   return attestation;
@@ -865,6 +969,23 @@ export function verifyBuildArtifactAttestation(root, {
     || attestation.privacyReportSha256 !== hashPrivateEvidenceFile(
       root,
       PRIVATE_EVIDENCE_PATHS.privacyReport,
+      code,
+    )
+    || attestation.embeddedGoogleServicesPlistSha256
+      !== buildInput.googleServicesPlistSha256
+    || attestation.embeddedGoogleServicesPlistSha256 !== hashPrivateEvidenceFile(
+      root,
+      PRIVATE_EVIDENCE_PATHS.embeddedGoogleServicesPlist,
+      code,
+    )
+    || attestation.signingCertificateSha256 !== hashPrivateEvidenceFile(
+      root,
+      PRIVATE_EVIDENCE_PATHS.signingCertificate,
+      code,
+    )
+    || attestation.embeddedProvisioningProfileSha256 !== hashPrivateEvidenceFile(
+      root,
+      PRIVATE_EVIDENCE_PATHS.embeddedProvisioningProfile,
       code,
     )) {
     reject(code);
@@ -1126,7 +1247,13 @@ export function resolvePinnedNodeTool(root, pin, missingCode, invalidCode) {
 
 export function easArgumentsForAction(action, { ipaPath } = {}) {
   if (action === 'build') {
-    return ['build', '--platform', 'ios', '--profile', 'production', '--non-interactive'];
+    return [
+      'build',
+      '--platform', 'ios',
+      '--profile', 'production',
+      '--freeze-credentials',
+      '--non-interactive',
+    ];
   }
   if (action === 'upload-testflight') {
     if (typeof ipaPath !== 'string' || ipaPath !== resolve(ipaPath)) {

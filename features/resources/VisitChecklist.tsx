@@ -8,6 +8,7 @@ import {
   resetVisitChecklist,
   setVisitChecklistItem,
 } from './publicContent';
+import { CitationList } from './CitationList';
 
 export function VisitChecklist() {
   const { colors } = useTheme();
@@ -73,6 +74,7 @@ export function VisitChecklist() {
           </View>
         </View>
       ))}
+      <CitationList sources={CLINIC_GUIDE.sources} reviewedOn={CLINIC_GUIDE.reviewedOn} />
       <View style={[styles.emergency, { borderColor: colors.error, backgroundColor: `${colors.error}10` }]}>
         <Text style={[styles.emergencyBody, { color: colors.text }]}>{CLINIC_GUIDE.emergency[language]}</Text>
       </View>

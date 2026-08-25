@@ -1,6 +1,6 @@
 # CaboHealth Catalog Platform — Diseño de la versión para App Store
 
-> **Histórico y no normativo:** no ejecutes tareas sin revalidarlas ni uses este archivo como estado actual. Quedaron sustituidos la topología permanente de dos proyectos, el acceso Apple mediante `reviewSandboxAdmin`/cuenta Staff y MFA/TOTP en producción. La autoridad vigente es [ADR 0001](../../decisions/0001-single-firebase-production-project.md), [ADR 0002](../../decisions/0002-password-only-staff-access.md), los runbooks de acceso, activación Firebase y contención Firestore, y los registros de activación fechados. Web público, overlay protegido y Staff password-only están desplegados; el puente/migración/lector estricto y el RC/TestFlight de Apple siguen pendientes.
+> **Histórico y no normativo:** no ejecutes tareas sin revalidarlas ni uses este archivo como estado actual. Quedaron sustituidos la topología permanente de dos proyectos, el acceso Apple mediante `reviewSandboxAdmin`/cuenta Staff, la fila nativa Staff y MFA/TOTP en producción. La autoridad vigente es [ADR 0001](../../decisions/0001-single-firebase-production-project.md), [ADR 0002](../../decisions/0002-password-only-staff-access.md), el manifiesto 3.0 y los registros de activación fechados. Web público, overlay protegido, backend estricto y Staff password-only están desplegados; el portal Staff es owner-only por URL directa y está excluido del binario consumidor. El RC/TestFlight de Apple sigue pendiente.
 
 **Fecha:** 2026-08-16
 
@@ -24,7 +24,7 @@ La versión nueva conserva el objetivo original: una plataforma vertical de Cabo
 6. Las miniapps para clientes permanecen visibles con nombre, descripción y candado. Un código de cliente desbloquea únicamente los módulos asignados.
 7. Los códigos se entregan a pacientes o clientes existentes de CaboHealth y autentican una relación con servicios médicos presenciales consumidos fuera de la app; no tienen cargo digital separado, no se venden como licencias y no existe CTA de compra. Este modelo debe documentarse y pasar el gate 3.1 antes del envío; si no encaja inequívocamente, Client Resources será público o usará IAP.
 8. App Review recibe una credencial estable, no expirable y capaz de abrir todas las funciones enviadas a revisión.
-9. El panel administrativo se conserva, pero deja de depender de gestos secretos, PIN local o escritura Firestore anónima. Se protege mediante identidad de personal, MFA, rol administrativo y operaciones auditadas. Como Staff Sign In es visible, App Review recibe desde el inicio una cuenta no expirable en el mismo sistema Firebase Auth, con scope servidor `reviewSandbox` y acceso exclusivo a repositorios `review_sandbox_*`; nunca puede leer ni mutar recursos de producción.
+9. **Sustituido el 2026-08-24:** el panel administrativo se conserva como portal web owner-only por URL directa, pero no aparece ni es alcanzable desde el binario consumidor. Usa identidad verificada, contraseña sin segundo factor conforme a ADR 0002, autorización servidor y operaciones auditadas. App Review recibe únicamente la credencial aislada `AR-` para la muestra fija de Client Resources; si Apple solicita por escrito el sistema administrativo separado, se suministrará acceso no productivo aislado sin privilegios de propietario.
 10. Ninguna miniapp se activa silenciosamente después de la revisión. Cada incorporación material se documenta y se incluye en el proceso de release correspondiente.
 
 ## 3. Objetivos
@@ -210,8 +210,8 @@ El WebView:
 
 La interfaz administrativa conserva las funciones de alta, edición, orden, publicación y despublicación, pero opera mediante una API autenticada.
 
-- La entrada aparece en Settings como `Staff Sign In`; no usa gesto oculto.
-- El personal inicia sesión con Firebase Auth y MFA.
+- **Sustituido el 2026-08-24:** no existe entrada Staff en Settings ni URL Staff alcanzable desde el binario consumidor.
+- El propietario abre el portal por URL directa e inicia sesión con Firebase Auth password-only.
 - Un custom claim `catalogAdmin` autoriza operaciones.
 - La API vuelve a validar el rol en cada mutación.
 - El cliente nunca escribe directamente el manifiesto publicado.
@@ -384,7 +384,7 @@ El trabajo se divide en entregas verificables:
 2. **Shell visual:** portada A4, catálogo, estados de acceso, Settings y accesibilidad.
 3. **Miniapps públicas:** Healthy Recipes y Clinic Guide con hosting, universal links y link checks.
 4. **Client Resources:** acceso protegido, launch token, contenido no sensible y demo de Review.
-5. **Administración:** Staff Sign In, rol, CRUD validado, auditoría y release gate.
+5. **Administración:** portal web owner-only por URL directa, rol, CRUD validado, auditoría y release gate; excluido del binario consumidor.
 6. **Hardening:** WebView, deep links, offline, caché, rate limits, privacidad y pruebas E2E.
 7. **Release:** deploy web/backend, TestFlight, pruebas del build exacto, metadata, carga y envío a Review.
 

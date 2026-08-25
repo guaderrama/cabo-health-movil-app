@@ -65,19 +65,6 @@ export default function SettingsScreen() {
     }
   }, [t]);
 
-  const openStaffPortal = useCallback(async () => {
-    try {
-      const state = await Network.getNetworkStateAsync();
-      if (state.isConnected === false || state.isInternetReachable === false) {
-        Alert.alert(t('common.offline'), t('settings.openLinkError'));
-        return;
-      }
-      await Linking.openURL(config.urls.staffPortal);
-    } catch {
-      Alert.alert(t('common.error'), t('settings.openLinkError'));
-    }
-  }, [t]);
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <BrandedBackground moleculeOpacity={0.32} />
@@ -134,13 +121,6 @@ export default function SettingsScreen() {
       </SettingsSection>
 
       <SettingsSection title={t('settings.informationSection')}>
-        <LinkRow
-          icon="people-circle-outline"
-          title={t('settings.staffAccess')}
-          subtitle={t('settings.staffAccessSubtitle')}
-          onPress={openStaffPortal}
-        />
-        <Separator />
         <LinkRow icon="shield-checkmark-outline" title={t('settings.privacy')} onPress={() => openUrl(config.urls.privacy)} />
         <Separator />
         <LinkRow icon="document-text-outline" title={t('settings.terms')} onPress={() => openUrl(config.urls.terms)} />

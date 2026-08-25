@@ -11,7 +11,7 @@ Status: Planning only. Capture `en-US` and `es-MX` from the processed CaboHealth
 | `05-client-resources-locked` | Protected folio before eligibility verification | Complimentary resources for eligible existing clients | Recursos incluidos para clientes existentes elegibles | No price, purchase, or secret visible |
 | `06-eligibility-code-entry` | Empty eligibility-code modal with format guidance | Verify eligibility securely | Verifica tu elegibilidad de forma segura | Never show a real CH/AR credential |
 | `07-saved` | Saved screen with reviewed public cards | Keep your public resources close | Conserva cerca tus recursos públicos | Only approved public scope |
-| `08-settings-and-legal` | Settings with language/appearance/effects, legal rows, and visible Staff Access | Clear controls and transparent support | Controles claros y soporte transparente | Staff row visible; no admin secret |
+| `08-settings-and-legal` | Settings with language/appearance/effects and the four public legal/support rows | Clear controls and transparent support | Controles claros y soporte transparente | No owner/admin portal, account, or secret visible |
 
 ## Capture rules
 

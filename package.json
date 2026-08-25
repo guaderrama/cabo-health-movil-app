@@ -43,6 +43,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@xmldom/xmldom": "0.8.15",
     "@react-native-firebase/app": "26.3.2",
     "@react-native-firebase/app-check": "26.3.2",
     "@react-native-firebase/auth": "26.3.2",
@@ -86,7 +87,7 @@
     "eas-cli": {
       "ajv": "8.20.0",
       "joi": "17.13.6",
-      "minimatch": "5.1.8",
+      "minimatch@5.1.2": "npm:minimatch@5.1.8",
       "nanoid": "3.3.18",
       "tar": "7.5.22",
       "yaml": "2.9.0"

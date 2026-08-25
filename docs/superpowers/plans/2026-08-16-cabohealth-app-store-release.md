@@ -1,6 +1,6 @@
 # CaboHealth App Store Release Implementation Plan
 
-> **Historical and non-normative:** do not execute unchecked tasks or use this file as current status. Superseded decisions include the two-project staging topology, `reviewSandboxAdmin`/reviewer-staff login, and production MFA/TOTP. Current authority is [ADR 0001](../../decisions/0001-single-firebase-production-project.md), [ADR 0002](../../decisions/0002-password-only-staff-access.md), the client-access, Firebase-activation, and Firestore-containment runbooks, plus dated activation records. Public web, the protected overlay, and password-only Staff are deployed; schema bridge/migration/strict promotion and the Apple RC/TestFlight build remain pending.
+> **Historical and non-normative:** do not execute unchecked tasks or use this file as current status. Superseded decisions include the two-project staging topology, `reviewSandboxAdmin`/reviewer-staff login, the native Staff row, and production MFA/TOTP. Current authority is [ADR 0001](../../decisions/0001-single-firebase-production-project.md), [ADR 0002](../../decisions/0002-password-only-staff-access.md), the 3.0 release manifest, and dated activation records. Public web, the protected overlay, the strict backend, and password-only Staff are deployed. Staff is owner-only by direct web URL and excluded from the consumer binary; the Apple RC/TestFlight build remains pending.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -15,9 +15,9 @@
 - “Subir” no equivale a “enviar a revisión”: primero se carga/procesa TestFlight, después se prueba y sólo entonces se selecciona el build y se pulsa Submit for Review.
 - No afirmar ni prometer aprobación. El objetivo es satisfacer criterios verificables y responder honestamente a App Review.
 - No usar módulos ocultos, feature flags para engañar Review ni activar una cuarta miniapp después de aprobar el build.
-- Toda función visible, incluido Client Access y Staff Sign In, se describe específicamente en Review Notes.
+- Toda función visible, incluido Client Access, se describe específicamente en Review Notes; las notas también declaran que el portal Staff separado no está vinculado ni es alcanzable desde el binario consumidor.
 - El código demo de cliente vive en servidor, no expira durante Review, no requiere 2FA/persona disponible y abre todo el contenido consumidor enviado.
-- La administración de personal se presenta como herramienta operativa separada. Como Staff Sign In es visible, Apple recibe desde el inicio una cuenta Firebase Auth funcional con scope servidor `reviewSandbox`; las Functions la enrutan sólo a repositorios `review_sandbox_*` y nunca a producción.
+- La administración de personal es una herramienta web owner-only separada y no forma parte del binario consumidor. No se entrega una cuenta de propietario a Apple; si Apple solicita ese sistema externo, se prepara acceso no productivo aislado o se obtiene dirección escrita.
 - No copiar secretos, contraseñas o códigos demo a Git. Los archivos versionados contienen nombres de campos y pasos; las credenciales se ingresan exclusivamente en App Review Information.
 - Seleccionar manual release inicialmente. Tras aprobación, confirmar producción intacta y entonces liberar.
 - Una modificación funcional de miniapp/backend/catálogo, permiso, SDK, entitlement, URL de producto o binario después de sign-off invalida el RC. Una matriz separa aclaraciones metadata-only y screenshots del mismo RC.
@@ -283,7 +283,7 @@ docs/operations/app-store-submission.md
 - [ ] Confirm content rights, ads, medical-device question, encryption/export compliance, availability/territories, pricing and release mode with the account holder where an attestation is required.
 - [ ] Write Review Notes under 4,000 bytes: vertical curated HTML5/JS host; three-miniapp table; clean-install/demo steps; no native code/bridge, UGC or purchase CTA; report/takedown; existing-client model; protected consent; Remove vs Delete account; audited Staff sandbox; backend/contact availability; prior-rejection fixes.
 - [ ] Re-test the exact non-expiring client demo credential created once during backend production setup; do not replace it after TestFlight. Store it only in App Review Information.
-- [ ] Proactively re-test and provide the mandatory non-expiring `reviewSandboxAdmin` login scoped to sandbox catalog/codes; it fully demonstrates visible Staff Sign In without MFA/person dependency and cannot read/mutate production.
+- [x] **Superseded 2026-08-24:** remove native Staff Sign In and its URL from the consumer binary. If Apple explicitly requests the separate admin system, provide isolated non-production access or obtain written direction; never expose production-owner access.
 - [ ] Run `verify-review-notes.mjs` to check byte length, exact URLs, all three slugs, access labels, data/permission values, no fourth miniapp, no stale build/claim and no secret in the versioned file.
 - [ ] Obtain final owner approval for legal/privacy questionnaire and Review Notes; record approval date without credentials.
 - [ ] Commit with `docs: complete App Review disclosures`.
@@ -331,6 +331,6 @@ docs/operations/app-store-submission.md
 - [ ] IPA entitlements, bundle/team/version/build and source provenance match App Store Connect.
 - [ ] Icon is opaque 1024×1024; screenshots come from the RC and metadata makes no unsupported claim.
 - [ ] App Privacy, age rating, content rights, export compliance and legal pages describe the exact build.
-- [ ] Demo access is stable and opens every consumer function; Staff Portal is explicitly disclosed and proactively testable through the isolated sandbox account.
+- [ ] Demo access is stable and opens every consumer function; exact-IPA evidence proves the separate owner Staff Portal is absent from the consumer binary. If Apple explicitly requests it, isolated non-production access or written direction is retained.
 - [ ] Seller organization and client-code business-model gates are signed; if either fails, submission does not proceed under the code-unlock design.
 - [ ] The exact RC is submitted with manual release, production remains unchanged during Review and approval is followed by a final smoke test before release.

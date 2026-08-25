@@ -5,8 +5,8 @@ export const config = {
   // App info
   app: {
     name: 'CaboHealth',
-    version: '2.0.0',
-    buildNumber: '1',
+    version: '3.0',
+    buildNumber: '4',
   },
 
   // Storage keys
@@ -37,7 +37,6 @@ export const config = {
     privacy: 'https://cabohealth.org/app/privacy/',
     terms: 'https://cabohealth.org/app/terms/',
     reportContent: 'https://cabohealth.org/app/report-content/',
-    staffPortal: 'https://cabohealth.org/staff/',
   },
 
   // Features flags

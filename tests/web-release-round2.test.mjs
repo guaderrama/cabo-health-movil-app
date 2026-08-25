@@ -1320,6 +1320,7 @@ test('bound assembly snapshot ignores a transient root exchange and returns orig
   mkdirSync(join(root, 'release'));
   mkdirSync(join(alternate, 'release'));
   copyFileSync(join(projectRoot, 'app.json'), join(root, 'app.json'));
+  copyFileSync(join(projectRoot, 'eas.json'), join(root, 'eas.json'));
   writeFileSync(join(root, 'release/compliance-facts.json'), '{"source":"original-pending"}\n', { flag: 'wx' });
   writeFileSync(join(alternate, 'release/compliance-facts.json'), '{"source":"alternate-ready"}\n', { flag: 'wx' });
   for (const [path] of inputPolicy.slice(1)) {
@@ -1330,7 +1331,9 @@ test('bound assembly snapshot ignores a transient root exchange and returns orig
   chmodSync(join(root, 'miniapps/dist'), 0o400);
   const snapshot = captureBoundAssemblySnapshot(root, 'assembly-transient-root-exchange');
   const captured = snapshot.complianceFiles.find(({ path }) => path === 'release/compliance-facts.json');
+  const capturedEas = snapshot.complianceFiles.find(({ path }) => path === 'eas.json');
   assert.equal(Buffer.from(captured.bytesBase64, 'base64').toString('utf8'), '{"source":"original-pending"}\n');
+  assert.deepEqual(Buffer.from(capturedEas.bytesBase64, 'base64'), readFileSync(join(projectRoot, 'eas.json')));
   assert.equal(readFileSync(join(root, 'release/compliance-facts.json'), 'utf8'), '{"source":"original-pending"}\n');
   assert.equal(readFileSync(join(alternate, 'release/compliance-facts.json'), 'utf8'), '{"source":"alternate-ready"}\n');
   assert.equal(existsSync(join(root, 'release/web-bundles')), false);

@@ -320,7 +320,7 @@ config/{environment-topology.schema.json,environment-topology.json}
 - [ ] Implement code create/edit/revoke with a one-time reveal/copy acknowledgment and a list that shows suffix/status only.
 - [ ] Show immutable paginated audit entries through `adminListAuditLogs` with actor, resource, action, timestamp and sanitized before/after metadata.
 - [ ] Build with no sourcemap in production and strict CSP-compatible assets. The only production origin is `https://cabohealth.org/staff/`.
-- [ ] Make the native `Staff Sign In` row open this URL in the system authentication browser, not the miniapp WebView, and document it specifically in Review Notes.
+- [x] **Superseded 2026-08-24:** remove the native `Staff Sign In` row and Staff URL from the consumer binary. Keep the owner portal reachable only by direct web URL and document that exclusion in Review Notes.
 - [ ] Run portal tests/build; scan built files with a tool that reports only `file:category`, permits documented public Firebase configuration, and never prints matching secret values. Confirm no private secret/bypass/source map.
 - [ ] Commit with `feat: add secure CaboHealth staff portal`.
 

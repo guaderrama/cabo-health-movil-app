@@ -17,6 +17,7 @@ import {
   type Recipe,
   type RecipeCategory,
 } from './publicContent';
+import { CitationList } from './CitationList';
 
 const CATEGORIES: readonly (RecipeCategory | null)[] = [null, 'breakfast', 'lunch', 'dinner', 'snack', 'beverage'];
 
@@ -56,6 +57,7 @@ export function RecipeBrowser() {
         <InfoBlock icon="alert-circle-outline" title={t('recipes.allergens')} body={selected.allergens[language]} />
         <InfoBlock icon="shield-checkmark-outline" title={t('recipes.foodSafety')} body={selected.foodSafety[language]} />
         <Text style={[styles.note, { color: colors.textSecondary }]}>{selected.editorialNote[language]}</Text>
+        <CitationList sources={RECIPE_CONTENT.sources} reviewedOn={RECIPE_CONTENT.reviewedOn} />
         <Text style={[styles.disclaimer, { color: colors.textSecondary, borderColor: colors.border }]}>
           {RECIPE_CONTENT.disclaimer[language]}
         </Text>
@@ -127,6 +129,7 @@ export function RecipeBrowser() {
           <Ionicons name="chevron-forward" size={21} color={colors.textTertiary} />
         </Pressable>
       ))}
+      <CitationList sources={RECIPE_CONTENT.sources} reviewedOn={RECIPE_CONTENT.reviewedOn} />
       <Text style={[styles.disclaimer, { color: colors.textSecondary, borderColor: colors.border }]}>
         {RECIPE_CONTENT.disclaimer[language]}
       </Text>

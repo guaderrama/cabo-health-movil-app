@@ -60,15 +60,29 @@ function withFixture(mutate, assertion) {
   }
 }
 
-test('release v3 verifier accepts the truthful draft-blocked 3.0/build 4 package', () => {
+test('release v3 verifier accepts the truthful pre-build-configured 3.0/build 4 package', () => {
   const result = runVerifier();
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /verified.*draft-blocked/iu);
+  assert.match(result.stdout, /verified.*pre-build-configured/iu);
+});
+
+test('release v3 verifier rejects a non-array ASC build list without throwing', () => {
+  withFixture(
+    (root) => mutateJson(root, 'release/app-store/3.0/release-manifest.json', (manifest) => {
+      manifest.ascEvidence.testFlightBuilds = {};
+    }),
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.doesNotMatch(result.stderr, /TypeError|RELEASE_V3_INTERNAL_ERROR/u);
+      assert.match(result.stderr, /release manifest must retain the exact (?:authority )?schema/iu);
+    },
+  );
 });
 
 test('release v3 capture rejects a symbolic link for every pinned authority', async (t) => {
   for (const relativePath of [
     'app.json',
+    'eas.json',
     'constants/config.ts',
     'constants/publicMiniapps.ts',
     'release/app-store/3.0/release-manifest.json',
@@ -277,6 +291,7 @@ test('release v3 authorities record the complete age, sanitized audit, and App R
 
 test('release v3 verifier rejects every non-object JSON authority', async (t) => {
   const authorities = [
+    'eas.json',
     'release/app-store/3.0/release-manifest.json',
     'release/app-store/3.0/age-rating.json',
     'release/app-store/3.0/app-privacy.json',
@@ -295,15 +310,15 @@ test('release v3 verifier rejects every non-object JSON authority', async (t) =>
   }
 });
 
-test('release v3 verifier keeps the native version authorities untouched before RC', () => {
+test('release v3 verifier rejects rollback from the ASC-confirmed native version authorities', () => {
   withFixture(
     (root) => mutateJson(root, 'app.json', (app) => {
-      app.expo.version = '3.0';
-      app.expo.ios.buildNumber = '4';
+      app.expo.version = '2.0.0';
+      app.expo.ios.buildNumber = '3';
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /app\.json must remain 2\.0\.0\/build 3/iu);
+      assert.match(result.stderr, /app\.json must remain 3\.0\/build 4/iu);
     },
   );
 });
@@ -315,9 +330,25 @@ test('release v3 verifier rejects non-version app config drift before RC', () =>
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /app\.json must retain the exact reviewed pre-RC bytes/iu);
+      assert.match(result.stderr, /app\.json must retain the exact reviewed pre-build bytes/iu);
     },
   );
+});
+
+test('release v3 verifier rejects drift in the exact EAS production environment', async (t) => {
+  for (const [name, mutate] of [
+    ['environment', (profile) => { profile.environment = 'preview'; }],
+    ['node', (profile) => { profile.node = '20.19.4'; }],
+    ['app environment', (profile) => { profile.env.APP_ENV = 'staging'; }],
+  ]) {
+    await t.test(name, () => withFixture(
+      (root) => mutateJson(root, 'eas.json', (eas) => mutate(eas.build.production)),
+      (result) => {
+        assert.equal(result.status, 1, `${name} bypassed EAS production validation`);
+        assert.match(result.stderr, /eas\.json (?:must retain the exact reviewed production-build bytes|production must pin)/iu);
+      },
+    ));
+  }
 });
 
 test('release v3 verifier rejects executable config drift hidden behind stale comments', () => {
@@ -325,11 +356,11 @@ test('release v3 verifier rejects executable config drift hidden behind stale co
     (root) => {
       const path = join(root, 'constants/config.ts');
       const source = readFileSync(path, 'utf8')
-        .replace("version: '2.0.0',", "version: '3.0.0',")
-        .replace("buildNumber: '1',", "buildNumber: '4',");
+        .replace("version: '3.0',", "version: '3.0.0',")
+        .replace("buildNumber: '4',", "buildNumber: '5',");
       writeFileSync(
         path,
-        `${source}\n// Stale reviewed values: version: '2.0.0'; buildNumber: '1'\n`,
+        `${source}\n// Stale reviewed values: version: '3.0'; buildNumber: '4'\n`,
       );
     },
     (result) => {
@@ -722,11 +753,11 @@ test('release v3 verifier keeps every external gate at its exact truthful state'
   ));
   assert.equal(
     manifest.gates.staffReviewAccess,
-    'pending-isolated-review-access-or-written-apple-direction',
+    'owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested',
   );
   assert.equal(
     manifest.appStoreDraft.unresolvedExternalGates.staffReviewAccess,
-    'pending-isolated-review-access-or-written-apple-direction',
+    'owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested',
   );
   withFixture(
     (root) => mutateJson(root, 'release/app-store/3.0/release-manifest.json', (manifest) => {
@@ -755,6 +786,7 @@ test('captured release verifier allows reviewed client imports but rejects a thi
   const { verifyCapturedReleaseV3 } = await import('../scripts/verify-release-v3.mjs');
   const files = new Map([
     ['app.json', Buffer.from(readFileSync(join(projectRoot, 'app.json')))],
+    ['eas.json', Buffer.from(readFileSync(join(projectRoot, 'eas.json')))],
     ['constants/config.ts', Buffer.from(readFileSync(join(projectRoot, 'constants/config.ts')))],
     ['constants/publicMiniapps.ts', Buffer.from(readFileSync(join(projectRoot, 'constants/publicMiniapps.ts')))],
     ['release/app-store/3.0/release-manifest.json', Buffer.from(readFileSync(join(projectRoot, 'release/app-store/3.0/release-manifest.json')))],
@@ -819,7 +851,7 @@ test('captured release verifier rejects semantic drift across every release auth
       (root) => mutateJson(root, relativePath, mutate),
       (result) => {
         assert.equal(result.status, 1, `${name} semantic drift bypassed captured authority`);
-        assert.match(result.stderr, /exact v3 draft semantics|exact privacy authority|exact age-rating authority/iu);
+        assert.match(result.stderr, /exact v3 pre-build semantics|exact privacy authority|exact age-rating authority/iu);
       },
     ));
   }

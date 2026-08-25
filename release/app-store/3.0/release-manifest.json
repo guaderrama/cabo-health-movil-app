@@ -1,22 +1,53 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "artifactKind": "app-store-metadata-candidate",
   "candidate": {
     "appleId": "6758285327",
     "bundleIdentifier": "com.cabohealth.app",
     "marketingVersion": "3.0",
     "buildNumber": "4",
-    "status": "draft-blocked",
-    "appJsonUpdated": false,
+    "status": "pre-build-configured",
+    "appJsonUpdated": true,
+    "configUpdated": true,
     "rcSourceSha": null,
     "testFlightBuildId": null
   },
   "ascEvidence": {
+    "observedAt": "2026-08-25T01:15:59Z",
+    "inspectionMode": "read-only",
     "currentRejectedVersion": "3.0",
+    "currentRejectedVersionStatus": "rejected",
+    "versionEditable": true,
+    "selectedRejectedBinaryVersion": "2.0.0",
     "selectedRejectedBuild": "2",
+    "testFlightBuilds": [
+      {
+        "marketingVersion": "2.0.0",
+        "buildNumber": "1",
+        "status": "expired"
+      },
+      {
+        "marketingVersion": "2.0.0",
+        "buildNumber": "2",
+        "status": "expired"
+      },
+      {
+        "marketingVersion": "2.0.0",
+        "buildNumber": "3",
+        "status": "expired"
+      }
+    ],
     "highestTestFlightBuild": "3",
     "highestTestFlightBuildStatus": "expired",
-    "nextCandidateBuild": "4"
+    "nextCandidateBuild": "4",
+    "nextCandidateBuildAvailable": true,
+    "latestReviewDate": "2026-02-24",
+    "latestReviewGuidelines": [
+      "1.4.1",
+      "2.1",
+      "4.1"
+    ],
+    "informationRequested": true
   },
   "ownerSeller": {
     "sellerType": "individual",
@@ -84,7 +115,9 @@
       "digitalTier": null
     },
     "staffAdministration": {
-      "visibleSettingsEntry": true,
+      "visibleSettingsEntry": false,
+      "consumerBinaryReachable": false,
+      "ownerDirectUrlOnly": true,
       "draftOnlyCatalogChanges": true,
       "directPublishing": false,
       "arbitraryRuntimeCatalog": false
@@ -188,9 +221,9 @@
       "hostedLegalClientAccess": "deployed-and-verified-revised-public-payload",
       "aasa": "deployed-and-verified-origin-and-apple-cdn",
       "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
-      "staffReviewAccess": "pending-isolated-review-access-or-written-apple-direction",
+      "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
       "clientAccessModel": "pending-apple-review-determination",
-      "exactReleaseCandidate": "pending-version-bump-build-and-qa",
+      "exactReleaseCandidate": "version-and-build-configured-pending-build-input-attestation-and-qa",
       "screenshots": "pending-exact-rc-capture",
       "appStoreConnectSave": "pending-final-save"
     }
@@ -212,12 +245,12 @@
     "hostedLegalClientAccess": "deployed-and-verified-revised-public-payload",
     "aasa": "deployed-and-verified-origin-and-apple-cdn",
     "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
-    "staffReviewAccess": "pending-isolated-review-access-or-written-apple-direction",
+    "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
     "clientAccessModel": "pending-apple-review-determination",
     "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
     "privacyMapping": "pending-final-linkage-category-review-and-save",
     "brandAndContentRights": "pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis",
-    "exactReleaseCandidate": "pending-version-bump-build-and-qa",
+    "exactReleaseCandidate": "version-and-build-configured-pending-build-input-attestation-and-qa",
     "testFlight": "pending-build-upload-selection-and-physical-iphone-qa",
     "screenshots": "pending-exact-rc-capture",
     "accessibilityLabels": "pending-exact-rc-evidence",

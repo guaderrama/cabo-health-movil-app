@@ -64,9 +64,13 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 
 | Material | Exact source | SHA-256 / boundary | Final basis/evidence |
 | --- | --- | --- | --- |
-| Native bilingual interface copy | `i18n/messages.ts` | `ed2be1dc101ff8237b0ced8b0fe58894a6f70e46dfb527e01442c22049d17c49` | Pending |
+| Native bilingual interface copy | `i18n/messages.ts` | `c54ac2550311e8dde6fbe6c787bf79f4267aeb6a0648fd161d6e65a8630485b0` | Pending |
 | Native introduction copy | `features/onboarding/IntroScreen.tsx` | `fb60620a37efac4e4deb265ddc3a4e89642ecded2643a5cb25006da3dd14e720` | Pending |
 | Native public catalog/editorial labels | `constants/publicMiniapps.ts` | `803818464ef0663340d557b28fefd4dd6860abc3203fcbee7cbb14e7ef775a5e` | Pending |
+| Native reviewed-citation presentation and exact-link boundary | `features/resources/CitationList.tsx` | `12cf2bef93d1155370b1d8030f8dd1099e7d2d73e96ec7669e8b40ee0249b8bf` | Pending |
+| Native Healthy Recipes presentation | `features/resources/RecipeBrowser.tsx` | `41fa1892b6003cb7f9caeb151525f221c4fe74b216890f5fa621b21a269ffddc` | Pending |
+| Native Clinic Guide checklist presentation | `features/resources/VisitChecklist.tsx` | `7e34daa9574bc4b5b4290297d0ed713afb924e09d554b172b2294e809a294b2f` | Pending |
+| Native reviewed public-content adapter and citation allowlist | `features/resources/publicContent.ts` | `e67f81c4cb88d7c1655673e9db0d47046855f4519e75dbf4f292dd1863895215` | Pending |
 | Healthy Recipes hosted interface/source-link template | `miniapps/healthy-recipes/index.html` | `b04f3cf2e9446cee78e1473ba421059ba2d536829c39cdde9bf806aa172c65ba` | Pending |
 | Clinic Guide hosted interface/source-link template | `miniapps/clinic-guide/index.html` | `7f1b25f055b0dbc3c4587787046e94108ab75f7105cb1e13faa93a6ffda3ff38` | Pending |
 | Client Resources, English | `client-resources-private/content/en.json` | `e3ebb6e0d7e94ffa04f123c2f2fe8cd746bf0dba80f3824746fdd7d9492f6593` | Pending |

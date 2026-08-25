@@ -70,6 +70,25 @@ export const RECIPES = RECIPE_CONTENT.recipes;
 export const CLINIC_GUIDE = clinicGuideJson as ClinicGuideContent;
 export const PUBLIC_CONTACT_FACTS = publicContactFactsJson as PublicContactFacts;
 
+const APPROVED_CITATION_URLS = new Set([
+  ...RECIPE_CONTENT.sources.map(({ url }) => url),
+  ...CLINIC_GUIDE.sources.map(({ url }) => url),
+]);
+
+export function isApprovedCitationUrl(url: string): boolean {
+  if (!APPROVED_CITATION_URLS.has(url)) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:'
+      && parsed.username === ''
+      && parsed.password === ''
+      && parsed.port === ''
+      && parsed.hash === '';
+  } catch {
+    return false;
+  }
+}
+
 function normalizeSearchText(value: string): string {
   return value
     .normalize('NFD')

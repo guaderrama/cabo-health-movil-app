@@ -2,7 +2,7 @@
 
 Status: Draft — not release-approved
 
-This inventory describes the planned 3.0/build 4 candidate: two public resources, one protected Client Resources surface for eligible existing in-person clients, the Staff Access portal, and the isolated App Review sample. It is not an App Privacy submission or a completed production attestation. Items marked **PENDING** block release.
+This inventory describes the planned 3.0/build 4 candidate: two public resources, one protected Client Resources surface for eligible existing in-person clients, and the isolated App Review sample. The separately hosted owner-only Staff Access portal remains an operational system outside the consumer binary and is reachable only by direct web URL. It is not an App Privacy submission or a completed production attestation. Items marked **PENDING** block release.
 
 ## Native and hosted public-resource state
 
@@ -42,7 +42,7 @@ The public contractual baseline includes the [Firebase terms matrix](https://fir
 
 | Surface | Data or state | Location / processor | Purpose | Current fact |
 | --- | --- | --- | --- | --- |
-| Staff sign-in | Verified staff email and password-authenticated Firebase Authentication session | Firebase Authentication | Authenticate the owner/operator to the visible Staff Access portal | The published password-only policy requires at least 14 characters with an uppercase letter, a lowercase letter, and a number; a symbol is optional. Email Enumeration Protection and App Check protect the boundary, and server Functions reauthorize every administrative request against the active private admin record and assigned permission. |
+| Staff sign-in | Verified staff email and password-authenticated Firebase Authentication session | Firebase Authentication | Authenticate the owner/operator to the separately hosted direct-URL Staff portal; it is not visible or reachable from the consumer binary | The published password-only policy requires at least 14 characters with an uppercase letter, a lowercase letter, and a number; a symbol is optional. Email Enumeration Protection and App Check protect the boundary, and server Functions reauthorize every administrative request against the active private admin record and assigned permission. |
 | Code creation | One-time plaintext code shown in browser memory; HMAC digest stored server-side | Staff browser memory / Firestore | Create or revoke an individual access for every client the owner chooses | Plaintext must disappear only after confirmed clipboard copy/acknowledgement; never returned by list; no shared master code exists |
 | Catalog drafts | Bilingual title/description, reviewed HTTPS URL, icon, access label, revision, archive state | Private Firestore draft collection | Prepare a future reviewed resource proposal | Drafts cannot publish or change the submitted runtime catalog |
 | App Review credential and identity | Separate AR credential digest, generation, pseudonymous `review_*` UID, installation digest, and fixed resource grant | Named isolated review database / Firebase Authentication | Give Apple multi-device access to a fixed bilingual non-client sample | No real credential is versioned; no production client record is exposed; active review access offers in-app deletion |

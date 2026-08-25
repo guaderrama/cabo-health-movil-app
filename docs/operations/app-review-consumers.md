@@ -1,9 +1,11 @@
 # App Review consumers
 
-Status: **NOT ACTIVE**. This tracer adds fail-closed iPhone and Hostinger
-consumers for the isolated App Review realm. It does not deploy Functions or
-Hostinger files, rotate a credential, change App Store metadata, or enable the
-review surface.
+Status: **BACKEND AND HOSTINGER OVERLAY ACTIVE / CREDENTIAL INACTIVE**. The
+isolated App Review consumers are deployed and fail closed. The public overlay,
+separate Functions realm, private Hostinger configuration, and invalid-nonce
+boundary were verified on 2026-08-24. No App Review credential has been issued,
+the review database remains empty, and valid-credential/two-iPhone QA is still
+blocked.
 
 ## iPhone contract
 

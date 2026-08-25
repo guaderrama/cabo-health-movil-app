@@ -28,6 +28,8 @@
       }
     },
     "production": {
+      "environment": "production",
+      "node": "22.22.3",
       "env": {
         "APP_ENV": "production"
       },

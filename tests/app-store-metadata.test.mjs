@@ -19,6 +19,7 @@ const verifierPath = join(projectRoot, 'scripts/verify-app-store-metadata.mjs');
 const releasePath = 'release/app-store/3.0';
 const authorityPaths = Object.freeze([
   'app.json',
+  'eas.json',
   'app-review-private/content/sample.json',
   'assets/adaptive-icon.png',
   'assets/favicon.png',
@@ -35,6 +36,10 @@ const authorityPaths = Object.freeze([
   'content/clinic-guide.json',
   'content/recipes.json',
   'features/onboarding/IntroScreen.tsx',
+  'features/resources/CitationList.tsx',
+  'features/resources/RecipeBrowser.tsx',
+  'features/resources/VisitChecklist.tsx',
+  'features/resources/publicContent.ts',
   'i18n/messages.ts',
   'miniapps/clinic-guide/index.html',
   'miniapps/healthy-recipes/index.html',
@@ -92,10 +97,58 @@ function withReleaseFixture(mutate, assertion) {
   }
 }
 
-test('versioned App Store metadata is a valid blocked 3.0 build 4 candidate', () => {
+test('versioned App Store metadata is a valid pre-build-configured 3.0 build 4 candidate', () => {
   const result = verify(projectRoot);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /draft verified; submission remains blocked/i);
+  assert.match(result.stdout, /pre-build metadata verified; submission remains blocked/i);
+});
+
+test('metadata verifier rejects stale or contradictory live ASC evidence', async (t) => {
+  const mutations = [
+    ['missing observation time', (manifest) => { delete manifest.ascEvidence.observedAt; }],
+    ['build list is not an array', (manifest) => { manifest.ascEvidence.testFlightBuilds = {}; }],
+    ['version not editable', (manifest) => { manifest.ascEvidence.versionEditable = false; }],
+    ['wrong rejected status', (manifest) => { manifest.ascEvidence.currentRejectedVersionStatus = 'ready-for-sale'; }],
+    ['wrong selected binary version', (manifest) => { manifest.ascEvidence.selectedRejectedBinaryVersion = '3.0'; }],
+    ['historical build not expired', (manifest) => { manifest.ascEvidence.testFlightBuilds[1].status = 'ready-to-test'; }],
+    ['build 4 already occupied', (manifest) => { manifest.ascEvidence.highestTestFlightBuild = '4'; }],
+    ['wrong next build', (manifest) => { manifest.ascEvidence.nextCandidateBuild = '5'; }],
+    ['build 4 unavailable', (manifest) => { manifest.ascEvidence.nextCandidateBuildAvailable = false; }],
+    ['wrong rejection date', (manifest) => { manifest.ascEvidence.latestReviewDate = '2026-02-23'; }],
+    ['missing rejection guideline', (manifest) => { manifest.ascEvidence.latestReviewGuidelines = ['2.1', '4.1']; }],
+    ['information request omitted', (manifest) => { manifest.ascEvidence.informationRequested = false; }],
+  ];
+
+  for (const [name, mutate] of mutations) {
+    await t.test(name, () => withReleaseFixture(
+      (root) => mutateJson(root, `${releasePath}/release-manifest.json`, mutate),
+      (result) => {
+        assert.equal(result.status, 1, `${name} bypassed ASC evidence validation`);
+        assert.doesNotMatch(result.stderr, /TypeError|RELEASE_METADATA_INTERNAL_ERROR/u);
+        assert.match(result.stderr, /ASC read-only evidence must (?:retain the exact sanitized authority schema|record the fresh editable 3\.0 rejection and reserve build 4)/i);
+      },
+    ));
+  }
+});
+
+test('metadata verifier keeps the candidate configured but unbuilt', async (t) => {
+  const mutations = [
+    ['phase rollback', (candidate) => { candidate.status = 'draft-blocked'; }],
+    ['app config rollback', (candidate) => { candidate.appJsonUpdated = false; }],
+    ['visible config rollback', (candidate) => { candidate.configUpdated = false; }],
+    ['premature source attestation', (candidate) => { candidate.rcSourceSha = '0'.repeat(64); }],
+    ['premature TestFlight binding', (candidate) => { candidate.testFlightBuildId = 'not-built'; }],
+  ];
+
+  for (const [name, mutate] of mutations) {
+    await t.test(name, () => withReleaseFixture(
+      (root) => mutateJson(root, `${releasePath}/release-manifest.json`, (manifest) => mutate(manifest.candidate)),
+      (result) => {
+        assert.equal(result.status, 1, `${name} bypassed candidate phase validation`);
+        assert.match(result.stderr, /unbuilt pre-build-configured 3\.0 build 4 authority/i);
+      },
+    ));
+  }
 });
 
 test('metadata verifier rejects empty required release and authoritative artifacts', async (t) => {
@@ -545,24 +598,41 @@ test('metadata verifier accepts the five owner confirmations without releasing u
     recordOwnerConfirmations,
     (result) => {
       assert.equal(result.status, 0, result.stderr || result.stdout);
-      assert.match(result.stdout, /draft verified; submission remains blocked/i);
+      assert.match(result.stdout, /pre-build metadata verified; submission remains blocked/i);
     },
   );
 });
 
-test('metadata verifier keeps Staff Access review blocked without isolated credentials or Apple direction', () => {
+test('metadata verifier keeps the live-reconciled pre-build configuration gate completed', () => {
+  withReleaseFixture(
+    (root) => {
+      const file = join(root, releasePath, 'submission-gates.md');
+      const source = readFileSync(file, 'utf8');
+      writeFileSync(file, source.replace(
+        '- [x] Reconcile live App Store Connect and update `app.json` and `constants/config.ts` together to 3.0/build 4 for the pre-build configuration; no RC, build, IPA, or TestFlight upload exists yet.',
+        '- [ ] Reconcile live App Store Connect and update `app.json` and `constants/config.ts` together to 3.0/build 4 for the pre-build configuration; no RC, build, IPA, or TestFlight upload exists yet.',
+      ));
+    },
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /must retain the exact completed pre-build version configuration checkbox/i);
+    },
+  );
+});
+
+test('metadata verifier keeps the Staff Portal outside the consumer binary', () => {
   withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'review-notes.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        /Staff Access is an owner\/operator surface; reviewer access, if required, is supplied separately in App Store Connect\.\n/u,
-        'Staff Access is ready for App Review.\n',
+        /The owner-only Staff Portal is not linked or reachable from the consumer binary\. If requested, isolated non-production access will be supplied\.\n/u,
+        'The production owner portal is linked for every reviewer.\n',
       ));
     },
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /Staff Access review-access disclosure/iu);
+      assert.match(result.stderr, /Staff Portal consumer-exclusion disclosure/iu);
     },
   );
 });
@@ -1025,15 +1095,15 @@ test('metadata verifier rejects an ownership declaration that claims a registere
   );
 });
 
-test('metadata verifier reconciles authoritative Task 7 facts and current app config', async (t) => {
+test('metadata verifier reconciles authoritative Task 7 facts and configured pre-build app state', async (t) => {
   const mutations = [
     ['changed legal sign-off', (root) => mutateJson(root, 'release/compliance-facts.json', (facts) => {
       facts.legalEntity.legalSignOffStatus = 'verified';
     }), /authoritative legal sign-off status no longer matches/i],
-    ['current app already changed', (root) => mutateJson(root, 'app.json', (app) => {
-      app.expo.version = '3.0';
-      app.expo.ios.buildNumber = '4';
-    }), /manifest says appJsonUpdated=false/i],
+    ['configured app rolled back', (root) => mutateJson(root, 'app.json', (app) => {
+      app.expo.version = '2.0.0';
+      app.expo.ios.buildNumber = '3';
+    }), /manifest says appJsonUpdated=true.*3\.0\/build 4/i],
     ['third actual catalog slug', (root) => {
       const file = join(root, 'constants/publicMiniapps.ts');
       const source = readFileSync(file, 'utf8');

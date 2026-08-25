@@ -33,8 +33,27 @@ project. A production build environment must additionally supply:
 
 The plist `BUNDLE_ID` must be `com.cabohealth.app`. Staging and production
 configuration fails before native compilation if any required input is missing
-or mismatched; no staging credentials are authorized. A development build
-without these inputs remains intentionally locked.
+or mismatched. Production additionally rejects every project ID except the
+exact `cabohealth-owner-prod`; no staging credentials are authorized. The EAS
+production profile explicitly selects the `production` variable environment
+and Node `22.22.3`.
+
+Both Expo configuration and the release guard use the same strict XML plist
+reader. It requires one root dictionary, one ordinary-text `PROJECT_ID`, and
+one ordinary-text `BUNDLE_ID`; duplicate, nested, non-string, commented/CDATA-
+split, malformed, custom-entity, or multiple-root identity representations fail
+closed. The parser is a direct exact dependency, and release tests also require
+the installed EAS dependency tree to be valid rather than checking versions
+alone.
+
+Before the guarded RC build, the same plist must exist locally outside Dropbox
+as an owner-only regular file with mode `0600`. The build-input attestation pins
+its SHA-256, the exact production project ID, and a sanitized resolved Expo
+configuration whose private path is replaced by a fixed marker. The build
+artifact attestation must then prove that the plist extracted from the signed
+IPA has the same hash and must retain the signing-certificate and embedded
+provisioning-profile fingerprints. No private path or plist content enters Git.
+A development build without these inputs remains intentionally locked.
 
 `CABOHEALTH_APP_CHECK_DEBUG=true` is accepted only for `APP_ENV=development`.
 Use debug providers only with local/emulator development and never register a

@@ -76,9 +76,12 @@ variables, and private config are all distinct from production. Generate a new
 review key ring and never reuse production or staging key material. Canonical
 realm separation remains required even when operators follow this rule.
 
-## Private Hostinger installation gate
+## Activation state and remaining private gates
 
-Do not publish or enable the paths until every step is green:
+The separate overlay and broker are already deployed and verified fail-closed
+without an active credential. Steps 1–7 below are retained as the completed
+installation contract; step 8 remains a release gate before a credential can be
+placed in App Store Connect:
 
 1. Deploy and freeze the matching backend `appReviewBrokerApi` only after its
    named review Firestore database, IAM, rules, TTL policies, and eight review
@@ -120,8 +123,9 @@ domain.
 
 ## Signed Hostinger activation evidence
 
-The web realm remains inactive until the shared protected-overlay gate has
-real, externally pinned Hostinger evidence:
+The overlay and broker are active but reviewer-valid access remains inactive
+until the shared protected-overlay gate and credential/device evidence are
+complete:
 
 1. Generate distinct production and App Review Ed25519 keypairs outside Git
    and outside `public_html`. Keep the review private-key document at the path

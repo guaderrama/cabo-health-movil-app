@@ -10,6 +10,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,6 +36,21 @@ function git(root, ...args) {
   assert.equal(result.status, 0, result.stderr);
 }
 
+function canonicalGoogleServicesPlist({
+  bundleId = 'com.cabohealth.app',
+  projectId = 'cabohealth-owner-prod',
+} = {}) {
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0"><dict>',
+    `<key>PROJECT_ID</key><string>${projectId}</string>`,
+    `<key>BUNDLE_ID</key><string>${bundleId}</string>`,
+    '</dict></plist>',
+    '',
+  ].join('\n');
+}
+
 test('production build and submit scripts cannot bypass the release guard', () => {
   const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
   assert.match(readFileSync(join(projectRoot, '.gitignore'), 'utf8'), /^\/release\/private\/$/mu);
@@ -54,12 +70,15 @@ test('release tooling pins EAS CLI and its compatible patched parser closure exa
   const packageLock = JSON.parse(readFileSync(join(projectRoot, 'package-lock.json'), 'utf8'));
 
   assert.equal(packageJson.devDependencies['eas-cli'], '22.2.0');
+  assert.equal(packageJson.dependencies['@xmldom/xmldom'], '0.8.15');
   assert.equal(packageLock.packages[''].devDependencies['eas-cli'], '22.2.0');
+  assert.equal(packageLock.packages[''].dependencies['@xmldom/xmldom'], '0.8.15');
+  assert.equal(packageLock.packages['node_modules/@xmldom/xmldom'].version, '0.8.15');
   assert.equal(packageLock.packages['node_modules/eas-cli'].version, '22.2.0');
   assert.deepEqual(packageJson.overrides['eas-cli'], {
     ajv: '8.20.0',
     joi: '17.13.6',
-    minimatch: '5.1.8',
+    'minimatch@5.1.2': 'npm:minimatch@5.1.8',
     nanoid: '3.3.18',
     tar: '7.5.22',
     yaml: '2.9.0',
@@ -70,9 +89,68 @@ test('release tooling pins EAS CLI and its compatible patched parser closure exa
     packageLock.packages['node_modules/eas-cli/node_modules/minimatch'].version,
     '5.1.8',
   );
+  assert.equal(
+    packageLock.packages['node_modules/eas-cli/node_modules/glob/node_modules/minimatch'].version,
+    '10.2.6',
+  );
+  assert.equal(
+    packageLock.packages['node_modules/eas-cli/node_modules/@expo/prebuild-config/node_modules/minimatch'].version,
+    '9.0.9',
+  );
   assert.equal(packageLock.packages['node_modules/nanoid'].version, '3.3.18');
   assert.equal(packageLock.packages['node_modules/tar'].version, '7.5.22');
   assert.equal(packageLock.packages['node_modules/yaml'].version, '2.9.0');
+});
+
+test('the installed EAS parser dependency tree is valid', () => {
+  const result = spawnSync(
+    process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    ['ls', '@xmldom/xmldom', 'minimatch', '--all', '--depth=6'],
+    { cwd: projectRoot, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 },
+  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});
+
+test('release guard rejects ambiguous Firebase plist identities with the exact guard code', async (t) => {
+  const { readProductionGoogleServicesPlist } = await import(guardPath);
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'cabohealth-strict-plist-')));
+  const plistPath = join(root, 'GoogleService-Info.plist');
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const environment = {
+    CABOHEALTH_FIREBASE_PROJECT_ID: 'cabohealth-owner-prod',
+    CABOHEALTH_GOOGLE_SERVICES_PLIST: plistPath,
+  };
+  const validProject = '<key>PROJECT_ID</key><string>cabohealth-owner-prod</string>';
+  const wrongProject = '<key>PROJECT_ID</key><string>cabohealth-other</string>';
+  const validBundle = '<key>BUNDLE_ID</key><string>com.cabohealth.app</string>';
+  const wrap = (entries) => `<?xml version="1.0"?><plist version="1.0"><dict>${entries}</dict></plist>`;
+  const invalidPlists = [
+    wrap(`${validProject}${wrongProject}${validBundle}`),
+    wrap(`${wrongProject}${validProject}${validBundle}`),
+    wrap(`<key>DECOY</key><dict>${validProject}</dict>${wrongProject}${validBundle}`),
+    wrap(`<key>PROJECT_ID</key><integer>1</integer>${validBundle}`),
+    wrap('<key>PROJECT_ID<![CDATA[_DECOY]]></key><string>cabohealth-other</string>'
+      + '<key>PROJ<![CDATA[ECT_ID]]></key><string>cabohealth-owner-prod</string>'
+      + validBundle),
+    `<?xml version="1.0"?><plist><dict>${validProject}${validBundle}</dict>`,
+  ];
+
+  for (const plist of invalidPlists) {
+    writeFileSync(plistPath, plist, { mode: 0o600 });
+    chmodSync(plistPath, 0o600);
+    assert.throws(
+      () => readProductionGoogleServicesPlist(environment),
+      /EXACT_BUILD_INPUT_GOOGLE_SERVICES_PLIST_INVALID/u,
+    );
+  }
+
+  const canonicalBytes = Buffer.from(canonicalGoogleServicesPlist(), 'utf8');
+  writeFileSync(plistPath, canonicalBytes, { mode: 0o600 });
+  chmodSync(plistPath, 0o600);
+  const result = readProductionGoogleServicesPlist(environment);
+  assert.equal(result.path, plistPath);
+  assert.equal(result.sha256, hash(canonicalBytes));
+  assert.deepEqual(result.bytes, canonicalBytes);
 });
 
 test('each release phase refuses to run while its independently reviewed authority is unpinned', async (t) => {
@@ -317,12 +395,23 @@ test('the executable Node tool closure is copied and rehashed inside the private
   chmodSync(ipa, 0o600);
   const operation = createPrivateUploadSnapshot(ipa, hash(Buffer.from('ipa')), { privateParent });
   const privateTool = snapshotPinnedNodeTool(operation.operationRoot, resolved, pin);
+  assert.equal(privateTool.runtimeRoot, join(operation.operationRoot, 'node_modules'));
   assert.ok(privateTool.executable.startsWith(operation.operationRoot));
   assert.ok(privateTool.nodeExecutable.startsWith(operation.operationRoot));
   const privateExecution = spawnSync(privateTool.nodeExecutable, [privateTool.executable], {
     encoding: 'utf8',
   });
   assert.equal(privateExecution.status, 0, privateExecution.stderr);
+
+  const privateWorkspace = join(operation.operationRoot, 'workspace');
+  mkdirSync(privateWorkspace, { mode: 0o700 });
+  const resolution = spawnSync(
+    privateTool.nodeExecutable,
+    ['-e', "process.stdout.write(require.resolve('tool/package.json'))"],
+    { cwd: privateWorkspace, encoding: 'utf8' },
+  );
+  assert.equal(resolution.status, 0, resolution.stderr);
+  assert.equal(resolution.stdout, join(privateTool.runtimeRoot, 'tool/package.json'));
 
   write(root, 'runtime/tool/dependency.mjs', "export const value = 'Dropbox drift';\n");
   assert.deepEqual(verifyPrivateNodeToolSnapshot(privateTool, pin), privateTool);
@@ -473,6 +562,7 @@ test('submission authorization is documented as an operational challenge, not id
 
 test('phase attestations recompute tracked source and exact IPA bytes', async (t) => {
   const {
+    computeResolvedProductionExpoConfigSha256,
     computeTrackedSourceSha256,
     verifyBuildArtifactAttestation,
     verifyBuildInputAttestation,
@@ -481,10 +571,30 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
   const requestedRoot = mkdtempSync(join(tmpdir(), 'cabohealth-release-phases-'));
   const root = realpathSync(requestedRoot);
   t.after(() => rmSync(root, { recursive: true, force: true }));
+  const privatePlistRoot = realpathSync(mkdtempSync(join(tmpdir(), 'cabohealth-private-plist-')));
+  const privatePlistPath = join(privatePlistRoot, 'GoogleService-Info.plist');
+  const privatePlistBytes = Buffer.from(canonicalGoogleServicesPlist());
+  writeFileSync(privatePlistPath, privatePlistBytes, { mode: 0o600 });
+  chmodSync(privatePlistPath, 0o600);
+  t.after(() => rmSync(privatePlistRoot, { recursive: true, force: true }));
+  const previousPlist = process.env.CABOHEALTH_GOOGLE_SERVICES_PLIST;
+  const previousProject = process.env.CABOHEALTH_FIREBASE_PROJECT_ID;
+  process.env.CABOHEALTH_GOOGLE_SERVICES_PLIST = privatePlistPath;
+  process.env.CABOHEALTH_FIREBASE_PROJECT_ID = 'cabohealth-owner-prod';
+  t.after(() => {
+    if (previousPlist === undefined) delete process.env.CABOHEALTH_GOOGLE_SERVICES_PLIST;
+    else process.env.CABOHEALTH_GOOGLE_SERVICES_PLIST = previousPlist;
+    if (previousProject === undefined) delete process.env.CABOHEALTH_FIREBASE_PROJECT_ID;
+    else process.env.CABOHEALTH_FIREBASE_PROJECT_ID = previousProject;
+  });
 
   const initial = {
-    '.gitignore': 'release/private/\n',
-    'app.json': '{"expo":{"version":"3.0","ios":{"buildNumber":"4"}}}\n',
+    '.gitignore': 'release/private/\nnode_modules\n',
+    'app.json': '{"expo":{"version":"3.0","ios":{"buildNumber":"4","bundleIdentifier":"com.cabohealth.app"}}}\n',
+    'config/nativeFirebaseExpoConfig.cjs': readFileSync(
+      join(projectRoot, 'config/nativeFirebaseExpoConfig.cjs'),
+      'utf8',
+    ),
     'constants/config.ts': "export const version = '3.0';\nexport const buildNumber = '4';\n",
     'package-lock.json': '{"lockfileVersion":3}\n',
     'release/app-store/3.0/release-manifest.json': '{"status":"ready-for-build"}\n',
@@ -505,6 +615,7 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     'release/app-store/3.0/screenshots-manifest.json': '{"captures":[]}\n',
   };
   for (const [path, value] of Object.entries(initial)) write(root, path, value);
+  symlinkSync(join(projectRoot, 'node_modules'), join(root, 'node_modules'), 'dir');
   git(root, 'init', '-q');
   git(root, 'add', '.');
   git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
@@ -531,6 +642,12 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     metadataVerifierSha256: hash(readFileSync(
       join(root, 'scripts/verify-app-store-metadata.mjs'),
     )),
+    firebaseProjectId: 'cabohealth-owner-prod',
+    googleServicesPlistSha256: hash(privatePlistBytes),
+    resolvedProductionExpoConfigSha256: computeResolvedProductionExpoConfigSha256(
+      root,
+      privatePlistBytes,
+    ),
     reviewedAt: '2026-08-22T08:00:00.000Z',
   };
   const buildInputBytes = Buffer.from(`${JSON.stringify(buildInput)}\n`);
@@ -543,11 +660,25 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     verifyBuildInputAttestation(root, buildInputSha256),
     buildInput,
   );
+  writeFileSync(
+    privatePlistPath,
+    privatePlistBytes.toString('utf8').replace('cabohealth-owner-prod', 'cabohealth-other'),
+    { mode: 0o600 },
+  );
+  assert.throws(
+    () => verifyBuildInputAttestation(root, buildInputSha256),
+    /EXACT_BUILD_INPUT_GOOGLE_SERVICES_PLIST_INVALID/u,
+  );
+  writeFileSync(privatePlistPath, privatePlistBytes, { mode: 0o600 });
+  chmodSync(privatePlistPath, 0o600);
 
   const evidence = {
     'release/private/rc/CaboHealth-3.0-build-4.ipa': Buffer.from('exact ipa bytes'),
     'release/private/rc/signed-entitlements.plist': Buffer.from('<plist>exact</plist>'),
     'release/private/rc/privacy-report.json': Buffer.from('{"tracking":false}\n'),
+    'release/private/rc/embedded-GoogleService-Info.plist': privatePlistBytes,
+    'release/private/rc/signing-certificate.der': Buffer.from('exact signing certificate'),
+    'release/private/rc/embedded.mobileprovision': Buffer.from('exact provisioning profile'),
   };
   for (const [path, value] of Object.entries(evidence)) write(root, path, value);
   for (const path of Object.keys(evidence)) chmodSync(join(root, path), 0o600);
@@ -561,6 +692,13 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     ipaSha256: hash(evidence['release/private/rc/CaboHealth-3.0-build-4.ipa']),
     signedEntitlementsSha256: hash(evidence['release/private/rc/signed-entitlements.plist']),
     privacyReportSha256: hash(evidence['release/private/rc/privacy-report.json']),
+    embeddedGoogleServicesPlistSha256: hash(
+      evidence['release/private/rc/embedded-GoogleService-Info.plist'],
+    ),
+    signingCertificateSha256: hash(evidence['release/private/rc/signing-certificate.der']),
+    embeddedProvisioningProfileSha256: hash(
+      evidence['release/private/rc/embedded.mobileprovision'],
+    ),
     reviewedAt: '2026-08-22T09:00:00.000Z',
   };
   const buildArtifactBytes = Buffer.from(`${JSON.stringify(buildArtifact)}\n`);
@@ -651,7 +789,13 @@ test('the pinned CLI runner receives the exact build and local-IPA upload argume
 
   const buildArgs = easArgumentsForAction('build');
   executeNodeProgram(root, fakeCli, buildArgs, 'EAS');
-  assert.deepEqual(JSON.parse(readFileSync(output, 'utf8')), buildArgs);
+  assert.deepEqual(JSON.parse(readFileSync(output, 'utf8')), [
+    'build',
+    '--platform', 'ios',
+    '--profile', 'production',
+    '--freeze-credentials',
+    '--non-interactive',
+  ]);
 
   const privateIpaPath = join(root, 'private-upload/CaboHealth-3.0-build-4.ipa');
   const uploadArgs = easArgumentsForAction('upload-testflight', { ipaPath: privateIpaPath });
