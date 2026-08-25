@@ -2,6 +2,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { captureReleaseV3, verifyCapturedReleaseV3 } from './verify-release-v3.mjs';
+import { validateScreenshotsManifest } from './apple-post-build-evidence.mjs';
 
 const root = resolve(process.argv[2] ?? process.cwd());
 const releaseRoot = join(root, 'release/app-store/3.0');
@@ -125,23 +126,12 @@ const expectedUnresolvedExternalGates = Object.freeze({
   appStoreConnectSave: 'pending-final-save',
 });
 
-const expectedSceneIds = Object.freeze([
-  '01-launch',
-  '02-resource-catalog',
-  '03-healthy-recipes',
-  '04-clinic-guide',
-  '05-client-resources-locked',
-  '06-eligibility-code-entry',
-  '07-saved',
-  '08-settings-and-legal',
-]);
-
 const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmetic Scan)\b/iu;
 
 const EXACT_REVIEWED_PROSE_SHA256 = Object.freeze({
   'age-rating.md': 'a6f11c4ab2005ec58498931571a2212b3804db2dcfb081d91aa8e40ce07bd023',
-  'app-privacy.md': '5a7f7208dc4325ba58bf4227ce62d71be940cba51239d45a1661bdce7a81e29b',
-  'content-rights-inventory.md': '7ea5e5c48dfc9f8ae0200cdcebc2aae3b9184c0f1c08953a7e7ed33673c49289',
+  'app-privacy.md': '8a8056418a26791cd8f669ca769aed05a22884f0e78ada1f1d3a96489c970796',
+  'content-rights-inventory.md': 'ca3888098e8e9c479f265dc30b11a0c1e1ee7b85fb03980d5cff4afa0ecabb4d',
 });
 
 const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
@@ -186,7 +176,7 @@ const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
     paths: Object.freeze(['content/clinic-guide.json']),
   }),
   Object.freeze({
-    sha256: 'c54ac2550311e8dde6fbe6c787bf79f4267aeb6a0648fd161d6e65a8630485b0',
+    sha256: 'a52bd2c1a5fe9978af94b1cb44ffc7f23f8e5fe4964a2932cb3082a0362c3d65',
     paths: Object.freeze(['i18n/messages.ts']),
   }),
   Object.freeze({
@@ -242,7 +232,7 @@ const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
     paths: Object.freeze(['web-hosting/cabohealth.org/app/index.html']),
   }),
   Object.freeze({
-    sha256: 'bee0eaebf10afe3ded626da45a15ee11368e67f11e7d1dc170222405702fbb80',
+    sha256: '560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125',
     paths: Object.freeze(['web-hosting/cabohealth.org/app/privacy/index.html']),
   }),
   Object.freeze({
@@ -978,6 +968,11 @@ function verifyAuthoritativeProjectState() {
     || !/no actor UID, codes, client names, or resource URLs/iu.test(inventory)) {
     errors.push('Authoritative data inventory must describe the sanitized fixed Staff actor label without an actor UID');
   }
+  if (!/FirebaseAuth privacy manifest maps \*\*User ID\*\* as linked to the user for \*\*App Functionality\*\*/u.test(inventory)
+    || !/\*\*Other Diagnostic Data\*\* as not linked to the user for \*\*Analytics\*\*/u.test(inventory)
+    || !/Firebase Analytics product remains disabled/iu.test(inventory)) {
+    errors.push('Authoritative data inventory must retain the exact signed FirebaseAuth App Functionality and Analytics mapping while Firebase Analytics remains disabled');
+  }
 }
 
 function verifyLocalization(locale) {
@@ -1501,9 +1496,11 @@ function verifyPrivacy() {
     || conditionalRecommendation?.dataCollectedPath !== 'Required. Map the final verified production data types, purposes, linkage, and retention in App Store Connect after the exact RC and hosting configuration are tested.'
     || !equalJson(conditionalRecommendation?.provisionalPurpose, [
       'App Functionality',
+      'Analytics',
     ])
     || !equalJson(conditionalRecommendation?.provisionalCategoryMapping, [
-      'User ID, if the pseudonymous Firebase UID is retained and disclosure is required',
+      'User ID — linked to the user; App Functionality; not used for tracking (exact signed FirebaseAuth privacy manifest)',
+      'Other Diagnostic Data — not linked to the user; Analytics; not used for tracking (exact signed FirebaseAuth privacy manifest)',
       'Device ID, if the app-installation identifier is retained off device and disclosure is required',
       'Coarse Location, Device ID, or Other Diagnostic Data as required by Apple\'s final mapping of retained IP addresses',
       'Product Interaction, if retained requested-resource activity is in disclosure scope',
@@ -1622,43 +1619,36 @@ function verifyAgeRating() {
 function verifyScreenshots() {
   const screenshots = readJson('screenshots-manifest.json');
   if (!screenshots) return;
-  const requiredEvidenceKeys = [
-    'testFlightBuildId',
-    'sourceSha',
-    'imageHashes',
-    'ocrExcludedScopeCheck',
-    'humanVisualSignOff',
-  ];
-  if (
-    !hasExactKeys(screenshots, [
-      'schemaVersion',
-      'status',
-      'marketingVersion',
-      'buildNumber',
-      'deviceClass',
-      'locales',
-      'sceneIds',
-      'captures',
-      'requiredEvidence',
-    ])
-    || !hasExactKeys(screenshots.requiredEvidence, requiredEvidenceKeys)
-    || screenshots.schemaVersion !== 2
-  ) errors.push('Screenshot manifest must retain the exact authority schema');
-  if (
-    screenshots.status !== 'pending-exact-rc-capture'
-    || screenshots.marketingVersion !== '3.0'
-    || screenshots.buildNumber !== '4'
-    || screenshots.deviceClass !== 'iPhone 6.9-inch'
-  ) {
-    errors.push('Screenshot manifest must target 3.0 build 4 on the 6.9-inch iPhone class');
-  }
-  if (!equalJson(screenshots.locales, ['en-US', 'es-MX'])) errors.push('Screenshot locales must be exactly en-US and es-MX');
-  if (!equalJson(screenshots.sceneIds, expectedSceneIds)) errors.push('Screenshot storyboard must contain the exact eight approved scenes');
-  if (!Array.isArray(screenshots.captures) || screenshots.captures.length !== 0) {
-    errors.push('Screenshot captures must remain empty before exact-RC capture');
-  }
-  if (Object.values(screenshots.requiredEvidence ?? {}).some((value) => value !== null)) {
-    errors.push('Screenshot evidence must remain null before exact-RC capture');
+  try {
+    if (screenshots.status === 'exact-rc-captured-and-approved') {
+      const rc = readJson('rc-attestation.json');
+      if (!rc
+        || rc.schemaVersion !== 1
+        || rc.artifactKind !== 'cabohealth-ios-exact-rc-attestation'
+        || typeof rc.testFlightBuildId !== 'string'
+        || typeof rc.sourceTreeSha256 !== 'string'
+        || typeof rc.testFlightProcessedAt !== 'string'
+        || typeof rc.screenshotsManifestSha256 !== 'string') {
+        throw new Error('SCREENSHOTS_FINAL_RC_BINDING_INVALID');
+      }
+      const manifestBytes = readFileSync(join(releaseRoot, 'screenshots-manifest.json'));
+      const manifestSha256 = createHash('sha256').update(manifestBytes).digest('hex');
+      if (manifestSha256 !== rc.screenshotsManifestSha256) {
+        throw new Error('SCREENSHOTS_FINAL_RC_BINDING_INVALID');
+      }
+      validateScreenshotsManifest(screenshots, {
+        phase: 'final',
+        testFlightBuildId: rc.testFlightBuildId,
+        sourceTreeSha256: rc.sourceTreeSha256,
+        testFlightProcessedAt: rc.testFlightProcessedAt,
+        evidenceRoot: join(root, 'release/private/rc'),
+        requireFiles: true,
+      });
+    } else {
+      validateScreenshotsManifest(screenshots, { phase: 'pending' });
+    }
+  } catch {
+    errors.push('Screenshot manifest must target 3.0 build 4 on the 6.9-inch iPhone class. Screenshot manifest must retain the exact authority schema and be either the exact empty pending authority or the exact file-backed RC authority bound to its RC attestation');
   }
   const screenshotStoryboard = read('screenshots/storyboard.md');
   rejectContradictoryCaboHealthEntityClaims(screenshotStoryboard, 'screenshot storyboard');

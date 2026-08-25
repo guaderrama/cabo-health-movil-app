@@ -1,6 +1,10 @@
 import { EditorialMiniappCover } from '../../components/EditorialMiniappCover';
 import { useTranslations } from '../../hooks';
 import type { DevMiniapp } from './devMiniappCatalog';
+import {
+  translateDevMiniappMessage,
+  type DevMiniappMessageKey,
+} from './devMiniappMessages';
 
 export function DevMiniappTile({
   miniapp,
@@ -15,9 +19,10 @@ export function DevMiniappTile({
   index?: number;
   onPress: () => void;
 }) {
-  const { t } = useTranslations();
-  const access = miniapp.access === 'client' ? t('devPanel.clients') : t('devPanel.public');
-  const label = `${title}. ${summary}. ${t('devPanel.testOnly')}. ${access}.`;
+  const { language, t } = useTranslations();
+  const devT = (key: DevMiniappMessageKey) => translateDevMiniappMessage(language, key);
+  const access = miniapp.access === 'client' ? devT('devPanel.clients') : devT('devPanel.public');
+  const label = `${title}. ${summary}. ${devT('devPanel.testOnly')}. ${access}.`;
 
   return (
     <EditorialMiniappCover

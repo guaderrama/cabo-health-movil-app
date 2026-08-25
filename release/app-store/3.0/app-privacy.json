@@ -234,10 +234,12 @@
     "dataNotCollectedPath": "Not applicable to this v3 architecture: pseudonymous identifiers and provider request records are retained off device beyond real-time request servicing.",
     "dataCollectedPath": "Required. Map the final verified production data types, purposes, linkage, and retention in App Store Connect after the exact RC and hosting configuration are tested.",
     "provisionalPurpose": [
-      "App Functionality"
+      "App Functionality",
+      "Analytics"
     ],
     "provisionalCategoryMapping": [
-      "User ID, if the pseudonymous Firebase UID is retained and disclosure is required",
+      "User ID — linked to the user; App Functionality; not used for tracking (exact signed FirebaseAuth privacy manifest)",
+      "Other Diagnostic Data — not linked to the user; Analytics; not used for tracking (exact signed FirebaseAuth privacy manifest)",
       "Device ID, if the app-installation identifier is retained off device and disclosure is required",
       "Coarse Location, Device ID, or Other Diagnostic Data as required by Apple's final mapping of retained IP addresses",
       "Product Interaction, if retained requested-resource activity is in disclosure scope",

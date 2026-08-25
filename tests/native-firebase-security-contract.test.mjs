@@ -20,7 +20,15 @@ test('native Firebase dependencies are exact and the obsolete web client is not 
   assert.equal(dependencies['expo-secure-store'], '~15.0.8');
   assert.equal(dependencies['expo-build-properties'], '~1.0.10');
   assert.equal(dependencies['expo-crypto'], '~15.0.8');
+  assert.equal(dependencies['expo-font'], '~14.0.11');
   assert.equal('expo-updates' in dependencies, false);
+});
+
+test('dynamic Expo config composes the static app config through Expo input', () => {
+  const dynamicConfig = read('app.config.js');
+  assert.match(dynamicConfig, /module\.exports\s*=\s*\(\{ config \}\)/u);
+  assert.match(dynamicConfig, /baseConfig:\s*config/u);
+  assert.doesNotMatch(dynamicConfig, /require\(['"]\.\/app\.json['"]\)/u);
 });
 
 test('Apple privacy config disables tracking, aggregates Pod manifests, and gates the archive report', () => {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -18,11 +18,6 @@ import {
   buildPremiumHomeModel,
   type PremiumHomeTool,
 } from '../../features/home/premiumHomePresentation';
-import { DevMiniappPanel } from '../../features/devMiniapps/DevMiniappPanel';
-import { DevMiniappPreview } from '../../features/devMiniapps/DevMiniappPreview';
-import { DevMiniappTile } from '../../features/devMiniapps/DevMiniappTile';
-import { type DevMiniapp } from '../../features/devMiniapps/devMiniappCatalog';
-import { useDevMiniapps } from '../../features/devMiniapps/useDevMiniapps';
 import { ClientAccessFolio } from '../../features/clientAccess/ClientAccessFolio';
 import { ClientAccessModal } from '../../features/clientAccess/ClientAccessModal';
 import { useFavorites, useTheme, useTranslations, useWebApps } from '../../hooks';
@@ -36,11 +31,7 @@ export default function HomeScreen() {
   const { isOffline } = useWebApps();
   const { isFavorite, toggleFavorite } = useFavorites();
   const model = useMemo(() => buildPremiumHomeModel(PUBLIC_MINIAPPS), []);
-  const devCatalog = useDevMiniapps();
-  const [devPanelVisible, setDevPanelVisible] = useState(false);
   const [clientAccessVisible, setClientAccessVisible] = useState(false);
-  const [previewMiniapp, setPreviewMiniapp] = useState<Readonly<DevMiniapp> | null>(null);
-  const logoTapCount = useRef(0);
   const columns = resolveCatalogCardColumns({ width, fontScale });
 
   const openMiniapp = useCallback((miniapp: Readonly<PublicMiniapp>) => {
@@ -57,20 +48,6 @@ export default function HomeScreen() {
   const summaryFor = useCallback((miniapp: Readonly<PublicMiniapp>) => (
     miniapp.slug === 'clinic-guide' ? t('home.clinicSummary') : t('home.recipesSummary')
   ), [t]);
-  const devTitleFor = useCallback((miniapp: Readonly<DevMiniapp>) => (
-    language === 'es-MX' ? miniapp.titleEs : miniapp.titleEn
-  ), [language]);
-  const devSummaryFor = useCallback((miniapp: Readonly<DevMiniapp>) => (
-    language === 'es-MX' ? miniapp.summaryEs : miniapp.summaryEn
-  ), [language]);
-  const handleDevLogoTap = useCallback(() => {
-    logoTapCount.current += 1;
-    if (logoTapCount.current >= 5) {
-      logoTapCount.current = 0;
-      setDevPanelVisible(true);
-    }
-  }, []);
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <BrandedBackground density="rich" moleculeOpacity={isDark ? 0.58 : 0.9} />
@@ -83,32 +60,13 @@ export default function HomeScreen() {
       >
         <View style={[styles.header, { paddingTop: Math.max(insets.top + 18, 72) }]}>
           <View style={styles.brandLockup}>
-            {devCatalog.enabled ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="CaboHealth"
-                accessibilityHint={t('devPanel.openHint')}
-                delayLongPress={900}
-                onPress={handleDevLogoTap}
-                onLongPress={() => setDevPanelVisible(true)}
-                style={({ pressed }) => [styles.logoControl, pressed && styles.logoPressed]}
-              >
-                <Image
-                  source={require('../../assets/logo-wordmark.png')}
-                  resizeMode="contain"
-                  tintColor={colors.text}
-                  style={styles.logo}
-                />
-              </Pressable>
-            ) : (
-              <Image
-                source={require('../../assets/logo-wordmark.png')}
-                accessibilityLabel="CaboHealth"
-                resizeMode="contain"
-                tintColor={colors.text}
-                style={styles.logo}
-              />
-            )}
+            <Image
+              source={require('../../assets/logo-wordmark.png')}
+              accessibilityLabel="CaboHealth"
+              resizeMode="contain"
+              tintColor={colors.text}
+              style={styles.logo}
+            />
             <View style={styles.brandPromiseRow}>
               <View style={[styles.brandRule, { backgroundColor: colors.accent }]} />
               <Text style={[styles.brandPromise, { color: colors.textSecondary }]}>
@@ -152,28 +110,6 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {devCatalog.enabled && devCatalog.visibleMiniapps.length > 0 && (
-            <View style={styles.testSection}>
-              <SectionLabel label={t('home.testMiniapps')} color={colors.primary} />
-              <View style={styles.miniappGrid}>
-                {devCatalog.visibleMiniapps.map((miniapp, index) => (
-                  <View
-                    key={miniapp.id}
-                    style={columns === 2 ? styles.halfTile : styles.fullTile}
-                  >
-                    <DevMiniappTile
-                      miniapp={miniapp}
-                      title={devTitleFor(miniapp)}
-                      summary={devSummaryFor(miniapp)}
-                      index={model.resources.length + index}
-                      onPress={() => setPreviewMiniapp(miniapp)}
-                    />
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
-
           {isOffline && (
             <View
               accessibilityRole="alert"
@@ -215,24 +151,9 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
-      <DevMiniappPanel
-        visible={devPanelVisible}
-        miniapps={devCatalog.miniapps}
-        saving={devCatalog.saving}
-        storageError={devCatalog.storageError}
-        onClose={() => setDevPanelVisible(false)}
-        onAdd={devCatalog.addMiniapp}
-        onToggle={devCatalog.toggleMiniapp}
-        onRemove={devCatalog.deleteMiniapp}
-      />
       <ClientAccessModal
         visible={clientAccessVisible}
         onClose={() => setClientAccessVisible(false)}
-      />
-      <DevMiniappPreview
-        miniapp={previewMiniapp}
-        title={previewMiniapp ? devTitleFor(previewMiniapp) : ''}
-        onClose={() => setPreviewMiniapp(null)}
       />
     </View>
   );
@@ -291,7 +212,6 @@ const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1 },
   header: { alignItems: 'center', paddingBottom: 48, paddingHorizontal: 20 },
   brandLockup: { width: '100%', alignItems: 'center' },
-  logoControl: { minWidth: 104, minHeight: 60, alignItems: 'center', justifyContent: 'center' },
   logo: { width: 104, height: 60 },
   brandPromiseRow: {
     width: '100%',
@@ -338,7 +258,6 @@ const styles = StyleSheet.create({
   fullTile: { width: '100%' },
   toolsSection: { marginTop: 34 },
   clientSection: { marginTop: 24 },
-  testSection: { marginTop: 17 },
   toolsSurface: { marginTop: 0 },
   toolRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 9 },
   toolIcon: { width: 44, height: 44, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
@@ -346,5 +265,4 @@ const styles = StyleSheet.create({
   offline: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginTop: 14, borderWidth: 1, borderRadius: 14, padding: 11 },
   offlineText: { flex: 1, fontSize: 13, lineHeight: 18 },
   pressed: { opacity: 0.7, transform: [{ scale: 0.99 }] },
-  logoPressed: { opacity: 0.7, transform: [{ scale: 0.97 }] },
 });

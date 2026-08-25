@@ -15,7 +15,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CaboHealthMiniappIcon } from '../../components/icons/CaboHealthMiniappIcon';
 import { useTheme, useTranslations } from '../../hooks';
-import type { MessageKey } from '../../i18n/messages';
 import {
   DEFAULT_DEV_MINIAPP_ICON,
   DEV_MINIAPP_ICONS,
@@ -26,6 +25,10 @@ import {
   type DevMiniappIcon,
   type DevMiniappInput,
 } from './devMiniappCatalog';
+import {
+  translateDevMiniappMessage,
+  type DevMiniappMessageKey,
+} from './devMiniappMessages';
 
 const ICON_LABEL_KEYS = Object.freeze({
   'flask-outline': 'devPanel.iconLab',
@@ -36,7 +39,7 @@ const ICON_LABEL_KEYS = Object.freeze({
   'map-outline': 'devPanel.iconLocation',
   'chatbubble-ellipses-outline': 'devPanel.iconContact',
   'sparkles-outline': 'devPanel.iconFeatured',
-} satisfies Record<DevMiniappIcon, MessageKey>);
+} satisfies Record<DevMiniappIcon, DevMiniappMessageKey>);
 
 const EMPTY_FORM: DevMiniappInput = {
   titleEn: '',
@@ -69,6 +72,7 @@ export function DevMiniappPanel({
 }) {
   const { colors } = useTheme();
   const { language, t } = useTranslations();
+  const devT = (key: DevMiniappMessageKey) => translateDevMiniappMessage(language, key);
   const insets = useSafeAreaInsets();
   const [form, setForm] = useState<DevMiniappInput>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
@@ -84,7 +88,7 @@ export function DevMiniappPanel({
   const submit = async () => {
     const result = await onAdd(form);
     if (!result.ok) {
-      setFormError(t('devPanel.validationError'));
+      setFormError(devT('devPanel.validationError'));
       return;
     }
     setForm(EMPTY_FORM);
@@ -138,10 +142,10 @@ export function DevMiniappPanel({
           <View style={styles.headerCopy}>
             <View style={styles.titleLine}>
               <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>
-                {t('devPanel.title')}
+                {devT('devPanel.title')}
               </Text>
               <View style={[styles.testBadge, { backgroundColor: colors.disabledBackground }]}>
-                <Text style={[styles.testBadgeText, { color: colors.primary }]}>{t('devPanel.testOnly')}</Text>
+                <Text style={[styles.testBadgeText, { color: colors.primary }]}>{devT('devPanel.testOnly')}</Text>
               </View>
             </View>
           </View>
@@ -160,22 +164,22 @@ export function DevMiniappPanel({
           contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 28, 36) }]}
         >
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            {t('devPanel.subtitle')}
+            {devT('devPanel.subtitle')}
           </Text>
 
           {storageError && (
             <View accessibilityRole="alert" style={[styles.alert, { borderColor: colors.error }]}>
               <Ionicons name="alert-circle-outline" size={20} color={colors.error} />
-              <Text style={[styles.alertText, { color: colors.text }]}>{t('devPanel.storageError')}</Text>
+              <Text style={[styles.alertText, { color: colors.text }]}>{devT('devPanel.storageError')}</Text>
             </View>
           )}
 
           <Text accessibilityRole="header" style={[styles.sectionLabel, { color: colors.primary }]}>
-            {t('devPanel.current').toUpperCase()}
+            {devT('devPanel.current').toUpperCase()}
           </Text>
           <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
             {miniapps.length === 0 ? (
-              <Text style={[styles.empty, { color: colors.textSecondary }]}>{t('devPanel.empty')}</Text>
+              <Text style={[styles.empty, { color: colors.textSecondary }]}>{devT('devPanel.empty')}</Text>
             ) : miniapps.map((miniapp, index) => (
               <View
                 key={miniapp.id}
@@ -197,11 +201,11 @@ export function DevMiniappPanel({
                 <View style={styles.savedCopy}>
                   <Text style={[styles.savedTitle, { color: colors.text }]} numberOfLines={1}>{displayTitle(miniapp)}</Text>
                   <Text style={[styles.savedMeta, { color: colors.textSecondary }]} numberOfLines={1}>
-                    {miniapp.access === 'client' ? t('devPanel.clients') : t('devPanel.public')} · {miniapp.slug}
+                    {miniapp.access === 'client' ? devT('devPanel.clients') : devT('devPanel.public')} · {miniapp.slug}
                   </Text>
                 </View>
                 <Switch
-                  accessibilityLabel={`${displayTitle(miniapp)}: ${miniapp.active ? t('devPanel.active') : t('devPanel.inactive')}`}
+                  accessibilityLabel={`${displayTitle(miniapp)}: ${miniapp.active ? devT('devPanel.active') : devT('devPanel.inactive')}`}
                   disabled={saving}
                   value={miniapp.active}
                   onValueChange={(active) => { void onToggle(miniapp.id, active); }}
@@ -210,7 +214,7 @@ export function DevMiniappPanel({
                 />
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`${t('devPanel.remove')}: ${displayTitle(miniapp)}`}
+                  accessibilityLabel={`${devT('devPanel.remove')}: ${displayTitle(miniapp)}`}
                   disabled={saving}
                   onPress={() => setRemoveCandidate(miniapp)}
                   style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
@@ -222,7 +226,7 @@ export function DevMiniappPanel({
           </View>
 
           <Text accessibilityRole="header" style={[styles.sectionLabel, styles.addLabel, { color: colors.primary }]}>
-            {t('devPanel.addTitle').toUpperCase()}
+            {devT('devPanel.addTitle').toUpperCase()}
           </Text>
           <View style={[styles.form, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
             <Pressable
@@ -235,32 +239,32 @@ export function DevMiniappPanel({
               ]}
             >
               <CaboHealthMiniappIcon name="flask-outline" size={20} />
-              <Text style={[styles.sampleButtonText, { color: colors.primary }]}>{t('devPanel.useSample')}</Text>
+              <Text style={[styles.sampleButtonText, { color: colors.primary }]}>{devT('devPanel.useSample')}</Text>
             </Pressable>
             <Field
-              label={t('devPanel.titleEn')}
+              label={devT('devPanel.titleEn')}
               value={form.titleEn}
               onChangeText={(value) => update('titleEn', value)}
             />
             <Field
-              label={t('devPanel.titleEs')}
+              label={devT('devPanel.titleEs')}
               value={form.titleEs}
               onChangeText={(value) => update('titleEs', value)}
             />
             <Field
-              label={t('devPanel.summaryEn')}
+              label={devT('devPanel.summaryEn')}
               value={form.summaryEn}
               onChangeText={(value) => update('summaryEn', value)}
               multiline
             />
             <Field
-              label={t('devPanel.summaryEs')}
+              label={devT('devPanel.summaryEs')}
               value={form.summaryEs}
               onChangeText={(value) => update('summaryEs', value)}
               multiline
             />
             <Field
-              label={t('devPanel.url')}
+              label={devT('devPanel.url')}
               value={form.url}
               onChangeText={(value) => update('url', value)}
               autoCapitalize="none"
@@ -269,32 +273,32 @@ export function DevMiniappPanel({
               placeholder="https://example.org/guide/"
             />
 
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>{t('devPanel.icon')}</Text>
+            <Text style={[styles.fieldLabel, { color: colors.text }]}>{devT('devPanel.icon')}</Text>
             <View accessibilityRole="radiogroup" style={styles.iconGrid}>
               {DEV_MINIAPP_ICONS.map((icon) => (
                 <IconChoice
                   key={icon}
                   icon={icon}
-                  label={t(ICON_LABEL_KEYS[icon])}
+                  label={devT(ICON_LABEL_KEYS[icon])}
                   selected={(form.icon ?? DEFAULT_DEV_MINIAPP_ICON) === icon}
                   onPress={() => update('icon', icon)}
                 />
               ))}
             </View>
 
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>{t('devPanel.access')}</Text>
+            <Text style={[styles.fieldLabel, { color: colors.text }]}>{devT('devPanel.access')}</Text>
             <View accessibilityRole="radiogroup" style={styles.segmented}>
               {(['public', 'client'] as const).map((access) => (
                 <AccessChoice
                   key={access}
                   access={access}
                   selected={form.access === access}
-                  label={access === 'public' ? t('devPanel.public') : t('devPanel.clients')}
+                  label={access === 'public' ? devT('devPanel.public') : devT('devPanel.clients')}
                   onPress={() => update('access', access)}
                 />
               ))}
             </View>
-            <Text style={[styles.accessWarning, { color: colors.textSecondary }]}>{t('devPanel.accessWarning')}</Text>
+            <Text style={[styles.accessWarning, { color: colors.textSecondary }]}>{devT('devPanel.accessWarning')}</Text>
 
             {formError && (
               <Text accessibilityRole="alert" style={[styles.formError, { color: colors.error }]}>
@@ -313,7 +317,7 @@ export function DevMiniappPanel({
               ]}
             >
               <Ionicons name="add" size={22} color={colors.white} />
-              <Text style={[styles.addButtonText, { color: colors.white }]}>{t('devPanel.add')}</Text>
+              <Text style={[styles.addButtonText, { color: colors.white }]}>{devT('devPanel.add')}</Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -327,8 +331,8 @@ export function DevMiniappPanel({
                 { backgroundColor: colors.cardBackground, borderColor: colors.border },
               ]}
             >
-              <Text style={[styles.confirmTitle, { color: colors.text }]}>{t('devPanel.remove')}</Text>
-              <Text style={[styles.confirmCopy, { color: colors.textSecondary }]}>{t('devPanel.removeConfirm')}</Text>
+              <Text style={[styles.confirmTitle, { color: colors.text }]}>{devT('devPanel.remove')}</Text>
+              <Text style={[styles.confirmCopy, { color: colors.textSecondary }]}>{devT('devPanel.removeConfirm')}</Text>
               <View style={styles.confirmActions}>
                 <Pressable
                   accessibilityRole="button"
@@ -344,7 +348,7 @@ export function DevMiniappPanel({
                   onPress={() => { void removeSelected(); }}
                   style={({ pressed }) => [styles.confirmButton, pressed && styles.pressed]}
                 >
-                  <Text style={[styles.confirmButtonText, { color: colors.error }]}>{t('devPanel.remove')}</Text>
+                  <Text style={[styles.confirmButtonText, { color: colors.error }]}>{devT('devPanel.remove')}</Text>
                 </Pressable>
               </View>
             </View>

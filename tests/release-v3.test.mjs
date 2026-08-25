@@ -263,7 +263,8 @@ test('release v3 authorities record the complete age, sanitized audit, and App R
     containsPlaintextSecrets: false,
   });
   assert.deepEqual(privacy.conditionalRecommendation.provisionalCategoryMapping, [
-    'User ID, if the pseudonymous Firebase UID is retained and disclosure is required',
+    'User ID — linked to the user; App Functionality; not used for tracking (exact signed FirebaseAuth privacy manifest)',
+    'Other Diagnostic Data — not linked to the user; Analytics; not used for tracking (exact signed FirebaseAuth privacy manifest)',
     'Device ID, if the app-installation identifier is retained off device and disclosure is required',
     'Coarse Location, Device ID, or Other Diagnostic Data as required by Apple\'s final mapping of retained IP addresses',
     'Product Interaction, if retained requested-resource activity is in disclosure scope',
@@ -273,7 +274,7 @@ test('release v3 authorities record the complete age, sanitized audit, and App R
   ]);
   assert.deepEqual(
     privacy.conditionalRecommendation.provisionalPurpose,
-    ['App Functionality'],
+    ['App Functionality', 'Analytics'],
   );
   assert.deepEqual(manifest.reviewCredential, {
     namespace: 'review_sandbox',
@@ -520,6 +521,7 @@ test('release v3 verifier requires pseudonymous Firebase, SecureStore, App Check
     ['wrong audit deadline', (privacy) => { privacy.applicationAudit.deletionDeadlineDays = 31; }],
     ['variable audit actor', (privacy) => { privacy.applicationAudit.actorLabel = 'Admin Name'; }],
     ['audit actor UID', (privacy) => { privacy.applicationAudit.containsActorUid = true; }],
+    ['missing signed FirebaseAuth Analytics purpose', (privacy) => { privacy.conditionalRecommendation.provisionalPurpose = ['App Functionality']; }],
   ];
   for (const [name, mutate] of mutations) {
     await t.test(name, () => withFixture(
@@ -635,6 +637,7 @@ test('captured release verifier rejects every structured App Privacy lifecycle d
     ['tombstone TTL', (privacy) => { privacy.accessArtifacts.deletionTombstoneHasTtl = true; }],
     ['tombstone retention', (privacy) => { privacy.accessArtifacts.deletionTombstoneRetention = 'forever'; }],
     ['plaintext artifact', (privacy) => { privacy.accessArtifacts.containsPlaintextSecrets = true; }],
+    ['missing signed FirebaseAuth Analytics purpose', (privacy) => { privacy.conditionalRecommendation.provisionalPurpose = ['App Functionality']; }],
   ];
 
   for (const [name, mutate] of mutations) {

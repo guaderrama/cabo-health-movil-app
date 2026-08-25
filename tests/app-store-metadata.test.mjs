@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   cpSync,
   mkdirSync,
   mkdtempSync,
@@ -58,6 +60,94 @@ const authorityPaths = Object.freeze([
   'web-hosting/cabohealth.org/app/support/index.html',
   'web-hosting/cabohealth.org/app/terms/index.html',
 ]);
+
+const screenshotLocales = Object.freeze(['en-US', 'es-MX']);
+const screenshotSceneIds = Object.freeze([
+  '01-launch',
+  '02-resource-catalog',
+  '03-healthy-recipes',
+  '04-clinic-guide',
+  '05-client-resources-locked',
+  '06-eligibility-code-entry',
+  '07-saved',
+  '08-settings-and-legal',
+]);
+
+function screenshotPng(width, height, suffix) {
+  const bytes = Buffer.alloc(24 + Buffer.byteLength(suffix));
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes, 0);
+  bytes.writeUInt32BE(13, 8);
+  bytes.write('IHDR', 12, 'ascii');
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  bytes.write(suffix, 24, 'utf8');
+  return bytes;
+}
+
+function writeFinalScreenshotAuthority(root) {
+  const testFlightBuildId = '987654321';
+  const sourceTreeSha256 = 'a'.repeat(64);
+  const captures = [];
+  for (const locale of screenshotLocales) {
+    for (const sceneId of screenshotSceneIds) {
+      const relativePath = `screenshots/${locale}/iphone-6.9/${sceneId}.png`;
+      const absolutePath = join(root, 'release/private/rc', relativePath);
+      mkdirSync(dirname(absolutePath), { recursive: true, mode: 0o700 });
+      const bytes = screenshotPng(1320, 2868, `${locale}:${sceneId}`);
+      writeFileSync(absolutePath, bytes, { mode: 0o600 });
+      chmodSync(absolutePath, 0o600);
+      captures.push({
+        locale,
+        sceneId,
+        relativePath,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+        width: 1320,
+        height: 2868,
+        format: 'png',
+        capturedAt: '2026-08-25T17:00:00.000Z',
+        testFlightBuildId,
+      });
+    }
+  }
+  const manifest = {
+    schemaVersion: 2,
+    status: 'exact-rc-captured-and-approved',
+    marketingVersion: '3.0',
+    buildNumber: '4',
+    deviceClass: 'iPhone 6.9-inch',
+    locales: [...screenshotLocales],
+    sceneIds: [...screenshotSceneIds],
+    captures,
+    requiredEvidence: {
+      testFlightBuildId,
+      sourceSha: sourceTreeSha256,
+      imageHashes: captures.map((capture) => capture.sha256),
+      ocrExcludedScopeCheck: true,
+      humanVisualSignOff: true,
+    },
+  };
+  const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  writeFileSync(join(root, releasePath, 'screenshots-manifest.json'), manifestBytes);
+  writeFileSync(join(root, releasePath, 'rc-attestation.json'), `${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-ios-exact-rc-attestation',
+    candidate: {
+      appleId: '6758285327',
+      bundleIdentifier: 'com.cabohealth.app',
+      marketingVersion: '3.0',
+      buildNumber: '4',
+    },
+    buildArtifactAttestationSha256: 'b'.repeat(64),
+    sourceTreeSha256,
+    testFlightBuildId,
+    testFlightProcessedAt: '2026-08-25T16:00:00.000Z',
+    physicalIphoneQaSha256: 'c'.repeat(64),
+    screenshotsManifestSha256: createHash('sha256').update(manifestBytes).digest('hex'),
+    appStoreMetadataEvidenceSha256: 'd'.repeat(64),
+    reviewedAt: '2026-08-25T18:00:00.000Z',
+  })}\n`);
+  return captures;
+}
 
 function verify(root) {
   return spawnSync(process.execPath, [verifierPath, root], {
@@ -591,6 +681,14 @@ test('App Privacy preserves observed logs separately from the owner-authorized d
     containsResourceUrls: false,
     containsClientNames: false,
   });
+  assert.deepEqual(privacy.conditionalRecommendation.provisionalPurpose, [
+    'App Functionality',
+    'Analytics',
+  ]);
+  assert.deepEqual(privacy.conditionalRecommendation.provisionalCategoryMapping.slice(0, 2), [
+    'User ID — linked to the user; App Functionality; not used for tracking (exact signed FirebaseAuth privacy manifest)',
+    'Other Diagnostic Data — not linked to the user; Analytics; not used for tracking (exact signed FirebaseAuth privacy manifest)',
+  ]);
 });
 
 test('metadata verifier accepts the five owner confirmations without releasing unverified gates', () => {
@@ -1234,6 +1332,9 @@ test('metadata verifier rejects unapproved App Privacy purposes and schema keys'
     ['advertising provisional purpose', (privacy) => {
       privacy.conditionalRecommendation.provisionalPurpose = ['Targeted Advertising'];
     }],
+    ['missing signed FirebaseAuth Analytics purpose', (privacy) => {
+      privacy.conditionalRecommendation.provisionalPurpose = ['App Functionality'];
+    }],
     ['non-Apple fraud purpose taxonomy', (privacy) => {
       privacy.conditionalRecommendation.provisionalPurpose = [
         'App Functionality',
@@ -1516,6 +1617,29 @@ test('metadata verifier rejects screenshot schema and evidence-authority drift',
       },
     ));
   }
+});
+
+test('metadata verifier accepts the exact file-backed screenshot RC phase and rejects byte drift', async (t) => {
+  await t.test('exact final RC', () => withReleaseFixture(
+    (root) => writeFinalScreenshotAuthority(root),
+    (result) => {
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+    },
+  ));
+  await t.test('image byte drift', () => withReleaseFixture(
+    (root) => {
+      const captures = writeFinalScreenshotAuthority(root);
+      writeFileSync(
+        join(root, 'release/private/rc', captures[0].relativePath),
+        screenshotPng(1320, 2868, 'drifted'),
+        { mode: 0o600 },
+      );
+    },
+    (result) => {
+      assert.equal(result.status, 1, 'file-backed screenshot byte drift bypassed verifier');
+      assert.match(result.stderr, /exact file-backed RC authority/iu);
+    },
+  ));
 });
 
 test('metadata verifier rejects public copy that presents the app as a generic marketplace', () => {

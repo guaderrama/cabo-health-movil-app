@@ -4,13 +4,14 @@ import test from 'node:test';
 
 const read = (path) => readFileSync(path, 'utf8');
 
-test('Home presents public and test miniapps as the same responsive tile grid', () => {
+test('Home presents only approved production resources in the responsive tile grid', () => {
   const home = read('app/(main)/index.tsx');
 
   assert.match(home, /useWindowDimensions/u);
   assert.match(home, /resolveCatalogCardColumns/u);
   assert.match(home, /<PremiumMiniappTile/u);
-  assert.match(home, /<DevMiniappTile/u);
+  assert.match(home, /<ClientAccessFolio/u);
+  assert.doesNotMatch(home, /<DevMiniappTile|features\/devMiniapps/u);
   assert.match(home, /styles\.miniappGrid/u);
   assert.match(home, /columns === 2/u);
   assert.doesNotMatch(home, /<PremiumResourceRow/u);
@@ -59,7 +60,7 @@ test('public miniapps render as editorial covers with full-card navigation and a
   assert.match(cover, /onPressOut=\{motion\.onPressOut\}/u);
 });
 
-test('test miniapps reuse the editorial cover but remain visually subordinate while Tools stay quiet rows', () => {
+test('development-only miniapp source retains its editorial cover while production Tools stay quiet rows', () => {
   const home = read('app/(main)/index.tsx');
   const tile = read('features/devMiniapps/DevMiniappTile.tsx');
 

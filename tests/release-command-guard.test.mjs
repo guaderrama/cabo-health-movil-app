@@ -15,11 +15,22 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { createRequire } from 'node:module';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import {
+  APPLE_RELEASE_CANDIDATE,
+  APP_STORE_METADATA_CHECK_IDS,
+  PHYSICAL_IPHONE_QA_CHECK_IDS,
+  SCREENSHOT_LOCALES,
+  SCREENSHOT_SCENE_IDS,
+  canonicalAppleEvidenceBytes,
+} from '../scripts/apple-post-build-evidence.mjs';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 const guardPath = join(projectRoot, 'scripts/release-command-guard.mjs');
+const require = createRequire(import.meta.url);
+const { bplistCreator, parse: parsePlist } = require('simple-plist');
 
 function hash(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -51,6 +62,264 @@ function canonicalGoogleServicesPlist({
   ].join('\n');
 }
 
+function allPassed(keys) {
+  return Object.fromEntries(keys.map((key) => [key, true]));
+}
+
+function fakePng(width, height, suffix) {
+  const bytes = Buffer.alloc(24 + Buffer.byteLength(suffix));
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes, 0);
+  bytes.writeUInt32BE(13, 8);
+  bytes.write('IHDR', 12, 'ascii');
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  bytes.write(suffix, 24, 'utf8');
+  return bytes;
+}
+
+function exactPrivacyReport({
+  ipaSha256,
+  signedEntitlementsSha256,
+  signingCertificateSha256,
+  provisioningProfileSha256,
+  sourceGoogleServicesPlistSha256,
+  embeddedGoogleServicesPlistSha256,
+}) {
+  const firebaseManifestSha256 = '7'.repeat(64);
+  const rootManifestSha256 = '8'.repeat(64);
+  const privacyManifests = [{
+    relativePath: 'FirebaseAuth_Privacy.bundle/PrivacyInfo.xcprivacy',
+    sha256: firebaseManifestSha256,
+    tracking: false,
+    trackingDomains: [],
+    dataTypes: [{
+      dataType: 'NSPrivacyCollectedDataTypeOtherDiagnosticData',
+      linked: false,
+      purposes: ['NSPrivacyCollectedDataTypePurposeAnalytics'],
+      tracking: false,
+    }, {
+      dataType: 'NSPrivacyCollectedDataTypeUserID',
+      linked: true,
+      purposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'],
+      tracking: false,
+    }],
+    apis: [{
+      apiType: 'NSPrivacyAccessedAPICategoryUserDefaults',
+      reasons: ['CA92.1'],
+    }],
+  }, {
+    relativePath: 'PrivacyInfo.xcprivacy',
+    sha256: rootManifestSha256,
+    tracking: false,
+    trackingDomains: [],
+    dataTypes: [],
+    apis: [],
+  }];
+  const inventoryFiles = [{
+    relativePath: 'FirebaseAuth_Privacy.bundle/PrivacyInfo.xcprivacy',
+    size: 2102,
+    sha256: firebaseManifestSha256,
+  }, {
+    relativePath: 'Info.plist',
+    size: 1024,
+    sha256: '9'.repeat(64),
+  }, {
+    relativePath: 'PrivacyInfo.xcprivacy',
+    size: 1386,
+    sha256: rootManifestSha256,
+  }];
+  return {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-ipa-privacy-report',
+    status: 'passed',
+    generatedAt: '2026-08-22T08:30:00.000Z',
+    candidate: {
+      bundleIdentifier: APPLE_RELEASE_CANDIDATE.bundleIdentifier,
+      marketingVersion: APPLE_RELEASE_CANDIDATE.marketingVersion,
+      buildNumber: APPLE_RELEASE_CANDIDATE.buildNumber,
+      teamIdentifier: 'DQ8PH2DZ3R',
+      appAttestEnvironment: 'production',
+      associatedDomains: ['applinks:cabohealth.org'],
+      appBoundDomains: ['cabohealth.org'],
+    },
+    ipaSha256,
+    signature: {
+      verified: true,
+      identifier: APPLE_RELEASE_CANDIDATE.bundleIdentifier,
+      teamIdentifier: 'DQ8PH2DZ3R',
+      distributionAuthoritySha256: 'a'.repeat(64),
+      signedEntitlementsSha256,
+      signedEntitlementKeys: [
+        'application-identifier',
+        'beta-reports-active',
+        'com.apple.developer.associated-domains',
+        'com.apple.developer.devicecheck.appattest-environment',
+        'com.apple.developer.team-identifier',
+        'get-task-allow',
+      ],
+      signingCertificateSha256,
+      provisioningProfileSha256,
+      provisioningProfile: {
+        expiration: '2030-01-01T00:00:00.000Z',
+        name: 'Synthetic App Store profile',
+        uuid: 'ABCDEF12-3456-4789-ABCD-ABCDEF123456',
+      },
+    },
+    firebase: {
+      bundleIdentifier: APPLE_RELEASE_CANDIDATE.bundleIdentifier,
+      projectIdentifier: 'cabohealth-owner-prod',
+      sourceSha256: sourceGoogleServicesPlistSha256,
+      embeddedSha256: embeddedGoogleServicesPlistSha256,
+      semanticEquality: true,
+    },
+    sensitivePermissions: {
+      photos: false,
+      camera: false,
+      microphone: false,
+      location: false,
+      healthKit: false,
+    },
+    sensitiveFrameworks: [],
+    forbiddenPayloadStrings: [],
+    protectedResources: {
+      forbiddenInfoPlistKeysChecked: [
+        'NSCameraUsageDescription',
+        'NSHealthClinicalHealthRecordsShareUsageDescription',
+        'NSHealthShareUsageDescription',
+        'NSHealthUpdateUsageDescription',
+        'NSLocationAlwaysAndWhenInUseUsageDescription',
+        'NSLocationAlwaysUsageDescription',
+        'NSLocationTemporaryUsageDescriptionDictionary',
+        'NSLocationUsageDescription',
+        'NSLocationWhenInUseUsageDescription',
+        'NSMicrophoneUsageDescription',
+        'NSPhotoLibraryAddUsageDescription',
+        'NSPhotoLibraryUsageDescription',
+      ],
+      forbiddenEntitlementKeysChecked: [
+        'aps-environment',
+        'com.apple.developer.healthkit',
+        'com.apple.developer.healthkit.access',
+        'com.apple.developer.healthkit.background-delivery',
+        'com.apple.developer.location.push',
+        'com.apple.developer.location.push.service',
+        'com.apple.security.application-groups',
+        'keychain-access-groups',
+      ],
+      binaryAndResourceScan: Object.fromEntries([
+        'camera',
+        'devPanel',
+        'expoFileSystem',
+        'healthKit',
+        'location',
+        'microphone',
+        'photos',
+        'staffUrl',
+      ].map((key) => [key, { markersChecked: 1, matches: 0 }])),
+    },
+    privacyManifests,
+    inventory: {
+      fileCount: inventoryFiles.length,
+      privacyManifestCount: privacyManifests.length,
+      files: inventoryFiles,
+    },
+    tracking: false,
+    failures: [],
+  };
+}
+
+function exactRcEvidence(root, { sourceTreeSha256, testFlightBuildId }) {
+  const physicalIphoneQa = {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-physical-iphone-qa',
+    candidate: { ...APPLE_RELEASE_CANDIDATE },
+    testFlightBuildId,
+    sourceTreeSha256,
+    status: 'passed',
+    performedAt: '2026-08-22T10:30:00.000Z',
+    reviewedAt: '2026-08-22T10:45:00.000Z',
+    devices: [{
+      opaqueId: '1'.repeat(64),
+      model: 'iPhone 16 Pro Max',
+      osVersion: '18.6',
+      installation: 'clean',
+      locales: [...SCREENSHOT_LOCALES],
+      result: 'passed',
+      evidenceSha256: '2'.repeat(64),
+    }, {
+      opaqueId: '3'.repeat(64),
+      model: 'iPhone 15 Pro Max',
+      osVersion: '18.5',
+      installation: 'upgrade',
+      locales: [...SCREENSHOT_LOCALES],
+      result: 'passed',
+      evidenceSha256: '4'.repeat(64),
+    }],
+    checks: allPassed(PHYSICAL_IPHONE_QA_CHECK_IDS),
+    failures: [],
+    humanSignOff: true,
+  };
+  const captures = [];
+  for (const locale of SCREENSHOT_LOCALES) {
+    for (const sceneId of SCREENSHOT_SCENE_IDS) {
+      const relativePath = `screenshots/${locale}/iphone-6.9/${sceneId}.png`;
+      const bytes = fakePng(1320, 2868, `${locale}:${sceneId}`);
+      write(root, `release/private/rc/${relativePath}`, bytes);
+      chmodSync(join(root, `release/private/rc/${relativePath}`), 0o600);
+      captures.push({
+        locale,
+        sceneId,
+        relativePath,
+        sha256: hash(bytes),
+        width: 1320,
+        height: 2868,
+        format: 'png',
+        capturedAt: '2026-08-22T10:30:00.000Z',
+        testFlightBuildId,
+      });
+    }
+  }
+  const screenshotsManifest = {
+    schemaVersion: 2,
+    status: 'exact-rc-captured-and-approved',
+    marketingVersion: '3.0',
+    buildNumber: '4',
+    deviceClass: 'iPhone 6.9-inch',
+    locales: [...SCREENSHOT_LOCALES],
+    sceneIds: [...SCREENSHOT_SCENE_IDS],
+    captures,
+    requiredEvidence: {
+      testFlightBuildId,
+      sourceSha: sourceTreeSha256,
+      imageHashes: captures.map((capture) => capture.sha256),
+      ocrExcludedScopeCheck: true,
+      humanVisualSignOff: true,
+    },
+  };
+  const appStoreConnectEvidence = {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-app-store-connect-evidence',
+    candidate: { ...APPLE_RELEASE_CANDIDATE },
+    testFlightBuildId,
+    status: 'ready-for-review',
+    capturedAt: '2026-08-22T10:30:00.000Z',
+    reviewedAt: '2026-08-22T10:45:00.000Z',
+    appResourceId: APPLE_RELEASE_CANDIDATE.appleId,
+    appStoreVersionId: 'app-store-version-123',
+    buildResourceId: '123e4567-e89b-42d3-a456-426614174001',
+    appStoreVersionState: 'PREPARE_FOR_SUBMISSION',
+    buildProcessingState: 'VALID',
+    metadataChecks: allPassed(APP_STORE_METADATA_CHECK_IDS),
+    failures: [],
+    evidenceSnapshotSha256: '5'.repeat(64),
+  };
+  return {
+    physicalIphoneQa: canonicalAppleEvidenceBytes(physicalIphoneQa),
+    screenshotsManifest: canonicalAppleEvidenceBytes(screenshotsManifest),
+    appStoreConnectEvidence: canonicalAppleEvidenceBytes(appStoreConnectEvidence),
+  };
+}
+
 test('production build and submit scripts cannot bypass the release guard', () => {
   const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
   assert.match(readFileSync(join(projectRoot, '.gitignore'), 'utf8'), /^\/release\/private\/$/mu);
@@ -65,16 +334,21 @@ test('production build and submit scripts cannot bypass the release guard', () =
   assert.doesNotMatch(packageJson.scripts.submit, /\beas\s+submit\b/u);
 });
 
-test('release tooling pins EAS CLI and its compatible patched parser closure exactly', () => {
+test('release tooling pins EAS CLI and both plist parsers exactly', () => {
   const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
   const packageLock = JSON.parse(readFileSync(join(projectRoot, 'package-lock.json'), 'utf8'));
+  const easJson = JSON.parse(readFileSync(join(projectRoot, 'eas.json'), 'utf8'));
 
   assert.equal(packageJson.devDependencies['eas-cli'], '22.2.0');
+  assert.equal(easJson.cli.version, packageJson.devDependencies['eas-cli']);
+  assert.equal(packageJson.devDependencies['simple-plist'], '1.3.1');
   assert.equal(packageJson.dependencies['@xmldom/xmldom'], '0.8.15');
   assert.equal(packageLock.packages[''].devDependencies['eas-cli'], '22.2.0');
+  assert.equal(packageLock.packages[''].devDependencies['simple-plist'], '1.3.1');
   assert.equal(packageLock.packages[''].dependencies['@xmldom/xmldom'], '0.8.15');
   assert.equal(packageLock.packages['node_modules/@xmldom/xmldom'].version, '0.8.15');
   assert.equal(packageLock.packages['node_modules/eas-cli'].version, '22.2.0');
+  assert.equal(packageLock.packages['node_modules/simple-plist'].version, '1.3.1');
   assert.deepEqual(packageJson.overrides['eas-cli'], {
     ajv: '8.20.0',
     joi: '17.13.6',
@@ -153,7 +427,20 @@ test('release guard rejects ambiguous Firebase plist identities with the exact g
   assert.deepEqual(result.bytes, canonicalBytes);
 });
 
-test('the build authority is pinned while unfinished artifact and RC phases stay blocked', async () => {
+test('artifact verification compares complete plist content across XML and binary encodings', async () => {
+  const { googleServicesPlistsHaveSameContent } = await import(guardPath);
+  const xml = Buffer.from(canonicalGoogleServicesPlist(), 'utf8');
+  const parsed = parsePlist(xml);
+  const binary = bplistCreator(parsed);
+  const changedBinary = bplistCreator({ ...parsed, STORAGE_BUCKET: 'wrong.example.invalid' });
+
+  assert.notEqual(hash(xml), hash(binary));
+  assert.equal(googleServicesPlistsHaveSameContent(xml, binary), true);
+  assert.equal(googleServicesPlistsHaveSameContent(xml, changedBinary), false);
+  assert.equal(googleServicesPlistsHaveSameContent(xml, Buffer.from('not-a-plist')), false);
+});
+
+test('release authorities remain valid as the build, artifact, and RC phases advance', async () => {
   const {
     decodePinnedNodeToolAuthority,
     resolvePinnedNodeTool,
@@ -161,6 +448,20 @@ test('the build authority is pinned while unfinished artifact and RC phases stay
     verifyRcAttestation,
   } = await import(guardPath);
   const source = readFileSync(guardPath, 'utf8');
+  const optionalShaPin = (name) => {
+    const value = source.match(
+      new RegExp(`^const ${name} = (null|'[a-f0-9]{64}');$`, 'mu'),
+    )?.[1];
+    assert.ok(value, `${name} must be null or one exact SHA-256`);
+    return value === 'null' ? null : value.slice(1, -1);
+  };
+  const optionalToolPin = (name) => {
+    const value = source.match(
+      new RegExp(`^const ${name} = (null|'[A-Za-z0-9+/]+={0,2}');$`, 'mu'),
+    )?.[1];
+    assert.ok(value, `${name} must be null or one canonical base64 authority`);
+    return value === 'null' ? null : value.slice(1, -1);
+  };
   const buildInputPin = source.match(
     /^const BUILD_INPUT_ATTESTATION_SHA256 = '([a-f0-9]{64})';$/mu,
   )?.[1];
@@ -188,24 +489,55 @@ test('the build authority is pinned while unfinished artifact and RC phases stay
     'EAS_CLI_NOT_PINNED',
     'EAS_CLI_PIN_INVALID',
   ).executable.endsWith('/node_modules/eas-cli/bin/run'));
-  assert.match(source, /^const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;$/mu);
-  assert.match(source, /^const RC_ATTESTATION_SHA256 = null;$/mu);
-  assert.match(source, /^const PINNED_APP_STORE_SUBMIT_ADAPTER = null;$/mu);
-  assert.throws(
-    () => verifyBuildArtifactAttestation(projectRoot, {
-      buildInputSha256: buildInputPin,
-      buildArtifactSha256: null,
-    }),
-    /EXACT_BUILD_ARTIFACT_ATTESTATION_MISSING/u,
-  );
-  assert.throws(
-    () => verifyRcAttestation(projectRoot, {
-      buildInputSha256: buildInputPin,
-      buildArtifactSha256: null,
-      rcSha256: null,
-    }),
-    /EXACT_RC_ATTESTATION_MISSING/u,
-  );
+  const buildArtifactPin = optionalShaPin('BUILD_ARTIFACT_ATTESTATION_SHA256');
+  const rcPin = optionalShaPin('RC_ATTESTATION_SHA256');
+  const adapterPin = optionalToolPin('PINNED_APP_STORE_SUBMIT_ADAPTER');
+
+  if (buildArtifactPin === null) {
+    assert.throws(
+      () => verifyBuildArtifactAttestation(projectRoot, {
+        buildInputSha256: buildInputPin,
+        buildArtifactSha256: null,
+      }),
+      /EXACT_BUILD_ARTIFACT_ATTESTATION_MISSING/u,
+    );
+  } else {
+    assert.equal(hash(readFileSync(join(
+      projectRoot,
+      'release/app-store/3.0/build-artifact-attestation.json',
+    ))), buildArtifactPin);
+  }
+
+  if (rcPin === null) {
+    assert.throws(
+      () => verifyRcAttestation(projectRoot, {
+        buildInputSha256: buildInputPin,
+        buildArtifactSha256: buildArtifactPin,
+        rcSha256: null,
+      }),
+      /EXACT_RC_ATTESTATION_MISSING/u,
+    );
+  } else {
+    assert.notEqual(buildArtifactPin, null, 'an RC authority requires a build-artifact authority');
+    assert.equal(hash(readFileSync(join(
+      projectRoot,
+      'release/app-store/3.0/rc-attestation.json',
+    ))), rcPin);
+  }
+
+  if (adapterPin !== null) {
+    const decodedAdapterPin = decodePinnedNodeToolAuthority(
+      adapterPin,
+      'APP_STORE_SUBMIT_ADAPTER_NOT_PINNED',
+      'APP_STORE_SUBMIT_ADAPTER_PIN_INVALID',
+    );
+    assert.ok(resolvePinnedNodeTool(
+      projectRoot,
+      decodedAdapterPin,
+      'APP_STORE_SUBMIT_ADAPTER_NOT_PINNED',
+      'APP_STORE_SUBMIT_ADAPTER_PIN_INVALID',
+    ).executable.startsWith(projectRoot));
+  }
 });
 
 test('release guard separates source, built artifact, and final reviewed RC authorities', () => {
@@ -594,7 +926,7 @@ test('submission authorization is documented as an operational challenge, not id
   assert.match(gates, /cannot cryptographically authenticate Ivan's identity/iu);
   assert.match(gates, /Codex must ask Ivan.*separate explicit confirmation/isu);
   assert.match(gates, /confirmation challenge.*RC-bound/iu);
-  assert.match(gates, /submit adapter pin remains `null`/iu);
+  assert.match(gates, /submit adapter.*independently reviewed and recursively pinned/iu);
 });
 
 test('phase attestations recompute tracked source and exact IPA bytes', async (t) => {
@@ -712,11 +1044,28 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
   const evidence = {
     'release/private/rc/CaboHealth-3.0-build-4.ipa': Buffer.from('exact ipa bytes'),
     'release/private/rc/signed-entitlements.plist': Buffer.from('<plist>exact</plist>'),
-    'release/private/rc/privacy-report.json': Buffer.from('{"tracking":false}\n'),
-    'release/private/rc/embedded-GoogleService-Info.plist': privatePlistBytes,
+    'release/private/rc/embedded-GoogleService-Info.plist': bplistCreator(
+      parsePlist(privatePlistBytes),
+    ),
     'release/private/rc/signing-certificate.der': Buffer.from('exact signing certificate'),
     'release/private/rc/embedded.mobileprovision': Buffer.from('exact provisioning profile'),
   };
+  evidence['release/private/rc/privacy-report.json'] = canonicalAppleEvidenceBytes(
+    exactPrivacyReport({
+      ipaSha256: hash(evidence['release/private/rc/CaboHealth-3.0-build-4.ipa']),
+      signedEntitlementsSha256: hash(
+        evidence['release/private/rc/signed-entitlements.plist'],
+      ),
+      signingCertificateSha256: hash(evidence['release/private/rc/signing-certificate.der']),
+      provisioningProfileSha256: hash(
+        evidence['release/private/rc/embedded.mobileprovision'],
+      ),
+      sourceGoogleServicesPlistSha256: hash(privatePlistBytes),
+      embeddedGoogleServicesPlistSha256: hash(
+        evidence['release/private/rc/embedded-GoogleService-Info.plist'],
+      ),
+    }),
+  );
   for (const [path, value] of Object.entries(evidence)) write(root, path, value);
   for (const path of Object.keys(evidence)) chmodSync(join(root, path), 0o600);
   const buildArtifact = {
@@ -749,8 +1098,25 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     buildArtifactSha256,
   }), buildArtifact);
 
-  write(root, 'release/private/rc/physical-iphone-qa.json', '{"passed":true}\n');
-  write(root, 'release/private/rc/app-store-connect-evidence.json', '{"saved":true}\n');
+  const finalEvidence = exactRcEvidence(root, {
+    sourceTreeSha256,
+    testFlightBuildId: '987654321',
+  });
+  write(
+    root,
+    'release/private/rc/physical-iphone-qa.json',
+    finalEvidence.physicalIphoneQa,
+  );
+  write(
+    root,
+    'release/private/rc/app-store-connect-evidence.json',
+    finalEvidence.appStoreConnectEvidence,
+  );
+  write(
+    root,
+    'release/app-store/3.0/screenshots-manifest.json',
+    finalEvidence.screenshotsManifest,
+  );
   chmodSync(join(root, 'release/private/rc/physical-iphone-qa.json'), 0o600);
   chmodSync(join(root, 'release/private/rc/app-store-connect-evidence.json'), 0o600);
   const rcAttestation = {
@@ -774,7 +1140,12 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
   };
   const rcBytes = Buffer.from(`${JSON.stringify(rcAttestation)}\n`);
   write(root, 'release/app-store/3.0/rc-attestation.json', rcBytes);
-  git(root, 'add', 'release/app-store/3.0/rc-attestation.json');
+  git(
+    root,
+    'add',
+    'release/app-store/3.0/rc-attestation.json',
+    'release/app-store/3.0/screenshots-manifest.json',
+  );
   git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
     'commit', '-qm', 'pin exact RC');
   const rcSha256 = hash(rcBytes);

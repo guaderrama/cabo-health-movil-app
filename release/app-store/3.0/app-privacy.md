@@ -8,6 +8,8 @@ Status: **DATA COLLECTED; FINAL DATA TYPES AND LINKAGE PENDING.** The retained p
 - Client Resources uses a pseudonymous Firebase UID. The app asks for no client name, email, phone number, profile, diagnosis, or treatment information.
 - A random installation identifier is generated locally and held in iOS SecureStore to bind a grant to one installation and limit code sharing.
 - Firebase App Check protects callable access. Production iOS uses App Attest with DeviceCheck fallback.
+- The inspected signed 3.0/build 4 IPA embeds a FirebaseAuth privacy manifest that declares **User ID** as linked to the user for **App Functionality**, and **Other Diagnostic Data** as not linked to the user for **Analytics**. Both entries declare no tracking.
+- The Firebase Analytics product remains disabled and the app has no analytics feature. “Analytics” above is the Apple-selectable purpose declared by the FirebaseAuth SDK for its Other Diagnostic Data; it does not mean that Firebase Analytics is enabled.
 - Eligibility codes are 128-bit secrets. The backend stores keyed versioned digests, not plaintext codes or client names.
 - Local favorites, language, appearance, haptics, effects, recipe favorite keys, and checklist state remain on-device.
 - Hosted JavaScript has no native message bridge.
@@ -43,15 +45,16 @@ Select **Yes, we collect data from this app**. Before saving the exact App Priva
 - inspect the exact signed build’s SDK privacy report and network trace;
 - verify production Firebase, Google Cloud Logging, and Hostinger fields, retention, linkage, access, TTL, and deletion;
 - map only the current fields to Apple’s current definitions and purposes;
-- use only Apple’s selectable purpose **App Functionality**, which includes authentication, fraud prevention, and security for this scope;
-- evaluate **User ID**, **Device ID**, **Coarse Location**, **Product Interaction**, **Performance Data**, **Other Diagnostic Data**, and **Other Data Types** against the exact retained production fields;
+- carry forward the exact signed FirebaseAuth SDK mapping: **User ID** linked to the user for **App Functionality**, and **Other Diagnostic Data** not linked to the user for **Analytics**; neither is used for tracking;
+- keep the FirebaseAuth SDK’s Apple-selectable **Analytics** purpose distinct from the disabled Firebase Analytics product and the absence of an app analytics feature;
+- evaluate **Device ID**, **Coarse Location**, **Product Interaction**, **Performance Data**, **Other Diagnostic Data**, and **Other Data Types** against the remaining exact retained production fields;
 - disclose only the data types whose verified retention and Apple definitions require disclosure;
 - never describe a pseudonymous record as unlinked without evidence; and
 - obtain the account holder’s final approval before saving.
 
 ## Evidence required
 
-- [ ] Exact signed RC privacy report and dependency inventory reviewed.
+- [ ] Next exact signed RC privacy report and dependency inventory confirm the FirebaseAuth mapping observed in the signed diagnostic IPA.
 - [ ] iPhone network trace contains only reviewed CaboHealth/Firebase endpoints and explicit external actions.
 - [ ] Physical-iPhone App Attest and controlled rate-limit, TTL, deletion/retry, and 30-day audit behavior verified against the exact RC.
 - [ ] Valid Hostinger broker/session, replay, revocation, deletion, and reciprocal-realm behavior verified with no credential or health-data exposure.

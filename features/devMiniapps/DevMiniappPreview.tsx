@@ -18,6 +18,10 @@ import {
   isDevMiniappPanelEnabled,
   type DevMiniapp,
 } from './devMiniappCatalog';
+import {
+  translateDevMiniappMessage,
+  type DevMiniappMessageKey,
+} from './devMiniappMessages';
 
 const DEV_MINIAPP_WEBVIEW_SECURITY_PROPS = Object.freeze({
   ...RESTRICTED_WEBVIEW_SECURITY_PROPS,
@@ -36,7 +40,8 @@ export function DevMiniappPreview({
   onClose: () => void;
 }) {
   const { colors } = useTheme();
-  const { t } = useTranslations();
+  const { language, t } = useTranslations();
+  const devT = (key: DevMiniappMessageKey) => translateDevMiniappMessage(language, key);
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +50,7 @@ export function DevMiniappPreview({
 
   const block = () => {
     setLoading(false);
-    setError(t('devPanel.previewBlocked'));
+    setError(devT('devPanel.previewBlocked'));
     return false;
   };
 
@@ -74,7 +79,7 @@ export function DevMiniappPreview({
             {title}
           </Text>
           <View style={[styles.badge, { backgroundColor: colors.disabledBackground }]}>
-            <Text style={[styles.badgeText, { color: colors.primary }]}>{t('devPanel.testOnly')}</Text>
+            <Text style={[styles.badgeText, { color: colors.primary }]}>{devT('devPanel.testOnly')}</Text>
           </View>
         </View>
 

@@ -24,12 +24,26 @@ import { isDeepStrictEqual } from 'node:util';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import {
+  validateAppStoreConnectEvidence,
+  validateIpaPrivacyReport,
+  validatePhysicalIphoneQaEvidence,
+  validateScreenshotsManifest,
+} from './apple-post-build-evidence.mjs';
+
+export {
+  validateAppStoreConnectEvidence,
+  validateIpaPrivacyReport,
+  validatePhysicalIphoneQaEvidence,
+  validateScreenshotsManifest,
+} from './apple-post-build-evidence.mjs';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const {
   parseGoogleServicesPlistIdentity,
 } = require('../config/nativeFirebaseExpoConfig.cjs');
+const { parse: parsePlist } = require('simple-plist');
 
 const ATTESTATION_PATHS = Object.freeze({
   buildInput: 'release/app-store/3.0/build-input-attestation.json',
@@ -54,8 +68,8 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
 const BUILD_INPUT_ATTESTATION_SHA256 = 'e89942a65c2fabde7a0a232134c9762a8b6a3d1b241dd2cc871b4f431f3009d6';
 const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;
 const RC_ATTESTATION_SHA256 = null;
-const PINNED_EAS_CLI = 'eyJlbnRyeVJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvYmluL3J1biIsIm5vZGVFeGVjdXRhYmxlU2hhMjU2IjoiNWQ5ZDM4NzI5MTFlMjM0MGE0M2I3MDc5NjJlNjgxNDNkZThhNGU4ZDU0NjI4ODQ1YzBjNGYyZGUxZmI3Y2Q1YyIsIm5vZGVWZXJzaW9uIjoidjIyLjIyLjMiLCJwYWNrYWdlSnNvblJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvcGFja2FnZS5qc29uIiwicGFja2FnZVZlcnNpb24iOiIyMi4yLjAiLCJydW50aW1lUm9vdFJlbGF0aXZlUGF0aCI6Im5vZGVfbW9kdWxlcyIsInJ1bnRpbWVUcmVlU2hhMjU2IjoiNGNjZjljZGUyYjY5Y2Q0OTUwZDc1NDgyMTA2MGUyOTg5Yzc1MDE1NzQzOTVjOTc5MTJkN2Y3YTlmOGViN2RhOCJ9';
-const PINNED_APP_STORE_SUBMIT_ADAPTER = null;
+const PINNED_EAS_CLI = 'eyJlbnRyeVJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvYmluL3J1biIsIm5vZGVFeGVjdXRhYmxlU2hhMjU2IjoiNWQ5ZDM4NzI5MTFlMjM0MGE0M2I3MDc5NjJlNjgxNDNkZThhNGU4ZDU0NjI4ODQ1YzBjNGYyZGUxZmI3Y2Q1YyIsIm5vZGVWZXJzaW9uIjoidjIyLjIyLjMiLCJwYWNrYWdlSnNvblJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvcGFja2FnZS5qc29uIiwicGFja2FnZVZlcnNpb24iOiIyMi4yLjAiLCJydW50aW1lUm9vdFJlbGF0aXZlUGF0aCI6Im5vZGVfbW9kdWxlcyIsInJ1bnRpbWVUcmVlU2hhMjU2IjoiYzllNjdiODJiNzYxOTZlNDhhYjgxMjJiZDcwMDczYmI3MzU0MWQzMDc0NGI0M2JjZTUwZGQwNDUwYjgwZWVmNSJ9';
+const PINNED_APP_STORE_SUBMIT_ADAPTER = 'eyJlbnRyeVJlbGF0aXZlUGF0aCI6ImJpbi9zdWJtaXQubWpzIiwibm9kZUV4ZWN1dGFibGVTaGEyNTYiOiI1ZDlkMzg3MjkxMWUyMzQwYTQzYjcwNzk2MmU2ODE0M2RlOGE0ZThkNTQ2Mjg4NDVjMGM0ZjJkZTFmYjdjZDVjIiwibm9kZVZlcnNpb24iOiJ2MjIuMjIuMyIsInBhY2thZ2VKc29uUmVsYXRpdmVQYXRoIjoicGFja2FnZS5qc29uIiwicGFja2FnZVZlcnNpb24iOiIxLjAuMCIsInJ1bnRpbWVSb290UmVsYXRpdmVQYXRoIjoidG9vbHMvYXBwLXN0b3JlLXN1Ym1pdC1hZGFwdGVyIiwicnVudGltZVRyZWVTaGEyNTYiOiIwY2Q1NmVhZjM2YzljOTI2NzI1MTEzYmIzOWI2NmUwYjRkYmIyZGM5NTJhOWM2Yjc0Yjg0OTRlN2NiMjY4YjJjIn0=';
 
 const SOURCE_DIGEST_EXCLUSIONS = new Set([
   ...Object.values(ATTESTATION_PATHS),
@@ -379,6 +393,24 @@ function hashPrivateEvidenceFile(root, relativePath, code) {
     invalidCode: code,
     privateMode: 0o600,
   }));
+}
+
+function parsePlistDictionary(bytes) {
+  if (!Buffer.isBuffer(bytes)) return null;
+  let value;
+  try {
+    value = parsePlist(bytes);
+  } catch {
+    return null;
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value;
+}
+
+export function googleServicesPlistsHaveSameContent(sourceBytes, embeddedBytes) {
+  const source = parsePlistDictionary(sourceBytes);
+  const embedded = parsePlistDictionary(embeddedBytes);
+  return source !== null && embedded !== null && isDeepStrictEqual(source, embedded);
 }
 
 export function readProductionGoogleServicesPlist(environment = process.env) {
@@ -953,6 +985,25 @@ export function verifyBuildArtifactAttestation(root, {
   for (const key of BUILD_ARTIFACT_KEYS.filter((key) => key.endsWith('Sha256'))) {
     assertSha256(attestation[key], code);
   }
+  const sourceGoogleServicesPlist = readProductionGoogleServicesPlist();
+  const embeddedGoogleServicesPlist = readBoundRegularFile(
+    join(root, PRIVATE_EVIDENCE_PATHS.embeddedGoogleServicesPlist),
+    {
+      missingCode: code,
+      invalidCode: code,
+      privateMode: 0o600,
+      maxBytes: 256 * 1024,
+    },
+  );
+  const privacyReportBytes = readBoundRegularFile(
+    join(root, PRIVATE_EVIDENCE_PATHS.privacyReport),
+    {
+      missingCode: code,
+      invalidCode: code,
+      privateMode: 0o600,
+      maxBytes: 64 * 1024 * 1024,
+    },
+  );
   if (attestation.buildInputAttestationSha256 !== buildInputSha256
     || attestation.sourceTreeSha256 !== buildInput.sourceTreeSha256
     || !UUID_PATTERN.test(attestation.easBuildId)
@@ -966,17 +1017,11 @@ export function verifyBuildArtifactAttestation(root, {
       PRIVATE_EVIDENCE_PATHS.signedEntitlements,
       code,
     )
-    || attestation.privacyReportSha256 !== hashPrivateEvidenceFile(
-      root,
-      PRIVATE_EVIDENCE_PATHS.privacyReport,
-      code,
-    )
-    || attestation.embeddedGoogleServicesPlistSha256
-      !== buildInput.googleServicesPlistSha256
-    || attestation.embeddedGoogleServicesPlistSha256 !== hashPrivateEvidenceFile(
-      root,
-      PRIVATE_EVIDENCE_PATHS.embeddedGoogleServicesPlist,
-      code,
+    || attestation.privacyReportSha256 !== sha256(privacyReportBytes)
+    || attestation.embeddedGoogleServicesPlistSha256 !== sha256(embeddedGoogleServicesPlist)
+    || !googleServicesPlistsHaveSameContent(
+      sourceGoogleServicesPlist.bytes,
+      embeddedGoogleServicesPlist,
     )
     || attestation.signingCertificateSha256 !== hashPrivateEvidenceFile(
       root,
@@ -988,6 +1033,18 @@ export function verifyBuildArtifactAttestation(root, {
       PRIVATE_EVIDENCE_PATHS.embeddedProvisioningProfile,
       code,
     )) {
+    reject(code);
+  }
+  try {
+    validateIpaPrivacyReport(parseExactJson(privacyReportBytes, code), {
+      ipaSha256: attestation.ipaSha256,
+      signedEntitlementsSha256: attestation.signedEntitlementsSha256,
+      signingCertificateSha256: attestation.signingCertificateSha256,
+      embeddedProvisioningProfileSha256: attestation.embeddedProvisioningProfileSha256,
+      sourceGoogleServicesPlistSha256: buildInput.googleServicesPlistSha256,
+      embeddedGoogleServicesPlistSha256: attestation.embeddedGoogleServicesPlistSha256,
+    });
+  } catch {
     reject(code);
   }
   return attestation;
@@ -1021,25 +1078,59 @@ export function verifyRcAttestation(root, {
   for (const key of RC_KEYS.filter((key) => key.endsWith('Sha256'))) {
     assertSha256(attestation[key], code);
   }
+  const physicalIphoneQaBytes = readBoundRegularFile(
+    join(root, PRIVATE_EVIDENCE_PATHS.physicalIphoneQa),
+    {
+      missingCode: code,
+      invalidCode: code,
+      privateMode: 0o600,
+      maxBytes: 1024 * 1024,
+    },
+  );
+  const appStoreConnectEvidenceBytes = readBoundRegularFile(
+    join(root, PRIVATE_EVIDENCE_PATHS.appStoreConnectEvidence),
+    {
+      missingCode: code,
+      invalidCode: code,
+      privateMode: 0o600,
+      maxBytes: 1024 * 1024,
+    },
+  );
+  const screenshotsManifestBytes = readBoundRegularFile(
+    join(root, 'release/app-store/3.0/screenshots-manifest.json'),
+    {
+      missingCode: code,
+      invalidCode: code,
+      maxBytes: 1024 * 1024,
+    },
+  );
   if (attestation.buildArtifactAttestationSha256 !== buildArtifactSha256
     || attestation.sourceTreeSha256 !== buildArtifact.sourceTreeSha256
     || typeof attestation.testFlightBuildId !== 'string'
     || !/^\d+$/u.test(attestation.testFlightBuildId)
-    || attestation.physicalIphoneQaSha256 !== hashPrivateEvidenceFile(
-      root,
-      PRIVATE_EVIDENCE_PATHS.physicalIphoneQa,
-      code,
-    )
-    || attestation.screenshotsManifestSha256 !== hashProjectFile(
-      root,
-      'release/app-store/3.0/screenshots-manifest.json',
-      code,
-    )
-    || attestation.appStoreMetadataEvidenceSha256 !== hashPrivateEvidenceFile(
-      root,
-      PRIVATE_EVIDENCE_PATHS.appStoreConnectEvidence,
-      code,
-    )) {
+    || attestation.physicalIphoneQaSha256 !== sha256(physicalIphoneQaBytes)
+    || attestation.screenshotsManifestSha256 !== sha256(screenshotsManifestBytes)
+    || attestation.appStoreMetadataEvidenceSha256 !== sha256(appStoreConnectEvidenceBytes)) {
+    reject(code);
+  }
+  try {
+    const bindings = {
+      testFlightBuildId: attestation.testFlightBuildId,
+      sourceTreeSha256: attestation.sourceTreeSha256,
+      testFlightProcessedAt: attestation.testFlightProcessedAt,
+    };
+    validatePhysicalIphoneQaEvidence(parseExactJson(physicalIphoneQaBytes, code), bindings);
+    validateAppStoreConnectEvidence(
+      parseExactJson(appStoreConnectEvidenceBytes, code),
+      bindings,
+    );
+    validateScreenshotsManifest(parseExactJson(screenshotsManifestBytes, code), {
+      phase: 'final',
+      ...bindings,
+      evidenceRoot: join(root, 'release/private/rc'),
+      requireFiles: true,
+    });
+  } catch {
     reject(code);
   }
   return attestation;

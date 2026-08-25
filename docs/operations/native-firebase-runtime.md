@@ -67,10 +67,31 @@ The native bundle also imports the frozen public contact record at
 `release/public-contact-facts.json`. `.easignore` must retain exactly that
 public runtime file while continuing to exclude `release/private/`, App Store
 evidence, and every other release artifact. The upload-context regression test
-pins this exception. Before relaunching a failed release, use EAS
-`build:inspect` at the `archive` stage and confirm that the copied record has
-the same SHA-256 as the tracked source and that no private/evidence path entered
-the archive.
+uses the archive-copy implementation from the pinned EAS CLI—not a separate
+ignore-rule approximation—and proves that the copied record has the same
+SHA-256 while representative private and App Store evidence files stay out.
+Before relaunching a failed release, also use EAS `build:inspect` at the
+`archive` stage against the complete project as an operational cross-check.
+
+`app.json` remains the static, reviewable source of the public Expo config.
+`app.config.js` receives that resolved object through Expo's `{ config }`
+argument and adds only the environment-bound native Firebase fields. Do not
+reload `app.json` manually in the dynamic config: that bypasses Expo's config
+composition contract and triggers a preflight warning. `expo-font` is direct
+and version-compatible because `@expo/vector-icons` requires its native peer.
+The release tooling intentionally retains `eas-cli` as an exact local
+development dependency: the guard hashes its complete runtime tree and the
+Node executable before it can build or upload. `eas.json` independently pins
+the same exact CLI version. Expo Doctor's generic warning against a local EAS
+CLI is therefore an acknowledged exception, not permission to remove or
+upgrade this reviewed toolchain.
+
+Expo Doctor also reports the existing SDK-recommended drift for Expo core,
+Router, Constants, Linking, Gesture Handler, Screens, and Worklets. Keep that
+signal visible; do not silence it with `expo.install.exclude` or run a bulk
+`expo install --fix` during the RC freeze. Those native dependency changes need
+their own candidate, clean prebuild, complete test pass, and signed-archive
+review.
 
 Both Expo configuration and the release guard use the same strict XML plist
 reader. It requires one root dictionary, one ordinary-text `PROJECT_ID`, and
@@ -82,12 +103,15 @@ alone.
 
 Before the guarded RC build, the same plist must exist locally outside Dropbox
 as an owner-only regular file with mode `0600`. The build-input attestation pins
-its SHA-256, the exact production project ID, and a sanitized resolved Expo
-configuration whose private path is replaced by a fixed marker. The build
-artifact attestation must then prove that the plist extracted from the signed
-IPA has the same hash and must retain the signing-certificate and embedded
-provisioning-profile fingerprints. No private path or plist content enters Git.
-A development build without these inputs remains intentionally locked.
+its raw SHA-256, the exact production project ID, and a sanitized resolved Expo
+configuration whose private path is replaced by a fixed marker. Xcode compiles
+that XML plist into a binary plist inside the signed app, so the build-artifact
+attestation retains the raw hash of the extracted binary file and proves that
+its complete parsed dictionary is exactly equal to the input dictionary. A raw
+XML-versus-binary hash comparison is not a content comparison. The attestation
+also retains the signing-certificate and embedded-provisioning-profile
+fingerprints. No private path or plist content enters Git. A development build
+without these inputs remains intentionally locked.
 
 `CABOHEALTH_APP_CHECK_DEBUG=true` is accepted only for `APP_ENV=development`.
 Use debug providers only with local/emulator development and never register a
@@ -141,6 +165,12 @@ Before a release:
    IPA. Confirm `com.apple.developer.devicecheck.appattest-environment` is
    `production`, then exercise App Attest on a physical iPhone through
    TestFlight. A missing or altered signed entitlement must block release.
+
+The exact privacy-report, two-device QA, App Store Connect, and final screenshot
+contracts are documented in
+[`apple-post-build-evidence.md`](apple-post-build-evidence.md). Those validators
+bind the observations to the signed IPA, TestFlight build, and frozen source;
+they do not create or infer a successful result.
 
 Official references:
 

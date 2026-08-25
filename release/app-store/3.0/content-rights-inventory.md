@@ -64,7 +64,7 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 
 | Material | Exact source | SHA-256 / boundary | Final basis/evidence |
 | --- | --- | --- | --- |
-| Native bilingual interface copy | `i18n/messages.ts` | `c54ac2550311e8dde6fbe6c787bf79f4267aeb6a0648fd161d6e65a8630485b0` | Pending |
+| Native bilingual interface copy | `i18n/messages.ts` | `a52bd2c1a5fe9978af94b1cb44ffc7f23f8e5fe4964a2932cb3082a0362c3d65` | Pending |
 | Native introduction copy | `features/onboarding/IntroScreen.tsx` | `fb60620a37efac4e4deb265ddc3a4e89642ecded2643a5cb25006da3dd14e720` | Pending |
 | Native public catalog/editorial labels | `constants/publicMiniapps.ts` | `803818464ef0663340d557b28fefd4dd6860abc3203fcbee7cbb14e7ef775a5e` | Pending |
 | Native reviewed-citation presentation and exact-link boundary | `features/resources/CitationList.tsx` | `12cf2bef93d1155370b1d8030f8dd1099e7d2d73e96ec7669e8b40ee0249b8bf` | Pending |
@@ -78,7 +78,7 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 | Fixed non-client App Review sample | `app-review-private/content/sample.json` | `03b558d9c0afc6a405f6fddf1d06fd67915170444baa596b713a150e9e8d0911` | Pending |
 | Staff Access interface copy | `staff-portal/src/i18n/messages.ts` | `90d3b21014dfb456c54029433875811e5727c4fc4b930934cfa4c5b77e9ae6ba` | Pending |
 | Public Marketing URL copy | `web-hosting/cabohealth.org/app/index.html` | `8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147` | Pending |
-| Hosted Privacy copy | `web-hosting/cabohealth.org/app/privacy/index.html` | `bee0eaebf10afe3ded626da45a15ee11368e67f11e7d1dc170222405702fbb80` | Pending public repromotion |
+| Hosted Privacy copy | `web-hosting/cabohealth.org/app/privacy/index.html` | `560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125` | Verified live in revised public release `web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693` |
 | Hosted Terms copy | `web-hosting/cabohealth.org/app/terms/index.html` | `b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22` | Pending final owner reconfirmation |
 | Hosted Support copy | `web-hosting/cabohealth.org/app/support/index.html` | `06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa` | Pending final owner reconfirmation |
 | Hosted Report Content copy | `web-hosting/cabohealth.org/app/report-content/index.html` | `f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c` | Pending final owner reconfirmation |

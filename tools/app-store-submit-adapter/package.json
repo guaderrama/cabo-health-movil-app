@@ -1,0 +1,17 @@
+{
+  "name": "@cabohealth/app-store-submit-adapter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pinned fail-closed App Store Connect review submission adapter for CaboHealth 3.0 build 4.",
+  "engines": {
+    "node": "22.22.3"
+  },
+  "bin": {
+    "cabohealth-app-store-submit": "./bin/submit.mjs",
+    "cabohealth-app-store-submit-dry-run": "./bin/dry-run.mjs"
+  },
+  "scripts": {
+    "test": "node --test ./test/*.test.mjs"
+  }
+}

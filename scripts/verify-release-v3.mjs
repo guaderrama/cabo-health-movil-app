@@ -34,12 +34,12 @@ const EXACT_ASC_TESTFLIGHT_BUILDS = [
 const EXACT_ASC_REVIEW_GUIDELINES = ['1.4.1', '2.1', '4.1'];
 const EXACT_AUTHORITY_SHA256 = Object.freeze({
   'app.json': 'f044a607226a1c120bb8724404e1222a8bb0cc4883d8d7bda28e4b0ec78815a3',
-  'eas.json': '9c8f655dcdfa32af3e588ce5b269fffc5eca8a7dd6cd7bd18f6fc80abf497a59',
+  'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
   'constants/config.ts': '53d80e4cff7899a52717a284467a90a23dd9c3d604b14a4e0b7342934b072371',
   'constants/publicMiniapps.ts': '803818464ef0663340d557b28fefd4dd6860abc3203fcbee7cbb14e7ef775a5e',
   'release/app-store/3.0/release-manifest.json': '768c2d5d58f06234188fc36bcd89349c71c9077085dbe4361e0e94240f08f835',
   'release/app-store/3.0/age-rating.json': 'b2bd2fdd9a5109a600923dee82eb0186df99a446128f3b05a37d54e2428e19bb',
-  'release/app-store/3.0/app-privacy.json': 'b24bb112b6eb678711d6de080de77ae9c53bde91bb9f6f8cabb832bb13cca45c',
+  'release/app-store/3.0/app-privacy.json': '9e02d9906fb19bbaac82268c45022d071b216ea65c6e4e12cb9de72b72632b10',
 });
 
 function parseJson(files, path, errors) {
@@ -877,9 +877,11 @@ export function verifyCapturedReleaseV3(files) {
       || privacy.conditionalRecommendation?.dataCollectedPath !== 'Required. Map the final verified production data types, purposes, linkage, and retention in App Store Connect after the exact RC and hosting configuration are tested.'
       || !sameArray(privacy.conditionalRecommendation?.provisionalPurpose, [
         'App Functionality',
+        'Analytics',
       ])
       || !sameArray(privacy.conditionalRecommendation?.provisionalCategoryMapping, [
-        'User ID, if the pseudonymous Firebase UID is retained and disclosure is required',
+        'User ID — linked to the user; App Functionality; not used for tracking (exact signed FirebaseAuth privacy manifest)',
+        'Other Diagnostic Data — not linked to the user; Analytics; not used for tracking (exact signed FirebaseAuth privacy manifest)',
         'Device ID, if the app-installation identifier is retained off device and disclosure is required',
         'Coarse Location, Device ID, or Other Diagnostic Data as required by Apple\'s final mapping of retained IP addresses',
         'Product Interaction, if retained requested-resource activity is in disclosure scope',
@@ -888,7 +890,7 @@ export function verifyCapturedReleaseV3(files) {
         'Other Data Types, only if a retained field cannot be accurately mapped to another Apple data type',
       ])
     ) {
-      errors.push('privacy architecture must retain pseudonymous Firebase access, transient HMAC-only request security, exact short-lived artifacts, durable production and review deletion, and an asynchronous 30-day audit deadline');
+      errors.push('privacy architecture must retain pseudonymous Firebase access, transient HMAC-only request security, exact short-lived artifacts, durable production and review deletion, an asynchronous 30-day audit deadline, and the exact signed FirebaseAuth App Functionality/Analytics mapping');
     }
   }
 

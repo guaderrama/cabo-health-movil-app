@@ -1,10 +1,33 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import ignore from 'ignore';
 
+const projectRoot = new URL('..', import.meta.url);
+const require = createRequire(import.meta.url);
+const { makeShallowCopyAsync } = require('eas-cli/build/vcs/local.js');
 const easRules = ignore().add(readFileSync(new URL('../.easignore', import.meta.url), 'utf8'));
+
+function sha256(bytes) {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function writeFixture(root, relativePath, bytes) {
+  const absolutePath = join(root, relativePath);
+  mkdirSync(dirname(absolutePath), { recursive: true });
+  writeFileSync(absolutePath, bytes);
+}
 
 test('the native EAS upload excludes server, private, evidence, and parameter surfaces', () => {
   const excluded = [
@@ -45,9 +68,41 @@ test('the native EAS upload retains required app source and assets', () => {
   }
 });
 
+test('the pinned EAS archive implementation copies the exact public contact record', async (t) => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'cabohealth-eas-context-'));
+  const archiveRoot = mkdtempSync(join(tmpdir(), 'cabohealth-eas-archive-'));
+  t.after(() => {
+    rmSync(fixtureRoot, { force: true, recursive: true });
+    rmSync(archiveRoot, { force: true, recursive: true });
+  });
+
+  const contactBytes = readFileSync(new URL('../release/public-contact-facts.json', import.meta.url));
+  writeFixture(fixtureRoot, '.easignore', readFileSync(new URL('../.easignore', import.meta.url)));
+  writeFixture(fixtureRoot, 'app/index.tsx', 'export default null;\n');
+  writeFixture(fixtureRoot, 'release/public-contact-facts.json', contactBytes);
+  writeFixture(fixtureRoot, 'release/private/secret.json', '{"secret":true}\n');
+  writeFixture(fixtureRoot, 'release/app-store/3.0/evidence.json', '{"private":true}\n');
+  writeFixture(fixtureRoot, 'app-review-private/config/backend.php', '<?php // private\n');
+
+  await makeShallowCopyAsync(fixtureRoot, archiveRoot);
+
+  const archivedContact = readFileSync(join(archiveRoot, 'release/public-contact-facts.json'));
+  assert.equal(sha256(archivedContact), sha256(contactBytes));
+  assert.equal(easRules.ignores('release/public-contact-facts.json'), false);
+  assert.throws(() => readFileSync(join(archiveRoot, 'release/private/secret.json')), /ENOENT/u);
+  assert.throws(
+    () => readFileSync(join(archiveRoot, 'release/app-store/3.0/evidence.json')),
+    /ENOENT/u,
+  );
+  assert.throws(
+    () => readFileSync(join(archiveRoot, 'app-review-private/config/backend.php')),
+    /ENOENT/u,
+  );
+});
+
 test('Firebase parameter files are excluded from Git as well as EAS', () => {
   const output = execFileSync('git', ['check-ignore', '-q', 'functions/.env.cabohealth-prod'], {
-    cwd: new URL('..', import.meta.url),
+    cwd: projectRoot,
     encoding: 'utf8',
   });
   assert.equal(output, '');
