@@ -374,6 +374,10 @@ test('the real assembler binds materialization to the independently reviewed dep
   const artifactPath = join(projectRoot, 'release/web-artifacts.json');
   const candidateArtifactPath = join(
     projectRoot,
+    'release/web-artifacts.web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693.json',
+  );
+  const predecessorArtifactPath = join(
+    projectRoot,
     'release/web-artifacts.web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b.json',
   );
   const bundleRoot = join(projectRoot, 'release/web-bundles');
@@ -387,10 +391,10 @@ test('the real assembler binds materialization to the independently reviewed dep
     schemaVersion: 2,
     artifactKind: 'cabohealth-web-deployment-readiness-v2',
     status: 'ready',
-    reviewedAt: '2026-08-24',
+    reviewedAt: '2026-08-25',
     reviewedInputs: {
       miniappCapsuleSha256: 'b569107971f2db55f900e595e08e4d9a8daa54ef4588850424d60a9a8c089929',
-      privacySha256: 'bee0eaebf10afe3ded626da45a15ee11368e67f11e7d1dc170222405702fbb80',
+      privacySha256: '560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125',
       marketingSha256: '8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147',
       aasaSha256: 'b7625ae96a6391ed5c08519c79053d30b7d26b5109c571e5405433e9098da772',
     },
@@ -406,8 +410,14 @@ test('the real assembler binds materialization to the independently reviewed dep
   ])), true);
   assert.equal(
     JSON.parse(readFileSync(candidateArtifactPath, 'utf8')).releaseId,
+    'web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693',
+  );
+  assert.equal(
+    JSON.parse(readFileSync(predecessorArtifactPath, 'utf8')).releaseId,
     'web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b',
   );
+  assert.equal(sha256(readFileSync(predecessorArtifactPath)), '79699e2a0b82ea24d8861cad67e7ee252320aec3777693a0c374a90312c7b943');
+  assert.deepEqual(readFileSync(candidateArtifactPath), readFileSync(artifactPath));
   const artifactBefore = existsSync(artifactPath) ? readFileSync(artifactPath) : null;
   const bundlesBefore = existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null;
   const result = spawnSync(process.execPath, [assemblerPath, '--check'], {
@@ -416,7 +426,7 @@ test('the real assembler binds materialization to the independently reviewed dep
   });
 
   assert.equal(result.status, 0, result.stdout || result.stderr);
-  assert.match(result.stdout, /Checked web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b/u);
+  assert.match(result.stdout, /Checked web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693/u);
   assert.deepEqual(readFileSync(artifactPath), artifactBefore);
   assert.deepEqual(existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null, bundlesBefore);
 });

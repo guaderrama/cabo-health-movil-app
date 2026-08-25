@@ -70,14 +70,14 @@ const REVIEWED_MARKETING_LANDING = Object.freeze({
 // Pinned after owner-authorized fact reconciliation and independent byte review.
 // Any later legal-copy edit must fail closed until a new review updates both authorities.
 export const FINAL_LEGAL_SHA256 = Object.freeze({
-  privacy: 'bee0eaebf10afe3ded626da45a15ee11368e67f11e7d1dc170222405702fbb80',
+  privacy: '560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125',
   'report-content': 'f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c',
   support: '06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa',
   terms: 'b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22',
 });
 // Set only after the final legal/AASA/Firebase/Hostinger staging evidence receives
 // a separate byte review. A null pin makes every materialization path fail closed.
-export const WEB_DEPLOYMENT_READINESS_SHA256 = 'f9dffa59e994449c64fec4f892f0d0f3e38ee641d70e9ea697eb74eeea52dcad';
+export const WEB_DEPLOYMENT_READINESS_SHA256 = '269615eb1e9bce545ca5867dafe57c0184171b1fe3ed7117a0108f81286a0283';
 export const WEB_RELEASE_PATHS = Object.freeze([
   '.well-known/apple-app-site-association',
   'app/index.html',
@@ -162,7 +162,7 @@ export function assertWebDeploymentReadiness(complianceBuffers) {
   if (readiness.schemaVersion !== 2
     || readiness.artifactKind !== 'cabohealth-web-deployment-readiness-v2'
     || readiness.status !== 'ready'
-    || readiness.reviewedAt !== '2026-08-24'
+    || readiness.reviewedAt !== '2026-08-25'
     || JSON.stringify(readiness.reviewedInputs) !== JSON.stringify({
       miniappCapsuleSha256: CAPSULE_SHA256,
       privacySha256: FINAL_LEGAL_SHA256.privacy,

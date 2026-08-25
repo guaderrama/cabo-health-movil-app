@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -254,7 +255,15 @@ async function runMutatedOrigin(verifyOrigin, mutate) {
   }
 }
 
-test('normal production check mode verifies the pinned sanitized evidence without network access', () => {
+test('normal production check mode verifies the archived live release while a successor is assembled', async () => {
+  const { resolveProductionArtifact } = await import('../scripts/verify-production.mjs');
+  const liveArtifact = resolveProductionArtifact(
+    projectRoot,
+    'web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b',
+  );
+  assert.equal(liveArtifact.releaseId, 'web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b');
+  assert.equal(sha256(Buffer.from(`${JSON.stringify(liveArtifact)}\n`)), '79699e2a0b82ea24d8861cad67e7ee252320aec3777693a0c374a90312c7b943');
+  assert.notEqual(JSON.parse(readFileSync(join(projectRoot, 'release/web-artifacts.json'), 'utf8')).releaseId, liveArtifact.releaseId);
   const result = spawnSync(process.execPath, [
     verifierPath,
     '--check',
@@ -268,6 +277,24 @@ test('normal production check mode verifies the pinned sanitized evidence withou
   });
   assert.equal(result.status, 0, result.stdout || result.stderr);
   assert.match(result.stdout, /Sanitized production evidence verified/u);
+});
+
+test('production artifact resolution fails closed when the current manifest archive is absent or different', async () => {
+  const { resolveProductionArtifact } = await import('../scripts/verify-production.mjs');
+  const current = JSON.parse(readFileSync(join(projectRoot, 'release/web-artifacts.json'), 'utf8'));
+  const root = mkdtempSync(join(tmpdir(), 'cabohealth-production-artifact-archive-fixture-'));
+  mkdirSync(join(root, 'release'));
+  writeFileSync(join(root, 'release/web-artifacts.json'), `${JSON.stringify(current)}\n`, { flag: 'wx' });
+  assert.throws(
+    () => resolveProductionArtifact(root, current.releaseId),
+    /WEB_ARTIFACT_ARCHIVE_MISSING/u,
+  );
+  const archivePath = join(root, `release/web-artifacts.${current.releaseId}.json`);
+  writeFileSync(archivePath, `${JSON.stringify({ ...current, appId: 'tampered' })}\n`, { flag: 'wx' });
+  assert.throws(
+    () => resolveProductionArtifact(root, current.releaseId),
+    /WEB_ARTIFACT_ARCHIVE_MISMATCH/u,
+  );
 });
 
 test('sanitized production evidence reconciles the exact artifact URL set without raw headers or secrets', async () => {

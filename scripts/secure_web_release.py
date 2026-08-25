@@ -146,14 +146,14 @@ DRAFT_LEGAL_SHA256 = {
 # Pinned after owner-authorized fact reconciliation and independent byte review.
 # Any later legal-copy edit must fail closed until both authorities are repinned.
 FINAL_LEGAL_SHA256: dict[str, str | None] = {
-    "privacy": "bee0eaebf10afe3ded626da45a15ee11368e67f11e7d1dc170222405702fbb80",
+    "privacy": "560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125",
     "report-content": "f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c",
     "support": "06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa",
     "terms": "b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22",
 }
 # This remains unset until an independently reviewed legal/AASA/Firebase/
 # Hostinger readiness record is pinned in both release authorities.
-WEB_DEPLOYMENT_READINESS_SHA256: str | None = "f9dffa59e994449c64fec4f892f0d0f3e38ee641d70e9ea697eb74eeea52dcad"
+WEB_DEPLOYMENT_READINESS_SHA256: str | None = "269615eb1e9bce545ca5867dafe57c0184171b1fe3ed7117a0108f81286a0283"
 MINIAPP_FILE_PINS = (
     ("apps/.htaccess", 568, "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"),
     ("apps/clinic-guide/app.js", 3868, "f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7"),
@@ -4264,7 +4264,7 @@ def validate_web_deployment_readiness_bound(root_fd: int) -> None:
         "schemaVersion": 2,
         "artifactKind": "cabohealth-web-deployment-readiness-v2",
         "status": "ready",
-        "reviewedAt": "2026-08-24",
+        "reviewedAt": "2026-08-25",
         "reviewedInputs": {
             "miniappCapsuleSha256": CAPSULE_SHA256,
             "privacySha256": FINAL_LEGAL_SHA256["privacy"],

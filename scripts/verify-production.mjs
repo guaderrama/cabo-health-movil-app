@@ -1523,6 +1523,29 @@ function parseCanonicalFile(path, label) {
   return value;
 }
 
+function archivedArtifactPath(root, releaseId) {
+  if (typeof releaseId !== 'string' || !RELEASE_ID.test(releaseId)) {
+    throw new Error('WEB_ARTIFACT_RELEASE_ID_INVALID');
+  }
+  return resolve(root, `release/web-artifacts.${releaseId}.json`);
+}
+
+export function resolveProductionArtifact(root, evidenceReleaseId) {
+  const currentPath = resolve(root, 'release/web-artifacts.json');
+  if (!existsSync(currentPath)) throw new Error('WEB_ARTIFACT_EVIDENCE_MISSING');
+  const current = parseCanonicalFile(currentPath, 'WEB_ARTIFACT_EVIDENCE');
+  const currentArchivePath = archivedArtifactPath(root, current.releaseId);
+  if (!existsSync(currentArchivePath)) throw new Error('WEB_ARTIFACT_ARCHIVE_MISSING');
+  const currentArchive = parseCanonicalFile(currentArchivePath, 'WEB_ARTIFACT_ARCHIVE');
+  if (canonicalJson(currentArchive) !== canonicalJson(current)) {
+    throw new Error('WEB_ARTIFACT_ARCHIVE_MISMATCH');
+  }
+  if (current.releaseId === evidenceReleaseId) return current;
+  const evidenceArchivePath = archivedArtifactPath(root, evidenceReleaseId);
+  if (!existsSync(evidenceArchivePath)) throw new Error('PRODUCTION_ARTIFACT_ARCHIVE_MISSING');
+  return parseCanonicalFile(evidenceArchivePath, 'PRODUCTION_ARTIFACT_ARCHIVE');
+}
+
 export async function verifyAppleCdn({
   artifact,
   reviewedReleaseId,
@@ -1566,10 +1589,8 @@ export function checkSanitizedProductionEvidence(
 ) {
   const evidencePath = resolve(root, 'release/production-urls.json');
   if (!existsSync(evidencePath)) throw new Error('PRODUCTION_EVIDENCE_MISSING');
-  const artifactPath = resolve(root, 'release/web-artifacts.json');
-  if (!existsSync(artifactPath)) throw new Error('WEB_ARTIFACT_EVIDENCE_MISSING');
   const evidence = parseCanonicalFile(evidencePath, 'PRODUCTION_EVIDENCE');
-  const artifact = parseCanonicalFile(artifactPath, 'WEB_ARTIFACT_EVIDENCE');
+  const artifact = resolveProductionArtifact(root, evidence.releaseId);
   validateProductionEvidence(evidence, artifact, authority, reviewedBrowserMeasurement);
   if (evidence.appleCdn.status !== 'verified') throw new Error('APPLE_CDN_PENDING_PROPAGATION');
   return true;
