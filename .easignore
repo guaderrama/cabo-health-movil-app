@@ -56,14 +56,16 @@ private-notes/
 docs/operations/private/
 
 # Server, staff, hosted-web, release-evidence, and private content never belong
-# in the native EAS build context.
+# in the native EAS build context. The one public contact record is a runtime
+# dependency of the native Clinic Guide and must remain in the upload.
 staff-portal/
 web-hosting/
 miniapps/
 client-resources-private/
 app-review-private/
 release/private/
-release/
+release/*
+!release/public-contact-facts.json
 firebase.json
 .firebaserc
 firestore.rules

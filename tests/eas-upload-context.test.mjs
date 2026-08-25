@@ -36,6 +36,7 @@ test('the native EAS upload retains required app source and assets', () => {
     'eas.json',
     'package.json',
     'package-lock.json',
+    'release/public-contact-facts.json',
   ];
   for (const path of retained) {
     assert.equal(easRules.ignores(path), false, `${path} would be missing from the EAS upload context`);

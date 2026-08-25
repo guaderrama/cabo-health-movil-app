@@ -48,6 +48,15 @@ contain `$RNFirebaseDisableSPM = true` before the application target while
 regression test pins both settings. Do not remove either side or switch linkage
 without a new native build review.
 
+The native bundle also imports the frozen public contact record at
+`release/public-contact-facts.json`. `.easignore` must retain exactly that
+public runtime file while continuing to exclude `release/private/`, App Store
+evidence, and every other release artifact. The upload-context regression test
+pins this exception. Before relaunching a failed release, use EAS
+`build:inspect` at the `archive` stage and confirm that the copied record has
+the same SHA-256 as the tracked source and that no private/evidence path entered
+the archive.
+
 Both Expo configuration and the release guard use the same strict XML plist
 reader. It requires one root dictionary, one ordinary-text `PROJECT_ID`, and
 one ordinary-text `BUNDLE_ID`; duplicate, nested, non-string, commented/CDATA-
