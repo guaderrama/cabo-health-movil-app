@@ -4,6 +4,18 @@ import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
 const APPROVED_SLUGS = new Set(['healthy-recipes', 'clinic-guide']);
+const DYNAMIC_AASA_COMPONENTS = Object.freeze([
+  Object.freeze({ '/': '/apps/client-resources/launch/', exclude: true }),
+  Object.freeze({ '/': '/apps/client-resources/launch/*', exclude: true }),
+  Object.freeze({ '/': '/apps/client-resources/api/', exclude: true }),
+  Object.freeze({ '/': '/apps/client-resources/api/*', exclude: true }),
+  Object.freeze({ '/': '/apps/app-review/', exclude: true }),
+  Object.freeze({ '/': '/apps/app-review/*', exclude: true }),
+  Object.freeze({ '/': '/apps/client-resources/' }),
+  Object.freeze({ '/': '/apps/client-resources/*', exclude: true }),
+  Object.freeze({ '/': '/apps/*/' }),
+]);
+const SOURCE_AASA_PATH = 'web-hosting/cabohealth.org/.well-known/apple-app-site-association';
 const APP_STORE_AGE_RATINGS = new Set([4, 9, 13, 16, 18]);
 const SOURCE_DIRECTORIES = ['app', 'components', 'constants', 'context', 'hooks', 'features'];
 const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.ts', '.tsx']);
@@ -75,8 +87,21 @@ function extractCatalogSlugs(source) {
     : [];
 }
 
-function extractAasaSlugs(source) {
-  return [...source.matchAll(/\/apps\/([a-z0-9-]+)\/(?:\*|(?=["'}\],\s]|$))/g)].map((match) => match[1]);
+function validateDynamicAasaAuthority(source, errors) {
+  let value;
+  try {
+    value = JSON.parse(source);
+  } catch {
+    errors.push('Invalid dynamic AASA authority: JSON');
+    return;
+  }
+  const details = value?.applinks?.details;
+  const components = Array.isArray(details) && details.length === 1
+    ? details[0]?.components
+    : undefined;
+  if (JSON.stringify(components) !== JSON.stringify(DYNAMIC_AASA_COMPONENTS)) {
+    errors.push('Invalid dynamic AASA authority: protected exclusions or canonical-root include changed');
+  }
 }
 
 function isSlugBearingKey(key) {
@@ -730,9 +755,9 @@ export function verifyCapturedMinimalV1(files) {
     errors.push('Missing catalog: constants/publicMiniapps.ts');
   }
 
-  for (const path of paths.filter((path) => basename(path) === 'apple-app-site-association')) {
-    addUnexpectedSlugs(errors, 'AASA', extractAasaSlugs(textFor(path)));
-  }
+  const capturedAasa = textFor(SOURCE_AASA_PATH);
+  if (capturedAasa === undefined) errors.push(`Missing AASA authority: ${SOURCE_AASA_PATH}`);
+  else validateDynamicAasaAuthority(capturedAasa, errors);
   for (const path of paths.filter((path) => (
     (path.startsWith('release/') || path.startsWith('miniapps/')) && path.endsWith('.json')
   ))) {
@@ -814,9 +839,9 @@ function verify(root) {
     errors.push('Missing catalog: constants/publicMiniapps.ts');
   }
 
-  for (const aasaPath of walk(root).filter((filePath) => basename(filePath) === 'apple-app-site-association')) {
-    addUnexpectedSlugs(errors, 'AASA', extractAasaSlugs(readText(aasaPath)));
-  }
+  const aasaPath = join(root, SOURCE_AASA_PATH);
+  if (!existsSync(aasaPath)) errors.push(`Missing AASA authority: ${SOURCE_AASA_PATH}`);
+  else validateDynamicAasaAuthority(readText(aasaPath), errors);
 
   for (const metadataDirectory of ['release', 'miniapps']) {
     for (const metadataPath of walk(join(root, metadataDirectory)).filter((filePath) => filePath.endsWith('.json'))) {

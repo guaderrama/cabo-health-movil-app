@@ -38,7 +38,7 @@ export async function loadClientAccessRuntime(): Promise<FirebaseClientAccessAda
   });
 }
 
-async function loadReactNativeFirebaseBridge() {
+export async function loadReactNativeFirebaseBridge() {
   const [appModule, authModule, functionsModule, appCheckModule] = await Promise.all([
     import('@react-native-firebase/app'),
     import('@react-native-firebase/auth'),

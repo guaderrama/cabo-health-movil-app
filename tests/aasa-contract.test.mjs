@@ -17,9 +17,11 @@ const expectedBytes = `${JSON.stringify({
         { '/': '/apps/client-resources/launch/*', exclude: true },
         { '/': '/apps/client-resources/api/', exclude: true },
         { '/': '/apps/client-resources/api/*', exclude: true },
-        { '/': '/apps/healthy-recipes/' },
-        { '/': '/apps/clinic-guide/' },
+        { '/': '/apps/app-review/', exclude: true },
+        { '/': '/apps/app-review/*', exclude: true },
         { '/': '/apps/client-resources/' },
+        { '/': '/apps/client-resources/*', exclude: true },
+        { '/': '/apps/*/' },
       ],
     }],
   },
@@ -54,7 +56,7 @@ test('verifier accepts only canonical bytes and exact Expo domain arrays', () =>
   assert.equal(result.status, 0, result.stderr);
 });
 
-test('verifier rejects duplicate keys, BOM, trailing content, extras, wildcards, and a wrong App ID', () => {
+test('verifier rejects duplicate keys, BOM, trailing content, extras, unsafe wildcard drift, and a wrong App ID', () => {
   const duplicate = expectedBytes.replace(
     '"applinks": {',
     '"applinks": {},\n  "applinks": {',
@@ -66,10 +68,10 @@ test('verifier rejects duplicate keys, BOM, trailing content, extras, wildcards,
     expectedBytes.replace('{\n  "applinks"', '{\n  "extra": true,\n  "applinks"'),
     expectedBytes.replace('"appIDs": [', '"extra": true,\n        "appIDs": ['),
     expectedBytes.replace('DQ8PH2DZ3R.com.cabohealth.app', 'WRONG.com.cabohealth.app'),
-    expectedBytes.replace('/apps/healthy-recipes/', '/apps/healthy-recipes/*'),
+    expectedBytes.replace('/apps/*/', '/apps/**'),
     expectedBytes.replace(
-      '          {\n            "/": "/apps/client-resources/"\n          }',
-      '          {\n            "/": "/apps/client-resources/*"\n          }',
+      '          {\n            "/": "/apps/*/"\n          }',
+      '          {\n            "/": "/apps/*"\n          }',
     ),
     expectedBytes.replace('"exclude": true', '"exclude": false'),
     expectedBytes.replace(
@@ -77,16 +79,16 @@ test('verifier rejects duplicate keys, BOM, trailing content, extras, wildcards,
       '',
     ),
     expectedBytes.replace(
-      '          {\n            "/": "/apps/client-resources/"\n          }',
+      '          {\n            "/": "/apps/*/"\n          }',
       '          {\n            "/": "/staff/"\n          }',
     ),
     expectedBytes.replace(
-      '          {\n            "/": "/apps/client-resources/"\n          }',
+      '          {\n            "/": "/apps/app-review/",\n            "exclude": true\n          }',
       '          {\n            "/": "/apps/app-review/"\n          }',
     ),
     expectedBytes.replace(
-      '          {\n            "/": "/apps/clinic-guide/"\n          }',
-      '          {\n            "/": "/apps/clinic-guide/"\n          },\n          {\n            "/": "/apps/third/"\n          }',
+      '          {\n            "/": "/apps/*/"\n          }',
+      '          {\n            "/": "/apps/*/"\n          },\n          {\n            "/": "/apps/third/"\n          }',
     ),
   ];
 

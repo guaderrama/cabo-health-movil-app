@@ -28,3 +28,25 @@ test('the audit view is read-only and rejects sensitive or unexpected event fiel
     events: [{ ...events[0], oneTimeCode: 'DO-NOT-LOG' }],
   }), /audit_response_invalid/u);
 });
+
+test('the audit view accepts every owner miniapp mutation emitted by the catalog backend', () => {
+  for (const action of [
+    'miniapp.created',
+    'miniapp.updated',
+    'miniapp.activated',
+    'miniapp.deactivated',
+    'miniapp.deleted',
+  ]) {
+    const parsed = parseAuditEvents({
+      events: [{
+        action,
+        actorLabel: 'Staff',
+        eventId: `evt_${action}`,
+        occurredAtMs: 1_800_000_000_000,
+        outcome: 'success',
+        targetSuffix: 'guide',
+      }],
+    });
+    assert.equal(parsed[0].action, action);
+  }
+});

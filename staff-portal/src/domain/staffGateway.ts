@@ -1,5 +1,9 @@
 export type StaffScope = 'production' | 'review-sandbox';
-export type StaffPermission = 'client_codes' | 'client_resource_drafts' | 'app_review_credential';
+export type StaffPermission =
+  | 'client_codes'
+  | 'client_resource_drafts'
+  | 'client_resource_publish'
+  | 'app_review_credential';
 
 // Release-reviewed entitlement. Keep this fixed until a server-authoritative
 // resource-list callable exists; the browser must never accept arbitrary IDs.
@@ -147,6 +151,7 @@ function parseCreatedCode(value: unknown): CreatedClientCode {
 function isPermission(value: unknown): value is StaffPermission {
   return value === 'client_codes'
     || value === 'client_resource_drafts'
+    || value === 'client_resource_publish'
     || value === 'app_review_credential';
 }
 

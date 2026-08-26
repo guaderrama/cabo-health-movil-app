@@ -122,10 +122,7 @@ El shell no entrega identificadores, locale, Saved, permisos ni datos personales
 
 El binario declara `applinks:cabohealth.org`. La ruta nativa `/apps/[slug]` resuelve contra el mismo catálogo y la misma política que un tap interno.
 
-`/.well-known/apple-app-site-association` responde por HTTPS, sin redirect y con JSON válido. Sólo declara las dos rutas canónicas exactas que puede resolver `app/apps/[slug].tsx`:
-
-- `/apps/healthy-recipes/`
-- `/apps/clinic-guide/`
+`/.well-known/apple-app-site-association` responde por HTTPS, sin redirect y con JSON válido. El paquete de preview web/desarrollo conserva únicamente `healthy-recipes` y `clinic-guide`, pero no funciona como fallback en una instalación nativa limpia sin snapshot. La autoridad AASA actual permite cualquier raíz canónica futura `/apps/<id>/` para cumplir el índice y Universal Link de Apple 4.7.4. Antes de ese include, excluye en orden las rutas de launch/API de Client Resources, App Review, y las rutas anidadas protegidas de Client Resources. El resolver nativo abre únicamente IDs activos de un snapshot de catálogo válido; cualquier ID desconocido o inactivo falla cerrado.
 
 Las rutas públicas necesarias para el release son:
 
@@ -150,16 +147,16 @@ Antes del release debe retirarse del dominio y de cachés cualquier documento p�
 ## 9. Reglas de publicación
 
 - Apple recibe exactamente el build probado en TestFlight.
-- Screenshots, metadata, AASA, catálogo y Review Notes describen sólo las dos miniapps públicas.
+- Screenshots, metadata, catálogo activo y Review Notes describen las miniapps efectivamente incluidas en el candidato. En iOS/Android, una instalación limpia sin snapshot falla cerrada; sólo un snapshot válido en caché permite uso offline. El paquete de preview conserva las dos miniapps públicas iniciales. AASA expresa la autoridad dinámica y sus exclusiones protegidas, no un inventario estático.
 - Review Notes explican ausencia de login, compras, UGC, datos personales/de salud, permisos y puente nativo, además del disclosure exacto de logs técnicos del hosting.
 - El seller debe ser la entidad legal que presta CaboHealth o contar con dirección escrita de Apple que valide otra estructura.
-- Un tercer módulo o cambio material requiere nueva versión, allowlist, AASA, QA y revisión; nunca se activa silenciosamente.
+- Una miniapp HTML5/JavaScript compatible puede activarse mediante el catálogo gobernado y la raíz canónica ya cubierta por AASA. Un cambio material —UGC, compras, permisos, datos sensibles, puente nativo o mayor edad— requiere actualizar binario, declaraciones, QA y evidencia antes de activarse.
 
 ## 10. Criterio de terminado
 
 El release está listo para enviarse sólo cuando:
 
-- las pruebas automáticas rechazan un tercer slug y cualquier ruta/import legacy;
+- las pruebas automáticas conservan exactamente los dos slugs del paquete de preview, demuestran el cierre nativo sin snapshot y rechazan cualquier deriva de los nueve componentes AASA o ruta/import legacy;
 - ambas miniapps y todos sus links pasan QA móvil, bilingüe, accesible, offline/error y contenido;
 - el WebView bloquea navegación no aprobada;
 - AASA funciona en origen y CDN de Apple, y los Universal Links abren el build firmado;

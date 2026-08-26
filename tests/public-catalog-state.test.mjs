@@ -16,10 +16,12 @@ const compiled = ts.transpileModule(source, {
 const {
   createPublicCatalogState,
   getFavoriteSnapshot,
+  normalizeRememberedPublicFavorites,
   setFavoriteSnapshot,
   settleFavoritePersistence,
   subscribeFavoriteSnapshot,
   toggleFavoriteSnapshot,
+  toggleRememberedPublicFavorite,
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
 const MINIAPPS = [
@@ -83,4 +85,22 @@ test('favorite persistence rejection settles without reverting optimistic state 
   assert.equal(settled, true);
   assert.deepEqual(getFavoriteSnapshot(), ['healthy-recipes']);
   assert.deepEqual(reports, [[]]);
+});
+
+test('remote public favorites stay remembered while absent catalog items remain hidden', () => {
+  const remembered = normalizeRememberedPublicFavorites([
+    'healthy-recipes',
+    'sun-care',
+    'sun-care',
+    'client-resources',
+    'Unsafe Slug',
+  ]);
+  assert.deepEqual(remembered, ['healthy-recipes', 'sun-care']);
+  assert.deepEqual(
+    toggleRememberedPublicFavorite(remembered, 'travel-health'),
+    ['healthy-recipes', 'sun-care', 'travel-health'],
+  );
+
+  const visible = createPublicCatalogState(MINIAPPS, remembered);
+  assert.deepEqual(visible.favoriteApps.map(({ id }) => id), ['healthy-recipes']);
 });

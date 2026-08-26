@@ -13,7 +13,7 @@ import {
   readStoredValue,
   type StoredValueResult,
 } from '../features/preferences/persistencePolicy';
-import { normalizePublicFavorites } from '../features/catalog/publicCatalogState';
+import { normalizeRememberedPublicFavorites } from '../features/catalog/publicCatalogState';
 
 const KEYS = config.storageKeys;
 
@@ -21,13 +21,13 @@ export function parseFavorites(data: string | null): string[] {
   if (!data) return [];
   const parsed: unknown = JSON.parse(data);
   if (!Array.isArray(parsed)) throw new Error('Invalid favorites value');
-  return normalizePublicFavorites(parsed);
+  return normalizeRememberedPublicFavorites(parsed);
 }
 
 export async function saveFavorites(favorites: string[]): Promise<void> {
   await AsyncStorage.setItem(
     KEYS.favorites,
-    JSON.stringify(normalizePublicFavorites(favorites)),
+    JSON.stringify(normalizeRememberedPublicFavorites(favorites)),
   );
 }
 

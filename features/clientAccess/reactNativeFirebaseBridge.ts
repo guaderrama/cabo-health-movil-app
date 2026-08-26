@@ -26,6 +26,11 @@ interface NativeProviderLike {
   }>): void;
 }
 
+const appCheckInitializations = new WeakMap<object, Readonly<{
+  signature: string;
+  promise: Promise<void>;
+}>>();
+
 export interface ReactNativeFirebaseModules {
   readonly app: {
     getApp(): NativeFirebaseAppLike;
@@ -71,19 +76,43 @@ export function createReactNativeFirebaseBridge(
   return Object.freeze({
     projectId: app.options.projectId ?? '',
     initializeAppCheck: async (options: NativeAppCheckOptions) => {
-      const provider = modules.appCheck.createProvider();
-      provider.configure({
-        apple: {
-          provider: options.appleProvider,
-        },
-        android: {
-          provider: options.androidProvider,
-        },
-      });
-      await modules.appCheck.initializeAppCheck(app, {
-        provider,
-        isTokenAutoRefreshEnabled: options.tokenAutoRefreshEnabled,
-      });
+      const signature = [
+        options.appleProvider,
+        options.androidProvider,
+        String(options.tokenAutoRefreshEnabled),
+      ].join(':');
+      const existing = appCheckInitializations.get(app);
+      if (existing) {
+        if (existing.signature !== signature) {
+          throw new Error('native_app_check_configuration_mismatch');
+        }
+        await existing.promise;
+        return;
+      }
+      const promise = (async () => {
+        const provider = modules.appCheck.createProvider();
+        provider.configure({
+          apple: {
+            provider: options.appleProvider,
+          },
+          android: {
+            provider: options.androidProvider,
+          },
+        });
+        await modules.appCheck.initializeAppCheck(app, {
+          provider,
+          isTokenAutoRefreshEnabled: options.tokenAutoRefreshEnabled,
+        });
+      })();
+      appCheckInitializations.set(app, { signature, promise });
+      try {
+        await promise;
+      } catch (error) {
+        if (appCheckInitializations.get(app)?.promise === promise) {
+          appCheckInitializations.delete(app);
+        }
+        throw error;
+      }
     },
     auth: Object.freeze({
       waitForReady: () => new Promise<Readonly<NativePrincipal> | null>((resolve) => {

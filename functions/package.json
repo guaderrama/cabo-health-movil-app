@@ -9,6 +9,7 @@
   "main": "lib/index.js",
   "scripts": {
     "bootstrap:firebase": "npm run build && node lib/tools/bootstrapFirebase.js",
+    "migrate:catalog": "npm run build && node lib/tools/migrateCatalog.js",
     "build": "tsc --project tsconfig.json",
     "test": "tsc --project tsconfig.test.json && node --test test-build/tests/**/*.test.js"
   },

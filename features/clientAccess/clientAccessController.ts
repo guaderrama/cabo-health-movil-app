@@ -168,7 +168,7 @@ function parseClientResource(value: unknown): Readonly<ClientResourceView> | nul
   const summary = parseLocalizedText(record.summary, 240);
   if (
     record.access !== 'client'
-    || !isNonblankString(record.id, 80)
+    || !isNonblankString(record.id, 64)
     || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(record.id)
     || !isNonblankString(record.iconKey, 40)
     || !CLIENT_RESOURCE_ICON_KEYS.has(record.iconKey)

@@ -66,7 +66,7 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 | --- | --- | --- | --- |
 | Native bilingual interface copy | `i18n/messages.ts` | `a52bd2c1a5fe9978af94b1cb44ffc7f23f8e5fe4964a2932cb3082a0362c3d65` | Pending |
 | Native introduction copy | `features/onboarding/IntroScreen.tsx` | `fb60620a37efac4e4deb265ddc3a4e89642ecded2643a5cb25006da3dd14e720` | Pending |
-| Native public catalog/editorial labels | `constants/publicMiniapps.ts` | `803818464ef0663340d557b28fefd4dd6860abc3203fcbee7cbb14e7ef775a5e` | Pending |
+| Native public catalog/editorial labels and dynamic-catalog type boundary | `constants/publicMiniapps.ts` | `893555428a9ac632f4964912cf98e7ba79f56c125ca6ba745bbdaf95910946aa` | Pending |
 | Native reviewed-citation presentation and exact-link boundary | `features/resources/CitationList.tsx` | `12cf2bef93d1155370b1d8030f8dd1099e7d2d73e96ec7669e8b40ee0249b8bf` | Pending |
 | Native Healthy Recipes presentation | `features/resources/RecipeBrowser.tsx` | `41fa1892b6003cb7f9caeb151525f221c4fe74b216890f5fa621b21a269ffddc` | Pending |
 | Native Clinic Guide checklist presentation | `features/resources/VisitChecklist.tsx` | `7e34daa9574bc4b5b4290297d0ed713afb924e09d554b172b2294e809a294b2f` | Pending |
@@ -76,7 +76,7 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 | Client Resources, English | `client-resources-private/content/en.json` | `e3ebb6e0d7e94ffa04f123c2f2fe8cd746bf0dba80f3824746fdd7d9492f6593` | Pending |
 | Client Resources, es-MX | `client-resources-private/content/es-MX.json` | `e29960ae5490c90ffb3e869a040d3c2bf970465215065cb4debc4f97b1363555` | Pending |
 | Fixed non-client App Review sample | `app-review-private/content/sample.json` | `03b558d9c0afc6a405f6fddf1d06fd67915170444baa596b713a150e9e8d0911` | Pending |
-| Staff Access interface copy | `staff-portal/src/i18n/messages.ts` | `90d3b21014dfb456c54029433875811e5727c4fc4b930934cfa4c5b77e9ae6ba` | Pending |
+| Staff Access interface copy, including owner catalog controls and audit labels | `staff-portal/src/i18n/messages.ts` | `9aa0be98218af997636cab2aaa7b5e524077539f60c5977f45c04f32ee4616f5` | Pending |
 | Public Marketing URL copy | `web-hosting/cabohealth.org/app/index.html` | `8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147` | Pending |
 | Hosted Privacy copy | `web-hosting/cabohealth.org/app/privacy/index.html` | `560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125` | Verified live in revised public release `web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693` |
 | Hosted Terms copy | `web-hosting/cabohealth.org/app/terms/index.html` | `b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22` | Pending final owner reconfirmation |
@@ -86,6 +86,8 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 | App Store screenshots | Exact RC captures | Not captured | Pending |
 
 `Firebase`, `Google Cloud`, `Hostinger`, `Apple`, `App Store`, `App Attest`, and `DeviceCheck` appear only to identify actual providers, platform features, review processes, or contractual disclosures. No ownership or endorsement is claimed.
+
+This catalog revision does not add or alter the bundled Healthy Recipes or Clinic Guide entries, their editorial copy, citations, hosted templates, images, or content files. The new source bytes add a type boundary for owner-managed catalog records plus bilingual Staff Access controls and audit labels. Those owner-facing additions do not import third-party content; their authorship or authorization basis nevertheless remains `Pending` under the same per-family evidence requirement as the rest of this inventory.
 
 ## Owner approval record required outside Git
 

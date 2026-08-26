@@ -34,6 +34,26 @@ test('the resource surface is draft-only, bilingual, and visibly fail-closed whe
   assert.doesNotMatch(source, /localStorage|sessionStorage|firestore/iu);
 });
 
+test('the owner miniapp surface publishes immediately with complete guarded CRUD controls', () => {
+  const source = read('src/components/MiniappCatalogPanel.tsx');
+
+  assert.match(source, /createCatalogItemModel/u);
+  assert.match(source, /model\.create\(/u);
+  assert.match(source, /model\.update\(/u);
+  assert.match(source, /model\.setActive\(/u);
+  assert.match(source, /model\.delete\(/u);
+  assert.match(source, /role="switch"/u);
+  assert.match(source, /aria-checked=\{item\.active\}/u);
+  assert.match(source, /ConfirmDialog/u);
+  assert.match(source, /miniapps\.deleteConfirm/u);
+  assert.match(source, /miniapps\.appleRule/u);
+  assert.match(source, /miniapps\.conflict/u);
+  assert.match(source, /disabled=\{busy\}/u);
+  assert.match(source, /operationRef\.current/u);
+  assert.match(source, /rel="noopener noreferrer"/u);
+  assert.doesNotMatch(source, /draft|release review|localStorage|sessionStorage|firestore/iu);
+});
+
 test('the activity surface is read-only, sanitized, and visibly fail-closed', () => {
   const source = read('src/components/AuditPanel.tsx');
 
@@ -41,11 +61,14 @@ test('the activity surface is read-only, sanitized, and visibly fail-closed', ()
   assert.match(source, /t\('audit\.unavailable'\)/u);
   assert.match(source, /<table/u);
   assert.match(source, /targetSuffix/u);
+  assert.match(source, /audit\.action\.miniappCreated/u);
+  assert.match(source, /audit\.action\.miniappDeleted/u);
+  assert.doesNotMatch(source, /action\.split/u);
   assert.doesNotMatch(source, /oneTimeCode|email|phone|clientName/iu);
   assert.doesNotMatch(source, /<form|<input|create\(|delete\(/iu);
 });
 
-test('the portal has visible password sign-in, password recovery, scope, language, and four explicit work areas', () => {
+test('the portal has visible password sign-in, password recovery, scope, language, and owner work areas', () => {
   const app = read('src/App.tsx');
 
   assert.match(app, /services\.signIn/u);
@@ -55,6 +78,8 @@ test('the portal has visible password sign-in, password recovery, scope, languag
   assert.match(app, /auth\.resetPassword/u);
   assert.match(app, /session\.scope/u);
   assert.match(app, /CodeAdminPanel/u);
+  assert.match(app, /MiniappCatalogPanel/u);
+  assert.match(app, /client_resource_publish/u);
   assert.match(app, /CatalogDraftPanel/u);
   assert.match(app, /AuditPanel/u);
   assert.match(app, /aria-label="Portal language"/u);
@@ -84,6 +109,8 @@ test('confirmation dialogs close on Escape, trap focus, and restore the invoking
   assert.match(dialog, /document\.addEventListener\('keydown'/u);
   assert.match(dialog, /document\.removeEventListener\('keydown'/u);
   assert.match(dialog, /aria-modal="true"/u);
+  assert.match(dialog, /busyRef\.current/u);
+  assert.match(dialog, /disabled=\{props\.busy\}/u);
 });
 
 test('App Review is a visible production-only workspace with verified one-time copy and hide confirmation', () => {

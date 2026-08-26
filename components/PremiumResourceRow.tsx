@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { PublicMiniapp } from '../constants/publicMiniapps';
+import type { CatalogPublicMiniapp } from '../constants/publicMiniapps';
 import { buildCatalogCardAccessibilityLabel } from '../features/catalog/catalogPresentation';
 import { useTheme, useTranslations } from '../hooks';
 
@@ -13,7 +13,7 @@ export function PremiumResourceRow({
   onPress,
   onToggleFavorite,
 }: {
-  miniapp: Readonly<PublicMiniapp>;
+  miniapp: Readonly<CatalogPublicMiniapp>;
   title: string;
   summary: string;
   favorite: boolean;
@@ -23,7 +23,15 @@ export function PremiumResourceRow({
 }) {
   const { colors } = useTheme();
   const { language, t } = useTranslations();
-  const icon = miniapp.slug === 'clinic-guide' ? 'sparkles-outline' : 'restaurant-outline';
+  const icon = miniapp.iconKey === 'laboratory' ? 'flask-outline'
+    : miniapp.iconKey === 'guide' ? 'book-outline'
+      : miniapp.iconKey === 'nutrition' ? 'leaf-outline'
+        : miniapp.iconKey === 'wellness' ? 'heart-outline'
+          : miniapp.iconKey === 'location' ? 'map-outline'
+            : miniapp.iconKey === 'contact' ? 'chatbubble-ellipses-outline'
+              : miniapp.iconKey === 'featured' || miniapp.slug === 'clinic-guide'
+                ? 'sparkles-outline'
+                : 'restaurant-outline';
 
   return (
     <View

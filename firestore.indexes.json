@@ -20,6 +20,12 @@
       "indexes": []
     },
     {
+      "collectionGroup": "_private_catalog_requests",
+      "fieldPath": "expiresAtMs",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "_private_launch_nonces",
       "fieldPath": "expiresAtMs",
       "ttl": true,

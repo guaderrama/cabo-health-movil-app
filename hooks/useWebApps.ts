@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Network from 'expo-network';
-import { PUBLIC_MINIAPPS } from '../constants/publicMiniapps';
+import type { CatalogPublicMiniapp } from '../constants/publicMiniapps';
 import { createPublicCatalogState } from '../features/catalog/publicCatalogState';
 import { WebApp } from '../types';
 import { useFavorites } from '../context/FavoritesContext';
+import { usePublicCatalog } from '../context/PublicCatalogContext';
 
 interface UseWebAppsResult {
+  catalogMiniapps: readonly Readonly<CatalogPublicMiniapp>[];
   apps: WebApp[];
   favoriteApps: WebApp[];
   nonFavoriteApps: WebApp[];
@@ -18,6 +20,12 @@ interface UseWebAppsResult {
 export function useWebApps(): UseWebAppsResult {
   const [isOffline, setIsOffline] = useState(false);
   const { favorites } = useFavorites();
+  const {
+    miniapps: catalogMiniapps,
+    isLoading,
+    error,
+    refresh: refreshPublishedCatalog,
+  } = usePublicCatalog();
 
   useEffect(() => {
     let isMounted = true;
@@ -37,12 +45,26 @@ export function useWebApps(): UseWebAppsResult {
   }, []);
 
   const catalog = useMemo(
-    () => createPublicCatalogState(PUBLIC_MINIAPPS, favorites, isOffline),
-    [favorites, isOffline],
+    () => createPublicCatalogState(catalogMiniapps, favorites, isOffline),
+    [catalogMiniapps, favorites, isOffline],
   );
-  const refresh = useCallback(async () => {}, []);
+  const refresh = useCallback(async () => {
+    await refreshPublishedCatalog();
+    await Network.getNetworkStateAsync().then((networkState) => {
+      setIsOffline(
+        networkState.isConnected === false
+        || networkState.isInternetReachable === false,
+      );
+    }).catch(() => {});
+  }, [refreshPublishedCatalog]);
 
-  return { ...catalog, refresh };
+  return {
+    ...catalog,
+    catalogMiniapps,
+    isLoading,
+    error,
+    refresh,
+  };
 }
 
 export default useWebApps;

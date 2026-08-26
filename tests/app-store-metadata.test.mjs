@@ -281,6 +281,31 @@ test('metadata verifier binds the exact content-rights inventory to every listed
     },
   ));
 
+  await t.test('reviewed public catalog source drift', () => withReleaseFixture(
+    (root) => {
+      const path = join(root, 'constants/publicMiniapps.ts');
+      writeFileSync(path, `${readFileSync(path, 'utf8')}\n// unreviewed catalog drift\n`);
+    },
+    (result) => {
+      assert.equal(result.status, 1, 'reviewed public catalog source drift bypassed verifier');
+      assert.match(result.stderr, /Content-rights source SHA-256 mismatch: constants\/publicMiniapps\.ts/iu);
+    },
+  ));
+
+  await t.test('reviewed Staff catalog copy drift', () => withReleaseFixture(
+    (root) => {
+      const path = join(root, 'staff-portal/src/i18n/messages.ts');
+      const source = readFileSync(path, 'utf8');
+      const mutated = source.replace('Live catalog', 'Unreviewed catalog');
+      assert.notEqual(mutated, source, 'Staff catalog copy fixture must contain its reviewed label');
+      writeFileSync(path, mutated);
+    },
+    (result) => {
+      assert.equal(result.status, 1, 'reviewed Staff catalog copy drift bypassed verifier');
+      assert.match(result.stderr, /Content-rights source SHA-256 mismatch: staff-portal\/src\/i18n\/messages\.ts/iu);
+    },
+  ));
+
   await t.test('listed source empty', () => withReleaseFixture(
     (root) => writeFileSync(join(root, 'miniapps/shared/logo.png'), ''),
     (result) => {
@@ -1012,11 +1037,11 @@ test('metadata verifier preserves exact completed public-web evidence checkboxes
     },
   ));
 
-  await t.test('the completed AASA gate cannot be reverted to pending', () => withReleaseFixture(
+  await t.test('the prior AASA deployment evidence cannot be reverted to pending', () => withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
-      const prefix = '- [x] Deploy the ordered AASA authority with four launch/API exclusions followed by the three exact allowed roots';
+      const prefix = '- [x] Preserve the prior seven-component AASA deployment evidence';
       const mutated = source.replace(prefix, prefix.replace('- [x]', '- [ ]'));
       assert.notEqual(mutated, source, 'AASA fixture must contain its exact completed gate');
       writeFileSync(file, mutated);
@@ -1024,6 +1049,21 @@ test('metadata verifier preserves exact completed public-web evidence checkboxes
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
       assert.match(result.stderr, /must retain the exact completed AASA public-web evidence checkbox/iu);
+    },
+  ));
+
+  await t.test('the dynamic AASA origin/CDN gate cannot be marked complete before deployment', () => withReleaseFixture(
+    (root) => {
+      const file = join(root, releasePath, 'submission-gates.md');
+      const source = readFileSync(file, 'utf8');
+      const prefix = '- [ ] Deploy the nine-component dynamic AASA authority';
+      const mutated = source.replace(prefix, prefix.replace('- [ ]', '- [x]'));
+      assert.notEqual(mutated, source, 'AASA fixture must contain its exact pending gate');
+      writeFileSync(file, mutated);
+    },
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /must retain the exact pending dynamic AASA origin\/CDN checkbox/iu);
     },
   ));
 

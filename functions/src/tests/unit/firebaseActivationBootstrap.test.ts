@@ -38,6 +38,7 @@ test('bootstrap plan contains only the fixed owner authority and reviewed client
           permissions: [
             'client_codes',
             'client_resource_drafts',
+            'client_resource_publish',
             'app_review_credential',
           ],
           schemaVersion: 1,

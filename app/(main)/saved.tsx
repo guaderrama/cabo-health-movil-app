@@ -3,8 +3,8 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { BrandedBackground, PremiumResourceRow } from '../../components';
-import { PUBLIC_MINIAPPS, type PublicMiniapp } from '../../constants/publicMiniapps';
-import { useFavorites, useTheme, useTranslations } from '../../hooks';
+import type { CatalogPublicMiniapp } from '../../constants/publicMiniapps';
+import { useFavorites, useTheme, useTranslations, useWebApps } from '../../hooks';
 
 export default function SavedScreen() {
   const router = useRouter();
@@ -12,8 +12,9 @@ export default function SavedScreen() {
   const { colors } = useTheme();
   const { language, t } = useTranslations();
   const { favorites, isFavorite, toggleFavorite } = useFavorites();
-  const saved = PUBLIC_MINIAPPS.filter((miniapp) => favorites.includes(miniapp.slug));
-  const openMiniapp = (miniapp: Readonly<PublicMiniapp>) => {
+  const { catalogMiniapps } = useWebApps();
+  const saved = catalogMiniapps.filter((miniapp) => favorites.includes(miniapp.slug));
+  const openMiniapp = (miniapp: Readonly<CatalogPublicMiniapp>) => {
     router.push({ pathname: '/apps/[slug]', params: { slug: miniapp.slug } });
   };
 
@@ -55,9 +56,7 @@ export default function SavedScreen() {
                 key={miniapp.slug}
                 miniapp={miniapp}
                 title={miniapp.title[language === 'es-MX' ? 'es' : 'en']}
-                summary={miniapp.slug === 'clinic-guide'
-                  ? t('home.clinicSummary')
-                  : t('home.recipesSummary')}
+                summary={miniapp.summary[language === 'es-MX' ? 'es' : 'en']}
                 favorite={isFavorite(miniapp.slug)}
                 first={index === 0}
                 onPress={() => openMiniapp(miniapp)}

@@ -143,7 +143,7 @@ complete:
    exact absolute `phpCliPath`, SHA-256, size, owner UID, mode `0755`, and exact numeric
    `phpCliVersionId` for a real PHP 8.2+ CLI outside the docroot. Pin
    `tools/hosting/protected-overlay-attestor.php` at SHA-256
-   `c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68`.
+   `d687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d`.
    Compute and approve the trust-policy SHA outside the activation/evidence
    capsule, then pass that independent pin to `create-activation` and
    `create-evidence-request`.

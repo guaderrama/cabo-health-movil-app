@@ -129,6 +129,28 @@ test('one immutable artifact contains the exact public inventories for both isol
   assert.equal(artifactPaths.some((path) => path.includes('-private/')), false);
 });
 
+test('the release artifact pins both legacy and dynamic production broker harnesses', () => {
+  const artifact = createProtectedOverlayArtifact({ projectRoot });
+  assert.deepEqual(
+    artifact.realms[0].externalInputs.phpHarnesses.map(({ path }) => path),
+    [
+      'tools/hosting/tests/client-resource-broker.php',
+      'tools/hosting/tests/dynamic-client-resource-broker.php',
+    ],
+  );
+  assert.deepEqual(
+    artifact.realms[1].externalInputs.phpHarnesses.map(({ path }) => path),
+    ['tools/hosting/tests/app-review-broker.php'],
+  );
+  for (const harness of artifact.realms.flatMap(({ externalInputs }) => (
+    externalInputs.phpHarnesses
+  ))) {
+    assert.equal(harness.minimumVersion, '8.2');
+    assert.equal(harness.status, 'external-required');
+    assert.match(harness.sha256, /^[a-f0-9]{64}$/u);
+  }
+});
+
 test('artifact verification pins exact bytes, security headers, and distinct broker identities', (context) => {
   const fixture = makeProjectFixture();
   context.after(() => rmSync(fixture, { recursive: true, force: true }));
@@ -236,6 +258,194 @@ test('activation pins distinct external private inputs without copying their byt
     () => createActivation(fixture),
     /protected_overlay_broker_identity_invalid/u,
   );
+});
+
+test('activation signs an exact structured bilingual private catalog without exposing content bytes', (context) => {
+  const fixture = makeDeploymentFixture();
+  context.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  const contentRoot = fixture.realms.production.privateContentRoot;
+  rmSync(join(contentRoot, 'en.json'));
+  rmSync(join(contentRoot, 'es-MX.json'));
+  for (const resourceId of ['client-resources', 'vip-lab-guide']) {
+    const resourceRoot = join(contentRoot, resourceId);
+    mkdirSync(resourceRoot, { mode: 0o700 });
+    for (const locale of ['en', 'es-MX']) {
+      writeFileSync(
+        join(resourceRoot, `${locale}.json`),
+        `${JSON.stringify({ resourceId, locale, private: `secret-${resourceId}-${locale}` })}\n`,
+        { mode: 0o600 },
+      );
+    }
+  }
+
+  const activation = createActivation(fixture);
+  const inventory = activation.realms[0].privateContent;
+
+  assert.equal(inventory.layout, 'structured');
+  assert.equal(inventory.rootMode, '0700');
+  assert.equal(inventory.resourceCount, 2);
+  assert.deepEqual(inventory.directories, [
+    { path: 'client-resources', mode: '0700' },
+    { path: 'vip-lab-guide', mode: '0700' },
+  ]);
+  assert.deepEqual(inventory.files.map(({ path, mode }) => ({ path, mode })), [
+    { path: 'client-resources/en.json', mode: '0600' },
+    { path: 'client-resources/es-MX.json', mode: '0600' },
+    { path: 'vip-lab-guide/en.json', mode: '0600' },
+    { path: 'vip-lab-guide/es-MX.json', mode: '0600' },
+  ]);
+  assert.match(inventory.inventorySha256, /^[a-f0-9]{64}$/u);
+  assert.doesNotMatch(JSON.stringify(activation), /secret-client-resources|secret-vip-lab-guide/u);
+});
+
+test('activation declares the exact legacy and structured transition modes', (context) => {
+  const legacyFixture = makeDeploymentFixture();
+  const transitionFixture = makeDeploymentFixture();
+  context.after(() => {
+    rmSync(legacyFixture.root, { recursive: true, force: true });
+    rmSync(transitionFixture.root, { recursive: true, force: true });
+  });
+
+  const legacyInventory = createActivation(legacyFixture).realms[0].privateContent;
+  assert.equal(legacyInventory.layout, 'legacy-flat');
+  assert.equal(legacyInventory.resourceCount, 1);
+  assert.deepEqual(legacyInventory.directories, []);
+  assert.deepEqual(legacyInventory.files.map(({ path }) => path), ['en.json', 'es-MX.json']);
+
+  const transitionRoot = transitionFixture.realms.production.privateContentRoot;
+  for (const resourceId of ['client-resources', 'vip-lab-guide']) {
+    const resourceRoot = join(transitionRoot, resourceId);
+    mkdirSync(resourceRoot, { mode: 0o700 });
+    for (const locale of ['en', 'es-MX']) {
+      writeFileSync(
+        join(resourceRoot, `${locale}.json`),
+        `${JSON.stringify({ resourceId, locale })}\n`,
+        { mode: 0o600 },
+      );
+    }
+  }
+  const transitionInventory = createActivation(transitionFixture).realms[0].privateContent;
+  assert.equal(transitionInventory.layout, 'structured-with-client-resources-fallback');
+  assert.equal(transitionInventory.resourceCount, 2);
+  assert.deepEqual(transitionInventory.files.map(({ path }) => path), [
+    'en.json',
+    'es-MX.json',
+    'client-resources/en.json',
+    'client-resources/es-MX.json',
+    'vip-lab-guide/en.json',
+    'vip-lab-guide/es-MX.json',
+  ]);
+});
+
+test('private catalog IDs use strict kebab case and the exact 64-character boundary', (context) => {
+  const validFixture = makeDeploymentFixture();
+  const doubleHyphenFixture = makeDeploymentFixture();
+  const tooLongFixture = makeDeploymentFixture();
+  context.after(() => {
+    for (const fixture of [validFixture, doubleHyphenFixture, tooLongFixture]) {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+  const valid64 = `a-${'b'.repeat(62)}`;
+  assert.equal(valid64.length, 64);
+  writeStructuredProductionContent(validFixture, [valid64]);
+  assert.deepEqual(
+    createActivation(validFixture).realms[0].privateContent.directories.map(({ path }) => path),
+    [valid64],
+  );
+
+  writeStructuredProductionContent(doubleHyphenFixture, ['vip--lab']);
+  assert.throws(() => createActivation(doubleHyphenFixture), /protected_overlay_private_content_invalid/u);
+
+  writeStructuredProductionContent(tooLongFixture, [`a-${'b'.repeat(63)}`]);
+  assert.throws(() => createActivation(tooLongFixture), /protected_overlay_private_content_invalid/u);
+});
+
+test('private catalog rejects traversal aliases, extras, missing locales, symlinks, duplicates, and drift', (context) => {
+  const fixtures = Array.from({ length: 7 }, () => makeDeploymentFixture());
+  context.after(() => fixtures.forEach((fixture) => {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }));
+  const [traversal, extra, missing, symlinked, duplicate, drift, overflow] = fixtures;
+
+  writeStructuredProductionContent(traversal, ['vip-lab']);
+  mkdirSync(join(traversal.realms.production.privateContentRoot, '%2e%2e'));
+  assert.throws(() => createActivation(traversal), /protected_overlay_private_content_invalid/u);
+
+  writeStructuredProductionContent(extra, ['vip-lab']);
+  writeFileSync(
+    join(extra.realms.production.privateContentRoot, 'vip-lab/notes.txt'),
+    'extra\n',
+    { mode: 0o600 },
+  );
+  assert.throws(() => createActivation(extra), /protected_overlay_private_content_invalid/u);
+
+  writeStructuredProductionContent(missing, ['vip-lab']);
+  rmSync(join(missing.realms.production.privateContentRoot, 'vip-lab/es-MX.json'));
+  assert.throws(() => createActivation(missing), /protected_overlay_private_content_invalid/u);
+
+  writeStructuredProductionContent(symlinked, ['vip-lab']);
+  const outside = join(symlinked.root, 'outside-private.json');
+  writeFileSync(outside, '{}\n', { mode: 0o600 });
+  rmSync(join(symlinked.realms.production.privateContentRoot, 'vip-lab/en.json'));
+  symlinkSync(outside, join(symlinked.realms.production.privateContentRoot, 'vip-lab/en.json'));
+  assert.throws(() => createActivation(symlinked), /protected_overlay_private_content_invalid/u);
+
+  writeStructuredProductionContent(duplicate, ['vip-lab']);
+  const duplicateActivation = structuredClone(createActivation(duplicate));
+  duplicateActivation.realms[0].privateContent.files.push(
+    structuredClone(duplicateActivation.realms[0].privateContent.files[0]),
+  );
+  assert.throws(() => verifyProtectedOverlayActivationPlan({
+    activation: duplicateActivation,
+    deploymentRoot: duplicate.root,
+    expectedActivationSha256: duplicateActivation.activationSha256,
+    expectedTrustPolicySha256: duplicate.trustPolicySha256,
+    trustPolicy: duplicate.trustPolicy,
+  }), /protected_overlay_activation_invalid/u);
+
+  writeStructuredProductionContent(drift, ['vip-lab']);
+  const driftActivation = createActivation(drift);
+  writeFileSync(
+    join(drift.realms.production.privateContentRoot, 'vip-lab/en.json'),
+    '{"drift":true}\n',
+    { mode: 0o600 },
+  );
+  assert.throws(() => verifyProtectedOverlayActivationPlan({
+    activation: driftActivation,
+    deploymentRoot: drift.root,
+    expectedActivationSha256: driftActivation.activationSha256,
+    expectedTrustPolicySha256: drift.trustPolicySha256,
+    trustPolicy: drift.trustPolicy,
+  }), /protected_overlay_activation_invalid/u);
+
+  writeStructuredProductionContent(
+    overflow,
+    Array.from({ length: 13 }, (_, index) => `resource-${String(index + 1).padStart(2, '0')}`),
+  );
+  assert.throws(() => createActivation(overflow), /protected_overlay_private_content_invalid/u);
+});
+
+test('private catalog pins direct 0700 directories and 0600 files and rejects an implicit mixed layout', (context) => {
+  const directoryMode = makeDeploymentFixture();
+  const fileMode = makeDeploymentFixture();
+  const implicitMixed = makeDeploymentFixture();
+  context.after(() => {
+    for (const fixture of [directoryMode, fileMode, implicitMixed]) {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  writeStructuredProductionContent(directoryMode, ['vip-lab']);
+  chmodSync(join(directoryMode.realms.production.privateContentRoot, 'vip-lab'), 0o755);
+  assert.throws(() => createActivation(directoryMode), /protected_overlay_private_content_invalid/u);
+
+  writeStructuredProductionContent(fileMode, ['vip-lab']);
+  chmodSync(join(fileMode.realms.production.privateContentRoot, 'vip-lab/en.json'), 0o644);
+  assert.throws(() => createActivation(fileMode), /protected_overlay_private_input_invalid/u);
+
+  writeStructuredProductionContent(implicitMixed, ['vip-lab'], { keepLegacy: true });
+  assert.throws(() => createActivation(implicitMixed), /protected_overlay_private_content_invalid/u);
 });
 
 test('activation rejects symlinked private inputs even when their targets are outside docroot', (context) => {
@@ -373,11 +583,15 @@ test('the pinned Hostinger attestor derives signed evidence from runtime measure
   const source = readFileSync(path);
   assert.equal(
     createHash('sha256').update(source).digest('hex'),
-    'c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68',
+    'd687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d',
   );
   const text = source.toString('utf8');
   assert.match(text, /getenv\(\$name\)/u);
   assert.match(text, /attestor_measure_file/u);
+  assert.match(text, /attestor_measure_private_content/u);
+  assert.match(text, /dynamic-client-resource-broker\.php/u);
+  assert.match(text, /\[a-z0-9\]\+\(\?:-\[a-z0-9\]\+\)\*/u);
+  assert.doesNotMatch(text, /contentFiles/u);
   assert.match(text, /fopen/u);
   assert.match(text, /fstat/u);
   assert.match(text, /proc_open/u);
@@ -583,6 +797,54 @@ test('signed evidence rejects SAPI, document-root, PHP CLI, version, and cross-r
       trustPolicy: fixture.trustPolicy,
     }), /protected_overlay_evidence_invalid/u);
   }
+});
+
+test('public signed evidence proves the recursive inventory and all harnesses without private paths', (context) => {
+  const fixture = makeDeploymentFixture();
+  context.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  writeStructuredProductionContent(fixture, ['client-resources', 'vip-lab-guide']);
+  const artifact = createProtectedOverlayArtifact({ projectRoot });
+  const activation = createActivation(fixture);
+  const { evidence, request } = createDeploymentEvidence(fixture, artifact, activation);
+  const production = evidence.attestations[0].result;
+
+  assert.deepEqual(request.realms[0].phpHarnesses.map((harness) => ({
+    path: harness.path,
+    sourceSha256: harness.sourceSha256,
+    expectedOutputBase64: harness.expectedOutputBase64,
+  })), [
+    {
+      path: 'tools/hosting/tests/client-resource-broker.php',
+      sourceSha256: 'c8977a71d740ac7be0a745548e0a0c3fc3904028a19fe4b460bdb2755a67ca21',
+      expectedOutputBase64: Buffer.from('client resource broker: ok\n').toString('base64'),
+    },
+    {
+      path: 'tools/hosting/tests/dynamic-client-resource-broker.php',
+      sourceSha256: '9a9df9f409d87555851aaf7e14c4f3e1e430d394bfd304ded2ab90bd6b2518af',
+      expectedOutputBase64: Buffer.from('dynamic client resource broker: ok\n').toString('base64'),
+    },
+  ]);
+
+  assert.deepEqual(production.configuredEnvironmentNames, [
+    'CABOHEALTH_CLIENT_RESOURCES_BACKEND_FACTORY',
+    'CABOHEALTH_CLIENT_RESOURCES_SIGNING_CONFIG',
+    'CABOHEALTH_CLIENT_RESOURCES_PRIVATE_CONTENT_ROOT',
+  ]);
+  assert.deepEqual(production.privateContent, {
+    layout: 'structured',
+    resourceCount: 2,
+    inventorySha256: activation.realms[0].privateContent.inventorySha256,
+  });
+  assert.deepEqual(production.phpHarnesses.map(({ path }) => path), [
+    'tools/hosting/tests/client-resource-broker.php',
+    'tools/hosting/tests/dynamic-client-resource-broker.php',
+  ]);
+  assert.match(production.inputsSha256, /^[a-f0-9]{64}$/u);
+  assert.match(production.runtimeIdentitySha256, /^[a-f0-9]{64}$/u);
+  const serialized = JSON.stringify(evidence);
+  assert.equal(serialized.includes(fixture.root), false);
+  assert.equal(serialized.includes(fixture.secrets.production), false);
+  assert.equal(serialized.includes(fixture.secrets.review), false);
 });
 
 test('a first protected release deactivates durably to verified absence and can be promoted again', (context) => {
@@ -1575,6 +1837,7 @@ function makeProjectFixture() {
     'client-resources-private/config/broker-config.schema.json',
     'app-review-private/config/broker-config.schema.json',
     'tools/hosting/tests/client-resource-broker.php',
+    'tools/hosting/tests/dynamic-client-resource-broker.php',
     'tools/hosting/tests/app-review-broker.php',
   ]) {
     const source = join(projectRoot, ...path.split('/'));
@@ -1899,7 +2162,7 @@ function makeDeploymentFixture() {
       attestationPublicKeyDerBase64: attestationKeys[realm].publicKey
         .export({ format: 'der', type: 'spki' }).toString('base64'),
       attestorPath: 'tools/hosting/protected-overlay-attestor.php',
-      attestorSha256: 'c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68',
+      attestorSha256: 'd687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d',
     })),
   };
   return {
@@ -1910,6 +2173,25 @@ function makeDeploymentFixture() {
     trustPolicy,
     trustPolicySha256: sha256Json(trustPolicy),
   };
+}
+
+function writeStructuredProductionContent(fixture, resourceIds, { keepLegacy = false } = {}) {
+  const contentRoot = fixture.realms.production.privateContentRoot;
+  if (!keepLegacy) {
+    rmSync(join(contentRoot, 'en.json'));
+    rmSync(join(contentRoot, 'es-MX.json'));
+  }
+  for (const resourceId of resourceIds) {
+    const resourceRoot = join(contentRoot, resourceId);
+    mkdirSync(resourceRoot, { mode: 0o700 });
+    for (const locale of ['en', 'es-MX']) {
+      writeFileSync(
+        join(resourceRoot, `${locale}.json`),
+        `${JSON.stringify({ resourceId, locale })}\n`,
+        { mode: 0o600 },
+      );
+    }
+  }
 }
 
 function createActivation(deployment) {
@@ -1947,16 +2229,22 @@ function createDeploymentEvidence(deployment, artifact, activation, sourceRoot =
 
 function deploymentEvidenceResult(realm, runtimeIdentity = realm.runtimeIdentity) {
   return {
-    configuredEnvironment: realm.configuredEnvironment,
-    phpHarness: {
-      outputBase64: realm.phpHarness.expectedOutputBase64,
-      outputSha256: realm.phpHarness.expectedOutputSha256,
-      path: realm.phpHarness.path,
+    configuredEnvironmentNames: realm.configuredEnvironment.map(({ name }) => name),
+    inputsSha256: sha256Json(realm.inputs),
+    phpHarnesses: realm.phpHarnesses.map((harness) => ({
+      outputBase64: harness.expectedOutputBase64,
+      outputSha256: harness.expectedOutputSha256,
+      path: harness.path,
       phpVersionId: runtimeIdentity.phpCliVersionId,
-      sourceSha256: realm.phpHarness.sourceSha256,
+      sourceSha256: harness.sourceSha256,
       status: 'passed',
+    })),
+    privateContent: {
+      layout: realm.inputs.privateContent.layout,
+      resourceCount: realm.inputs.privateContent.resourceCount,
+      inventorySha256: realm.inputs.privateContent.inventorySha256,
     },
-    runtimeIdentity,
+    runtimeIdentitySha256: sha256Json(runtimeIdentity),
     status: 'passed',
   };
 }

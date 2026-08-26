@@ -128,7 +128,17 @@ function makePublicReleaseFixture() {
   writeFixtureFile(
     root,
     'web-hosting/cabohealth.org/.well-known/apple-app-site-association',
-    JSON.stringify({ applinks: { details: [{ components: [{ '/': '/apps/healthy-recipes/' }, { '/': '/apps/clinic-guide/' }] }] } }),
+    JSON.stringify({ applinks: { details: [{ components: [
+      { '/': '/apps/client-resources/launch/', exclude: true },
+      { '/': '/apps/client-resources/launch/*', exclude: true },
+      { '/': '/apps/client-resources/api/', exclude: true },
+      { '/': '/apps/client-resources/api/*', exclude: true },
+      { '/': '/apps/app-review/', exclude: true },
+      { '/': '/apps/app-review/*', exclude: true },
+      { '/': '/apps/client-resources/' },
+      { '/': '/apps/client-resources/*', exclude: true },
+      { '/': '/apps/*/' },
+    ] }] } }),
   );
   writeLegalSurfaceFixtures(root);
   writeFixtureFile(root, 'release/web-artifacts.json', JSON.stringify({ slugs: ['healthy-recipes', 'clinic-guide'] }));
@@ -464,7 +474,7 @@ test('release scope verifier rejects removed routes and unapproved module metada
   );
 });
 
-test('release scope verifier rejects a third slug in the catalog or AASA artifact', () => {
+test('release scope verifier rejects a third fallback slug and noncanonical AASA components', () => {
   withFixture(
     (root) => {
       writeFixtureFile(
@@ -481,23 +491,34 @@ test('release scope verifier rejects a third slug in the catalog or AASA artifac
     (result) => {
       assert.equal(result.status, 1);
       assert.match(result.stderr, /unapproved miniapp slug in catalog.*client-resources/i);
-      assert.match(result.stderr, /unapproved miniapp slug in AASA.*client-resources/i);
+      assert.match(result.stderr, /invalid dynamic AASA authority/i);
     },
   );
 });
 
-test('release scope verifier rejects an exact third AASA miniapp path', () => {
+test('release scope verifier rejects an extra exact AASA root outside the dynamic authority', () => {
   withFixture(
     (root) => {
       writeFixtureFile(
         root,
         'web-hosting/cabohealth.org/.well-known/apple-app-site-association',
-        JSON.stringify({ applinks: { details: [{ components: [{ '/': '/apps/healthy-recipes/' }, { '/': '/apps/clinic-guide/' }, { '/': '/apps/client-resources/' }] }] } }),
+        JSON.stringify({ applinks: { details: [{ components: [
+          { '/': '/apps/client-resources/launch/', exclude: true },
+          { '/': '/apps/client-resources/launch/*', exclude: true },
+          { '/': '/apps/client-resources/api/', exclude: true },
+          { '/': '/apps/client-resources/api/*', exclude: true },
+          { '/': '/apps/app-review/', exclude: true },
+          { '/': '/apps/app-review/*', exclude: true },
+          { '/': '/apps/client-resources/' },
+          { '/': '/apps/client-resources/*', exclude: true },
+          { '/': '/apps/*/' },
+          { '/': '/apps/unreviewed-third/' },
+        ] }] } }),
       );
     },
     (result) => {
       assert.equal(result.status, 1);
-      assert.match(result.stderr, /unapproved miniapp slug in AASA.*client-resources/i);
+      assert.match(result.stderr, /invalid dynamic AASA authority/i);
     },
   );
 });

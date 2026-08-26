@@ -42,6 +42,11 @@ test('every callable is wired to the correct iOS or staff-web App Check surface'
     'adminCreateCatalogDraft',
     'adminUpdateCatalogDraft',
     'adminArchiveCatalogDraft',
+    'adminListCatalogItems',
+    'adminCreateCatalogItem',
+    'adminUpdateCatalogItem',
+    'adminSetCatalogItemActive',
+    'adminDeleteCatalogItem',
     'adminListAudit',
     'adminGetAppReviewCredentialStatus',
     'adminRotateAppReviewCredential',
@@ -58,6 +63,7 @@ test('every callable is wired to the correct iOS or staff-web App Check surface'
     'createAppReviewLaunch',
     'deleteAppReviewAccount',
     'getAppReviewAccountDeletionStatus',
+    'getPublishedCatalog',
   ];
   for (const callable of staffCallables) {
     assert.match(source, new RegExp(
@@ -71,6 +77,6 @@ test('every callable is wired to the correct iOS or staff-web App Check surface'
       'u',
     ));
   }
-  assert.equal(source.match(/assertStaffAppCheck\(request\)/gu)?.length, 11);
-  assert.equal(source.match(/assertClientAppCheck\(request\)/gu)?.length, 11);
+  assert.equal(source.match(/assertStaffAppCheck\(request\)/gu)?.length, 16);
+  assert.equal(source.match(/assertClientAppCheck\(request\)/gu)?.length, 12);
 });

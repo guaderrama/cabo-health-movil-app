@@ -1,8 +1,10 @@
 # CaboHealth Hostinger release and rollback runbook
 
-Status: **the reviewed 17-file release is live and fully verified.** Release `web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693` completed the ten-unit promotion, five hosting overlays, exact predecessor/rollback controls, per-unit WordPress probes, descriptor inventory, 16-URL origin verification, 56-observation browser matrix, retained-control checks, and Apple CDN verification on 2026-08-25. Release `web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b`, the database/file backup, and the complete private rehearsal receipts remain retained for rollback. Physical-iPhone and Universal Link QA remain iOS release gates, not blockers to the completed public-web activation. This runbook remains the execution contract for any future release and is not blanket authorization for another promotion.
+Status: **release `web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693` remains live and fully verified.** It completed the ten-unit promotion, five hosting overlays, exact predecessor/rollback controls, per-unit WordPress probes, descriptor inventory, 16-URL origin verification, 56-observation browser matrix, retained-control checks, and Apple CDN verification on 2026-08-25. Local candidate `web-v1-40869f4a540a56c420b198aea0fdf58a21053646d280d89ad64d105fd1808948` changes only the AASA authority to the nine-component dynamic-catalog contract and **has not been transferred or deployed**. Release `web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b`, the live release, the database/file backup, and the complete private rehearsal receipts remain retained for rollback. Origin, browser, Apple CDN, and physical-iPhone Universal Link evidence for the local candidate are pending. This runbook remains the execution contract for any future release and is not blanket authorization for another promotion.
 
 The live release's canonical manifest SHA-256 is `68c804d83c4444d9c54d399ea632ae570d13e9b76298e5ca64b63c0f7da486f6`, its immutable transport SHA-256 is `bd5569c9ae49f2aa6c82ae61661fe4201e375cfe026a484842f2b9feb856c7b4`, and its Privacy page SHA-256 is `560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125`. The predecessor manifest remains immutable at `release/web-artifacts.web-v1-4a3e199b57be00b563dcf4d8e4d6f278b09872705981a0b39aad6a3a80b0f11b.json` for rollback reconciliation.
+
+The local candidate's canonical manifest SHA-256 is `2ab49eb8e2d47293cb72d2e7aa34134a2a32b7e5fe38f8cdc8ad6c3e5e807f7e`, its immutable transport SHA-256 is `3dcdbf88900ff4d93691f36cf2fbeedbd1dc08298f55640574368ea7ea813312`, and its AASA SHA-256 is `e721827da1fe77d4a34247c9c2c515db73614545c6fb20e03f52b25e8594beae`. These are local assembly pins only, not production evidence.
 
 ## Fixed scope
 
@@ -28,6 +30,19 @@ directories; it rejects a lone member, any third sibling, a link, a non-director
 or an unsafe mode. It deliberately does not count or attest their bytes: the
 separate signed protected-overlay gate remains their only release authority.
 
+For a dynamic private-content successor, follow
+`docs/operations/client-resources-web-broker.md` as the controlling sub-runbook.
+Its content root must declare exactly `legacy-flat`, `structured`, or
+`structured-with-client-resources-fallback`; the last mode requires a complete
+authoritative `client-resources/` directory plus the two inventoried legacy
+fallback files. Create new private `0400` activation/request capsules, execute
+both pinned production PHP harnesses and the review harness through the newly
+pinned one-shot attestor in the real serving handlers, assemble path-free
+signed evidence, and promote both public realms as one protected transaction.
+Do not reuse or rewrite the 2026-08-24 activation/evidence. Activate a private
+catalog item only after live verification; after rollback verification, remove
+the legacy flat pair in the next private release.
+
 Never change the WordPress root, theme, Media Library/uploads, database content, root `.htaccess`, unrelated assets, or the protected PHI-remediation rule. Never use recursive removal, `mv -f`, `cp -r`, broad `rsync`, tar extraction, manifest-selected paths, or an unreviewed remote script.
 
 ## Gate and assemble locally
@@ -42,7 +57,7 @@ node scripts/verify-production.mjs --check --reviewed-release-id=<reviewed-relea
 
 `--check` validates the exact v3 candidate and prints its deterministic plan without writing outputs. It is not by itself a deployment-readiness verdict. While hosted legal client-access disclosures, AASA, Firebase/Hostinger staging, Apple direction, or any other deployment evidence remains pending, `--assemble` must report `WEB_DEPLOYMENT_GATES_INCOMPLETE` and must not create or replace `release/web-artifacts.json`, `release/production-urls.json`, or `release/web-bundles/`. For the current 17-file release, the narrow web-readiness record was pinned only after independent legal, AASA, Firebase, Hostinger-stage, and byte review; it authorized deterministic assembly only. The later public promotion is proven separately by the canonical sanitized production evidence and dated activation record, while protected-overlay activation remains a separate authority. After every assembly gate is independently verified, the assembler snapshots the verified Task 6B capsule through `readVerifiedMiniappArtifact`, captures fixed public inputs through no-follow directory descriptors, materializes the content-addressed bundle, re-verifies it, and exclusively publishes provenance.
 
-Before assembling a successor, preserve the former current manifest under its exact `release/web-artifacts.<former-release-id>.json` name, then review and publish byte-identical current and versioned manifests for the new candidate. Seal those three working-tree files to mode `0444`; Git records file contents but may restore a non-executable file as `0644` after a fresh checkout, so verify the modes again before `--assemble`. The helper rejects rather than overwrites any current manifest, transport, or bundle collision. Never remove the predecessor archive to make a successor pass.
+Before assembling a successor, confirm the former current manifest already exists under its exact `release/web-artifacts.<former-release-id>.json` name. The official helper exclusively creates and verifies the new immutable `release/web-artifacts.<new-release-id>.json` alongside the current pointer; seal both to mode `0444`. Git records file contents but may restore a non-executable file as `0644` after a fresh checkout, so verify the modes again before `--assemble`. The helper rejects rather than overwrites any current manifest, immutable manifest, transport, or bundle collision. Never remove a predecessor archive to make a successor pass.
 
 The immutable upload object will be:
 

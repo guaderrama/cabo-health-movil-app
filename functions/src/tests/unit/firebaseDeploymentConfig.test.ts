@@ -28,6 +28,7 @@ test('Firestore index config contains no legacy catalog index', async () => {
       '_private_account_deletion_receipts',
       '_private_audit_events',
       '_private_broker_requests',
+      '_private_catalog_requests',
       '_private_launch_nonces',
       '_private_rate_limits',
       '_private_redemption_requests',

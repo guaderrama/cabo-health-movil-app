@@ -2,12 +2,12 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   getEditorialMetadata,
-  type PublicMiniapp,
+  type CatalogPublicMiniapp,
 } from '../constants/publicMiniapps';
 import { formatEditorialDate } from '../features/catalog/catalogPresentation';
 import { useTheme, useTranslations } from '../hooks';
 
-export function EditorialMetadata({ miniapp }: { miniapp: Readonly<PublicMiniapp> }) {
+export function EditorialMetadata({ miniapp }: { miniapp: Readonly<CatalogPublicMiniapp> }) {
   const { colors } = useTheme();
   const { language, t } = useTranslations();
   const metadata = getEditorialMetadata(miniapp);

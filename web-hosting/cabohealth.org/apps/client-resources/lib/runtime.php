@@ -26,6 +26,12 @@ interface ClientResourcesPrivateContentStore
     public function read(string $locale): array;
 }
 
+interface ClientResourcesRoutedPrivateContentStore extends ClientResourcesPrivateContentStore
+{
+    /** @return array<string, mixed> */
+    public function readResource(string $resourceId, string $locale): array;
+}
+
 final class ClientResourcesAccessDenied extends RuntimeException
 {
 }
@@ -266,21 +272,21 @@ final class SignedFunctionsClientResourcesBackend implements ClientResourcesBack
             || !is_int($expiresAtMs)
             || !is_array($entitlements)
             || !array_is_list($entitlements)
-            || count($entitlements) > 16
+            || count($entitlements) !== 1
             || !is_string($csrfToken)
             || !client_resources_is_opaque_value($csrfToken)
         ) {
             throw new ClientResourcesUnavailable('Broker response values are invalid.');
         }
         foreach ($entitlements as $entitlement) {
-            if (!is_string($entitlement) || preg_match('/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/u', $entitlement) !== 1) {
+            if (!client_resources_is_resource_id($entitlement)) {
                 throw new ClientResourcesUnavailable('Broker entitlement is invalid.');
             }
         }
         return [
             'active' => $active,
             'expiresAt' => intdiv($expiresAtMs, 1000),
-            'entitlements' => array_values(array_unique($entitlements)),
+            'entitlements' => array_values($entitlements),
             'csrfToken' => $csrfToken,
         ];
     }
@@ -525,6 +531,13 @@ function client_resources_is_opaque_value(string $value): bool
     return preg_match('/\A[A-Za-z0-9_-]{32,256}\z/u', $value) === 1;
 }
 
+function client_resources_is_resource_id(mixed $value): bool
+{
+    return is_string($value)
+        && strlen($value) <= 64
+        && preg_match('/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/u', $value) === 1;
+}
+
 function client_resources_cookie_header(string $name, string $value, int $maxAge, string $path): string
 {
     if (str_starts_with($name, '__Host-') && $path !== '/') {
@@ -646,13 +659,26 @@ function client_resources_resources_response(
         $expiresAt = is_int($session['expiresAt'] ?? null) ? $session['expiresAt'] : 0;
         $entitlements = is_array($session['entitlements'] ?? null) ? $session['entitlements'] : [];
         $csrfToken = is_string($session['csrfToken'] ?? null) ? $session['csrfToken'] : '';
-        if (!$active || $expiresAt <= $now || !in_array(CLIENT_RESOURCES_APP_ID, $entitlements, true)) {
+        if ($entitlements !== [] && (!array_is_list($entitlements) || count($entitlements) !== 1)) {
+            throw new ClientResourcesUnavailable('Invalid entitlement contract.');
+        }
+        $resourceId = $entitlements[0] ?? null;
+        if (!$active || $expiresAt <= $now || !is_string($resourceId)) {
             throw new ClientResourcesAccessDenied('Session is not authorized.');
+        }
+        if (!client_resources_is_resource_id($resourceId)) {
+            throw new ClientResourcesUnavailable('Invalid entitlement contract.');
         }
         if (!client_resources_is_opaque_value($csrfToken)) {
             throw new ClientResourcesUnavailable('Invalid CSRF contract.');
         }
-        $document = $store->read($query['locale']);
+        if ($store instanceof ClientResourcesRoutedPrivateContentStore) {
+            $document = $store->readResource($resourceId, $query['locale']);
+        } elseif ($resourceId === CLIENT_RESOURCES_APP_ID) {
+            $document = $store->read($query['locale']);
+        } else {
+            throw new ClientResourcesUnavailable('Private resource routing is unavailable.');
+        }
         $body = json_encode($document, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     } catch (ClientResourcesAccessDenied) {
         return client_resources_error_response(401);
@@ -774,7 +800,7 @@ function client_resources_is_text(mixed $value, int $maxLength): bool
         && strlen($value) <= $maxLength;
 }
 
-final class JsonClientResourcesPrivateContentStore implements ClientResourcesPrivateContentStore
+final class JsonClientResourcesPrivateContentStore implements ClientResourcesRoutedPrivateContentStore
 {
     private string $contentRoot;
 
@@ -792,14 +818,45 @@ final class JsonClientResourcesPrivateContentStore implements ClientResourcesPri
 
     public function read(string $locale): array
     {
+        return $this->readDocument($this->contentRoot, $locale);
+    }
+
+    public function readResource(string $resourceId, string $locale): array
+    {
+        if (!client_resources_is_resource_id($resourceId)) {
+            throw new ClientResourcesAccessDenied('Unsupported resource.');
+        }
+        $resourceRoot = $this->contentRoot . DIRECTORY_SEPARATOR . $resourceId;
+        if (
+            $resourceId === CLIENT_RESOURCES_APP_ID
+            && !file_exists($resourceRoot)
+            && !is_link($resourceRoot)
+        ) {
+            return $this->read($locale);
+        }
+        $resolvedResourceRoot = realpath($resourceRoot);
+        if (
+            $resolvedResourceRoot === false
+            || $resolvedResourceRoot !== $resourceRoot
+            || dirname($resolvedResourceRoot) !== $this->contentRoot
+            || !is_dir($resolvedResourceRoot)
+        ) {
+            throw new ClientResourcesUnavailable('Private resource content is unavailable.');
+        }
+        return $this->readDocument($resolvedResourceRoot, $locale);
+    }
+
+    /** @return array<string, mixed> */
+    private function readDocument(string $root, string $locale): array
+    {
         $filename = match ($locale) {
             'en' => 'en.json',
             'es-MX' => 'es-MX.json',
             default => throw new ClientResourcesAccessDenied('Unsupported locale.'),
         };
-        $path = $this->contentRoot . DIRECTORY_SEPARATOR . $filename;
+        $path = $root . DIRECTORY_SEPARATOR . $filename;
         $resolved = realpath($path);
-        if ($resolved === false || dirname($resolved) !== $this->contentRoot || !is_file($resolved)) {
+        if ($resolved === false || $resolved !== $path || dirname($resolved) !== $root || !is_file($resolved)) {
             throw new ClientResourcesUnavailable('Private release content is unavailable.');
         }
         $size = filesize($resolved);

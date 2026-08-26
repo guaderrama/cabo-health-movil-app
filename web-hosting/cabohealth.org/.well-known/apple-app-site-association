@@ -23,13 +23,22 @@
             "exclude": true
           },
           {
-            "/": "/apps/healthy-recipes/"
+            "/": "/apps/app-review/",
+            "exclude": true
           },
           {
-            "/": "/apps/clinic-guide/"
+            "/": "/apps/app-review/*",
+            "exclude": true
           },
           {
             "/": "/apps/client-resources/"
+          },
+          {
+            "/": "/apps/client-resources/*",
+            "exclude": true
+          },
+          {
+            "/": "/apps/*/"
           }
         ]
       }

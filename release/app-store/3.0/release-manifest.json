@@ -154,11 +154,13 @@
       { "/": "/apps/client-resources/launch/*", "exclude": true },
       { "/": "/apps/client-resources/api/", "exclude": true },
       { "/": "/apps/client-resources/api/*", "exclude": true },
-      { "/": "/apps/healthy-recipes/" },
-      { "/": "/apps/clinic-guide/" },
-      { "/": "/apps/client-resources/" }
+      { "/": "/apps/app-review/", "exclude": true },
+      { "/": "/apps/app-review/*", "exclude": true },
+      { "/": "/apps/client-resources/" },
+      { "/": "/apps/client-resources/*", "exclude": true },
+      { "/": "/apps/*/" }
     ],
-    "status": "deployed-and-verified-origin-and-apple-cdn"
+    "status": "dynamic-authority-local-candidate-pending-origin-and-apple-cdn"
   },
   "urls": {
     "support": "https://cabohealth.org/app/support/",
@@ -219,7 +221,7 @@
       "brandEvidenceAttachment": "pending-signed-owner-declaration",
       "firebaseAndHosting": "core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e",
       "hostedLegalClientAccess": "deployed-and-verified-revised-public-payload",
-      "aasa": "deployed-and-verified-origin-and-apple-cdn",
+      "aasa": "dynamic-authority-local-candidate-pending-origin-and-apple-cdn",
       "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
       "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
       "clientAccessModel": "pending-apple-review-determination",
@@ -243,7 +245,7 @@
     "exportCompliance": "owner-confirmed-pending-exact-rc-review",
     "firebaseAndHosting": "core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e",
     "hostedLegalClientAccess": "deployed-and-verified-revised-public-payload",
-    "aasa": "deployed-and-verified-origin-and-apple-cdn",
+    "aasa": "dynamic-authority-local-candidate-pending-origin-and-apple-cdn",
     "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
     "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
     "clientAccessModel": "pending-apple-review-determination",

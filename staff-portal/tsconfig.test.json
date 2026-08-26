@@ -13,6 +13,7 @@
     "src/domain/appReviewCredential.ts",
     "src/domain/staffGateway.ts",
     "src/domain/codeAdminModel.ts",
+    "src/domain/catalogItems.ts",
     "src/domain/catalogDrafts.ts",
     "src/domain/auditLog.ts",
     "src/firebase/staffFirebaseConfig.ts",

@@ -33,6 +33,10 @@ import {
   type CatalogDraftGateway,
 } from '../domain/catalogDrafts.js';
 import {
+  createCatalogItemGateway,
+  type CatalogItemGateway,
+} from '../domain/catalogItems.js';
+import {
   createScopedStaffGateway,
   parseServerStaffSession,
   type CallableTransport,
@@ -47,6 +51,7 @@ export type StaffSignInResult =
     kind: 'authenticated';
     session: ServerStaffSession;
     gateway: StaffGateway;
+    catalogGateway: CatalogItemGateway;
     draftGateway: CatalogDraftGateway;
     auditGateway: AuditGateway;
     appReviewGateway: AppReviewCredentialGateway;
@@ -123,6 +128,7 @@ export function createFirebaseStaffServices(config: StaffFirebaseConfig): Fireba
       kind: 'authenticated',
       session,
       gateway: createScopedStaffGateway({ production, review, session }),
+      catalogGateway: createCatalogItemGateway({ session, transport: production }),
       draftGateway: createCatalogDraftGateway({ session, transport: production }),
       auditGateway: createAuditGateway({ session, transport: production }),
       appReviewGateway: createAppReviewCredentialGateway({ session, transport: production }),

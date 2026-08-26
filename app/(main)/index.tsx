@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,15 +13,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandedBackground, PremiumMiniappTile } from '../../components';
-import { PUBLIC_MINIAPPS, type PublicMiniapp } from '../../constants/publicMiniapps';
+import type { CatalogPublicMiniapp } from '../../constants/publicMiniapps';
 import { resolveCatalogCardColumns } from '../../features/catalog/catalogPresentation';
-import {
-  buildPremiumHomeModel,
-  type PremiumHomeTool,
-} from '../../features/home/premiumHomePresentation';
+import type { PremiumHomeTool } from '../../features/home/premiumHomePresentation';
 import { ClientAccessFolio } from '../../features/clientAccess/ClientAccessFolio';
 import { ClientAccessModal } from '../../features/clientAccess/ClientAccessModal';
 import { useFavorites, useTheme, useTranslations, useWebApps } from '../../hooks';
+
+const HOME_TOOLS: readonly PremiumHomeTool[] = Object.freeze([
+  { id: 'visit-checklist', kind: 'route', destination: '/(main)/visit-checklist' },
+]);
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -28,13 +30,16 @@ export default function HomeScreen() {
   const { width, fontScale } = useWindowDimensions();
   const { colors, isDark } = useTheme();
   const { language, t } = useTranslations();
-  const { isOffline } = useWebApps();
+  const { catalogMiniapps, isLoading, isOffline, refresh } = useWebApps();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const model = useMemo(() => buildPremiumHomeModel(PUBLIC_MINIAPPS), []);
+  const model = useMemo(() => ({
+    resources: catalogMiniapps,
+    tools: HOME_TOOLS,
+  }), [catalogMiniapps]);
   const [clientAccessVisible, setClientAccessVisible] = useState(false);
   const columns = resolveCatalogCardColumns({ width, fontScale });
 
-  const openMiniapp = useCallback((miniapp: Readonly<PublicMiniapp>) => {
+  const openMiniapp = useCallback((miniapp: Readonly<CatalogPublicMiniapp>) => {
     router.push({ pathname: '/apps/[slug]', params: { slug: miniapp.slug } });
   }, [router]);
 
@@ -42,12 +47,12 @@ export default function HomeScreen() {
     router.push(tool.destination as never);
   }, [router]);
 
-  const titleFor = useCallback((miniapp: Readonly<PublicMiniapp>) => (
+  const titleFor = useCallback((miniapp: Readonly<CatalogPublicMiniapp>) => (
     miniapp.title[language === 'es-MX' ? 'es' : 'en']
   ), [language]);
-  const summaryFor = useCallback((miniapp: Readonly<PublicMiniapp>) => (
-    miniapp.slug === 'clinic-guide' ? t('home.clinicSummary') : t('home.recipesSummary')
-  ), [t]);
+  const summaryFor = useCallback((miniapp: Readonly<CatalogPublicMiniapp>) => (
+    miniapp.summary[language === 'es-MX' ? 'es' : 'en']
+  ), [language]);
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <BrandedBackground density="rich" moleculeOpacity={isDark ? 0.58 : 0.9} />
@@ -57,6 +62,13 @@ export default function HomeScreen() {
           { paddingBottom: Math.max(24, insets.bottom + 12) },
         ]}
         showsVerticalScrollIndicator={false}
+        refreshControl={(
+          <RefreshControl
+            refreshing={isLoading}
+            tintColor={colors.primary}
+            onRefresh={() => { void refresh(); }}
+          />
+        )}
       >
         <View style={[styles.header, { paddingTop: Math.max(insets.top + 18, 72) }]}>
           <View style={styles.brandLockup}>

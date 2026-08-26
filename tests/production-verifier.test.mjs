@@ -255,7 +255,7 @@ async function runMutatedOrigin(verifyOrigin, mutate) {
   }
 }
 
-test('normal production check mode verifies the exact current live release', async () => {
+test('normal production check verifies the archived live release while a local successor remains pending', async () => {
   const { resolveProductionArtifact } = await import('../scripts/verify-production.mjs');
   const liveArtifact = resolveProductionArtifact(
     projectRoot,
@@ -263,7 +263,15 @@ test('normal production check mode verifies the exact current live release', asy
   );
   assert.equal(liveArtifact.releaseId, 'web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693');
   assert.equal(sha256(Buffer.from(`${JSON.stringify(liveArtifact)}\n`)), '68c804d83c4444d9c54d399ea632ae570d13e9b76298e5ca64b63c0f7da486f6');
-  assert.equal(JSON.parse(readFileSync(join(projectRoot, 'release/web-artifacts.json'), 'utf8')).releaseId, liveArtifact.releaseId);
+  const localCandidate = JSON.parse(readFileSync(
+    join(projectRoot, 'release/web-artifacts.json'),
+    'utf8',
+  ));
+  assert.equal(
+    localCandidate.releaseId,
+    'web-v1-40869f4a540a56c420b198aea0fdf58a21053646d280d89ad64d105fd1808948',
+  );
+  assert.notEqual(localCandidate.releaseId, liveArtifact.releaseId);
   const result = spawnSync(process.execPath, [
     verifierPath,
     '--check',

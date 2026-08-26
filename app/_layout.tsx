@@ -11,6 +11,7 @@ import { ThemeProvider, useTheme } from '../hooks';
 import { PreferencesProvider } from '../context/PreferencesContext';
 import { FavoritesProvider } from '../context/FavoritesContext';
 import { ClientAccessBootstrap } from '../context/ClientAccessBootstrap';
+import { PublicCatalogProvider } from '../context/PublicCatalogContext';
 import {
   removeLegacyPrivateState,
   settleLegacyPrivateStateMigration,
@@ -45,9 +46,11 @@ export default function RootLayout() {
     <ThemeProvider>
       <PreferencesProvider>
         <ClientAccessBootstrap>
-          <FavoritesProvider>
-            <ThemedLayout />
-          </FavoritesProvider>
+          <PublicCatalogProvider>
+            <FavoritesProvider>
+              <ThemedLayout />
+            </FavoritesProvider>
+          </PublicCatalogProvider>
         </ClientAccessBootstrap>
       </PreferencesProvider>
     </ThemeProvider>

@@ -148,7 +148,10 @@ function attestor_read_canonical_json(string $path, int $mode, int $maximumBytes
     )['bytes'];
     try {
         $value = json_decode($source, true, 64, JSON_THROW_ON_ERROR);
-        $canonical = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
+        $canonical = json_encode(
+            $value,
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+        ) . "\n";
     } catch (Throwable) {
         attestor_fail('protected_overlay_attestor_input_invalid');
     }
@@ -181,6 +184,187 @@ function attestor_open_pinned_executable(string $path): array
         'protected_overlay_attestor_measurement_invalid',
         true,
     );
+}
+
+function attestor_is_resource_id(string $value): bool
+{
+    return strlen($value) <= 64
+        && preg_match('/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D', $value) === 1;
+}
+
+/** @param array<string, true> $identities @return array<string, int> */
+function attestor_measure_direct_directory(
+    string $path,
+    string $expectedParent,
+    array &$identities,
+): array {
+    $before = @lstat($path);
+    $resolved = @realpath($path);
+    $resolvedStat = $resolved === false ? false : @lstat($resolved);
+    if (
+        !is_array($before)
+        || $resolved === false
+        || $resolved !== $path
+        || dirname($resolved) !== $expectedParent
+        || !is_array($resolvedStat)
+        || is_link($path)
+        || ($resolvedStat['mode'] & 0170000) !== 0040000
+        || ($resolvedStat['mode'] & 0777) !== 0700
+        || !attestor_same_file_stat($before, $resolvedStat)
+    ) attestor_fail('protected_overlay_attestor_measurement_mismatch');
+    $identity = $resolvedStat['dev'] . ':' . $resolvedStat['ino'];
+    if (isset($identities[$identity])) {
+        attestor_fail('protected_overlay_attestor_measurement_mismatch');
+    }
+    $identities[$identity] = true;
+    return $resolvedStat;
+}
+
+/** @return list<string> */
+function attestor_direct_names(string $path): array
+{
+    $names = @scandir($path);
+    if (!is_array($names)) attestor_fail('protected_overlay_attestor_measurement_mismatch');
+    $names = array_values(array_filter(
+        $names,
+        static fn (string $name): bool => $name !== '.' && $name !== '..',
+    ));
+    sort($names, SORT_STRING);
+    return $names;
+}
+
+/** @return array<string, mixed> */
+function attestor_measure_private_content(string $contentRoot, array $definition): array
+{
+    $rootBefore = @lstat($contentRoot);
+    if (
+        !is_array($rootBefore)
+        || realpath($contentRoot) !== $contentRoot
+        || is_link($contentRoot)
+        || ($rootBefore['mode'] & 0170000) !== 0040000
+        || ($rootBefore['mode'] & 0777) !== 0700
+    ) attestor_fail('protected_overlay_attestor_measurement_mismatch');
+    $identities = [($rootBefore['dev'] . ':' . $rootBefore['ino']) => true];
+    $names = attestor_direct_names($contentRoot);
+    $directories = [];
+    $files = [];
+    $directoryStats = [];
+    $fileStats = [];
+    $policy = $definition['contentPolicy'] ?? null;
+
+    if ($policy === 'resource-catalog') {
+        $flatPaths = array_values(array_filter(
+            $names,
+            static fn (string $name): bool => in_array($name, ['en.json', 'es-MX.json'], true),
+        ));
+        $hasLegacyFlat = $flatPaths === ['en.json', 'es-MX.json'];
+        if ($flatPaths !== [] && !$hasLegacyFlat) {
+            attestor_fail('protected_overlay_attestor_measurement_mismatch');
+        }
+        $resourceIds = array_values(array_filter(
+            $names,
+            static fn (string $name): bool => !in_array($name, ['en.json', 'es-MX.json'], true),
+        ));
+        if (count($resourceIds) > 12 || (count($resourceIds) === 0 && !$hasLegacyFlat)) {
+            attestor_fail('protected_overlay_attestor_measurement_mismatch');
+        }
+        foreach ($resourceIds as $resourceId) {
+            if (!attestor_is_resource_id($resourceId)) {
+                attestor_fail('protected_overlay_attestor_measurement_mismatch');
+            }
+            $resourceRoot = $contentRoot . DIRECTORY_SEPARATOR . $resourceId;
+            $directoryStats[$resourceId] = attestor_measure_direct_directory(
+                $resourceRoot,
+                $contentRoot,
+                $identities,
+            );
+            if (attestor_direct_names($resourceRoot) !== ['en.json', 'es-MX.json']) {
+                attestor_fail('protected_overlay_attestor_measurement_mismatch');
+            }
+            $directories[] = ['path' => $resourceId, 'mode' => '0700'];
+        }
+        $hasStructuredClientResources = in_array('client-resources', $resourceIds, true);
+        if ($hasLegacyFlat && count($resourceIds) > 0 && !$hasStructuredClientResources) {
+            attestor_fail('protected_overlay_attestor_measurement_mismatch');
+        }
+        $layout = $hasLegacyFlat
+            ? (count($resourceIds) === 0
+                ? 'legacy-flat'
+                : 'structured-with-client-resources-fallback')
+            : 'structured';
+        $resourceCount = count($resourceIds) + ($hasLegacyFlat && !$hasStructuredClientResources ? 1 : 0);
+        $filePaths = $flatPaths;
+        foreach ($resourceIds as $resourceId) {
+            $filePaths[] = $resourceId . '/en.json';
+            $filePaths[] = $resourceId . '/es-MX.json';
+        }
+    } elseif (is_array($policy) && array_keys($policy) === ['fixedFiles']) {
+        $filePaths = $policy['fixedFiles'];
+        if (!is_array($filePaths) || $names !== $filePaths) {
+            attestor_fail('protected_overlay_attestor_measurement_mismatch');
+        }
+        $layout = 'fixed-flat';
+        $resourceCount = 0;
+    } else {
+        attestor_fail('protected_overlay_attestor_measurement_mismatch');
+    }
+
+    foreach ($filePaths as $relativePath) {
+        $path = $contentRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+        if (realpath($path) !== $path) attestor_fail('protected_overlay_attestor_measurement_mismatch');
+        $measured = attestor_measure_file($path, 0600, 65536);
+        if ($measured['size'] < 2) attestor_fail('protected_overlay_attestor_measurement_mismatch');
+        $identity = $measured['stat']['dev'] . ':' . $measured['stat']['ino'];
+        if (isset($identities[$identity])) {
+            attestor_fail('protected_overlay_attestor_measurement_mismatch');
+        }
+        $identities[$identity] = true;
+        $fileStats[$path] = $measured['stat'];
+        $files[] = [
+            'path' => $relativePath,
+            'mode' => '0600',
+            'size' => $measured['size'],
+            'sha256' => $measured['sha256'],
+        ];
+    }
+    foreach ($directoryStats as $resourceId => $before) {
+        $after = @lstat($contentRoot . DIRECTORY_SEPARATOR . $resourceId);
+        if (!is_array($after) || !attestor_same_file_stat($before, $after)) {
+            attestor_fail('protected_overlay_attestor_measurement_mismatch');
+        }
+    }
+    foreach ($fileStats as $path => $before) {
+        $after = @lstat($path);
+        if (!is_array($after) || !attestor_same_file_stat($before, $after)) {
+            attestor_fail('protected_overlay_attestor_measurement_mismatch');
+        }
+    }
+    $rootAfter = @lstat($contentRoot);
+    if (!is_array($rootAfter) || !attestor_same_file_stat($rootBefore, $rootAfter)) {
+        attestor_fail('protected_overlay_attestor_measurement_mismatch');
+    }
+    $inventory = [
+        'layout' => $layout,
+        'rootMode' => '0700',
+        'resourceCount' => $resourceCount,
+        'directories' => $directories,
+        'files' => $files,
+    ];
+    return [
+        'path' => $contentRoot,
+        'layout' => $layout,
+        'rootMode' => '0700',
+        'resourceCount' => $resourceCount,
+        'directories' => $directories,
+        'inventorySha256' => hash(
+            'sha256',
+            json_encode(
+                $inventory,
+                JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+            ),
+        ),
+        'files' => $files,
+    ];
 }
 
 /** @param array<string, mixed> $requestRealm */
@@ -230,34 +414,12 @@ function attestor_verify_environment(array $requestRealm, array $definition, str
     }
 
     $contentRoot = $observed[2]['value'];
-    $contentStat = lstat($contentRoot);
     $expectedContent = $inputs['privateContent'] ?? null;
-    if (
-        !is_array($contentStat)
-        || !is_dir($contentRoot)
-        || is_link($contentRoot)
-        || ($contentStat['mode'] & 0777) !== 0700
-        || !is_array($expectedContent)
-        || array_keys($expectedContent) !== ['path', 'inventorySha256', 'files']
-        || $expectedContent['path'] !== $contentRoot
-        || !is_array($expectedContent['files'])
-        || !array_is_list($expectedContent['files'])
-    ) attestor_fail('protected_overlay_attestor_measurement_mismatch');
-    $names = scandir($contentRoot);
-    if (!is_array($names)) attestor_fail('protected_overlay_attestor_measurement_mismatch');
-    $names = array_values(array_filter($names, static fn (string $name): bool => $name !== '.' && $name !== '..'));
-    sort($names);
-    if ($names !== $definition['contentFiles']) attestor_fail('protected_overlay_attestor_measurement_mismatch');
-    $files = [];
-    foreach ($names as $name) {
-        $measured = attestor_measure_file($contentRoot . DIRECTORY_SEPARATOR . $name, 0600, 65536);
-        $files[] = ['path' => $name, 'size' => $measured['size'], 'sha256' => $measured['sha256']];
-    }
-    $inventory = hash('sha256', json_encode($files, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
-    if ($expectedContent['files'] !== $files || $expectedContent['inventorySha256'] !== $inventory) {
+    $measuredContent = attestor_measure_private_content($contentRoot, $definition);
+    if (!is_array($expectedContent) || $expectedContent !== $measuredContent) {
         attestor_fail('protected_overlay_attestor_measurement_mismatch');
     }
-    return $observed;
+    return ['configuredEnvironment' => $observed, 'privateContent' => $measuredContent];
 }
 
 /** @param array<string, mixed> $requestRealm @return array{identity:array<string,mixed>,phpCli:array<string,mixed>} */
@@ -305,33 +467,30 @@ function attestor_verify_runtime(array $requestRealm, string $documentRoot): arr
     return ['identity' => $observed, 'phpCli' => $phpCli];
 }
 
-/** @param array<string, mixed> $requestRealm */
-function attestor_run_harness(
+/** @param array<string, mixed> $requestRealm @return list<array<string, mixed>> */
+function attestor_run_harnesses(
     array $requestRealm,
     array $definition,
     string $projectRoot,
     array $phpCli,
 ): array
 {
-    $expected = $requestRealm['phpHarness'] ?? null;
-    if (!is_array($expected) || array_is_list($expected)) {
+    $expectedHarnesses = $requestRealm['phpHarnesses'] ?? null;
+    $definedHarnesses = $definition['harnesses'] ?? null;
+    if (
+        !is_array($expectedHarnesses)
+        || !array_is_list($expectedHarnesses)
+        || !is_array($definedHarnesses)
+        || !array_is_list($definedHarnesses)
+        || count($expectedHarnesses) !== count($definedHarnesses)
+    ) {
         attestor_fail('protected_overlay_attestor_request_invalid');
     }
-    $harnessPath = realpath($projectRoot . DIRECTORY_SEPARATOR . $definition['harnessPath']);
-    $expectedPath = realpath($projectRoot . DIRECTORY_SEPARATOR . (string) ($expected['path'] ?? ''));
     $attestorPath = realpath($projectRoot . DIRECTORY_SEPARATOR . (string) (($requestRealm['attestor']['path'] ?? '')));
     $attestorSource = attestor_measure_file(__FILE__, 0644, 262144);
-    $harnessSource = $harnessPath === false
-        ? null
-        : attestor_measure_file($harnessPath, 0644, 262144);
     if (
-        $harnessPath === false
-        || !is_array($harnessSource)
-        || $expectedPath !== $harnessPath
-        || $attestorPath !== $attestorSource['path']
+        $attestorPath !== $attestorSource['path']
         || $attestorSource['sha256'] !== ($requestRealm['attestor']['sha256'] ?? null)
-        || $harnessSource['sha256'] !== ($expected['sourceSha256'] ?? null)
-        || ($expected['sourceSha256'] ?? null) !== $definition['harnessSha256']
         || !function_exists('proc_open')
     ) attestor_fail('protected_overlay_attestor_harness_invalid');
     $versionPipes = [];
@@ -358,60 +517,96 @@ function attestor_run_harness(
         || $versionStatus !== 0
     ) attestor_fail('protected_overlay_attestor_php_cli_invalid');
     $phpVersionId = (int) $versionStdout;
-    if (
-        $phpVersionId < ($expected['minimumVersionId'] ?? PHP_INT_MAX)
-        || $phpVersionId !== ($requestRealm['runtimeIdentity']['phpCliVersionId'] ?? null)
-    ) {
+    if ($phpVersionId !== ($requestRealm['runtimeIdentity']['phpCliVersionId'] ?? null)) {
         attestor_fail('protected_overlay_attestor_php_cli_invalid');
     }
-    $pipes = [];
-    $process = proc_open(
-        [PROTECTED_OVERLAY_PINNED_PHP_CLI, $harnessPath],
-        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => $phpCli['handle']],
-        $pipes,
-        $projectRoot,
-        PROTECTED_OVERLAY_CHILD_ENVIRONMENT,
-        ['bypass_shell' => true],
-    );
-    if (!is_resource($process)) attestor_fail('protected_overlay_attestor_harness_invalid');
-    fclose($pipes[0]);
-    $stdout = stream_get_contents($pipes[1], 4097);
-    $stderr = stream_get_contents($pipes[2], 4097);
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-    $status = proc_close($process);
-    $harnessAfter = attestor_measure_file($harnessPath, 0644, 262144);
+    $results = [];
+    foreach ($definedHarnesses as $index => $defined) {
+        $expected = $expectedHarnesses[$index] ?? null;
+        if (
+            !is_array($defined)
+            || array_keys($defined) !== ['path', 'sha256', 'output']
+            || !is_array($expected)
+            || array_keys($expected) !== [
+                'path',
+                'sourceSha256',
+                'minimumVersionId',
+                'expectedOutputBase64',
+                'expectedOutputSha256',
+            ]
+            || ($expected['path'] ?? null) !== ($defined['path'] ?? null)
+            || ($expected['sourceSha256'] ?? null) !== ($defined['sha256'] ?? null)
+            || ($expected['minimumVersionId'] ?? null) !== 80200
+            || $phpVersionId < 80200
+            || ($expected['expectedOutputBase64'] ?? null) !== base64_encode($defined['output'])
+            || ($expected['expectedOutputSha256'] ?? null) !== hash('sha256', $defined['output'])
+        ) attestor_fail('protected_overlay_attestor_harness_invalid');
+        $harnessPath = realpath($projectRoot . DIRECTORY_SEPARATOR . $defined['path']);
+        $expectedPath = realpath($projectRoot . DIRECTORY_SEPARATOR . (string) $expected['path']);
+        $harnessSource = $harnessPath === false
+            ? null
+            : attestor_measure_file($harnessPath, 0644, 262144);
+        if (
+            $harnessPath === false
+            || !is_array($harnessSource)
+            || $expectedPath !== $harnessPath
+            || $harnessSource['sha256'] !== $defined['sha256']
+        ) attestor_fail('protected_overlay_attestor_harness_invalid');
+        $pipes = [];
+        $process = proc_open(
+            [PROTECTED_OVERLAY_PINNED_PHP_CLI, $harnessPath],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => $phpCli['handle']],
+            $pipes,
+            $projectRoot,
+            PROTECTED_OVERLAY_CHILD_ENVIRONMENT,
+            ['bypass_shell' => true],
+        );
+        if (!is_resource($process)) attestor_fail('protected_overlay_attestor_harness_invalid');
+        fclose($pipes[0]);
+        $stdout = stream_get_contents($pipes[1], 4097);
+        $stderr = stream_get_contents($pipes[2], 4097);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $status = proc_close($process);
+        $harnessAfter = attestor_measure_file($harnessPath, 0644, 262144);
+        if (
+            !is_string($stdout)
+            || !is_string($stderr)
+            || $status !== 0
+            || $stderr !== ''
+            || base64_encode($stdout) !== ($expected['expectedOutputBase64'] ?? null)
+            || hash('sha256', $stdout) !== ($expected['expectedOutputSha256'] ?? null)
+            || $harnessAfter['sha256'] !== $harnessSource['sha256']
+            || !attestor_same_file_stat($harnessAfter['stat'], $harnessSource['stat'])
+        ) attestor_fail('protected_overlay_attestor_harness_failed');
+        $results[] = [
+            'outputBase64' => base64_encode($stdout),
+            'outputSha256' => hash('sha256', $stdout),
+            'path' => $defined['path'],
+            'phpVersionId' => $phpVersionId,
+            'sourceSha256' => $defined['sha256'],
+            'status' => 'passed',
+        ];
+    }
     $phpCliAfter = attestor_measure_file($phpCli['path'], 0755, 134217728);
     $pinnedPhpCliAfter = fstat($phpCli['handle']);
     $pinnedPhpCliClosed = fclose($phpCli['handle']);
     if (
-        !is_string($stdout)
-        || !is_string($stderr)
-        || $status !== 0
-        || $stderr !== ''
-        || base64_encode($stdout) !== ($expected['expectedOutputBase64'] ?? null)
-        || hash('sha256', $stdout) !== ($expected['expectedOutputSha256'] ?? null)
-        || $harnessAfter['sha256'] !== $harnessSource['sha256']
-        || !attestor_same_file_stat($harnessAfter['stat'], $harnessSource['stat'])
-        || !is_array($pinnedPhpCliAfter)
+        !is_array($pinnedPhpCliAfter)
         || !attestor_same_file_stat($pinnedPhpCliAfter, $phpCli['stat'])
         || !$pinnedPhpCliClosed
         || $phpCliAfter['sha256'] !== $phpCli['sha256']
         || !attestor_same_file_stat($phpCliAfter['stat'], $phpCli['stat'])
     ) attestor_fail('protected_overlay_attestor_harness_failed');
-    return [
-        'outputBase64' => base64_encode($stdout),
-        'outputSha256' => hash('sha256', $stdout),
-        'path' => $definition['harnessPath'],
-        'phpVersionId' => $phpVersionId,
-        'sourceSha256' => $definition['harnessSha256'],
-        'status' => 'passed',
-    ];
+    return $results;
 }
 
 function attestor_write_output(string $path, array $value): void
 {
-    $source = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
+    $source = json_encode(
+        $value,
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+    ) . "\n";
     $handle = @fopen($path, 'x');
     if (!is_resource($handle) || !chmod($path, 0400) || fwrite($handle, $source) !== strlen($source) || !fclose($handle)) {
         attestor_fail('protected_overlay_attestor_output_invalid');
@@ -426,18 +621,31 @@ $definitions = [
         'configEnvironment' => 'CABOHEALTH_CLIENT_RESOURCES_SIGNING_CONFIG',
         'contentEnvironment' => 'CABOHEALTH_CLIENT_RESOURCES_PRIVATE_CONTENT_ROOT',
         'keyEnvironment' => 'CABOHEALTH_CLIENT_RESOURCES_ATTESTATION_KEY',
-        'harnessPath' => 'tools/hosting/tests/client-resource-broker.php',
-        'harnessSha256' => 'c8977a71d740ac7be0a745548e0a0c3fc3904028a19fe4b460bdb2755a67ca21',
-        'contentFiles' => ['en.json', 'es-MX.json'],
+        'harnesses' => [
+            [
+                'path' => 'tools/hosting/tests/client-resource-broker.php',
+                'sha256' => 'c8977a71d740ac7be0a745548e0a0c3fc3904028a19fe4b460bdb2755a67ca21',
+                'output' => "client resource broker: ok\n",
+            ],
+            [
+                'path' => 'tools/hosting/tests/dynamic-client-resource-broker.php',
+                'sha256' => '9a9df9f409d87555851aaf7e14c4f3e1e430d394bfd304ded2ab90bd6b2518af',
+                'output' => "dynamic client resource broker: ok\n",
+            ],
+        ],
+        'contentPolicy' => 'resource-catalog',
     ],
     'review' => [
         'factoryEnvironment' => 'CABOHEALTH_APP_REVIEW_BACKEND_FACTORY',
         'configEnvironment' => 'CABOHEALTH_APP_REVIEW_SIGNING_CONFIG',
         'contentEnvironment' => 'CABOHEALTH_APP_REVIEW_PRIVATE_CONTENT_ROOT',
         'keyEnvironment' => 'CABOHEALTH_APP_REVIEW_ATTESTATION_KEY',
-        'harnessPath' => 'tools/hosting/tests/app-review-broker.php',
-        'harnessSha256' => 'd30b39aa480a02897868ec33ca7f434adec8e833bce4e53e33c889095edf171b',
-        'contentFiles' => ['sample.json'],
+        'harnesses' => [[
+            'path' => 'tools/hosting/tests/app-review-broker.php',
+            'sha256' => 'd30b39aa480a02897868ec33ca7f434adec8e833bce4e53e33c889095edf171b',
+            'output' => "app review broker: ok\n",
+        ]],
+        'contentPolicy' => ['fixedFiles' => ['sample.json']],
     ],
 ];
 $definition = $definitions[$realm] ?? null;
@@ -479,8 +687,12 @@ foreach ($requestRealms as $candidate) {
 }
 if (!is_array($requestRealm)) attestor_fail('protected_overlay_attestor_request_invalid');
 $runtime = attestor_verify_runtime($requestRealm, $documentRoot);
-$configuredEnvironment = attestor_verify_environment($requestRealm, $definition, $documentRoot);
-$phpHarness = attestor_run_harness($requestRealm, $definition, $projectRoot, $runtime['phpCli']);
+$environmentBefore = attestor_verify_environment($requestRealm, $definition, $documentRoot);
+$phpHarnesses = attestor_run_harnesses($requestRealm, $definition, $projectRoot, $runtime['phpCli']);
+$environment = attestor_verify_environment($requestRealm, $definition, $documentRoot);
+if ($environmentBefore !== $environment) {
+    attestor_fail('protected_overlay_attestor_measurement_mismatch');
+}
 $keyPath = getenv($definition['keyEnvironment']);
 if (!is_string($keyPath) || $keyPath === '') attestor_fail('protected_overlay_attestor_key_invalid');
 $resolvedKeyPath = realpath($keyPath);
@@ -515,9 +727,30 @@ if (
     || $publicDer !== hex2bin('302a300506032b6570032100') . sodium_crypto_sign_publickey_from_secretkey($secretKey)
 ) attestor_fail('protected_overlay_attestor_key_invalid');
 $result = [
-    'configuredEnvironment' => $configuredEnvironment,
-    'phpHarness' => $phpHarness,
-    'runtimeIdentity' => $runtime['identity'],
+    'configuredEnvironmentNames' => array_map(
+        static fn (array $entry): string => $entry['name'],
+        $environment['configuredEnvironment'],
+    ),
+    'inputsSha256' => hash(
+        'sha256',
+        json_encode(
+            $requestRealm['inputs'],
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+        ),
+    ),
+    'phpHarnesses' => $phpHarnesses,
+    'privateContent' => [
+        'layout' => $environment['privateContent']['layout'],
+        'resourceCount' => $environment['privateContent']['resourceCount'],
+        'inventorySha256' => $environment['privateContent']['inventorySha256'],
+    ],
+    'runtimeIdentitySha256' => hash(
+        'sha256',
+        json_encode(
+            $runtime['identity'],
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+        ),
+    ),
     'status' => 'passed',
 ];
 $signed = [
@@ -527,7 +760,10 @@ $signed = [
     'result' => $result,
 ];
 $message = PROTECTED_OVERLAY_ATTESTATION_DOMAIN . "\n"
-    . json_encode($signed, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    . json_encode(
+        $signed,
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+    );
 $attestation = [
     'realm' => $realm,
     'result' => $result,

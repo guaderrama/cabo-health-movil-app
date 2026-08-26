@@ -77,7 +77,7 @@ export const FINAL_LEGAL_SHA256 = Object.freeze({
 });
 // Set only after the final legal/AASA/Firebase/Hostinger staging evidence receives
 // a separate byte review. A null pin makes every materialization path fail closed.
-export const WEB_DEPLOYMENT_READINESS_SHA256 = '269615eb1e9bce545ca5867dafe57c0184171b1fe3ed7117a0108f81286a0283';
+export const WEB_DEPLOYMENT_READINESS_SHA256 = 'bf2e2326d057a60131db535b57000f69f2b96a812929f1e6e27286e9a4f9522c';
 export const WEB_RELEASE_PATHS = Object.freeze([
   '.well-known/apple-app-site-association',
   'app/index.html',

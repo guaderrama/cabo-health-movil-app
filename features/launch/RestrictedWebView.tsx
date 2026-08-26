@@ -20,7 +20,7 @@ import type {
   WebViewHttpErrorEvent,
   WebViewOpenWindowEvent,
 } from 'react-native-webview/lib/WebViewTypes';
-import type { PublicMiniapp } from '../../constants/publicMiniapps';
+import type { CatalogPublicMiniapp } from '../../constants/publicMiniapps';
 import { useFavorites, usePreferences, useTheme, useTranslations } from '../../hooks';
 import { classifyMiniappNavigation } from './navigationPolicy';
 import {
@@ -34,7 +34,7 @@ import {
 export function RestrictedWebView({
   miniapp,
 }: {
-  miniapp: Readonly<PublicMiniapp>;
+  miniapp: Readonly<CatalogPublicMiniapp>;
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -64,6 +64,7 @@ export function RestrictedWebView({
   const handleNavigationRequest = useCallback((request: ShouldStartLoadRequest) => {
     const result = classifyMiniappNavigation({
       slug: miniapp.slug,
+      miniapp,
       url: request.url,
       platform: Platform.OS,
       navigationType: request.navigationType,
@@ -75,11 +76,12 @@ export function RestrictedWebView({
       openExternal,
       showError: showGenericError,
     });
-  }, [miniapp.slug, openExternal, showGenericError]);
+  }, [miniapp, openExternal, showGenericError]);
 
   const handleOpenWindow = useCallback((event: WebViewOpenWindowEvent) => {
     applyPopupNavigation({
       slug: miniapp.slug,
+      miniapp,
       targetUrl: event.nativeEvent.targetUrl,
       platform: Platform.OS,
       effects: {
@@ -87,7 +89,7 @@ export function RestrictedWebView({
         showError: showGenericError,
       },
     });
-  }, [miniapp.slug, openExternal, showGenericError]);
+  }, [miniapp, openExternal, showGenericError]);
 
   const handleRetry = useCallback(() => {
     setErrorMessage(null);

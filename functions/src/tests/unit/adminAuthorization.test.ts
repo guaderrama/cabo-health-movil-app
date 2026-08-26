@@ -83,11 +83,11 @@ test('staff bootstrap returns only known permissions from the active production 
     auth: validAuth,
     loadAdmin: async () => ({
       ...validDocument,
-      permissions: ['client_resource_drafts', 'client_codes'],
+      permissions: ['client_resource_publish', 'client_resource_drafts', 'client_codes'],
     }),
     nowMs,
   }), {
-    permissions: ['client_codes', 'client_resource_drafts'],
+    permissions: ['client_codes', 'client_resource_drafts', 'client_resource_publish'],
     scope: 'production',
     uid: 'owner_uid',
   });

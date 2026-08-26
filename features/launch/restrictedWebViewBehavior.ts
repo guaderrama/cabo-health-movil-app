@@ -1,4 +1,4 @@
-import type { PublicMiniapp, PublicMiniappSlug } from '../../constants/publicMiniapps';
+import type { CatalogPublicMiniapp } from '../../constants/publicMiniapps';
 import {
   classifyMiniappNavigation,
   EMBEDDED_PRESENTATION_FRAGMENTS,
@@ -42,13 +42,15 @@ export function applyNavigationDecision(
 }
 
 export function applyPopupNavigation(input: {
-  slug: PublicMiniappSlug;
+  slug: string;
+  miniapp?: Readonly<CatalogPublicMiniapp>;
   targetUrl: string;
   platform: string;
   effects: NavigationEffects;
 }): boolean {
   const decision = classifyMiniappNavigation({
     slug: input.slug,
+    miniapp: input.miniapp,
     url: input.targetUrl,
     platform: input.platform,
     navigationType: 'other',
@@ -71,7 +73,7 @@ export function handleRestrictedWebViewBack(router: {
 }
 
 export function getRestrictedWebViewSource(
-  miniapp: Readonly<PublicMiniapp>,
+  miniapp: Readonly<CatalogPublicMiniapp>,
   {
     language = 'en',
     reduceMotion = false,
@@ -83,7 +85,7 @@ export function getRestrictedWebViewSource(
 }
 
 export function getRestrictedWebViewPolicyProps<ShouldStart, OpenWindow>(
-  miniapp: Readonly<PublicMiniapp>,
+  miniapp: Readonly<CatalogPublicMiniapp>,
   callbacks: Readonly<{
     onShouldStartLoadWithRequest: ShouldStart;
     onOpenWindow: OpenWindow;
@@ -99,7 +101,7 @@ export function getRestrictedWebViewPolicyProps<ShouldStart, OpenWindow>(
 }
 
 export function getRestrictedSharePayload(
-  miniapp: Readonly<PublicMiniapp>,
+  miniapp: Readonly<CatalogPublicMiniapp>,
   title: string,
 ) {
   return {

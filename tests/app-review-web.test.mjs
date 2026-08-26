@@ -171,7 +171,7 @@ test('App Review activation record is fail-closed and separate from the public r
   assert.match(runbook, /APP_REVIEW_DELETION_RECEIPT_PEPPER_RING/u);
   assert.match(runbook, /APP_REVIEW_BROKER_HMAC_KEY_RING/u);
   assert.match(runbook, /protected-overlay-attestor\.php/u);
-  assert.match(runbook, /c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68/u);
+  assert.match(runbook, /d687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d/u);
   assert.match(runbook, /same effective web PHP handler/iu);
   assert.match(runbook, /LiteSpeed LSAPI runtime/iu);
   assert.match(runbook, /lowercase value `litespeed`/iu);

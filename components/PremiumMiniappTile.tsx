@@ -1,5 +1,8 @@
-import type { PublicMiniapp } from '../constants/publicMiniapps';
-import { buildCatalogCardAccessibilityLabel } from '../features/catalog/catalogPresentation';
+import type { CatalogPublicMiniapp } from '../constants/publicMiniapps';
+import {
+  buildCatalogCardAccessibilityLabel,
+  resolveCatalogMiniappIcon,
+} from '../features/catalog/catalogPresentation';
 import { useTranslations } from '../hooks';
 import { EditorialMiniappCover } from './EditorialMiniappCover';
 
@@ -12,7 +15,7 @@ export function PremiumMiniappTile({
   onPress,
   onToggleFavorite,
 }: {
-  miniapp: Readonly<PublicMiniapp>;
+  miniapp: Readonly<CatalogPublicMiniapp>;
   title: string;
   summary: string;
   favorite: boolean;
@@ -30,8 +33,12 @@ export function PremiumMiniappTile({
       title={title}
       summary={summary}
       actionLabel={t('catalog.openResource')}
-      icon={clinic ? 'sparkles-outline' : 'restaurant-outline'}
-      folioIcon={clinic ? 'stethoscope' : 'bowl-mix-outline'}
+      icon={resolveCatalogMiniappIcon(miniapp.iconKey, miniapp.slug)}
+      folioIcon={miniapp.slug === 'clinic-guide'
+        ? 'stethoscope'
+        : miniapp.slug === 'healthy-recipes'
+          ? 'bowl-mix-outline'
+          : undefined}
       badgeIcon="globe-outline"
       accessibilityLabel={buildCatalogCardAccessibilityLabel(miniapp, language, t)}
       accessibilityHint={t('catalog.openResource')}

@@ -29,6 +29,7 @@ import {
   type ConsumeLaunchCommand,
   type CreateLaunchCommand,
 } from '../domain/clientLaunchService.js';
+import { CATALOG_ID_PATTERN } from '../domain/catalogAdmin.js';
 import { type WebSessionStore } from '../domain/webSessionBroker.js';
 import type { HmacDigest } from '../security/versionedHmac.js';
 
@@ -44,10 +45,24 @@ const WEB_SESSION_PREFIX = '_private_web_sessions';
 const BROKER_REQUEST_PREFIX = '_private_broker_requests';
 const ACCOUNT_DELETION_PREFIX = '_private_account_deletions';
 const ACCOUNT_DELETION_RECEIPT_PREFIX = '_private_account_deletion_receipts';
+const CATALOG_PATH = '_private_catalog/current';
+const CLIENT_RESOURCE_GROUP_MARKER = 'client-resources';
 
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1_000;
 const DELETION_ARTIFACT_BATCH_LIMIT = 400;
 const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
+const MAX_CATALOG_ITEMS = 12;
+
+const CATALOG_ICONS = new Set([
+  'laboratory',
+  'guide',
+  'nutrition',
+  'recipes',
+  'wellness',
+  'location',
+  'contact',
+  'featured',
+]);
 
 export interface DocumentTransaction {
   get(path: string): Promise<unknown | undefined>;
@@ -177,12 +192,8 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
     record: AccessCodeCreateRecord,
   ): Promise<'created' | 'collision' | 'invalid_resource'> {
     return this.#database.runTransaction(async (transaction) => {
-      const resources = await Promise.all(record.resourceIds.map(async (resourceId) => (
-        parseClientResource(await transaction.get(clientResourcePath(resourceId)))
-      )));
-      if (resources.some((resource, index) => (
-        resource === null || resource.id !== record.resourceIds[index]
-      ))) return 'invalid_resource';
+      const resources = await resolveClientResources(transaction, record.resourceIds);
+      if (resources === null) return 'invalid_resource';
       const lookupPath = `${ACCESS_CODE_LOOKUP_PREFIX}/${record.lookupId}`;
       const codePath = `${ACCESS_CODE_PREFIX}/${record.codeId}`;
       const [existingLookup, existingCode] = await Promise.all([
@@ -759,19 +770,19 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       const code = parseStoredAccessCode(
         await transaction.get(`${ACCESS_CODE_PREFIX}/${nonce.codeId}`),
       );
-      const resource = parseClientResource(
-        await transaction.get(clientResourcePath(nonce.resourceId)),
-      );
+      const resources = grant
+        ? await resolveClientResources(transaction, grant.resourceIds)
+        : null;
       if (
         !grant
         || grant.status !== 'active'
         || grant.expiresAtMs <= command.nowMs
-        || !grant.resourceIds.includes(nonce.resourceId)
+        || resources === null
+        || !resources.some(({ id }) => id === nonce.resourceId)
         || !code
         || code.status !== 'active'
         || code.expiresAtMs <= command.nowMs
         || code.subjectUid !== nonce.subjectUid
-        || !resource
       ) return Object.freeze({ kind: 'invalid' as const });
       transaction.set(`${LAUNCH_NONCE_PREFIX}/${match.lookup.lookupId}`, Object.freeze({
         ...nonce,
@@ -817,19 +828,19 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       const code = parseStoredAccessCode(
         await transaction.get(`${ACCESS_CODE_PREFIX}/${nonce.codeId}`),
       );
-      const resource = parseClientResource(
-        await transaction.get(clientResourcePath(nonce.resourceId)),
-      );
+      const resources = grant
+        ? await resolveClientResources(transaction, grant.resourceIds)
+        : null;
       if (
         !grant
         || grant.status !== 'active'
         || grant.expiresAtMs <= command.nowMs
-        || !grant.resourceIds.includes(nonce.resourceId)
+        || resources === null
+        || !resources.some(({ id }) => id === nonce.resourceId)
         || !code
         || code.status !== 'active'
         || code.expiresAtMs <= command.nowMs
         || code.subjectUid !== nonce.subjectUid
-        || !resource
       ) return Object.freeze({ kind: 'invalid' as const });
       const expiresAtMs = Math.min(
         command.expiresNoLaterThanMs,
@@ -889,19 +900,19 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       const code = parseStoredAccessCode(
         await transaction.get(`${ACCESS_CODE_PREFIX}/${session.codeId}`),
       );
-      const resource = parseClientResource(
-        await transaction.get(clientResourcePath(session.resourceId)),
-      );
+      const resources = grant
+        ? await resolveClientResources(transaction, grant.resourceIds)
+        : null;
       if (
         !grant
         || grant.status !== 'active'
         || grant.expiresAtMs <= command.nowMs
-        || !grant.resourceIds.includes(session.resourceId)
+        || resources === null
+        || !resources.some(({ id }) => id === session.resourceId)
         || !code
         || code.status !== 'active'
         || code.expiresAtMs <= command.nowMs
         || code.subjectUid !== session.subjectUid
-        || !resource
       ) return Object.freeze({ kind: 'invalid' as const });
       if (match.lookup.lookupId !== command.currentSessionLookup.lookupId) {
         const currentValue = candidates.find(
@@ -1007,11 +1018,8 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         return Object.freeze({ kind: 'invalid' as const });
       }
 
-      const resourceDocuments = await Promise.all(storedCode.resourceIds.map(async (resourceId) => (
-        transaction.get(clientResourcePath(resourceId))
-      )));
-      const resources = resourceDocuments.map(parseClientResource);
-      if (resources.some((resource) => resource === null)) {
+      const resources = await resolveClientResources(transaction, storedCode.resourceIds);
+      if (resources === null) {
         writeFailedAttempts(transaction, rateLimits, command.nowMs);
         return Object.freeze({ kind: 'invalid' as const });
       }
@@ -1023,7 +1031,7 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
       );
       const grant: Readonly<ClientGrantView> = Object.freeze({
         expiresAtMs: storedCode.expiresAtMs,
-        resources: Object.freeze(resources as Readonly<ClientResourceView>[]),
+        resources,
         schemaVersion: 1,
         status: 'active',
       });
@@ -1257,10 +1265,14 @@ function parseStoredAccessCode(value: unknown): Readonly<StoredAccessCode> | nul
 function parseClientResource(value: unknown): Readonly<ClientResourceView> | null {
   if (!isRecord(value)) return null;
   if (
-    value.schemaVersion !== 1
+    !recordHasExactKeys(value, [
+      'access', 'iconKey', 'id', 'schemaVersion', 'status', 'summary', 'title',
+    ])
+    || value.schemaVersion !== 1
     || value.status !== 'active'
     || value.access !== 'client'
     || typeof value.id !== 'string'
+    || !CATALOG_ID_PATTERN.test(value.id)
     || typeof value.iconKey !== 'string'
     || !isLocalizedText(value.title)
     || !isLocalizedText(value.summary)
@@ -1272,6 +1284,189 @@ function parseClientResource(value: unknown): Readonly<ClientResourceView> | nul
     summary: Object.freeze({ en: value.summary.en, es: value.summary.es }),
     title: Object.freeze({ en: value.title.en, es: value.title.es }),
   });
+}
+
+interface StoredCatalogClientItem {
+  readonly access: 'clients' | 'public';
+  readonly active: boolean;
+  readonly createdAtMs: number;
+  readonly icon: string;
+  readonly id: string;
+  readonly revision: number;
+  readonly summary: Readonly<{ en: string; 'es-MX': string }>;
+  readonly title: Readonly<{ en: string; 'es-MX': string }>;
+  readonly updatedAtMs: number;
+  readonly url: string;
+}
+
+/**
+ * Resolves the durable group marker on every authorization decision. Keeping the
+ * marker in codes and grants means catalog activations and withdrawals take
+ * effect without rewriting security artifacts.
+ */
+async function resolveClientResources(
+  transaction: DocumentTransaction,
+  resourceIds: readonly string[],
+): Promise<readonly Readonly<ClientResourceView>[] | null> {
+  const catalogValue = await transaction.get(CATALOG_PATH);
+  if (catalogValue === undefined) {
+    return readSpecificClientResources(transaction, resourceIds);
+  }
+  const catalog = parseCatalogClientItems(catalogValue);
+  if (catalog === null) return null;
+
+  const activeClients = catalog.filter(({ access, active }) => access === 'clients' && active);
+  const activeById = new Map(activeClients.map((item) => [item.id, item]));
+  const expandedIds: string[] = [];
+  const seen = new Set<string>();
+  for (const resourceId of resourceIds) {
+    const replacements = resourceId === CLIENT_RESOURCE_GROUP_MARKER
+      ? activeClients.map(({ id }) => id)
+      : [resourceId];
+    for (const replacement of replacements) {
+      if (!seen.has(replacement)) {
+        seen.add(replacement);
+        expandedIds.push(replacement);
+      }
+    }
+  }
+
+  const resources = await readSpecificClientResources(transaction, expandedIds);
+  if (resources === null) return null;
+  for (const resource of resources) {
+    const catalogItem = activeById.get(resource.id);
+    if (!catalogItem || !clientResourceMatchesCatalog(resource, catalogItem)) return null;
+  }
+  return resources;
+}
+
+async function readSpecificClientResources(
+  transaction: DocumentTransaction,
+  resourceIds: readonly string[],
+): Promise<readonly Readonly<ClientResourceView>[] | null> {
+  const resources = await Promise.all(resourceIds.map(async (resourceId) => (
+    parseClientResource(await transaction.get(clientResourcePath(resourceId)))
+  )));
+  if (resources.some((resource, index) => (
+    resource === null || resource.id !== resourceIds[index]
+  ))) return null;
+  return Object.freeze(resources as Readonly<ClientResourceView>[]);
+}
+
+function clientResourceMatchesCatalog(
+  resource: Readonly<ClientResourceView>,
+  catalogItem: Readonly<StoredCatalogClientItem>,
+): boolean {
+  return resource.id === catalogItem.id
+    && resource.iconKey === catalogClientIconKey(catalogItem.icon)
+    && resource.title.en === catalogItem.title.en
+    && resource.title.es === catalogItem.title['es-MX']
+    && resource.summary.en === catalogItem.summary.en
+    && resource.summary.es === catalogItem.summary['es-MX'];
+}
+
+function catalogClientIconKey(icon: string): string | null {
+  return {
+    contact: 'chatbubble-ellipses-outline',
+    featured: 'sparkles-outline',
+    guide: 'book-outline',
+    laboratory: 'flask-outline',
+    location: 'map-outline',
+    nutrition: 'leaf-outline',
+    recipes: 'restaurant-outline',
+    wellness: 'heart-outline',
+  }[icon] ?? null;
+}
+
+function parseCatalogClientItems(value: unknown): readonly Readonly<StoredCatalogClientItem>[] | null {
+  if (
+    !isRecord(value)
+    || !recordHasExactKeys(value, ['items', 'revision', 'schemaVersion', 'updatedAtMs'])
+    || value.schemaVersion !== 1
+    || !isNonnegativeSafeInteger(value.revision)
+    || !isNonnegativeSafeInteger(value.updatedAtMs)
+    || !Array.isArray(value.items)
+    || value.items.length > MAX_CATALOG_ITEMS
+  ) return null;
+
+  const parsed: StoredCatalogClientItem[] = [];
+  const ids = new Set<string>();
+  for (const candidate of value.items) {
+    const item = parseCatalogItem(candidate);
+    if (!item || ids.has(item.id)) return null;
+    ids.add(item.id);
+    parsed.push(item);
+  }
+  return Object.freeze(parsed);
+}
+
+function parseCatalogItem(value: unknown): Readonly<StoredCatalogClientItem> | null {
+  if (
+    !isRecord(value)
+    || !recordHasExactKeys(value, [
+      'access',
+      'active',
+      'createdAtMs',
+      'icon',
+      'id',
+      'revision',
+      'summary',
+      'title',
+      'updatedAtMs',
+      'url',
+    ])
+    || (value.access !== 'public' && value.access !== 'clients')
+    || typeof value.active !== 'boolean'
+    || !isNonnegativeSafeInteger(value.createdAtMs)
+    || !isNonnegativeSafeInteger(value.updatedAtMs)
+    || value.updatedAtMs < value.createdAtMs
+    || typeof value.icon !== 'string'
+    || !CATALOG_ICONS.has(value.icon)
+    || typeof value.id !== 'string'
+    || !CATALOG_ID_PATTERN.test(value.id)
+    || !Number.isSafeInteger(value.revision)
+    || (value.revision as number) < 1
+    || typeof value.url !== 'string'
+    || value.url !== `https://cabohealth.org/apps/${value.id}/`
+    || value.id === 'app-review'
+    || value.id === 'shared'
+    || (value.id === 'client-resources' && value.access !== 'clients')
+  ) return null;
+  const title = parseExactCatalogCopy(value.title, 80);
+  const summary = parseExactCatalogCopy(value.summary, 240);
+  if (!title || !summary) return null;
+  return Object.freeze({
+    access: value.access,
+    active: value.active,
+    createdAtMs: value.createdAtMs,
+    icon: value.icon,
+    id: value.id,
+    revision: value.revision as number,
+    summary,
+    title,
+    updatedAtMs: value.updatedAtMs,
+    url: value.url,
+  }) as Readonly<StoredCatalogClientItem>;
+}
+
+function parseExactCatalogCopy(
+  value: unknown,
+  maximumLength: number,
+): Readonly<{ en: string; 'es-MX': string }> | null {
+  if (!isRecord(value) || !recordHasExactKeys(value, ['en', 'es-MX'])) return null;
+  if (
+    typeof value.en !== 'string'
+    || typeof value['es-MX'] !== 'string'
+    || value.en.length < 1
+    || value.en.length > maximumLength
+    || value['es-MX'].length < 1
+    || value['es-MX'].length > maximumLength
+    || value.en !== value.en.trim()
+    || value['es-MX'] !== value['es-MX'].trim()
+    || /[\u0000-\u001f\u007f]/u.test(value.en)
+    || /[\u0000-\u001f\u007f]/u.test(value['es-MX'])
+  ) return null;
+  return Object.freeze({ en: value.en, 'es-MX': value['es-MX'] });
 }
 
 async function readLiveSession(
@@ -1300,14 +1495,12 @@ async function readLiveSession(
   ) return null;
 
   const resources = includeResources
-    ? (await Promise.all(grant.resourceIds.map((resourceId) => (
-      transaction.get(clientResourcePath(resourceId))
-    )))).map(parseClientResource)
+    ? await resolveClientResources(transaction, grant.resourceIds)
     : [];
-  if (resources.some((resource) => resource === null)) return null;
+  if (resources === null) return null;
   const view = Object.freeze({
     expiresAtMs: grant.expiresAtMs,
-    resources: Object.freeze(resources as Readonly<ClientResourceView>[]),
+    resources: Object.freeze(resources),
     schemaVersion: 1 as const,
     status: 'active' as const,
   });

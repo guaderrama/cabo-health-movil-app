@@ -77,13 +77,22 @@ const REALM_DEFINITIONS = Object.freeze([
       privateContentEnvironmentVariable: 'CABOHEALTH_CLIENT_RESOURCES_PRIVATE_CONTENT_ROOT',
       configSchemaPath: 'client-resources-private/config/broker-config.schema.json',
       configSchemaSha256: 'dbb8fc7c0a4b440865de8cfd91e41d30493e2fd57e3b6fbdb5103b7c36bbb6d7',
-      phpHarnessPath: 'tools/hosting/tests/client-resource-broker.php',
-      phpHarnessSha256: 'c8977a71d740ac7be0a745548e0a0c3fc3904028a19fe4b460bdb2755a67ca21',
-      phpHarnessOutput: 'client resource broker: ok\n',
+      phpHarnesses: Object.freeze([
+        Object.freeze({
+          path: 'tools/hosting/tests/client-resource-broker.php',
+          sha256: 'c8977a71d740ac7be0a745548e0a0c3fc3904028a19fe4b460bdb2755a67ca21',
+          output: 'client resource broker: ok\n',
+        }),
+        Object.freeze({
+          path: 'tools/hosting/tests/dynamic-client-resource-broker.php',
+          sha256: '9a9df9f409d87555851aaf7e14c4f3e1e430d394bfd304ded2ab90bd6b2518af',
+          output: 'dynamic client resource broker: ok\n',
+        }),
+      ]),
       attestorPath: 'tools/hosting/protected-overlay-attestor.php',
-      attestorSha256: 'c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68',
+      attestorSha256: 'd687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d',
       attestationKeyEnvironmentVariable: 'CABOHEALTH_CLIENT_RESOURCES_ATTESTATION_KEY',
-      contentFiles: Object.freeze(['en.json', 'es-MX.json']),
+      privateContentPolicy: 'resource-catalog',
       factoryClass: 'SignedFunctionsClientResourcesBackend',
       backendFactorySha256: '8debc4e5bcf1fbbaef8426fa47f9def98ce0718146b1ee5cab61235d892a2972',
     }),
@@ -112,13 +121,17 @@ const REALM_DEFINITIONS = Object.freeze([
       privateContentEnvironmentVariable: 'CABOHEALTH_APP_REVIEW_PRIVATE_CONTENT_ROOT',
       configSchemaPath: 'app-review-private/config/broker-config.schema.json',
       configSchemaSha256: '1e6f9cc3c57416df864161d13e4d3dcc1ea10fb1a5369e65a4f706f75a66c7b5',
-      phpHarnessPath: 'tools/hosting/tests/app-review-broker.php',
-      phpHarnessSha256: 'd30b39aa480a02897868ec33ca7f434adec8e833bce4e53e33c889095edf171b',
-      phpHarnessOutput: 'app review broker: ok\n',
+      phpHarnesses: Object.freeze([
+        Object.freeze({
+          path: 'tools/hosting/tests/app-review-broker.php',
+          sha256: 'd30b39aa480a02897868ec33ca7f434adec8e833bce4e53e33c889095edf171b',
+          output: 'app review broker: ok\n',
+        }),
+      ]),
       attestorPath: 'tools/hosting/protected-overlay-attestor.php',
-      attestorSha256: 'c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68',
+      attestorSha256: 'd687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d',
       attestationKeyEnvironmentVariable: 'CABOHEALTH_APP_REVIEW_ATTESTATION_KEY',
-      contentFiles: Object.freeze(['sample.json']),
+      privateContentPolicy: Object.freeze({ fixedFiles: Object.freeze(['sample.json']) }),
       factoryClass: 'SignedFunctionsAppReviewBackend',
       backendFactorySha256: '2b8ab60cc1c023d3e652127adb5e2a1be8dc5c746f7314957d16a589dbde13bf',
     }),
@@ -149,10 +162,19 @@ export function createProtectedOverlayArtifact({ projectRoot }) {
     if (sha256(configSchemaBytes) !== definition.externalInputs.configSchemaSha256) {
       throw new Error('protected_overlay_config_schema_invalid');
     }
-    const phpHarnessBytes = readRegularFile(resolve(root, definition.externalInputs.phpHarnessPath));
-    if (sha256(phpHarnessBytes) !== definition.externalInputs.phpHarnessSha256) {
-      throw new Error('protected_overlay_php_harness_source_invalid');
-    }
+    const phpHarnesses = Object.freeze(definition.externalInputs.phpHarnesses.map((harness) => {
+      const bytes = readRegularFile(resolve(root, harness.path));
+      if (sha256(bytes) !== harness.sha256) {
+        throw new Error('protected_overlay_php_harness_source_invalid');
+      }
+      return Object.freeze({
+        path: harness.path,
+        minimumVersion: '8.2',
+        size: bytes.length,
+        sha256: harness.sha256,
+        status: 'external-required',
+      });
+    }));
     return Object.freeze({
       realm: definition.realm,
       sourceRoot: definition.sourceRoot,
@@ -171,13 +193,7 @@ export function createProtectedOverlayArtifact({ projectRoot }) {
           size: configSchemaBytes.length,
           sha256: sha256(configSchemaBytes),
         }),
-        phpHarness: Object.freeze({
-          path: definition.externalInputs.phpHarnessPath,
-          minimumVersion: '8.2',
-          size: phpHarnessBytes.length,
-          sha256: sha256(phpHarnessBytes),
-          status: 'external-required',
-        }),
+        phpHarnesses,
       }),
       files,
     });
@@ -273,7 +289,7 @@ export function createProtectedOverlayActivationPlan({
       input.privateContentRoot,
       documentRoot,
       root,
-      definition.externalInputs.contentFiles,
+      definition.externalInputs.privateContentPolicy,
       privateIdentities,
     );
     return Object.freeze({
@@ -304,7 +320,11 @@ export function createProtectedOverlayActivationPlan({
       }),
       privateContent: Object.freeze({
         path: privateContent.path,
-        inventorySha256: sha256(canonical(privateContent.files)),
+        layout: privateContent.layout,
+        rootMode: privateContent.rootMode,
+        resourceCount: privateContent.resourceCount,
+        directories: privateContent.directories,
+        inventorySha256: privateContent.inventorySha256,
         files: privateContent.files,
       }),
     });
@@ -455,32 +475,34 @@ export function verifyProtectedOverlayDeploymentEvidence({
       || attestation.realm !== request.realm
       || !isRecord(attestation.result)
       || !hasExactKeys(attestation.result, [
-        'configuredEnvironment',
-        'phpHarness',
-        'runtimeIdentity',
+        'configuredEnvironmentNames',
+        'inputsSha256',
+        'phpHarnesses',
+        'privateContent',
+        'runtimeIdentitySha256',
         'status',
       ])
       || attestation.result.status !== 'passed'
-      || canonical(attestation.result.configuredEnvironment)
-        !== canonical(request.configuredEnvironment)
-      || canonical(attestation.result.runtimeIdentity) !== canonical(request.runtimeIdentity)
-      || !isRecord(attestation.result.phpHarness)
-      || !hasExactKeys(attestation.result.phpHarness, [
-        'outputBase64',
-        'outputSha256',
-        'path',
-        'phpVersionId',
-        'sourceSha256',
-        'status',
+      || canonical(attestation.result.configuredEnvironmentNames)
+        !== canonical(request.configuredEnvironment.map(({ name }) => name))
+      || attestation.result.inputsSha256 !== sha256(canonical(request.inputs))
+      || !isAttestedHarnesses(
+        attestation.result.phpHarnesses,
+        request.phpHarnesses,
+        request.runtimeIdentity.phpCliVersionId,
+      )
+      || !isRecord(attestation.result.privateContent)
+      || !hasExactKeys(attestation.result.privateContent, [
+        'layout',
+        'resourceCount',
+        'inventorySha256',
       ])
-      || attestation.result.phpHarness.path !== request.phpHarness.path
-      || attestation.result.phpHarness.sourceSha256 !== request.phpHarness.sourceSha256
-      || attestation.result.phpHarness.outputBase64 !== request.phpHarness.expectedOutputBase64
-      || attestation.result.phpHarness.outputSha256 !== request.phpHarness.expectedOutputSha256
-      || attestation.result.phpHarness.status !== 'passed'
-      || !Number.isSafeInteger(attestation.result.phpHarness.phpVersionId)
-      || attestation.result.phpHarness.phpVersionId
-        !== request.runtimeIdentity.phpCliVersionId
+      || attestation.result.privateContent.layout !== request.inputs.privateContent.layout
+      || attestation.result.privateContent.resourceCount
+        !== request.inputs.privateContent.resourceCount
+      || attestation.result.privateContent.inventorySha256
+        !== request.inputs.privateContent.inventorySha256
+      || attestation.result.runtimeIdentitySha256 !== sha256(canonical(request.runtimeIdentity))
       || typeof attestation.signatureBase64 !== 'string'
     ) throw new Error('protected_overlay_evidence_invalid');
     const signature = Buffer.from(attestation.signatureBase64, 'base64');
@@ -502,6 +524,31 @@ export function verifyProtectedOverlayDeploymentEvidence({
     )) throw new Error('protected_overlay_evidence_invalid');
   }
   return evidence;
+}
+
+function isAttestedHarnesses(value, expectedHarnesses, phpVersionId) {
+  if (!Array.isArray(value) || value.length !== expectedHarnesses.length) return false;
+  return value.every((harness, index) => {
+    const expected = expectedHarnesses[index];
+    return (
+      isRecord(harness)
+      && hasExactKeys(harness, [
+        'outputBase64',
+        'outputSha256',
+        'path',
+        'phpVersionId',
+        'sourceSha256',
+        'status',
+      ])
+      && harness.path === expected.path
+      && harness.sourceSha256 === expected.sourceSha256
+      && harness.outputBase64 === expected.expectedOutputBase64
+      && harness.outputSha256 === expected.expectedOutputSha256
+      && harness.status === 'passed'
+      && Number.isSafeInteger(harness.phpVersionId)
+      && harness.phpVersionId === phpVersionId
+    );
+  });
 }
 
 export function createProtectedOverlayDeploymentEvidence({
@@ -536,7 +583,16 @@ function buildDeploymentEvidenceRequest(artifact, activation, trustPolicySha256)
   const realms = Object.freeze(REALM_DEFINITIONS.map((definition, index) => {
     const artifactRealm = artifact.realms[index];
     const activationRealm = activation.realms[index];
-    const harnessOutput = Buffer.from(definition.externalInputs.phpHarnessOutput, 'utf8');
+    const phpHarnesses = Object.freeze(definition.externalInputs.phpHarnesses.map((harness) => {
+      const output = Buffer.from(harness.output, 'utf8');
+      return Object.freeze({
+        path: harness.path,
+        sourceSha256: harness.sha256,
+        minimumVersionId: 80200,
+        expectedOutputBase64: output.toString('base64'),
+        expectedOutputSha256: sha256(output),
+      });
+    }));
     return Object.freeze({
       realm: definition.realm,
       artifactRealmSha256: sha256(canonical(artifactRealm)),
@@ -563,13 +619,7 @@ function buildDeploymentEvidenceRequest(artifact, activation, trustPolicySha256)
         brokerConfig: activationRealm.brokerConfig,
         privateContent: activationRealm.privateContent,
       }),
-      phpHarness: Object.freeze({
-        path: definition.externalInputs.phpHarnessPath,
-        sourceSha256: definition.externalInputs.phpHarnessSha256,
-        minimumVersionId: 80200,
-        expectedOutputBase64: harnessOutput.toString('base64'),
-        expectedOutputSha256: sha256(harnessOutput),
-      }),
+      phpHarnesses,
     });
   }));
   const core = Object.freeze({
@@ -641,7 +691,7 @@ function validateEvidenceRequest(request, expectedTrustPolicySha256, verifiedTru
         'brokerIdentity',
         'configuredEnvironment',
         'inputs',
-        'phpHarness',
+        'phpHarnesses',
         'runtimeIdentity',
       ])
       || realm.realm !== definition.realm
@@ -704,29 +754,125 @@ function validateEvidenceRequest(request, expectedTrustPolicySha256, verifiedTru
       || !isActivationFileMetadata(realm.inputs.backendFactory)
       || !isActivationFileMetadata(realm.inputs.brokerConfig)
       || !isRecord(realm.inputs.privateContent)
-      || !hasExactKeys(realm.inputs.privateContent, [
-        'path',
-        'inventorySha256',
-        'files',
-      ])
-      || typeof realm.inputs.privateContent.path !== 'string'
-      || !HASH_PATTERN.test(realm.inputs.privateContent.inventorySha256)
-      || !Array.isArray(realm.inputs.privateContent.files)
-      || !isRecord(realm.phpHarness)
-      || !hasExactKeys(realm.phpHarness, [
+      || !isPrivateContentMetadata(realm.inputs.privateContent, definition)
+      || !isEvidenceRequestHarnesses(realm.phpHarnesses, definition)
+    ) throw new Error('protected_overlay_evidence_request_invalid');
+  }
+}
+
+function isEvidenceRequestHarnesses(value, definition) {
+  if (
+    !Array.isArray(value)
+    || value.length !== definition.externalInputs.phpHarnesses.length
+  ) return false;
+  return value.every((harness, index) => {
+    const expected = definition.externalInputs.phpHarnesses[index];
+    const output = Buffer.from(expected.output, 'utf8');
+    return (
+      isRecord(harness)
+      && hasExactKeys(harness, [
         'path',
         'sourceSha256',
         'minimumVersionId',
         'expectedOutputBase64',
         'expectedOutputSha256',
       ])
-      || realm.phpHarness.path !== definition.externalInputs.phpHarnessPath
-      || realm.phpHarness.sourceSha256 !== definition.externalInputs.phpHarnessSha256
-      || realm.phpHarness.minimumVersionId !== 80200
-      || typeof realm.phpHarness.expectedOutputBase64 !== 'string'
-      || !HASH_PATTERN.test(realm.phpHarness.expectedOutputSha256)
-    ) throw new Error('protected_overlay_evidence_request_invalid');
+      && harness.path === expected.path
+      && harness.sourceSha256 === expected.sha256
+      && harness.minimumVersionId === 80200
+      && harness.expectedOutputBase64 === output.toString('base64')
+      && harness.expectedOutputSha256 === sha256(output)
+    );
+  });
+}
+
+function isPrivateContentMetadata(value, definition) {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, [
+      'path',
+      'layout',
+      'rootMode',
+      'resourceCount',
+      'directories',
+      'inventorySha256',
+      'files',
+    ])
+    || typeof value.path !== 'string'
+    || !value.path.startsWith('/')
+    || value.rootMode !== '0700'
+    || !Number.isSafeInteger(value.resourceCount)
+    || value.resourceCount < 0
+    || value.resourceCount > 12
+    || !Array.isArray(value.directories)
+    || !Array.isArray(value.files)
+    || !HASH_PATTERN.test(value.inventorySha256)
+  ) return false;
+  const directories = value.directories;
+  const files = value.files;
+  if (directories.some((directory) => (
+    !isRecord(directory)
+    || !hasExactKeys(directory, ['path', 'mode'])
+    || !isPrivateResourceId(directory.path)
+    || directory.mode !== '0700'
+  ))) return false;
+  const directoryPaths = directories.map(({ path }) => path);
+  if (
+    new Set(directoryPaths).size !== directoryPaths.length
+    || canonical([...directoryPaths].sort(compareText)) !== canonical(directoryPaths)
+  ) return false;
+  if (files.some((file) => (
+    !isRecord(file)
+    || !hasExactKeys(file, ['path', 'mode', 'size', 'sha256'])
+    || file.mode !== '0600'
+    || !Number.isSafeInteger(file.size)
+    || file.size < 2
+    || file.size > 65536
+    || !HASH_PATTERN.test(file.sha256)
+  ))) return false;
+  const filePaths = files.map(({ path }) => path);
+  if (new Set(filePaths).size !== filePaths.length) return false;
+  const inventory = {
+    layout: value.layout,
+    rootMode: value.rootMode,
+    resourceCount: value.resourceCount,
+    directories,
+    files,
+  };
+  if (sha256(canonical(inventory)) !== value.inventorySha256) return false;
+  if (definition.externalInputs.privateContentPolicy === 'resource-catalog') {
+    const structuredPaths = directoryPaths.flatMap((resourceId) => [
+      `${resourceId}/en.json`,
+      `${resourceId}/es-MX.json`,
+    ]);
+    const hasLegacyFlat = filePaths.includes('en.json') || filePaths.includes('es-MX.json');
+    const expectedPaths = hasLegacyFlat
+      ? ['en.json', 'es-MX.json', ...structuredPaths]
+      : structuredPaths;
+    const hasStructuredClientResources = directoryPaths.includes('client-resources');
+    const expectedLayout = hasLegacyFlat
+      ? (directoryPaths.length === 0
+        ? 'legacy-flat'
+        : 'structured-with-client-resources-fallback')
+      : 'structured';
+    const expectedResourceCount = directoryPaths.length
+      + (hasLegacyFlat && !hasStructuredClientResources ? 1 : 0);
+    return (
+      expectedResourceCount >= 1
+      && value.resourceCount === expectedResourceCount
+      && value.layout === expectedLayout
+      && (!hasLegacyFlat || directoryPaths.length === 0 || hasStructuredClientResources)
+      && canonical(filePaths) === canonical(expectedPaths)
+    );
   }
+  const fixedFiles = definition.externalInputs.privateContentPolicy?.fixedFiles;
+  return (
+    Array.isArray(fixedFiles)
+    && value.layout === 'fixed-flat'
+    && value.resourceCount === 0
+    && directoryPaths.length === 0
+    && canonical(filePaths) === canonical(fixedFiles)
+  );
 }
 
 export function promoteProtectedOverlays({
@@ -1283,7 +1429,7 @@ function validateArtifactCapsule(artifact, pins) {
         'brokerConfigEnvironmentVariable',
         'privateContentEnvironmentVariable',
         'configSchema',
-        'phpHarness',
+        'phpHarnesses',
       ])
       || realm.externalInputs.status !== 'required-outside-docroot'
       || realm.externalInputs.backendFactoryEnvironmentVariable
@@ -1299,20 +1445,7 @@ function validateArtifactCapsule(artifact, pins) {
         !== definition.externalInputs.configSchemaSha256
       || !Number.isSafeInteger(realm.externalInputs.configSchema.size)
       || realm.externalInputs.configSchema.size < 1
-      || !isRecord(realm.externalInputs.phpHarness)
-      || !hasExactKeys(realm.externalInputs.phpHarness, [
-        'path',
-        'minimumVersion',
-        'size',
-        'sha256',
-        'status',
-      ])
-      || realm.externalInputs.phpHarness.path !== definition.externalInputs.phpHarnessPath
-      || realm.externalInputs.phpHarness.minimumVersion !== '8.2'
-      || !Number.isSafeInteger(realm.externalInputs.phpHarness.size)
-      || realm.externalInputs.phpHarness.size < 1
-      || realm.externalInputs.phpHarness.sha256 !== definition.externalInputs.phpHarnessSha256
-      || realm.externalInputs.phpHarness.status !== 'external-required'
+      || !isArtifactHarnesses(realm.externalInputs.phpHarnesses, definition)
       || !Array.isArray(realm.files)
       || realm.files.length !== definition.files.length
     ) throw new Error('protected_overlay_artifact_invalid');
@@ -1370,6 +1503,26 @@ function validateArtifactCapsule(artifact, pins) {
     || artifact.artifactSha256 !== pins.expectedArtifactSha256
   ) throw new Error('protected_overlay_artifact_invalid');
   return artifact;
+}
+
+function isArtifactHarnesses(value, definition) {
+  if (
+    !Array.isArray(value)
+    || value.length !== definition.externalInputs.phpHarnesses.length
+  ) return false;
+  return value.every((harness, index) => {
+    const expected = definition.externalInputs.phpHarnesses[index];
+    return (
+      isRecord(harness)
+      && hasExactKeys(harness, ['path', 'minimumVersion', 'size', 'sha256', 'status'])
+      && harness.path === expected.path
+      && harness.minimumVersion === '8.2'
+      && Number.isSafeInteger(harness.size)
+      && harness.size > 0
+      && harness.sha256 === expected.sha256
+      && harness.status === 'external-required'
+    );
+  });
 }
 
 function materializeRealm(destination, realm) {
@@ -2305,7 +2458,7 @@ function readPrivateContentInventory(
   path,
   documentRoot,
   deploymentRoot,
-  expectedFiles,
+  policy,
   identities,
 ) {
   const directoryBefore = inspectDescriptorBoundDirectory(path, {
@@ -2325,19 +2478,106 @@ function readPrivateContentInventory(
   const entries = readdirSync(resolved, { withFileTypes: true }).sort((left, right) => (
     compareText(left.name, right.name)
   ));
-  if (canonical(entries.map(({ name }) => name)) !== canonical(expectedFiles)) {
+  let layout;
+  let resourceCount;
+  let directories;
+  let files;
+  if (policy === 'resource-catalog') {
+    const flatNames = entries.filter(({ name }) => name === 'en.json' || name === 'es-MX.json');
+    const resourceEntries = entries.filter(({ name }) => name !== 'en.json' && name !== 'es-MX.json');
+    const flatPaths = flatNames.map(({ name }) => name);
+    const hasLegacyFlat = canonical(flatPaths) === canonical(['en.json', 'es-MX.json']);
+    if ((flatNames.length > 0 && !hasLegacyFlat) || resourceEntries.some((entry) => (
+      !entry.isDirectory() || !isPrivateResourceId(entry.name)
+    ))) {
+      throw new Error('protected_overlay_private_content_invalid');
+    }
+    const resourceIds = resourceEntries.map(({ name }) => name);
+    const hasStructuredClientResources = resourceIds.includes('client-resources');
+    if (
+      resourceIds.length > 12
+      || (resourceIds.length === 0 && !hasLegacyFlat)
+      || (hasLegacyFlat && resourceIds.length > 0 && !hasStructuredClientResources)
+    ) throw new Error('protected_overlay_private_content_invalid');
+    layout = hasLegacyFlat
+      ? (resourceIds.length === 0
+        ? 'legacy-flat'
+        : 'structured-with-client-resources-fallback')
+      : 'structured';
+    resourceCount = resourceIds.length + (hasLegacyFlat && !hasStructuredClientResources ? 1 : 0);
+    directories = Object.freeze(resourceEntries.map(({ name }) => {
+      const directory = inspectDescriptorBoundDirectory(resolve(resolved, name), {
+        allowedModes: [0o700],
+        errorCode: 'protected_overlay_private_content_invalid',
+        mustBeInside: resolved,
+        mustBeOutside: documentRoot,
+      });
+      const stat = lstatSync(directory.path);
+      const identity = `${stat.dev}:${stat.ino}`;
+      if (identities.has(identity) || dirname(directory.path) !== resolved) {
+        throw new Error('protected_overlay_private_content_invalid');
+      }
+      identities.add(identity);
+      return Object.freeze({ path: name, mode: '0700' });
+    }));
+    const filePaths = [
+      ...flatPaths,
+      ...resourceIds.flatMap((resourceId) => [
+        `${resourceId}/en.json`,
+        `${resourceId}/es-MX.json`,
+      ]),
+    ];
+    for (const resourceId of resourceIds) {
+      const children = readdirSync(resolve(resolved, resourceId), { withFileTypes: true })
+        .sort((left, right) => compareText(left.name, right.name));
+      if (
+        canonical(children.map(({ name }) => name)) !== canonical(['en.json', 'es-MX.json'])
+        || children.some((entry) => !entry.isFile())
+      ) throw new Error('protected_overlay_private_content_invalid');
+    }
+    files = Object.freeze(filePaths.map((relativePath) => {
+      const file = readPrivateActivationFile(
+        resolve(resolved, ...relativePath.split('/')),
+        documentRoot,
+        deploymentRoot,
+        identities,
+        65536,
+      );
+      return Object.freeze({
+        path: relativePath,
+        mode: '0600',
+        size: file.bytes.length,
+        sha256: sha256(file.bytes),
+      });
+    }));
+  } else if (isRecord(policy) && Array.isArray(policy.fixedFiles)) {
+    if (canonical(entries.map(({ name }) => name)) !== canonical(policy.fixedFiles)) {
+      throw new Error('protected_overlay_private_content_invalid');
+    }
+    layout = 'fixed-flat';
+    resourceCount = 0;
+    directories = Object.freeze([]);
+    files = Object.freeze(entries.map(({ name }) => {
+      if (!entries.find((entry) => entry.name === name)?.isFile()) {
+        throw new Error('protected_overlay_private_content_invalid');
+      }
+      const file = readPrivateActivationFile(
+        resolve(resolved, name),
+        documentRoot,
+        deploymentRoot,
+        identities,
+        65536,
+      );
+      return Object.freeze({
+        path: name,
+        mode: '0600',
+        size: file.bytes.length,
+        sha256: sha256(file.bytes),
+      });
+    }));
+  } else {
     throw new Error('protected_overlay_private_content_invalid');
   }
-  const files = Object.freeze(entries.map(({ name }) => {
-    const file = readPrivateActivationFile(
-      resolve(resolved, name),
-      documentRoot,
-      deploymentRoot,
-      identities,
-      65536,
-    );
-    return Object.freeze({ path: name, size: file.bytes.length, sha256: sha256(file.bytes) });
-  }));
   const directoryAfter = inspectDescriptorBoundDirectory(resolved, {
     allowedModes: [0o700],
     errorCode: 'protected_overlay_private_content_invalid',
@@ -2347,7 +2587,24 @@ function readPrivateContentInventory(
   if (directoryBefore.identity !== directoryAfter.identity) {
     throw new Error('protected_overlay_private_content_invalid');
   }
-  return Object.freeze({ path: resolved, files });
+  const inventory = Object.freeze({
+    layout,
+    rootMode: '0700',
+    resourceCount,
+    directories,
+    files,
+  });
+  return Object.freeze({
+    path: resolved,
+    ...inventory,
+    inventorySha256: sha256(canonical(inventory)),
+  });
+}
+
+function isPrivateResourceId(value) {
+  return typeof value === 'string'
+    && value.length <= 64
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
 }
 
 function realDirectory(path, ...allowedModes) {

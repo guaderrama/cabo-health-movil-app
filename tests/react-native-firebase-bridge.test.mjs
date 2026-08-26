@@ -85,3 +85,26 @@ test('the bridge configures App Attest with DeviceCheck fallback and token refre
     }],
   ]);
 });
+
+test('catalog and client adapters share one App Check initialization for the native app', async () => {
+  const { modules } = makeModules();
+  let initializations = 0;
+  modules.appCheck.initializeAppCheck = async () => {
+    initializations += 1;
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+  const first = createReactNativeFirebaseBridge(modules);
+  const second = createReactNativeFirebaseBridge(modules);
+  const options = {
+    appleProvider: 'appAttestWithDeviceCheckFallback',
+    androidProvider: 'playIntegrity',
+    tokenAutoRefreshEnabled: true,
+  };
+
+  await Promise.all([
+    first.initializeAppCheck(options),
+    second.initializeAppCheck(options),
+  ]);
+
+  assert.equal(initializations, 1);
+});

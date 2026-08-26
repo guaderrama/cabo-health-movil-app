@@ -62,6 +62,32 @@ test('a 60-second launch nonce reveals no target, is stored hashed, and can be c
   );
 });
 
+test('launch validation rejects noncanonical and overlong resource IDs before touching storage', async () => {
+  let storageCalls = 0;
+  const launches = new ClientLaunchService({
+    installationHasher: hasher('installation'),
+    nonceHasher: hasher('launch-nonce'),
+    nowMs: () => nowMs,
+    randomSource: () => Buffer.alloc(24, 10),
+    store: {
+      createLaunch: async () => { storageCalls += 1; return 'created'; },
+      consumeLaunch: async () => ({ kind: 'invalid' }),
+    },
+  });
+
+  for (const candidate of ['vip--lab', 'a'.repeat(65)]) {
+    await assert.rejects(
+      launches.create({
+        installationId,
+        resourceId: candidate,
+        subjectUid: `client_${'s'.repeat(32)}`,
+      }),
+      (error: unknown) => error instanceof ClientAccessPublicError && error.code === 'invalid_access',
+    );
+  }
+  assert.equal(storageCalls, 0);
+});
+
 function hasher(namespace: string): VersionedHmac {
   const key = createSecretKey(Buffer.from('test-only-pepper-key-with-at-least-32-bytes', 'utf8'));
   return new VersionedHmac({

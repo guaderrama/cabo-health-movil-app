@@ -1,4 +1,8 @@
-import type { PublicMiniapp } from '../../constants/publicMiniapps';
+import type {
+  CatalogPublicMiniapp,
+  PublicCatalogIcon,
+} from '../../constants/publicMiniapps';
+import type { CaboHealthMiniappIconName } from '../../components/icons/CaboHealthMiniappIcon';
 import type { AppLanguage, MessageKey } from '../../i18n/messages';
 
 export function formatEditorialDate(value: string, language: AppLanguage): string {
@@ -14,7 +18,7 @@ export function formatEditorialDate(value: string, language: AppLanguage): strin
 }
 
 export function buildCatalogCardAccessibilityLabel(
-  miniapp: Readonly<PublicMiniapp>,
+  miniapp: Readonly<CatalogPublicMiniapp>,
   language: AppLanguage,
   translate: (key: MessageKey) => string,
 ): string {
@@ -33,6 +37,23 @@ export function buildCatalogCardAccessibilityLabel(
     facts.push(`${translate('catalog.age')}: ${miniapp.appStoreAgeRating}+`);
   }
   return facts.join('. ');
+}
+
+export function resolveCatalogMiniappIcon(
+  icon: PublicCatalogIcon | undefined,
+  slug: string,
+): CaboHealthMiniappIconName {
+  if (!icon) return slug === 'clinic-guide' ? 'sparkles-outline' : 'restaurant-outline';
+  return ({
+    laboratory: 'flask-outline',
+    guide: 'book-outline',
+    nutrition: 'leaf-outline',
+    recipes: 'restaurant-outline',
+    wellness: 'heart-outline',
+    location: 'map-outline',
+    contact: 'chatbubble-ellipses-outline',
+    featured: 'sparkles-outline',
+  } as const)[icon];
 }
 
 export function resolveCatalogCardColumns(input: { width: number; fontScale: number }): 1 | 2 {

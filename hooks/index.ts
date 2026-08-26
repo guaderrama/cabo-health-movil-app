@@ -8,6 +8,7 @@ export { useReducedMotion } from './useReducedMotion';
 export { usePreferences } from '../context/PreferencesContext';
 export { useEditorialTileMotion } from './useEditorialTileMotion';
 export { useTranslations } from '../i18n/useTranslations';
+export { usePublicCatalog } from '../context/PublicCatalogContext';
 
 // Theme hook (re-export from context)
 export { useTheme, ThemeProvider } from '../context/ThemeContext';

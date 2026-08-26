@@ -8,6 +8,13 @@ docroot. The PHP harness, signed LiteSpeed attestations, exact deployment gate,
 and live invalid-nonce denial passed. Native credential, replay, revocation,
 and physical-iPhone E2E remain separate Apple-submission gates.
 
+Dynamic-routing code status: **IMPLEMENTED AND LOCALLY VERIFIED 2026-08-25;
+NOT DEPLOYED**. The active release ID above is historical evidence for the
+fixed `client-resources` release and does not contain the dynamic router. A new
+protected-overlay artifact, private-content inventory, signed Hostinger
+attestations, and promotion are required before any additional private miniapp
+can be activated in production.
+
 ## Trust boundary
 
 - The protected public subtree under `web-hosting/cabohealth.org/apps/client-resources/`
@@ -25,6 +32,52 @@ and physical-iPhone E2E remain separate Apple-submission gates.
 - There is no analytics, native JavaScript bridge, PHI, personalized plan,
   upload, or free-text health field in this vertical.
 
+## Dynamic private-resource authority
+
+The resource is selected only from the live server-side web session. The
+launch `POST` contains only the one-use nonce, the clean `303` contains no
+resource identifier, and the protected resource API accepts only the exact
+`lang=en` or `lang=es-MX` query. A path, query parameter, form value, header,
+cookie value, or JSON value supplied by the browser can never select private
+content.
+
+An active introspection response must contain exactly one entitlement. Its ID
+must match `^[a-z0-9]+(?:-[a-z0-9]+)*$` and be at most 64 bytes, so it has no
+slash, dot, whitespace, leading/trailing hyphen, or repeated hyphen.
+An absent grant is unauthorized; multiple, non-list, malformed, or oversized
+entitlements are an invalid backend contract and fail closed before any
+private-content read.
+
+`CABOHEALTH_CLIENT_RESOURCES_PRIVATE_CONTENT_ROOT` remains the only content
+root setting. New releases use one direct, canonical directory per resource:
+
+```text
+<private-content-root>/
+  client-resources/
+    en.json
+    es-MX.json
+  vip-lab-guide/
+    en.json
+    es-MX.json
+  <another-safe-resource-id>/
+    en.json
+    es-MX.json
+```
+
+Directory names are derived only after the entitlement passes the exact ID
+validator. Both the resource directory and locale file must resolve to their
+exact canonical paths directly under the configured root; symlinks, aliases,
+missing files, traversal, and schema drift fail closed. Every document keeps
+the existing exact schema and size limits.
+
+For backwards compatibility only, the `client-resources` entitlement may read
+the historical flat `<private-content-root>/en.json` and `es-MX.json` files
+when the `client-resources/` directory is completely absent. If that directory
+exists, it is authoritative and a missing or invalid locale never falls back
+to the flat release. No other resource ID may use flat content. This lets the
+new runtime serve the current release safely while private modules are migrated
+atomically.
+
 ## Exact Functions contract
 
 All three calls are HTTPS `POST` requests to the exact configured
@@ -37,7 +90,7 @@ Routes and exact bodies:
 - `/v1/launch/redeem`: `{"nonce":"<opaque-32-char-value>"}` →
   `{"sessionId":"<opaque>","expiresAtMs":<integer>}`.
 - `/v1/sessions/introspect`: `{"sessionId":"<opaque>"}` →
-  `{"active":true,"expiresAtMs":<integer>,"entitlements":["client-resources"],"csrfToken":"<opaque>"}`.
+  `{"active":true,"expiresAtMs":<integer>,"entitlements":["<one-safe-resource-id>"],"csrfToken":"<opaque>"}`.
 - `/v1/sessions/revoke`:
   `{"sessionId":"<opaque>","csrfToken":"<opaque>"}` →
   `{"revoked":true}`.
@@ -102,16 +155,84 @@ Do not activate the public endpoints until all steps below pass:
 5. Deploy the matching reviewed content release outside the docroot and set
    `CABOHEALTH_CLIENT_RESOURCES_PRIVATE_CONTENT_ROOT` to its exact `content`
    directory. Never point this variable at `public_html` or a request value.
+   The setting does not change for dynamic routing; resource directories are
+   direct children of that root.
 6. Confirm PHP 8.2 and the cURL extension, then run
-   `tools/hosting/tests/client-resource-broker.php` in a private staging copy.
-   The committed suite must prove that unsigned/tampered HTTP 200 responses
-   are rejected before their JSON schema is consumed.
+   `tools/hosting/tests/client-resource-broker.php` and
+   `tools/hosting/tests/dynamic-client-resource-broker.php` in a private
+   staging copy. The committed suites must prove that unsigned/tampered HTTP
+   200 responses are rejected before their JSON schema is consumed, that only
+   one safe entitlement routes content, that the browser cannot select an ID,
+   and that structured/legacy content never crosses resource boundaries.
 7. Against staging, verify valid launch, 60-second expiry, replay, GET/query
    rejection, wrong origin/CSRF, live revocation, session expiry, cookie path,
    clean 303 URL, bilingual content, and that direct private-file HTTPS access
    is impossible.
 8. Rotate the staging key before production. Production must use its own key
    ID and signing key; never reuse staging material.
+
+### Dynamic-content release gate
+
+Gate migration status: **IMPLEMENTED AND LOCALLY VERIFIED 2026-08-25; NOT
+DEPLOYED**. The active 2026-08-24 production evidence remains historical and
+must not be edited or relabeled. A dynamic promotion requires a completely new
+artifact, activation, request, two Hostinger attestations, evidence capsule,
+and independently approved pins.
+
+The production private inventory now accepts exactly one declared mode:
+
+- `legacy-flat`: only `en.json` and `es-MX.json`, representing only
+  `client-resources`;
+- `structured`: 1–12 direct resource directories, each containing exactly
+  `en.json` and `es-MX.json`; or
+- `structured-with-client-resources-fallback`: both legacy flat files plus a
+  structured inventory that includes `client-resources/`. The structured
+  locale is authoritative and the flat pair is retained only as rollback
+  fallback.
+
+Every ID is 1–64 lowercase ASCII characters in strict kebab form
+`^[a-z0-9]+(?:-[a-z0-9]+)*$`; a double hyphen is invalid. The gate and attestor
+pin the root and resource directory modes (`0700`), file modes (`0600`), exact
+relative paths, sizes, SHA-256 hashes, resource count, layout, and complete
+inventory digest. Missing or extra locales, nested content, aliases, duplicate
+entries, hard links, symlinks, traversal spellings, size/mode drift, and source
+drift fail closed.
+
+The immutable artifact pins and the real Hostinger handler executes both
+production harnesses:
+
+- `tools/hosting/tests/client-resource-broker.php` —
+  `c8977a71d740ac7be0a745548e0a0c3fc3904028a19fe4b460bdb2755a67ca21`;
+- `tools/hosting/tests/dynamic-client-resource-broker.php` —
+  `9a9df9f409d87555851aaf7e14c4f3e1e430d394bfd304ded2ab90bd6b2518af`.
+
+Promotion order for a new dynamic private release:
+
+1. run `create-artifact` for the reviewed public runtime, attestor contract,
+   and harnesses, recording its three printed pins independently;
+2. prepare a new immutable private content root in one exact mode, then create
+   the private `0400` activation and evidence request; both may contain
+   absolute server paths and therefore never enter Git, screenshots, or public
+   evidence;
+3. independently approve the current attestor SHA-256, execute the one-shot
+   attestor in the real production and App Review web handlers, and immediately
+   remove both one-shot mappings;
+4. assemble the sanitized public evidence. It contains variable names,
+   inventory mode/count/digest, input/runtime digests, harness results, and
+   signatures—never absolute private paths or secret bytes;
+5. promote and verify both realms atomically with all independent pins, then
+   prove live invalid-ID, double-hyphen, multi-entitlement, bilingual, and
+   structured-over-flat precedence behavior; and
+6. only then activate the matching catalog item. After rollback is separately
+   rehearsed and verified, remove the two legacy flat files in the next private
+   release so the steady state becomes `structured`.
+
+The compatibility-safe order is: additive Functions support, new broker
+runtime still serving the legacy `client-resources` files, attested structured
+private content, live invalid-ID/multi-entitlement checks, then catalog
+activation. To remove or roll back a private miniapp, deactivate it in the
+catalog first so new launches and existing introspection fail, then roll back
+its private release. No additional secret or environment variable is needed.
 
 The production Secret Manager inventory is exactly eight rings:
 `CLIENT_CODE_PEPPER_RING`, `CLIENT_INSTALLATION_PEPPER_RING`,
@@ -151,7 +272,7 @@ The release gate does not trust a typed `status: passed`. Before activation:
    `/opt/alt/[php-version]/usr/bin/php`; discover and measure the actual binary
    for this account rather than hard-coding that example. Include the pinned attestor
    `tools/hosting/protected-overlay-attestor.php` with SHA-256
-   `c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68`.
+   `d687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d`.
    Obtain its SHA-256 independently and have Ivan approve/record that pin in
    the secured release record **outside** the activation/evidence capsule.
 3. Run `protected-overlays:release create-activation` with the external
@@ -181,9 +302,9 @@ The release gate does not trust a typed `status: passed`. Before activation:
    runtime, reads each configured path from real `getenv` values, opens every
    request/config/factory/key file before measuring it, compares descriptor
    identity and metadata before and after the bounded read, re-hashes private
-   content, requires the pinned CLI's numeric `PHP_VERSION_ID` to equal the
+   content before and after the harness run, requires the pinned CLI's numeric `PHP_VERSION_ID` to equal the
    independently approved `phpCliVersionId`, and runs
-   the harness through the still-open measured descriptor
+   every realm's exact ordered harness list through the still-open measured descriptor
    (`/proc/self/fd/3`), so a path swap cannot select different bytes. It never invokes the FPM/CGI
    `PHP_BINARY`. Both child processes receive only `LANG=C` and `LC_ALL=C`;
    they never inherit attestation-key, broker-HMAC, path, or server variables
@@ -200,7 +321,9 @@ The release gate does not trust a typed `status: passed`. Before activation:
    two read-only attestation files and the pinned trust policy. Record its
    `evidenceSha256` independently, then pass that exact evidence file and pin
    to `promote` and `verify-deployment`. Never derive the expected pin from the
-   same capsule inside the promotion command.
+   same capsule inside the promotion command. The activation and evidence
+   request remain private `0400` inputs because they bind absolute paths; only
+   the sanitized evidence capsule may be retained in a public release record.
 
 Current external gate: **COMPLETED/VERIFIED 2026-08-24**. Hostinger proved the
 exact LiteSpeed serving identity, document root, pinned PHP CLI, immutable

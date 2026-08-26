@@ -22,13 +22,18 @@ export async function readStoredValue<T>(
   }
 }
 
+export interface PersistenceSettlement {
+  readonly isLatest: boolean;
+}
+
 export function createOrderedPersistence<T>(options: {
   persist: (value: T) => Promise<void>;
-  onCommit: (value: T) => void;
-  onFailure: (value: T) => void;
+  onCommit: (value: T, settlement: PersistenceSettlement) => void;
+  onFailure: (value: T, settlement: PersistenceSettlement) => void;
 }) {
   let queue: Promise<void> = Promise.resolve();
   let operationGeneration = 0;
+  let latestSubmissionId = 0;
 
   return {
     beginRead() {
@@ -42,16 +47,21 @@ export function createOrderedPersistence<T>(options: {
       };
     },
     submit(value: T): Promise<boolean> {
+      const submissionId = ++latestSubmissionId;
       operationGeneration += 1;
       const operation = queue.then(async () => {
         try {
           await options.persist(value);
           operationGeneration += 1;
-          options.onCommit(value);
+          options.onCommit(value, Object.freeze({
+            isLatest: submissionId === latestSubmissionId,
+          }));
           return true;
         } catch {
           operationGeneration += 1;
-          options.onFailure(value);
+          options.onFailure(value, Object.freeze({
+            isLatest: submissionId === latestSubmissionId,
+          }));
           return false;
         }
       });

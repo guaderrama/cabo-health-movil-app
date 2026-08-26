@@ -289,7 +289,7 @@ docs/operations/{hostinger-access,hostinger-backup,hostinger-deploy}.md
 - Create: `tools/hosting/verify-release.mjs`
 - Create: `tools/hosting/tests/release.test.mjs`
 
-- [ ] Write tests first requiring App ID `DQ8PH2DZ3R.com.cabohealth.app`, exactly the three canonical root paths, explicit exclusions for Client Resources `/launch/` and `/api/`, and no broad wildcard.
+- [ ] Write tests first requiring App ID `DQ8PH2DZ3R.com.cabohealth.app` and the exact ordered dynamic authority: four Client Resources `/launch/` and `/api/` exclusions, two App Review exclusions, exact Client Resources root inclusion, nested Client Resources exclusion, and `/apps/*/` inclusion limited to one canonical root segment.
 - [ ] Run `node --test tools/hosting/tests/release.test.mjs`; expected result: fail before AASA/manifest assembly exists.
 - [ ] Create extensionless AASA using modern ordered `components`; `.well-known/.htaccess` forces `application/json`, no redirect and controlled cache. Nested recipe/assets/API/broker routes stay on the web and never resolve to native routing.
 - [ ] Make `assemble-release --environment staging|production` build all apps, copy Staff Portal/legal/broker files into a versioned assembly directory, exclude source maps and calculate SHA-256 for every artifact. Staging maps the same generated sources to `/apps-staging/`; production maps to `/apps/`.
@@ -347,6 +347,6 @@ docs/operations/{hostinger-access,hostinger-backup,hostinger-deploy}.md
 - [ ] Client Resources public bundle contains no exclusive content; valid nonce succeeds once and private API rejects every invalid session.
 - [ ] Every miniapp exposes Report content, conforms to host age, has strict CSP and can be audit-unpublished; no page presents a marketplace/store or purchase CTA.
 - [ ] Brand, VoiceOver semantics, keyboard, contrast, Dynamic Type-equivalent zoom and Reduce Motion pass automated/manual QA.
-- [ ] AASA origin and Apple CDN contain only the three approved paths for `DQ8PH2DZ3R.com.cabohealth.app`.
+- [ ] AASA origin and Apple CDN are byte-identical to the nine-component authority for `DQ8PH2DZ3R.com.cabohealth.app`; broker/API/App Review/protected nested paths remain web-only, while any future `/apps/<id>/` root reaches native resolution and fails closed unless present and active in the validated catalog.
 - [ ] Hostinger backup, activation and rollback are verified without touching the other domain, DNS, MX or WordPress theme.
 - [ ] Production web/backend URLs remain stable before the iOS release candidate is built.

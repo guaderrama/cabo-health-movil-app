@@ -50,9 +50,21 @@ import {
   type CatalogDraftInput,
   validateCatalogDraftInput,
 } from './domain/catalogDraftAdmin.js';
+import {
+  CatalogAdminService,
+  CatalogConflictError,
+  CatalogInputError,
+  CatalogLimitError,
+  CatalogNotFoundError,
+  type CatalogItemDetailsInput,
+  type CatalogItemInput,
+  validateCatalogItemDetailsInput,
+  validateCatalogItemInput,
+} from './domain/catalogAdmin.js';
 import { AdminFirestoreDocumentDatabase } from './infrastructure/adminFirestoreDocumentDatabase.js';
 import { FirestoreClientAccessStore } from './repositories/firestoreClientAccessStore.js';
 import { FirestoreCatalogDraftStore } from './repositories/firestoreCatalogDraftStore.js';
+import { FirestoreCatalogStore } from './repositories/firestoreCatalogStore.js';
 import { FirestoreAppReviewSandboxStore } from './repositories/firestoreAppReviewSandboxStore.js';
 import { parsePepperRingSecret, VersionedHmac } from './security/versionedHmac.js';
 import {
@@ -225,6 +237,92 @@ export const adminArchiveCatalogDraft = onCall(baseCallableOptions, async (reque
     return Object.freeze({ archived: true, draft });
   } catch (error) {
     throw mapCatalogDraftError(error);
+  }
+});
+
+export const adminListCatalogItems = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  assertEmptyData(request.data, 'invalid_admin_input');
+  await assertProductionAdmin(request, 'client_resource_publish');
+  try {
+    return Object.freeze({ items: await createCatalogService().list() });
+  } catch {
+    throw new HttpsError('internal', 'catalog_operation_failed');
+  }
+});
+
+export const adminCreateCatalogItem = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  const actorUid = await assertProductionAdmin(request, 'client_resource_publish');
+  try {
+    const input = parseCatalogCreate(request.data);
+    const item = await createCatalogService().create(input.item, {
+      actorUid,
+      requestId: input.requestId,
+    });
+    return Object.freeze({ item });
+  } catch (error) {
+    throw mapCatalogError(error);
+  }
+});
+
+export const adminUpdateCatalogItem = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  const actorUid = await assertProductionAdmin(request, 'client_resource_publish');
+  try {
+    const input = parseCatalogUpdate(request.data);
+    const item = await createCatalogService().update(
+      input.id,
+      input.revision,
+      input.item,
+      { actorUid, requestId: input.requestId },
+    );
+    return Object.freeze({ item });
+  } catch (error) {
+    throw mapCatalogError(error);
+  }
+});
+
+export const adminSetCatalogItemActive = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  const actorUid = await assertProductionAdmin(request, 'client_resource_publish');
+  try {
+    const input = parseCatalogSetActive(request.data);
+    const item = await createCatalogService().setActive(
+      input.id,
+      input.revision,
+      input.active,
+      { actorUid, requestId: input.requestId },
+    );
+    return Object.freeze({ item });
+  } catch (error) {
+    throw mapCatalogError(error);
+  }
+});
+
+export const adminDeleteCatalogItem = onCall(baseCallableOptions, async (request) => {
+  assertStaffAppCheck(request);
+  const actorUid = await assertProductionAdmin(request, 'client_resource_publish');
+  try {
+    const input = parseCatalogDelete(request.data);
+    await createCatalogService().delete(
+      input.id,
+      input.revision,
+      { actorUid, requestId: input.requestId },
+    );
+    return Object.freeze({ deleted: true as const });
+  } catch (error) {
+    throw mapCatalogError(error);
+  }
+});
+
+export const getPublishedCatalog = onCall(baseCallableOptions, async (request) => {
+  assertClientAppCheck(request);
+  assertEmptyData(request.data, 'invalid_catalog_request');
+  try {
+    return await createCatalogService().publishedCatalog();
+  } catch {
+    throw new HttpsError('internal', 'catalog_operation_failed');
   }
 });
 
@@ -747,6 +845,14 @@ function createCatalogDraftService(): CatalogDraftAdminService {
   });
 }
 
+function createCatalogService(): CatalogAdminService {
+  return new CatalogAdminService({
+    store: new FirestoreCatalogStore(
+      new AdminFirestoreDocumentDatabase(getFirestore()),
+    ),
+  });
+}
+
 function createSessionManager(
   store: FirestoreClientAccessStore = createStore(),
 ): ClientSessionManager {
@@ -869,14 +975,15 @@ function assertStaffAppCheck(request: CallableRequest<unknown>): void {
 async function assertProductionAdmin(
   request: CallableRequest<unknown>,
   requiredPermission: ProductionAdminPermission,
-): Promise<void> {
+): Promise<string> {
   try {
-    await authorizeProductionAdmin({
+    const admin = await authorizeProductionAdmin({
       auth: request.auth,
       loadAdmin: loadProductionAdmin,
       nowMs: Date.now(),
       requiredPermission,
     });
+    return admin.uid;
   } catch {
     throw new HttpsError('permission-denied', 'admin_authorization_failed');
   }
@@ -1047,6 +1154,83 @@ function parseCatalogDraftArchive(value: unknown): Readonly<{
   return Object.freeze({ draftId: value.draftId, revision: value.revision });
 }
 
+function parseCatalogCreate(value: unknown): Readonly<{
+  item: CatalogItemInput;
+  requestId: string;
+}> {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['item', 'requestId'])
+    || typeof value.requestId !== 'string') {
+    throw new HttpsError('invalid-argument', 'invalid_admin_input');
+  }
+  return Object.freeze({
+    item: validateCatalogItemInput(value.item),
+    requestId: value.requestId,
+  });
+}
+
+function parseCatalogUpdate(value: unknown): Readonly<{
+  id: string;
+  item: CatalogItemDetailsInput;
+  requestId: string;
+  revision: number;
+}> {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['id', 'item', 'requestId', 'revision'])
+    || typeof value.id !== 'string'
+    || typeof value.requestId !== 'string'
+    || typeof value.revision !== 'number') {
+    throw new HttpsError('invalid-argument', 'invalid_admin_input');
+  }
+  return Object.freeze({
+    id: value.id,
+    item: validateCatalogItemDetailsInput(value.item),
+    requestId: value.requestId,
+    revision: value.revision,
+  });
+}
+
+function parseCatalogSetActive(value: unknown): Readonly<{
+  active: boolean;
+  id: string;
+  requestId: string;
+  revision: number;
+}> {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['active', 'id', 'requestId', 'revision'])
+    || typeof value.active !== 'boolean'
+    || typeof value.id !== 'string'
+    || typeof value.requestId !== 'string'
+    || typeof value.revision !== 'number') {
+    throw new HttpsError('invalid-argument', 'invalid_admin_input');
+  }
+  return Object.freeze({
+    active: value.active,
+    id: value.id,
+    requestId: value.requestId,
+    revision: value.revision,
+  });
+}
+
+function parseCatalogDelete(value: unknown): Readonly<{
+  id: string;
+  requestId: string;
+  revision: number;
+}> {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['id', 'requestId', 'revision'])
+    || typeof value.id !== 'string'
+    || typeof value.requestId !== 'string'
+    || typeof value.revision !== 'number') {
+    throw new HttpsError('invalid-argument', 'invalid_admin_input');
+  }
+  return Object.freeze({
+    id: value.id,
+    requestId: value.requestId,
+    revision: value.revision,
+  });
+}
+
 function parseInstallationId(value: unknown): string {
   if (
     !isRecord(value)
@@ -1115,6 +1299,23 @@ function mapCatalogDraftError(error: unknown): HttpsError {
     return new HttpsError('not-found', 'catalog_draft_not_found');
   }
   return new HttpsError('internal', 'catalog_draft_operation_failed');
+}
+
+function mapCatalogError(error: unknown): HttpsError {
+  if (error instanceof HttpsError) return error;
+  if (error instanceof CatalogInputError) {
+    return new HttpsError('invalid-argument', 'invalid_admin_input');
+  }
+  if (error instanceof CatalogConflictError) {
+    return new HttpsError('aborted', 'catalog_item_revision_conflict');
+  }
+  if (error instanceof CatalogNotFoundError) {
+    return new HttpsError('not-found', 'catalog_item_not_found');
+  }
+  if (error instanceof CatalogLimitError) {
+    return new HttpsError('resource-exhausted', 'catalog_item_limit');
+  }
+  return new HttpsError('internal', 'catalog_operation_failed');
 }
 
 function mapAppReviewClientError(error: unknown): HttpsError {

@@ -773,14 +773,29 @@ test('release v3 verifier keeps every external gate at its exact truthful state'
   );
 });
 
-test('release v3 verifier requires planned AASA client-resource inclusion and launch/api/staff exclusions', () => {
+test('release v3 verifier requires the ordered dynamic-catalog AASA authority', () => {
+  const manifest = JSON.parse(readFileSync(
+    join(projectRoot, 'release/app-store/3.0/release-manifest.json'),
+    'utf8',
+  ));
+  assert.deepEqual(manifest.aasaPlan.components, [
+    { '/': '/apps/client-resources/launch/', exclude: true },
+    { '/': '/apps/client-resources/launch/*', exclude: true },
+    { '/': '/apps/client-resources/api/', exclude: true },
+    { '/': '/apps/client-resources/api/*', exclude: true },
+    { '/': '/apps/app-review/', exclude: true },
+    { '/': '/apps/app-review/*', exclude: true },
+    { '/': '/apps/client-resources/' },
+    { '/': '/apps/client-resources/*', exclude: true },
+    { '/': '/apps/*/' },
+  ]);
   withFixture(
     (root) => mutateJson(root, 'release/app-store/3.0/release-manifest.json', (manifest) => {
       manifest.aasaPlan.components.splice(1, 1);
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /AASA plan must retain the ordered launch\/api exclusions and three exact app roots/iu);
+      assert.match(result.stderr, /AASA plan must retain the ordered protected-route exclusions and dynamic canonical-root include/iu);
     },
   );
 });

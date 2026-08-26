@@ -2,7 +2,7 @@ import { PUBLIC_CONTACT_URLS } from '../../constants/publicContacts';
 import {
   getPublicMiniapp,
   PUBLIC_MINIAPPS,
-  type PublicMiniappSlug,
+  type CatalogPublicMiniapp,
 } from '../../constants/publicMiniapps';
 
 export const EMBEDDED_PRESENTATION_FRAGMENTS = Object.freeze({
@@ -16,6 +16,7 @@ const ALLOWED_ROOT_FRAGMENTS: readonly string[] = Object.freeze([
   '#main-content',
   ...Object.values(EMBEDDED_PRESENTATION_FRAGMENTS),
 ]);
+const PUBLIC_ROUTE_ID_PATTERN = /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 export const APPROVED_EDITORIAL_SOURCE_URLS = Object.freeze({
   'healthy-recipes': Object.freeze([
@@ -68,6 +69,7 @@ export type NavigationDecision =
 
 export interface MiniappNavigationRequest {
   slug: string | string[] | undefined;
+  miniapp?: Readonly<CatalogPublicMiniapp>;
   url: string;
   platform: string;
   navigationType?: string;
@@ -77,9 +79,19 @@ export interface MiniappNavigationRequest {
 
 export function resolvePublicMiniappRouteSlug(
   value: string | string[] | undefined,
-): PublicMiniappSlug | undefined {
+  catalog: readonly Readonly<Pick<CatalogPublicMiniapp, 'slug'>>[] = PUBLIC_MINIAPPS,
+): string | undefined {
   if (typeof value !== 'string') return undefined;
-  return getPublicMiniapp(value)?.slug;
+  return catalog.find((miniapp) => miniapp.slug === value)?.slug;
+}
+
+export function shouldWaitForPublicCatalogRoute(
+  value: string | string[] | undefined,
+  isLoading: boolean,
+): boolean {
+  return isLoading
+    && typeof value === 'string'
+    && PUBLIC_ROUTE_ID_PATTERN.test(value);
 }
 
 export function classifyMiniappNavigation(
@@ -89,7 +101,7 @@ export function classifyMiniappNavigation(
   if (request.isPopup) return block('popup-target');
 
   const miniapp = typeof request.slug === 'string'
-    ? getPublicMiniapp(request.slug)
+    ? resolveNavigationMiniapp(request.slug, request.miniapp)
     : undefined;
   if (!miniapp) return block('unknown-miniapp');
 
@@ -99,7 +111,7 @@ export function classifyMiniappNavigation(
   const legalUrls = Object.values(miniapp.legalUrls);
   const legalDestination = legalUrls.includes(url as (typeof legalUrls)[number]);
   const contactDestination = contactUrls.includes(url);
-  const editorialSourceUrls: readonly string[] = APPROVED_EDITORIAL_SOURCE_URLS[miniapp.slug];
+  const editorialSourceUrls = getEditorialSourceUrls(miniapp.slug);
   const editorialSourceDestination = editorialSourceUrls.includes(url);
   if (legalDestination || contactDestination || editorialSourceDestination) {
     if (!isExplicitTopFrameIosClick(request)) {
@@ -155,12 +167,58 @@ export function classifyMiniappNavigation(
   if (rawPath.startsWith(miniapp.allowedPathPrefix)) {
     return { decision: 'allow-webview', reason: 'selected-miniapp-path' };
   }
-  if (PUBLIC_MINIAPPS.some((candidate) => (
-    candidate.slug !== miniapp.slug && rawPath.startsWith(candidate.allowedPathPrefix)
-  ))) {
+  if (isOtherPublicMiniappPath(rawPath, miniapp.slug)) {
     return block('cross-miniapp-path');
   }
   return block('unapproved-path');
+}
+
+function resolveNavigationMiniapp(
+  slug: string,
+  supplied: Readonly<CatalogPublicMiniapp> | undefined,
+): Readonly<CatalogPublicMiniapp> | undefined {
+  const candidate = supplied ?? getPublicMiniapp(slug);
+  if (!hasExactCatalogBoundary(candidate) || candidate.slug !== slug) {
+    return undefined;
+  }
+  return candidate;
+}
+
+function hasExactCatalogBoundary(value: unknown): value is Readonly<CatalogPublicMiniapp> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const miniapp = value as Record<string, unknown>;
+  if (
+    typeof miniapp.slug !== 'string'
+    || !PUBLIC_ROUTE_ID_PATTERN.test(miniapp.slug)
+    || ['app-review', 'shared', 'client-resources'].includes(miniapp.slug)
+    || miniapp.legalUrls === null
+    || typeof miniapp.legalUrls !== 'object'
+    || Array.isArray(miniapp.legalUrls)
+  ) return false;
+  const legalUrls = miniapp.legalUrls as Record<string, unknown>;
+  if (Object.keys(legalUrls).sort().join(',') !== 'privacy,reportContent,support,terms') {
+    return false;
+  }
+  const canonical = `https://cabohealth.org/apps/${miniapp.slug}/`;
+  return miniapp.canonicalUrl === canonical
+    && miniapp.universalLink === canonical
+    && miniapp.allowedPathPrefix === `/apps/${miniapp.slug}/`
+    && legalUrls.privacy === 'https://cabohealth.org/app/privacy/'
+    && legalUrls.terms === 'https://cabohealth.org/app/terms/'
+    && legalUrls.support === 'https://cabohealth.org/app/support/'
+    && legalUrls.reportContent === 'https://cabohealth.org/app/report-content/';
+}
+
+function getEditorialSourceUrls(slug: string): readonly string[] {
+  if (!Object.hasOwn(APPROVED_EDITORIAL_SOURCE_URLS, slug)) return [];
+  return APPROVED_EDITORIAL_SOURCE_URLS[
+    slug as keyof typeof APPROVED_EDITORIAL_SOURCE_URLS
+  ];
+}
+
+function isOtherPublicMiniappPath(rawPath: string, selectedSlug: string): boolean {
+  const matched = /^\/apps\/((?=.{1,64}(?:\/|$))[a-z0-9]+(?:-[a-z0-9]+)*)\//u.exec(rawPath);
+  return matched !== null && matched[1] !== selectedSlug;
 }
 
 function block(

@@ -45,7 +45,12 @@ export type StaffAuditAction =
   | 'client_code.revoked'
   | 'draft.created'
   | 'draft.updated'
-  | 'draft.archived';
+  | 'draft.archived'
+  | 'miniapp.created'
+  | 'miniapp.updated'
+  | 'miniapp.activated'
+  | 'miniapp.deactivated'
+  | 'miniapp.deleted';
 
 export interface StaffAuditEvent {
   readonly action: StaffAuditAction;

@@ -6,6 +6,7 @@ import {
   createOpaqueClientSession,
   normalizeClientAccessCredential,
   normalizeClientAccessCode,
+  parseClientGrantView,
 } from '../.test-build/features/clientAccess/clientAccessController.js';
 
 const future = Date.now() + 60_000;
@@ -44,6 +45,15 @@ const reviewGrant = Object.freeze({
     iconKey: 'featured',
     access: 'client',
   })]),
+});
+
+test('production grants reject resource IDs outside the exact 64-character kebab contract', () => {
+  for (const id of ['vip--lab', 'a'.repeat(65)]) {
+    assert.equal(parseClientGrantView({
+      ...grant,
+      resources: [{ ...grant.resources[0], id }],
+    }), null);
+  }
 });
 
 test('CH and AR credentials canonicalize to distinct 128-bit realms', () => {

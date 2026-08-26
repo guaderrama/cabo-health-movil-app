@@ -92,6 +92,42 @@ test('failed persistence does not commit and the same change can be retried', as
   ]);
 });
 
+test('the latest failed queued write can reconcile an optimistic intention to the last commit', async () => {
+  const slug = 'healthy-recipes';
+  const writes = [];
+  let committed = [];
+  let intended = [];
+  const writer = createOrderedPersistence({
+    persist: async (value) => {
+      writes.push(value);
+      if (writes.length === 2) throw new Error('private write detail');
+    },
+    onCommit: (value, settlement) => {
+      committed = value;
+      if (settlement.isLatest) intended = value;
+    },
+    onFailure: (_value, settlement) => {
+      if (settlement.isLatest) intended = committed;
+    },
+  });
+  const toggle = () => {
+    intended = intended.includes(slug) ? [] : [slug];
+    return writer.submit(intended);
+  };
+
+  const first = toggle();
+  const second = toggle();
+  assert.equal(await first, true);
+  assert.equal(await second, false);
+  assert.deepEqual(committed, [slug]);
+  assert.deepEqual(intended, [slug]);
+
+  assert.equal(await toggle(), true);
+  assert.deepEqual(writes, [[slug], [], []]);
+  assert.deepEqual(committed, []);
+  assert.deepEqual(intended, []);
+});
+
 const providerScenarios = [
   {
     name: 'Favorites',

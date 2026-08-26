@@ -153,7 +153,7 @@ FINAL_LEGAL_SHA256: dict[str, str | None] = {
 }
 # This remains unset until an independently reviewed legal/AASA/Firebase/
 # Hostinger readiness record is pinned in both release authorities.
-WEB_DEPLOYMENT_READINESS_SHA256: str | None = "269615eb1e9bce545ca5867dafe57c0184171b1fe3ed7117a0108f81286a0283"
+WEB_DEPLOYMENT_READINESS_SHA256: str | None = "bf2e2326d057a60131db535b57000f69f2b96a812929f1e6e27286e9a4f9522c"
 MINIAPP_FILE_PINS = (
     ("apps/.htaccess", 568, "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"),
     ("apps/clinic-guide/app.js", 3868, "f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7"),
@@ -4291,9 +4291,11 @@ def canonical_aasa_bytes() -> bytes:
                     {"/": "/apps/client-resources/launch/*", "exclude": True},
                     {"/": "/apps/client-resources/api/", "exclude": True},
                     {"/": "/apps/client-resources/api/*", "exclude": True},
-                    {"/": "/apps/healthy-recipes/"},
-                    {"/": "/apps/clinic-guide/"},
+                    {"/": "/apps/app-review/", "exclude": True},
+                    {"/": "/apps/app-review/*", "exclude": True},
                     {"/": "/apps/client-resources/"},
+                    {"/": "/apps/client-resources/*", "exclude": True},
+                    {"/": "/apps/*/"},
                 ],
             }],
         },
@@ -4403,6 +4405,38 @@ def publish_manifest_bound(
                 os.close(bundle_fd)
         finally:
             os.close(bundles_fd)
+
+        immutable_name = f"web-artifacts.{transport['releaseId']}.json"
+        immutable = stat_if_present(release_fd, immutable_name)
+        if immutable is None:
+            create_file(
+                release_fd,
+                immutable_name,
+                manifest_bytes,
+                f"release/{immutable_name}",
+                0o444,
+            )
+        else:
+            if (
+                not stat.S_ISREG(immutable.st_mode)
+                or immutable.st_uid != os.geteuid()
+                or immutable.st_nlink != 1
+                or immutable.st_mode & 0o777 != 0o444
+            ):
+                fail("WEB_IMMUTABLE_ARTIFACT_MANIFEST_COLLISION")
+            immutable_fd = os.open(immutable_name, OPEN_FILE_READ, dir_fd=release_fd)
+            try:
+                before = os.fstat(immutable_fd)
+                contents = read_all(immutable_fd)
+                after = os.fstat(immutable_fd)
+                if (
+                    contents != manifest_bytes
+                    or (before.st_dev, before.st_ino, before.st_size, before.st_mode, before.st_uid, before.st_nlink)
+                    != (after.st_dev, after.st_ino, after.st_size, after.st_mode, after.st_uid, after.st_nlink)
+                ):
+                    fail("WEB_IMMUTABLE_ARTIFACT_MANIFEST_COLLISION")
+            finally:
+                os.close(immutable_fd)
 
         existing = stat_if_present(release_fd, "web-artifacts.json")
         if existing is None:

@@ -10,6 +10,9 @@ type FavoriteListener = () => void;
 let favoriteSnapshot: string[] = [];
 const favoriteListeners = new Set<FavoriteListener>();
 const CANONICAL_FAVORITES = ['healthy-recipes', 'clinic-guide'] as const;
+const PUBLIC_ID_PATTERN = /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+const RESERVED_PRIVATE_IDS = new Set(['client-resources', 'app-review', 'shared']);
+const MAX_REMEMBERED_FAVORITES = 64;
 
 export function normalizePublicFavorites(favorites: readonly unknown[]): string[] {
   const requested = new Set(
@@ -24,6 +27,36 @@ export function togglePublicFavorite(favorites: readonly string[], id: string): 
     return normalized;
   }
   return normalizePublicFavorites(
+    normalized.includes(id)
+      ? normalized.filter((favorite) => favorite !== id)
+      : [...normalized, id],
+  );
+}
+
+export function normalizeRememberedPublicFavorites(favorites: readonly unknown[]): string[] {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const value of favorites) {
+    if (
+      typeof value !== 'string'
+      || !PUBLIC_ID_PATTERN.test(value)
+      || RESERVED_PRIVATE_IDS.has(value)
+      || seen.has(value)
+    ) continue;
+    seen.add(value);
+    normalized.push(value);
+    if (normalized.length === MAX_REMEMBERED_FAVORITES) break;
+  }
+  return normalized;
+}
+
+export function toggleRememberedPublicFavorite(
+  favorites: readonly string[],
+  id: string,
+): string[] {
+  const normalized = normalizeRememberedPublicFavorites(favorites);
+  if (!PUBLIC_ID_PATTERN.test(id) || RESERVED_PRIVATE_IDS.has(id)) return normalized;
+  return normalizeRememberedPublicFavorites(
     normalized.includes(id)
       ? normalized.filter((favorite) => favorite !== id)
       : [...normalized, id],

@@ -195,9 +195,12 @@ test('the broker surface is POST-only and uses a valid path-scoped secure cookie
   assert.match(apache, /<Files "runtime\.php">[\s\S]*Require all denied/u);
 });
 
-test('the PHP broker behavior suite is present and runs when PHP 8 is available', (context) => {
-  const harness = 'tools/hosting/tests/client-resource-broker.php';
-  assert.equal(existsSync(harness), true);
+test('the PHP broker behavior suites are present and run when PHP 8 is available', (context) => {
+  const harnesses = [
+    ['tools/hosting/tests/client-resource-broker.php', /client resource broker: ok/u],
+    ['tools/hosting/tests/dynamic-client-resource-broker.php', /dynamic client resource broker: ok/u],
+  ];
+  for (const [harness] of harnesses) assert.equal(existsSync(harness), true);
 
   const version = spawnSync('php', ['-r', 'echo PHP_VERSION_ID;'], { encoding: 'utf8' });
   if (version.error?.code === 'ENOENT') {
@@ -207,9 +210,11 @@ test('the PHP broker behavior suite is present and runs when PHP 8 is available'
   assert.equal(version.status, 0, version.stderr);
   assert.ok(Number(version.stdout) >= 80200, `PHP 8.2+ required, received ${version.stdout}`);
 
-  const result = spawnSync('php', [harness], { encoding: 'utf8' });
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stdout, /client resource broker: ok/u);
+  for (const [harness, output] of harnesses) {
+    const result = spawnSync('php', [harness], { encoding: 'utf8' });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, output);
+  }
 });
 
 test('production activation record remains fail closed and binds the verified private deployment', () => {
@@ -231,7 +236,7 @@ test('production activation record remains fail closed and binds the verified pr
   assert.match(runbook, /CLIENT_DELETION_RECEIPT_PEPPER_RING/u);
   assert.match(runbook, /CLIENT_BROKER_HMAC_KEY_RING/u);
   assert.match(runbook, /protected-overlay-attestor\.php/u);
-  assert.match(runbook, /c509d78a0c4696f36ba86543b7236142e4c241b14990921b912b0c60cc336c68/u);
+  assert.match(runbook, /d687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d/u);
   assert.match(runbook, /same effective web PHP handler/iu);
   assert.match(runbook, /LiteSpeed LSAPI runtime/iu);
   assert.match(runbook, /lowercase value `litespeed`/iu);

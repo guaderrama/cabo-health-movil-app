@@ -54,7 +54,7 @@ export function AuditPanel({ gateway, language, t }: AuditPanelProps) {
           <table>
             <thead>
               <tr>
-                <th scope="col">Event</th>
+                <th scope="col">{t('audit.event')}</th>
                 <th scope="col">{t('audit.actor')}</th>
                 <th scope="col">{t('audit.target')}</th>
                 <th scope="col">{t('audit.time')}</th>
@@ -63,8 +63,8 @@ export function AuditPanel({ gateway, language, t }: AuditPanelProps) {
             <tbody>
               {events.map((event) => (
                 <tr key={event.eventId}>
-                  <td><span className={`outcome-dot ${event.outcome}`} aria-hidden="true" />{formatAction(event.action)}</td>
-                  <td>{event.actorLabel}</td>
+                  <td><span className={`outcome-dot ${event.outcome}`} aria-hidden="true" />{formatAction(event.action, t)}</td>
+                  <td>{t('audit.staff')}</td>
                   <td>{event.targetSuffix}</td>
                   <td>{new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(event.occurredAtMs)}</td>
                 </tr>
@@ -77,6 +77,18 @@ export function AuditPanel({ gateway, language, t }: AuditPanelProps) {
   );
 }
 
-function formatAction(action: StaffAuditAction): string {
-  return action.split('.').map((part) => part.replaceAll('_', ' ')).join(' · ');
+function formatAction(action: StaffAuditAction, t: (key: StaffMessageKey) => string): string {
+  const keys: Record<StaffAuditAction, StaffMessageKey> = {
+    'client_code.created': 'audit.action.clientCodeCreated',
+    'client_code.revoked': 'audit.action.clientCodeRevoked',
+    'draft.created': 'audit.action.draftCreated',
+    'draft.updated': 'audit.action.draftUpdated',
+    'draft.archived': 'audit.action.draftArchived',
+    'miniapp.created': 'audit.action.miniappCreated',
+    'miniapp.updated': 'audit.action.miniappUpdated',
+    'miniapp.activated': 'audit.action.miniappActivated',
+    'miniapp.deactivated': 'audit.action.miniappDeactivated',
+    'miniapp.deleted': 'audit.action.miniappDeleted',
+  };
+  return t(keys[action]);
 }

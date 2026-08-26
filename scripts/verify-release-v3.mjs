@@ -2,6 +2,7 @@ import { lstatSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { AASA_COMPONENTS } from './generate-aasa.mjs';
 
 const REQUIRED_CAPTURE_PATHS = [
   'app.json',
@@ -17,15 +18,7 @@ const EXACT_PUBLIC_SLUGS = ['healthy-recipes', 'clinic-guide'];
 const EXACT_PUBLIC_URLS = EXACT_PUBLIC_SLUGS.map(
   (slug) => `https://cabohealth.org/apps/${slug}/`,
 );
-const EXACT_AASA_COMPONENTS = [
-  { '/': '/apps/client-resources/launch/', exclude: true },
-  { '/': '/apps/client-resources/launch/*', exclude: true },
-  { '/': '/apps/client-resources/api/', exclude: true },
-  { '/': '/apps/client-resources/api/*', exclude: true },
-  { '/': '/apps/healthy-recipes/' },
-  { '/': '/apps/clinic-guide/' },
-  { '/': '/apps/client-resources/' },
-];
+const EXACT_AASA_COMPONENTS = AASA_COMPONENTS;
 const EXACT_ASC_TESTFLIGHT_BUILDS = [
   { marketingVersion: '2.0.0', buildNumber: '1', status: 'expired' },
   { marketingVersion: '2.0.0', buildNumber: '2', status: 'expired' },
@@ -36,8 +29,8 @@ const EXACT_AUTHORITY_SHA256 = Object.freeze({
   'app.json': 'f044a607226a1c120bb8724404e1222a8bb0cc4883d8d7bda28e4b0ec78815a3',
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
   'constants/config.ts': '53d80e4cff7899a52717a284467a90a23dd9c3d604b14a4e0b7342934b072371',
-  'constants/publicMiniapps.ts': '803818464ef0663340d557b28fefd4dd6860abc3203fcbee7cbb14e7ef775a5e',
-  'release/app-store/3.0/release-manifest.json': '768c2d5d58f06234188fc36bcd89349c71c9077085dbe4361e0e94240f08f835',
+  'constants/publicMiniapps.ts': '893555428a9ac632f4964912cf98e7ba79f56c125ca6ba745bbdaf95910946aa',
+  'release/app-store/3.0/release-manifest.json': '83d992b2d060d6a59c10c4d6e2db457f73b0532eb93ec0055a881ccba3d4a6cf',
   'release/app-store/3.0/age-rating.json': 'b2bd2fdd9a5109a600923dee82eb0186df99a446128f3b05a37d54e2428e19bb',
   'release/app-store/3.0/app-privacy.json': '9e02d9906fb19bbaac82268c45022d071b216ea65c6e4e12cb9de72b72632b10',
 });
@@ -402,7 +395,7 @@ export function verifyCapturedReleaseV3(files) {
       exportCompliance: 'owner-confirmed-pending-exact-rc-review',
       firebaseAndHosting: 'core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e',
       hostedLegalClientAccess: 'deployed-and-verified-revised-public-payload',
-      aasa: 'deployed-and-verified-origin-and-apple-cdn',
+      aasa: 'dynamic-authority-local-candidate-pending-origin-and-apple-cdn',
       appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
       staffReviewAccess: 'owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested',
       clientAccessModel: 'pending-apple-review-determination',
@@ -423,8 +416,8 @@ export function verifyCapturedReleaseV3(files) {
 
     const aasa = manifest.aasaPlan;
     if (!sameJson(aasa?.components, EXACT_AASA_COMPONENTS)
-      || aasa?.status !== 'deployed-and-verified-origin-and-apple-cdn') {
-      errors.push('AASA plan must retain the ordered launch/api exclusions and three exact app roots');
+      || aasa?.status !== 'dynamic-authority-local-candidate-pending-origin-and-apple-cdn') {
+      errors.push('AASA plan must retain the ordered protected-route exclusions and dynamic canonical-root include');
     }
 
     if (manifest.candidate?.marketingVersion !== '3.0'

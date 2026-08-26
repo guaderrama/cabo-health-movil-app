@@ -15,7 +15,9 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const onCancelRef = useRef(props.onCancel);
+  const busyRef = useRef(Boolean(props.busy));
   onCancelRef.current = props.onCancel;
+  busyRef.current = Boolean(props.busy);
 
   useEffect(() => {
     if (!props.open) return undefined;
@@ -27,6 +29,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        if (busyRef.current) return;
         onCancelRef.current();
         return;
       }
@@ -61,7 +64,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 
   if (!props.open) return null;
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={props.onCancel}>
+    <div className="dialog-backdrop" role="presentation" onMouseDown={props.busy ? undefined : props.onCancel}>
       <section
         ref={dialogRef}
         aria-labelledby="confirm-title"
@@ -73,7 +76,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         <p className="eyebrow">CaboHealth</p>
         <h2 id="confirm-title">{props.title}</h2>
         <div className="dialog-actions">
-          <button ref={cancelRef} className="button secondary" type="button" onClick={props.onCancel}>
+          <button ref={cancelRef} className="button secondary" disabled={props.busy} type="button" onClick={props.onCancel}>
             {props.cancelLabel}
           </button>
           <button className="button danger" disabled={props.busy} type="button" onClick={props.onConfirm}>

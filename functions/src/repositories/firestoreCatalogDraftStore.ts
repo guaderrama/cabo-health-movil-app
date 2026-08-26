@@ -127,7 +127,7 @@ export class FirestoreCatalogDraftStore implements CatalogDraftStore {
     const events = documents.flatMap(({ id, value }) => {
       const parsed = parseStaffAudit(value);
       if (parsed === null) {
-        if (isRecord(value) && value.schemaVersion === 2) {
+        if (isRecord(value) && (value.schemaVersion === 2 || value.schemaVersion === 3)) {
           throw new Error('invalid_staff_audit_record');
         }
         return [];
@@ -220,19 +220,25 @@ function suffix(id: string): string {
 function parseStaffAudit(value: unknown): StaffAuditEvent | null {
   if (!isRecord(value)) return null;
   const action = value.action;
+  const schemaVersion = value.schemaVersion;
+  const expectedKeys = schemaVersion === 3
+    ? [
+      'action', 'actorLabel', 'actorUid', 'eventId', 'expiresAtMs',
+      'occurredAtMs', 'outcome', 'schemaVersion', 'targetSuffix',
+    ]
+    : [
+      'action', 'actorLabel', 'eventId', 'expiresAtMs', 'occurredAtMs',
+      'outcome', 'schemaVersion', 'targetSuffix',
+    ];
   if (
-    !hasExactKeys(value, [
-      'action',
-      'actorLabel',
-      'eventId',
-      'expiresAtMs',
-      'occurredAtMs',
-      'outcome',
-      'schemaVersion',
-      'targetSuffix',
-    ])
-    || value.schemaVersion !== 2
+    !hasExactKeys(value, expectedKeys)
+    || (schemaVersion !== 2 && schemaVersion !== 3)
     || !isStaffAuditAction(action)
+    || (schemaVersion === 3 && !isCatalogAuditAction(action))
+    || (schemaVersion === 3 && (
+      typeof value.actorUid !== 'string'
+      || !/^[A-Za-z0-9:_-]{1,128}$/u.test(value.actorUid)
+    ))
     || value.actorLabel !== 'Staff'
     || typeof value.eventId !== 'string'
     || !/^evt_[A-Za-z0-9_-]{24,64}$/u.test(value.eventId)
@@ -258,7 +264,16 @@ function isStaffAuditAction(value: unknown): value is StaffAuditAction {
     || value === 'client_code.revoked'
     || value === 'draft.created'
     || value === 'draft.updated'
-    || value === 'draft.archived';
+    || value === 'draft.archived'
+    || isCatalogAuditAction(value);
+}
+
+function isCatalogAuditAction(value: unknown): value is Extract<StaffAuditAction, `miniapp.${string}`> {
+  return value === 'miniapp.created'
+    || value === 'miniapp.updated'
+    || value === 'miniapp.activated'
+    || value === 'miniapp.deactivated'
+    || value === 'miniapp.deleted';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

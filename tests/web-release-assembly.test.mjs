@@ -374,6 +374,10 @@ test('the real assembler binds materialization to the independently reviewed dep
   const artifactPath = join(projectRoot, 'release/web-artifacts.json');
   const candidateArtifactPath = join(
     projectRoot,
+    'release/web-artifacts.web-v1-40869f4a540a56c420b198aea0fdf58a21053646d280d89ad64d105fd1808948.json',
+  );
+  const priorCandidateArtifactPath = join(
+    projectRoot,
     'release/web-artifacts.web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693.json',
   );
   const predecessorArtifactPath = join(
@@ -396,7 +400,7 @@ test('the real assembler binds materialization to the independently reviewed dep
       miniappCapsuleSha256: 'b569107971f2db55f900e595e08e4d9a8daa54ef4588850424d60a9a8c089929',
       privacySha256: '560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125',
       marketingSha256: '8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147',
-      aasaSha256: 'b7625ae96a6391ed5c08519c79053d30b7d26b5109c571e5405433e9098da772',
+      aasaSha256: 'e721827da1fe77d4a34247c9c2c515db73614545c6fb20e03f52b25e8594beae',
     },
     scope: {
       localAssemblyAuthorized: true,
@@ -410,6 +414,10 @@ test('the real assembler binds materialization to the independently reviewed dep
   ])), true);
   assert.equal(
     JSON.parse(readFileSync(candidateArtifactPath, 'utf8')).releaseId,
+    'web-v1-40869f4a540a56c420b198aea0fdf58a21053646d280d89ad64d105fd1808948',
+  );
+  assert.equal(
+    JSON.parse(readFileSync(priorCandidateArtifactPath, 'utf8')).releaseId,
     'web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693',
   );
   assert.equal(
@@ -426,7 +434,7 @@ test('the real assembler binds materialization to the independently reviewed dep
   });
 
   assert.equal(result.status, 0, result.stdout || result.stderr);
-  assert.match(result.stdout, /Checked web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693/u);
+  assert.match(result.stdout, /Checked web-v1-40869f4a540a56c420b198aea0fdf58a21053646d280d89ad64d105fd1808948/u);
   assert.deepEqual(readFileSync(artifactPath), artifactBefore);
   assert.deepEqual(existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null, bundlesBefore);
 });
@@ -773,8 +781,35 @@ test('post-pin materialization independently reaches legal, canonical AASA, and 
       encoding: 'utf8',
       input: canonicalJson(envelope()),
     });
-    return { root, publish };
+    return { root, publish, legalPins, patchedHelperPath };
   };
+
+  await context.test('valid publication preserves an immutable release-ID manifest', () => {
+    const { root, publish, legalPins, patchedHelperPath } = prepare();
+    const readiness = JSON.parse(readFileSync(
+      join(projectRoot, 'release/web-deployment-readiness.json'),
+      'utf8',
+    ));
+    readiness.reviewedInputs.privacySha256 = legalPins.privacy;
+    const readinessBytes = Buffer.from(canonicalJson(readiness));
+    writeFixturePath(
+      root,
+      'release/web-deployment-readiness.json',
+      readinessBytes,
+    );
+    const helper = readFileSync(patchedHelperPath, 'utf8').replace(
+      /WEB_DEPLOYMENT_READINESS_SHA256: str \| None = "[a-f0-9]{64}"/u,
+      `WEB_DEPLOYMENT_READINESS_SHA256: str | None = "${sha256(readinessBytes)}"`,
+    );
+    writeFileSync(patchedHelperPath, helper);
+    const result = publish();
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const current = readFileSync(join(root, 'release/web-artifacts.json'));
+    const releaseId = JSON.parse(current).releaseId;
+    const immutablePath = join(root, `release/web-artifacts.${releaseId}.json`);
+    assert.deepEqual(readFileSync(immutablePath), current);
+    assert.equal(statSync(immutablePath).mode & 0o777, 0o444);
+  });
 
   await context.test('final legal bytes', () => {
     const { root, publish } = prepare();

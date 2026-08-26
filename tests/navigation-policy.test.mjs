@@ -5,6 +5,7 @@ import {
   APPROVED_EDITORIAL_SOURCE_URLS,
   classifyMiniappNavigation,
   resolvePublicMiniappRouteSlug,
+  shouldWaitForPublicCatalogRoute,
 } from '../.test-build/features/launch/navigationPolicy.js';
 import {
   getConfirmedPublicContactUrls,
@@ -19,6 +20,18 @@ const syntheticContacts = [
   'https://maps.apple.com/?address=Exact%20Clinic',
   'https://wa.me/526241234567',
 ];
+const dynamicMiniapp = {
+  slug: 'sun-care',
+  canonicalUrl: 'https://cabohealth.org/apps/sun-care/',
+  universalLink: 'https://cabohealth.org/apps/sun-care/',
+  allowedPathPrefix: '/apps/sun-care/',
+  legalUrls: {
+    privacy: 'https://cabohealth.org/app/privacy/',
+    terms: 'https://cabohealth.org/app/terms/',
+    support: 'https://cabohealth.org/app/support/',
+    reportContent: 'https://cabohealth.org/app/report-content/',
+  },
+};
 
 function classify(url, overrides = {}, contactUrls = []) {
   return classifyMiniappNavigation({
@@ -400,4 +413,67 @@ test('resolves only a single exact approved route slug', () => {
   assert.equal(resolvePublicMiniappRouteSlug(['healthy-recipes']), undefined);
   assert.equal(resolvePublicMiniappRouteSlug('unknown'), undefined);
   assert.equal(resolvePublicMiniappRouteSlug(' healthy-recipes'), undefined);
+});
+
+test('a canonical public route waits for the initial live withdrawal check', () => {
+  assert.equal(shouldWaitForPublicCatalogRoute('sun-care', true), true);
+  assert.equal(shouldWaitForPublicCatalogRoute('sun-care', false), false);
+  for (const malformed of [undefined, ['sun-care'], 'sun--care', 'Sun-care', 'a'.repeat(65)]) {
+    assert.equal(shouldWaitForPublicCatalogRoute(malformed, true), false);
+  }
+});
+
+test('a validated runtime miniapp resolves and stays confined to its exact path prefix', () => {
+  assert.equal(resolvePublicMiniappRouteSlug('sun-care', [dynamicMiniapp]), 'sun-care');
+  assert.deepEqual(classifyMiniappNavigation({
+    slug: 'sun-care',
+    miniapp: dynamicMiniapp,
+    url: 'https://cabohealth.org/apps/sun-care/details/',
+    platform: 'ios',
+    navigationType: 'other',
+    isTopFrame: true,
+    isPopup: false,
+  }), { decision: 'allow-webview', reason: 'selected-miniapp-path' });
+  assert.deepEqual(classifyMiniappNavigation({
+    slug: 'sun-care',
+    miniapp: dynamicMiniapp,
+    url: 'https://cabohealth.org/apps/another-public-app/',
+    platform: 'ios',
+    navigationType: 'other',
+    isTopFrame: true,
+    isPopup: false,
+  }), { decision: 'block', reason: 'cross-miniapp-path' });
+});
+
+test('a malformed runtime miniapp object fails closed instead of throwing', () => {
+  assert.deepEqual(classifyMiniappNavigation({
+    slug: 'sun-care',
+    miniapp: {
+      slug: 'sun-care',
+      canonicalUrl: 'https://cabohealth.org/apps/sun-care/',
+      universalLink: 'https://cabohealth.org/apps/sun-care/',
+      allowedPathPrefix: '/apps/sun-care/',
+    },
+    url: 'https://cabohealth.org/apps/sun-care/',
+    platform: 'ios',
+    navigationType: 'other',
+    isTopFrame: true,
+    isPopup: false,
+  }), { decision: 'block', reason: 'unknown-miniapp' });
+});
+
+test('a runtime miniapp cannot add an external URL to the legal allowlist', () => {
+  const url = 'https://example.test/injected-legal';
+  assert.deepEqual(classifyMiniappNavigation({
+    slug: 'sun-care',
+    miniapp: {
+      ...dynamicMiniapp,
+      legalUrls: { ...dynamicMiniapp.legalUrls, injected: url },
+    },
+    url,
+    platform: 'ios',
+    navigationType: 'click',
+    isTopFrame: true,
+    isPopup: false,
+  }), { decision: 'block', reason: 'unknown-miniapp' });
 });

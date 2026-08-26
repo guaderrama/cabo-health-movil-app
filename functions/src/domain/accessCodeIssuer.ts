@@ -7,6 +7,7 @@ import {
 import { VersionedHmac } from '../security/versionedHmac.js';
 
 const MAX_RESOURCE_IDS = 12;
+const MAX_RESOURCE_ID_LENGTH = 64;
 const MAX_CODE_LIFETIME_MS = 366 * 24 * 60 * 60 * 1_000;
 const RESOURCE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
@@ -77,7 +78,10 @@ export class AccessCodeIssuer {
       || input.expiresAtMs > nowMs + MAX_CODE_LIFETIME_MS
       || resourceIds.length === 0
       || resourceIds.length > MAX_RESOURCE_IDS
-      || resourceIds.some((resourceId) => !RESOURCE_ID_PATTERN.test(resourceId))
+      || resourceIds.some((resourceId) => (
+        resourceId.length > MAX_RESOURCE_ID_LENGTH
+        || !RESOURCE_ID_PATTERN.test(resourceId)
+      ))
     ) {
       throw new AccessCodeInputError();
     }

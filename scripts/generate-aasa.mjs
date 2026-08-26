@@ -7,9 +7,11 @@ export const AASA_COMPONENTS = Object.freeze([
   Object.freeze({ '/': '/apps/client-resources/launch/*', exclude: true }),
   Object.freeze({ '/': '/apps/client-resources/api/', exclude: true }),
   Object.freeze({ '/': '/apps/client-resources/api/*', exclude: true }),
-  Object.freeze({ '/': '/apps/healthy-recipes/' }),
-  Object.freeze({ '/': '/apps/clinic-guide/' }),
+  Object.freeze({ '/': '/apps/app-review/', exclude: true }),
+  Object.freeze({ '/': '/apps/app-review/*', exclude: true }),
   Object.freeze({ '/': '/apps/client-resources/' }),
+  Object.freeze({ '/': '/apps/client-resources/*', exclude: true }),
+  Object.freeze({ '/': '/apps/*/' }),
 ]);
 
 export function readReleaseIdentity(root = process.cwd()) {

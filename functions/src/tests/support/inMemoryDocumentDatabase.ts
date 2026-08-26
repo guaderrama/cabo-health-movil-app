@@ -6,13 +6,18 @@ import type {
 export class InMemoryDocumentDatabase implements DocumentDatabase {
   readonly #documents = new Map<string, unknown>();
   readonly #rejectDuplicateWrites: boolean;
+  readonly #rejectReadsAfterWrites: boolean;
   #queue = Promise.resolve();
 
   constructor(
     seed: Readonly<Record<string, unknown>> = {},
-    options: Readonly<{ rejectDuplicateWrites?: boolean }> = {},
+    options: Readonly<{
+      rejectDuplicateWrites?: boolean;
+      rejectReadsAfterWrites?: boolean;
+    }> = {},
   ) {
     this.#rejectDuplicateWrites = options.rejectDuplicateWrites ?? false;
+    this.#rejectReadsAfterWrites = options.rejectReadsAfterWrites ?? false;
     for (const [path, value] of Object.entries(seed)) {
       this.#documents.set(path, structuredClone(value));
     }
@@ -23,8 +28,15 @@ export class InMemoryDocumentDatabase implements DocumentDatabase {
       const workingCopy = new Map(
         [...this.#documents].map(([path, value]) => [path, structuredClone(value)]),
       );
+      const writtenPaths = new Set<string>();
+      const rejectDuplicateWrites = this.#rejectDuplicateWrites;
+      const rejectReadsAfterWrites = this.#rejectReadsAfterWrites;
+      let hasWrite = false;
       const transaction: DocumentTransaction = {
         async get(path) {
+          if (rejectReadsAfterWrites && hasWrite) {
+            throw new Error(`document_read_after_write:${path}`);
+          }
           const value = workingCopy.get(path);
           return value === undefined ? undefined : structuredClone(value);
         },
@@ -42,13 +54,12 @@ export class InMemoryDocumentDatabase implements DocumentDatabase {
           workingCopy.set(path, structuredClone(value));
         },
       };
-      const writtenPaths = new Set<string>();
-      const rejectDuplicateWrites = this.#rejectDuplicateWrites;
       function registerWrite(path: string): void {
         if (rejectDuplicateWrites && writtenPaths.has(path)) {
           throw new Error(`duplicate_document_write:${path}`);
         }
         writtenPaths.add(path);
+        hasWrite = true;
       }
       const result = await operation(transaction);
       this.#documents.clear();

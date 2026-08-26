@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { captureReleaseV3, verifyCapturedReleaseV3 } from './verify-release-v3.mjs';
 import { validateScreenshotsManifest } from './apple-post-build-evidence.mjs';
+import { AASA_COMPONENTS } from './generate-aasa.mjs';
 
 const root = resolve(process.argv[2] ?? process.cwd());
 const releaseRoot = join(root, 'release/app-store/3.0');
@@ -27,15 +28,7 @@ const protectedClientResource = Object.freeze({
   url: 'https://cabohealth.org/apps/client-resources/',
 });
 
-const expectedAasaComponents = Object.freeze([
-  Object.freeze({ '/': '/apps/client-resources/launch/', exclude: true }),
-  Object.freeze({ '/': '/apps/client-resources/launch/*', exclude: true }),
-  Object.freeze({ '/': '/apps/client-resources/api/', exclude: true }),
-  Object.freeze({ '/': '/apps/client-resources/api/*', exclude: true }),
-  Object.freeze({ '/': '/apps/healthy-recipes/' }),
-  Object.freeze({ '/': '/apps/clinic-guide/' }),
-  Object.freeze({ '/': '/apps/client-resources/' }),
-]);
+const expectedAasaComponents = AASA_COMPONENTS;
 
 const expectedAscTestFlightBuilds = Object.freeze([
   Object.freeze({ marketingVersion: '2.0.0', buildNumber: '1', status: 'expired' }),
@@ -69,7 +62,7 @@ const expectedGateStates = Object.freeze({
   exportCompliance: 'owner-confirmed-pending-exact-rc-review',
   firebaseAndHosting: 'core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e',
   hostedLegalClientAccess: 'deployed-and-verified-revised-public-payload',
-  aasa: 'deployed-and-verified-origin-and-apple-cdn',
+  aasa: 'dynamic-authority-local-candidate-pending-origin-and-apple-cdn',
   appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
   staffReviewAccess: 'owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested',
   clientAccessModel: 'pending-apple-review-determination',
@@ -117,7 +110,7 @@ const expectedUnresolvedExternalGates = Object.freeze({
   brandEvidenceAttachment: 'pending-signed-owner-declaration',
   firebaseAndHosting: 'core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e',
   hostedLegalClientAccess: 'deployed-and-verified-revised-public-payload',
-  aasa: 'deployed-and-verified-origin-and-apple-cdn',
+  aasa: 'dynamic-authority-local-candidate-pending-origin-and-apple-cdn',
   appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
   staffReviewAccess: 'owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested',
   clientAccessModel: 'pending-apple-review-determination',
@@ -131,7 +124,7 @@ const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmeti
 const EXACT_REVIEWED_PROSE_SHA256 = Object.freeze({
   'age-rating.md': 'a6f11c4ab2005ec58498931571a2212b3804db2dcfb081d91aa8e40ce07bd023',
   'app-privacy.md': '8a8056418a26791cd8f669ca769aed05a22884f0e78ada1f1d3a96489c970796',
-  'content-rights-inventory.md': 'ca3888098e8e9c479f265dc30b11a0c1e1ee7b85fb03980d5cff4afa0ecabb4d',
+  'content-rights-inventory.md': '9ab8292ee7a9813685e1b482b4775952abd000d8bec3fc07333de22b62170346',
 });
 
 const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
@@ -184,7 +177,7 @@ const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
     paths: Object.freeze(['features/onboarding/IntroScreen.tsx']),
   }),
   Object.freeze({
-    sha256: '803818464ef0663340d557b28fefd4dd6860abc3203fcbee7cbb14e7ef775a5e',
+    sha256: '893555428a9ac632f4964912cf98e7ba79f56c125ca6ba745bbdaf95910946aa',
     paths: Object.freeze(['constants/publicMiniapps.ts']),
   }),
   Object.freeze({
@@ -224,7 +217,7 @@ const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
     paths: Object.freeze(['app-review-private/content/sample.json']),
   }),
   Object.freeze({
-    sha256: '90d3b21014dfb456c54029433875811e5727c4fc4b930934cfa4c5b77e9ae6ba',
+    sha256: '9aa0be98218af997636cab2aaa7b5e524077539f60c5977f45c04f32ee4616f5',
     paths: Object.freeze(['staff-portal/src/i18n/messages.ts']),
   }),
   Object.freeze({
@@ -698,8 +691,8 @@ function verifyManifest() {
   ) errors.push('App Review credential must remain isolated and pending activation');
   if (!hasExactKeys(aasaPlan, ['components', 'status'])
     || !equalJson(aasaPlan?.components, expectedAasaComponents)
-    || aasaPlan?.status !== 'deployed-and-verified-origin-and-apple-cdn') {
-    errors.push('AASA plan must retain the ordered launch/api exclusions and three exact app roots');
+    || aasaPlan?.status !== 'dynamic-authority-local-candidate-pending-origin-and-apple-cdn') {
+    errors.push('AASA plan must retain the ordered protected-route exclusions and dynamic canonical-root include');
   }
   if (!equalJson(urls, expectedUrls)) errors.push('Release manifest URLs do not match the exact canonical URLs');
   if (
@@ -1657,8 +1650,9 @@ function verifyScreenshots() {
 function verifyHumanChecklists() {
   const completedOwnerE2eGate = '- [x] Run a controlled production end-to-end check proving verified-email password-only sign-in, App Check, recent authentication, server-side permission enforcement, and no second-factor challenge.';
   const completedPublicWebGates = [
-    '- [x] Deploy the ordered AASA authority with four launch/API exclusions followed by the three exact allowed roots; verify origin bytes and Apple CDN bytes before Universal Link QA.',
+    '- [x] Preserve the prior seven-component AASA deployment evidence (four launch/API exclusions and three exact roots), including its verified origin and Apple CDN bytes.',
   ];
+  const pendingDynamicAasaGate = '- [ ] Deploy the nine-component dynamic AASA authority (four client launch/API exclusions, two App Review exclusions, exact Client Resources root include, nested Client Resources exclusion, and `/apps/*/` canonical-root include); then verify byte equality at origin and Apple CDN before Universal Link QA.';
   const completedRevisedPublicWebGates = [
     '- [x] Promote and origin-verify the revised Healthy Recipes and Clinic Guide citation bytes plus the updated Privacy disclosure, then regenerate the exact public-release evidence. Marketing, Terms, Support, Report Content, and AASA remained byte-identical to the preceding 17-file release.',
     '- [x] Verify the revised two-miniapp/Privacy payload is exact and no WordPress or unrelated file changes occurred during promotion. The preceding release remains retained as rollback.',
@@ -1695,6 +1689,9 @@ function verifyHumanChecklists() {
         if (!source.includes(completedPublicWebGate)) {
           errors.push('submission-gates.md must retain the exact completed AASA public-web evidence checkbox');
         }
+      }
+      if (!source.includes(pendingDynamicAasaGate)) {
+        errors.push('submission-gates.md must retain the exact pending dynamic AASA origin/CDN checkbox');
       }
       for (const completedRevisedPublicWebGate of completedRevisedPublicWebGates) {
         if (!source.includes(completedRevisedPublicWebGate)) {

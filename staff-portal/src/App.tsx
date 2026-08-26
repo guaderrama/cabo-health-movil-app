@@ -4,6 +4,7 @@ import { AppReviewCredentialPanel } from './components/AppReviewCredentialPanel.
 import { AuditPanel } from './components/AuditPanel.js';
 import { CatalogDraftPanel } from './components/CatalogDraftPanel.js';
 import { CodeAdminPanel } from './components/CodeAdminPanel.js';
+import { MiniappCatalogPanel } from './components/MiniappCatalogPanel.js';
 import { isStaffAuthorizationBoundaryError } from './domain/authBoundary.js';
 import type {
   FirebaseStaffServices,
@@ -19,7 +20,7 @@ interface AppProps {
   readonly services: FirebaseStaffServices;
 }
 
-type PortalTab = 'codes' | 'drafts' | 'audit' | 'app-review';
+type PortalTab = 'codes' | 'miniapps' | 'drafts' | 'audit' | 'app-review';
 type Authenticated = Extract<StaffSignInResult, { kind: 'authenticated' }>;
 type AuthStage = 'restoring' | 'sign-in' | 'authenticated';
 type AuthNotice = 'verification-sent' | 'password-reset-sent' | null;
@@ -156,8 +157,11 @@ export function App({ services }: AppProps) {
   if (!authenticated) return null;
 
   const canManageCodes = authenticated.session.permissions.includes('client_codes');
+  const canManageMiniapps = authenticated.session.scope === 'production'
+    && authenticated.session.permissions.includes('client_resource_publish');
   const canManageDrafts = authenticated.session.scope === 'production'
     && authenticated.session.permissions.includes('client_resource_drafts');
+  const showLegacyDrafts = canManageDrafts && !canManageMiniapps;
   const canManageAppReview = authenticated.session.scope === 'production'
     && authenticated.session.permissions.includes('app_review_credential');
 
@@ -172,7 +176,8 @@ export function App({ services }: AppProps) {
         </div>
         <nav aria-label="Staff workspace" className="portal-nav">
           {canManageCodes ? <NavButton active={tab === 'codes'} number="01" label={t('nav.codes')} onClick={() => setTab('codes')} /> : null}
-          {canManageDrafts ? <NavButton active={tab === 'drafts'} number="02" label={t('nav.drafts')} onClick={() => setTab('drafts')} /> : null}
+          {canManageMiniapps ? <NavButton active={tab === 'miniapps'} number="02" label={t('nav.miniapps')} onClick={() => setTab('miniapps')} /> : null}
+          {showLegacyDrafts ? <NavButton active={tab === 'drafts'} number="02" label={t('nav.drafts')} onClick={() => setTab('drafts')} /> : null}
           {canManageDrafts ? <NavButton active={tab === 'audit'} number="03" label={t('nav.audit')} onClick={() => setTab('audit')} /> : null}
           {canManageAppReview ? <NavButton active={tab === 'app-review'} number="04" label={t('nav.review')} onClick={() => setTab('app-review')} /> : null}
         </nav>
@@ -192,7 +197,8 @@ export function App({ services }: AppProps) {
       </aside>
       <main className="portal-main">
         {tab === 'codes' && canManageCodes ? <CodeAdminPanel gateway={authenticated.gateway} language={language} t={t} /> : null}
-        {tab === 'drafts' && canManageDrafts ? <CatalogDraftPanel gateway={authenticated.draftGateway} language={language} t={t} /> : null}
+        {tab === 'miniapps' && canManageMiniapps ? <MiniappCatalogPanel gateway={authenticated.catalogGateway} language={language} t={t} /> : null}
+        {tab === 'drafts' && showLegacyDrafts ? <CatalogDraftPanel gateway={authenticated.draftGateway} language={language} t={t} /> : null}
         {tab === 'audit' && canManageDrafts ? <AuditPanel gateway={authenticated.auditGateway} language={language} t={t} /> : null}
         {tab === 'app-review' && canManageAppReview ? <AppReviewCredentialPanel gateway={authenticated.appReviewGateway} language={language} t={t} /> : null}
       </main>
@@ -202,6 +208,8 @@ export function App({ services }: AppProps) {
 
 function firstPortalTab(authenticated: Authenticated): PortalTab {
   if (authenticated.session.permissions.includes('client_codes')) return 'codes';
+  if (authenticated.session.scope === 'production'
+    && authenticated.session.permissions.includes('client_resource_publish')) return 'miniapps';
   if (authenticated.session.scope === 'production'
     && authenticated.session.permissions.includes('client_resource_drafts')) return 'drafts';
   if (authenticated.session.scope === 'production'

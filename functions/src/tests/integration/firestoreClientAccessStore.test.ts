@@ -78,6 +78,30 @@ test('code creation fails closed when a requested client resource is not in the 
   assert.equal(database.serializedState().includes('_private_access_codes/'), false);
 });
 
+test('code creation rejects resource identifiers outside the exact 64-character kebab contract', async () => {
+  const overlongId = 'a'.repeat(65);
+  const database = new InMemoryDocumentDatabase({
+    [clientResourcePath(overlongId)]: {
+      ...resource,
+      id: overlongId,
+    },
+  });
+  const issuer = new AccessCodeIssuer({
+    codeHasher: hasher('code'),
+    nowMs: () => nowMs,
+    randomSource: () => Buffer.alloc(16, 6),
+    store: new FirestoreClientAccessStore(database),
+  });
+
+  for (const resourceId of ['vip--lab', overlongId]) {
+    await assert.rejects(issuer.issue({
+      expiresAtMs: nowMs + 86_400_000,
+      resourceIds: [resourceId],
+    }), (error: unknown) => error instanceof AccessCodeInputError);
+  }
+  assert.equal(database.serializedState().includes('_private_access_codes/'), false);
+});
+
 test('five malformed attempts lock only their hashed source-and-installation bucket', async () => {
   const database = new InMemoryDocumentDatabase({
     [clientResourcePath(resource.id)]: resource,

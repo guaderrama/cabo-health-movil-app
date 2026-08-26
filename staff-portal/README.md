@@ -5,7 +5,7 @@ Separate React/Vite surface for authorized CaboHealth staff at the canonical URL
 ## Design brief
 
 - **Audience:** authorized CaboHealth owner/operators.
-- **Outcome:** issue or revoke an individual code for every client the owner chooses, prepare bilingual resource drafts, inspect a read-only activity feed, and rotate the isolated App Review credential.
+- **Outcome:** issue or revoke an individual code for every client the owner chooses, publish and manage the bilingual miniapp catalog, inspect a read-only activity feed, and rotate the isolated App Review credential.
 - **Emphasis:** current access state and the next safe action.
 - **Tone:** calm, clinical, editorial.
 - **Density:** balanced; operational data stays scan-friendly without dashboard clutter.
@@ -21,9 +21,10 @@ Separate React/Vite surface for authorized CaboHealth staff at the canonical URL
 - A console-created account that has not completed setup is handled fail-closed: an unverified sign-in sends Firebase's verification email and signs out. Password reset always displays the same generic response whether or not the address is registered, preserving email-enumeration privacy.
 - The client imports Firebase Auth, App Check, and callable Functions only. It never imports Firestore.
 - `adminGetStaffSession` derives scope and permissions on the server. No URL, form, or browser storage can select scope.
-- Every staff callable requires `catalogAdmin: true`, an active exact `_private_admins/{uid}` document with `scope: "production"`, and the exact operation permission: `client_codes`, `client_resource_drafts`, or `app_review_credential`. Claims alone never authorize access. A review-sandbox staff session fails closed before any production callable can run.
+- Every staff callable requires `catalogAdmin: true`, an active exact `_private_admins/{uid}` document with `scope: "production"`, and the exact operation permission: `client_codes`, `client_resource_publish`, `client_resource_drafts`, or `app_review_credential`. Claims alone never authorize access. A review-sandbox staff session fails closed before any production callable can run.
 - Full client codes and the `AR-…` App Review credential are held in React/controller memory only, copied once, then explicitly cleared after a second confirmation.
-- Resource entries are drafts only. There is no publication or runtime-activation operation.
+- Only production owners with `client_resource_publish` see the Miniapps workspace. Creating an active miniapp, editing an active miniapp, activating, deactivating, and permanently deleting use server-authoritative optimistic revisions and immediately change the runtime catalog. The browser accepts only exact CaboHealth URLs under `https://cabohealth.org/apps/<slug>/`; the server validates the URL again.
+- The former draft gateway remains wired for compatibility with old `client_resource_drafts` sessions, but it is hidden whenever the owner has the real publication permission. Draft code cannot activate or publish anything.
 - CSP is present in HTML, portable `_headers`, and Hostinger/Apache `.htaccess`; build source maps are disabled. Its `connect-src` allowlist includes the exchange endpoint actually used by the pinned Firebase App Check SDK (`https://content-firebaseappcheck.googleapis.com`). A regression test derives this origin from the installed SDK and requires it in the HTML, portable headers, Apache policy, and live-release verifier so endpoint drift fails closed.
 - Every callable requests a limited-use App Check token because the production Functions consume replay-protected tokens and require the exact configured staff web App ID.
 - The release build requires externally pinned `APP_ENV`, project, web App ID, backend App ID parameter, and region. The public config must exactly match those pins. Missing or malformed values stop release builds; ordinary unconfigured test builds use `https://invalid.invalid` and remain closed.
@@ -75,7 +76,23 @@ Connected code callables:
 - `adminCreateClientAccessCode({ expiresAtMs, resourceIds })`
 - `adminRevokeClientAccessCode({ codeId })`
 
-Connected draft-only and read-only audit callables:
+Connected owner catalog callables:
+
+- `adminListCatalogItems({})`
+- `adminCreateCatalogItem({ requestId, item })`
+- `adminUpdateCatalogItem({ requestId, id, revision, item })`
+- `adminSetCatalogItemActive({ requestId, id, revision, active })`
+- `adminDeleteCatalogItem({ requestId, id, revision })`
+
+Catalog views contain `id`, `revision`, `createdAtMs`, and `updatedAtMs` in
+addition to the exact bilingual item fields. Mutation `requestId` values are
+UUID v4 identifiers created once per attempt; the one automatic lost-network
+retry reuses the same value. Revisions are compare-and-swap guards. A conflict
+is shown as a reload requirement, never overwritten locally. The server caps
+the catalog at 12 unique items and remains authoritative for permission, URL,
+schema, idempotency, audit, and runtime publication.
+
+Connected legacy draft and read-only audit callables:
 
 - `adminListCatalogDrafts({})`
 - `adminCreateCatalogDraft({ url, title, summary, icon, access })`
@@ -83,8 +100,10 @@ Connected draft-only and read-only audit callables:
 - `adminArchiveCatalogDraft({ draftId, revision })`
 - `adminListAudit({})`
 
-Draft mutations use optimistic revisions and return an exact draft view. There
-is no publish or runtime-activation callable.
+Legacy draft mutations use optimistic revisions and return an exact draft view.
+They have no publish or runtime-activation operation. The audit parser accepts
+code, legacy draft, and `miniapp.created|updated|activated|deactivated|deleted`
+events while continuing to reject extra or sensitive fields.
 
 Connected App Review credential callables:
 
@@ -96,12 +115,11 @@ shown once, is marked copied only after the Clipboard API succeeds, and cannot
 be hidden until staff confirms. Do not rotate it while App Review is active;
 rotation immediately invalidates the previous credential.
 
-For this release candidate, code issuance grants the single reviewed entitlement
-`client-resources`. Before activation, seed an active
-`_private_client_resources/client-resources` document exactly as specified by
-the backend operations runbook. The portal deliberately has no arbitrary
-resource-ID field; expanding the entitlement set requires a reviewed source
-change or a future server-authoritative resource-list callable.
+Code issuance grants the single group entitlement `client-resources`; the
+server expands that group to the currently active client miniapps. The portal
+deliberately has no arbitrary entitlement field. The owner changes membership
+through the permission-gated Miniapps workspace, so existing valid client codes
+follow the active server catalog without exposing private URLs in the browser.
 
 The production composition uses only these callable contracts through the one
 authorization-bound transport with limited-use App Check tokens. Missing

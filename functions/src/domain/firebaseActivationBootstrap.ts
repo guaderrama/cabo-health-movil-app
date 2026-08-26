@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 const OWNER_PERMISSIONS = Object.freeze([
   'client_codes',
   'client_resource_drafts',
+  'client_resource_publish',
   'app_review_credential',
 ] as const);
 

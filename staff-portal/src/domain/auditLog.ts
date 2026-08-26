@@ -8,7 +8,12 @@ export type StaffAuditAction =
   | 'client_code.revoked'
   | 'draft.created'
   | 'draft.updated'
-  | 'draft.archived';
+  | 'draft.archived'
+  | 'miniapp.created'
+  | 'miniapp.updated'
+  | 'miniapp.activated'
+  | 'miniapp.deactivated'
+  | 'miniapp.deleted';
 
 export interface StaffAuditEvent {
   readonly eventId: string;
@@ -98,7 +103,12 @@ function isAuditAction(value: unknown): value is StaffAuditAction {
     || value === 'client_code.revoked'
     || value === 'draft.created'
     || value === 'draft.updated'
-    || value === 'draft.archived';
+    || value === 'draft.archived'
+    || value === 'miniapp.created'
+    || value === 'miniapp.updated'
+    || value === 'miniapp.activated'
+    || value === 'miniapp.deactivated'
+    || value === 'miniapp.deleted';
 }
 
 function hasExactKeys(value: unknown, fields: readonly string[]): value is Record<string, unknown> {

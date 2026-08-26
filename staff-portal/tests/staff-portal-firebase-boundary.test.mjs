@@ -11,6 +11,7 @@ test('Firebase boundary requires App Check, verified password auth, and never im
   const gatewaySource = read('src/domain/staffGateway.ts');
   const adminGatewaySources = [
     gatewaySource,
+    read('src/domain/catalogItems.ts'),
     read('src/domain/catalogDrafts.ts'),
     read('src/domain/auditLog.ts'),
     read('src/domain/appReviewCredential.ts'),
@@ -47,6 +48,11 @@ test('Firebase boundary requires App Check, verified password auth, and never im
     'adminListClientAccessCodes',
     'adminCreateClientAccessCode',
     'adminRevokeClientAccessCode',
+    'adminListCatalogItems',
+    'adminCreateCatalogItem',
+    'adminUpdateCatalogItem',
+    'adminSetCatalogItemActive',
+    'adminDeleteCatalogItem',
     'adminListCatalogDrafts',
     'adminCreateCatalogDraft',
     'adminUpdateCatalogDraft',
@@ -63,10 +69,10 @@ test('Firebase boundary requires App Check, verified password auth, and never im
 test('the trusted server session has an exact schema with no client-supplied scope fields', () => {
   assert.deepEqual(parseServerStaffSession({
     scope: 'production',
-    permissions: ['client_codes', 'client_resource_drafts', 'app_review_credential'],
+    permissions: ['client_codes', 'client_resource_drafts', 'client_resource_publish', 'app_review_credential'],
   }), {
     scope: 'production',
-    permissions: ['client_codes', 'client_resource_drafts', 'app_review_credential'],
+    permissions: ['client_codes', 'client_resource_drafts', 'client_resource_publish', 'app_review_credential'],
   });
   assert.throws(() => parseServerStaffSession({
     scope: 'production',
@@ -75,16 +81,19 @@ test('the trusted server session has an exact schema with no client-supplied sco
   }), /staff_session_untrusted/u);
 });
 
-test('authenticated services expose real server-scoped draft and audit gateways with no unavailable stubs', () => {
+test('authenticated services expose the real owner catalog plus compatible draft and audit gateways', () => {
   const source = read('src/firebase/firebaseStaffServices.ts');
   const main = read('src/main.tsx');
   const app = read('src/App.tsx');
   const draftGateway = read('src/domain/catalogDrafts.ts');
+  const catalogGateway = read('src/domain/catalogItems.ts');
   const auditGateway = read('src/domain/auditLog.ts');
 
   assert.match(source, /createCatalogDraftGateway/u);
+  assert.match(source, /createCatalogItemGateway/u);
   assert.match(source, /createAuditGateway/u);
   assert.match(source, /draftGateway:/u);
+  assert.match(source, /catalogGateway:/u);
   assert.match(source, /auditGateway:/u);
   for (const callableName of [
     'adminListCatalogDrafts',
@@ -92,7 +101,15 @@ test('authenticated services expose real server-scoped draft and audit gateways 
     'adminUpdateCatalogDraft',
     'adminArchiveCatalogDraft',
   ]) assert.match(draftGateway, new RegExp(callableName, 'u'));
+  for (const callableName of [
+    'adminListCatalogItems',
+    'adminCreateCatalogItem',
+    'adminUpdateCatalogItem',
+    'adminSetCatalogItemActive',
+    'adminDeleteCatalogItem',
+  ]) assert.match(catalogGateway, new RegExp(callableName, 'u'));
   assert.match(auditGateway, /adminListAudit/u);
+  assert.match(app, /authenticated\.catalogGateway/u);
   assert.match(app, /authenticated\.draftGateway/u);
   assert.match(app, /authenticated\.auditGateway/u);
   assert.doesNotMatch(main, /createUnavailable|unavailableGateways/u);

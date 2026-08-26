@@ -27,6 +27,27 @@ export interface PublicMiniapp {
   legalUrls: PublicMiniappLegalUrls;
 }
 
+export type PublicCatalogIcon =
+  | 'laboratory'
+  | 'guide'
+  | 'nutrition'
+  | 'recipes'
+  | 'wellness'
+  | 'location'
+  | 'contact'
+  | 'featured';
+
+export type CatalogPublicMiniapp = Omit<
+  PublicMiniapp,
+  'slug' | 'canonicalUrl' | 'universalLink' | 'allowedPathPrefix'
+> & Readonly<{
+  slug: string;
+  canonicalUrl: string;
+  universalLink: string;
+  allowedPathPrefix: string;
+  iconKey?: PublicCatalogIcon;
+}>;
+
 export const PUBLIC_MINIAPP_SLUGS = ['healthy-recipes', 'clinic-guide'] as const;
 
 export const PUBLIC_MINIAPPS: readonly Readonly<PublicMiniapp>[] = Object.freeze([
@@ -113,7 +134,7 @@ export interface EditorialMetadata {
 }
 
 export function getEditorialMetadata(
-  miniapp: Readonly<PublicMiniapp>,
+  miniapp: Readonly<CatalogPublicMiniapp>,
 ): EditorialMetadata {
   return {
     access: miniapp.access,

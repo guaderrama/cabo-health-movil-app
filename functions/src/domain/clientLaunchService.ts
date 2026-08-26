@@ -6,6 +6,7 @@ import { ClientAccessPublicError } from './clientAccessRedeemer.js';
 
 const INSTALLATION_ID_PATTERN = /^[A-Za-z0-9_-]{32,128}$/u;
 const SUBJECT_UID_PATTERN = /^client_[A-Za-z0-9_-]{32}$/u;
+const MAX_RESOURCE_ID_LENGTH = 64;
 const RESOURCE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{32}$/u;
 const LAUNCH_LIFETIME_MS = 60_000;
@@ -65,6 +66,7 @@ export class ClientLaunchService {
   }>> {
     if (
       !INSTALLATION_ID_PATTERN.test(input.installationId)
+      || input.resourceId.length > MAX_RESOURCE_ID_LENGTH
       || !RESOURCE_ID_PATTERN.test(input.resourceId)
       || !SUBJECT_UID_PATTERN.test(input.subjectUid)
     ) throw new ClientAccessPublicError('invalid_access');
