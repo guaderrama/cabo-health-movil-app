@@ -65,7 +65,7 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
 // reviewed. The canonical source digest includes this guard after normalizing
 // only these five one-line authority values, so pinning is not circular while
 // every executable guard behavior remains part of the reviewed source.
-const BUILD_INPUT_ATTESTATION_SHA256 = null;
+const BUILD_INPUT_ATTESTATION_SHA256 = '7f25b5a0bd1b7765ec2053f841aaaac0f9abc688c77725b587553f4abb040f60';
 const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;
 const RC_ATTESTATION_SHA256 = null;
 const PINNED_EAS_CLI = 'eyJlbnRyeVJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvYmluL3J1biIsIm5vZGVFeGVjdXRhYmxlU2hhMjU2IjoiNWQ5ZDM4NzI5MTFlMjM0MGE0M2I3MDc5NjJlNjgxNDNkZThhNGU4ZDU0NjI4ODQ1YzBjNGYyZGUxZmI3Y2Q1YyIsIm5vZGVWZXJzaW9uIjoidjIyLjIyLjMiLCJwYWNrYWdlSnNvblJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvcGFja2FnZS5qc29uIiwicGFja2FnZVZlcnNpb24iOiIyMi4yLjAiLCJydW50aW1lUm9vdFJlbGF0aXZlUGF0aCI6Im5vZGVfbW9kdWxlcyIsInJ1bnRpbWVUcmVlU2hhMjU2IjoiZDA1NGU5ZTA5MjI0MWUxZDdkODY0OGI4NTQ3MmJmNGI3NjZmYThmMTFmMDZhNGRlMGQ1ODk4YjczNjdhNWNjYiJ9';
