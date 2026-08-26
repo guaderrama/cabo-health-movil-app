@@ -230,7 +230,7 @@
       "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
       "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
       "clientAccessModel": "pending-apple-review-determination",
-      "exactReleaseCandidate": "build-5-preconfigured-pending-build-input-attestation-eas-build-and-qa",
+      "exactReleaseCandidate": "build-5-input-attested-pending-eas-build-and-qa",
       "screenshots": "pending-exact-rc-capture",
       "appStoreConnectSave": "pending-final-save"
     }
@@ -257,7 +257,7 @@
     "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
     "privacyMapping": "pending-final-linkage-category-review-and-save",
     "brandAndContentRights": "pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis",
-    "exactReleaseCandidate": "build-5-preconfigured-pending-build-input-attestation-eas-build-and-qa",
+    "exactReleaseCandidate": "build-5-input-attested-pending-eas-build-and-qa",
     "testFlight": "build-4-obsolete-build-5-pending-build-upload-selection-and-physical-iphone-qa",
     "screenshots": "pending-exact-rc-capture",
     "accessibilityLabels": "pending-exact-rc-evidence",

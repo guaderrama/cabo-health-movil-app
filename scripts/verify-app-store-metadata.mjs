@@ -70,7 +70,7 @@ const expectedGateStates = Object.freeze({
   ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
   privacyMapping: 'pending-final-linkage-category-review-and-save',
   brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-  exactReleaseCandidate: 'build-5-preconfigured-pending-build-input-attestation-eas-build-and-qa',
+  exactReleaseCandidate: 'build-5-input-attested-pending-eas-build-and-qa',
   testFlight: 'build-4-obsolete-build-5-pending-build-upload-selection-and-physical-iphone-qa',
   accessibilityLabels: 'pending-exact-rc-evidence',
   screenshots: 'pending-exact-rc-capture',
@@ -115,7 +115,7 @@ const expectedUnresolvedExternalGates = Object.freeze({
   appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
   staffReviewAccess: 'owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested',
   clientAccessModel: 'pending-apple-review-determination',
-  exactReleaseCandidate: 'build-5-preconfigured-pending-build-input-attestation-eas-build-and-qa',
+  exactReleaseCandidate: 'build-5-input-attested-pending-eas-build-and-qa',
   screenshots: 'pending-exact-rc-capture',
   appStoreConnectSave: 'pending-final-save',
 });
@@ -1661,7 +1661,7 @@ function verifyHumanChecklists() {
     '- [x] Verify the revised two-miniapp/Privacy payload is exact and no WordPress or unrelated file changes occurred during promotion. The preceding release remains retained as rollback.',
   ];
   const completedVersionConfigurationGate = '- [x] Reconcile live App Store Connect and update `app.json` and `constants/config.ts` together to 3.0/build 5 for the pre-build configuration; build 4 is obsolete-source and no build 5 IPA or TestFlight upload exists yet.';
-  const pendingBuild5BuildInputAttestationGate = '- [ ] Regenerate, freeze, and independently review the build-5 canonical build-input attestation; bind the exact external mode-0600 production plist hash, sanitized resolved Expo config, `cabohealth-owner-prod`, source/lock/manifests/verifiers, recursive clean `node_modules` runtime, and Node executable bytes/version. Retain the build-4 attestation only as obsolete diagnostic evidence. Pin the new authority so `build:prod` can run with `--freeze-credentials` from a unique private snapshot outside Dropbox whose parent `node_modules` resolves every Expo plugin.';
+  const completedBuild5BuildInputAttestationGate = '- [x] Regenerate, freeze, and independently review the build-5 canonical build-input attestation; bind the exact external mode-0600 production plist hash, sanitized resolved Expo config, `cabohealth-owner-prod`, source/lock/manifests/verifiers, recursive clean `node_modules` runtime, and Node executable bytes/version. Retain the build-4 attestation only as obsolete diagnostic evidence. Pin the new authority so `build:prod` can run with `--freeze-credentials` from a unique private snapshot outside Dropbox whose parent `node_modules` resolves every Expo plugin.';
   const required = [
     'apple-review-remediation-2026-08-24.md',
     'testflight-what-to-test.md',
@@ -1707,8 +1707,8 @@ function verifyHumanChecklists() {
       if (!source.includes(completedVersionConfigurationGate)) {
         errors.push('submission-gates.md must retain the exact completed pre-build version configuration checkbox');
       }
-      if (!source.includes(pendingBuild5BuildInputAttestationGate)) {
-        errors.push('submission-gates.md must retain the exact pending build-5 build-input attestation checkbox');
+      if (!source.includes(completedBuild5BuildInputAttestationGate)) {
+        errors.push('submission-gates.md must retain the exact completed build-5 build-input attestation checkbox');
       }
       if (!source.includes(pendingPhysicalAppAttestGate)) {
         errors.push('submission-gates.md must retain the exact pending physical App Attest valid-flow checkbox');
@@ -1720,6 +1720,7 @@ function verifyHumanChecklists() {
         completedDynamicProtectedBrokerGate,
         ...completedRevisedPublicWebGates,
         completedVersionConfigurationGate,
+        completedBuild5BuildInputAttestationGate,
       ]
         .reduce((remaining, completedGate) => remaining.replace(completedGate, ''), source);
     }

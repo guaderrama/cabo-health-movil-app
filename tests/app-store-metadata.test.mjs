@@ -750,19 +750,19 @@ test('metadata verifier keeps the live-reconciled pre-build configuration gate c
   );
 });
 
-test('metadata verifier keeps the build-5 build-input attestation gate pending', () => {
+test('metadata verifier keeps the build-5 build-input attestation gate completed', () => {
   withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [ ] Regenerate, freeze, and independently review the build-5 canonical build-input attestation;',
         '- [x] Regenerate, freeze, and independently review the build-5 canonical build-input attestation;',
+        '- [ ] Regenerate, freeze, and independently review the build-5 canonical build-input attestation;',
       ));
     },
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /must retain the exact pending build-5 build-input attestation checkbox/i);
+      assert.match(result.stderr, /must retain the exact completed build-5 build-input attestation checkbox/i);
     },
   );
 });
