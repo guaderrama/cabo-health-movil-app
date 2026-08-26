@@ -66,7 +66,7 @@ One project removes the duplicated staging baseline. The project uses an owner-c
 
 Do not enable Analytics, advertising, tracking, Storage, or a service merely because it is available. Every enabled API or billable resource must support a documented runtime requirement.
 
-## Operational state — reviewed 2026-08-24
+## Operational state — reviewed through 2026-08-25
 
 Completed:
 
@@ -85,12 +85,14 @@ Completed:
 - Exact deny-all Firestore rules compiled and were released to `(default)` and `cabohealth-review-production`. Both index definitions were accepted; a later provider read confirmed all seven production and six review TTL field operations `ACTIVE`.
 - Sixteen independent production/review Secret Manager key rings were created with version label `2026-08`; no secret value was written to the repository or terminal transcript.
 - Dedicated Functions runtime identity `cabohealth-functions@cabohealth-owner-prod.iam.gserviceaccount.com` was created. On 2026-08-23 the owner authorized and provider re-reads verified conditional `roles/datastore.user` for exactly the two approved database names, custom role `cabohealthAuthUserDeletion` containing only `firebaseauth.users.delete`, self-resource `roles/iam.serviceAccountTokenCreator`, `roles/logging.logWriter`, and per-resource accessor bindings on exactly the 16 runtime secrets. Source and regression tests require every callable, scheduled job, and HTTP broker to use this identity.
-- The final strict Node.js 22 backend is deployed to `us-central1`; provider
-  inventories returned 26/26 Functions `ACTIVE` and 26/26 Cloud Run services
-  `Ready` with 100% latest-revision traffic. The eight writer services and
+- The final strict Node.js 22 backend is deployed to `us-central1`. Its original
+  post-migration inventory returned 26/26 Functions `ACTIVE`; the six guarded
+  dynamic-catalog callables were added on 2026-08-25, after which provider reads
+  returned the current 32/32 Functions `ACTIVE`. The eight writer services and
   deletion scheduler were restored to their exact reviewed running state after
   the serialized schema transition. Both HTTP brokers remain fail-closed to
-  unauthenticated callers.
+  unauthenticated callers. The exact dynamic activation evidence is recorded in
+  `docs/operations/dynamic-miniapp-production-activation-2026-08-25.md`.
 - Owner authorized seven-day Artifact Registry retention on 2026-08-23. Provider verification returned cleanup action `DELETE` for any Functions container image older than `604800s` in `us-central1/gcf-artifacts`.
 - The owner Auth identity, password-only bootstrap, zero-factor migration, fresh
   Staff Portal sign-in, and authenticated `adminGetStaffSession` HTTP 200 are
@@ -106,8 +108,10 @@ Not completed:
   and physical-iPhone proof remain pending.
 - No App Review credential has been issued; valid-credential, reciprocal-realm,
   deletion/retry, and two-iPhone E2E remain pending.
-- No exact 3.0/build 4 RC or TestFlight build exists, and nothing has been
-  submitted to Apple from this source state.
+- A signed 3.0/build 4 diagnostic build exists in TestFlight, but it predates
+  the completed dynamic-catalog source and is not the release candidate. No
+  exact 3.0/build 5 IPA, processed TestFlight candidate, physical-device QA, or
+  App Review submission exists from this source state.
 
 ## Current normative owner-auth references
 

@@ -56,6 +56,15 @@ test('production grants reject resource IDs outside the exact 64-character kebab
   }
 });
 
+test('production grants reject every permanently retired App Review resource id', () => {
+  for (const id of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
+    assert.equal(parseClientGrantView({
+      ...grant,
+      resources: [{ ...grant.resources[0], id }],
+    }, Date.now()), null, id);
+  }
+});
+
 test('CH and AR credentials canonicalize to distinct 128-bit realms', () => {
   assert.deepEqual(
     normalizeClientAccessCredential(' ch 01234567 89abcdef 01234567 89abcdef '),

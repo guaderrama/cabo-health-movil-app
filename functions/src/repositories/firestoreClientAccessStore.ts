@@ -29,7 +29,10 @@ import {
   type ConsumeLaunchCommand,
   type CreateLaunchCommand,
 } from '../domain/clientLaunchService.js';
-import { CATALOG_ID_PATTERN } from '../domain/catalogAdmin.js';
+import {
+  CATALOG_ID_PATTERN,
+  isPermanentlyRetiredCatalogId,
+} from '../domain/catalogAdmin.js';
 import { type WebSessionStore } from '../domain/webSessionBroker.js';
 import type { HmacDigest } from '../security/versionedHmac.js';
 
@@ -1273,6 +1276,7 @@ function parseClientResource(value: unknown): Readonly<ClientResourceView> | nul
     || value.access !== 'client'
     || typeof value.id !== 'string'
     || !CATALOG_ID_PATTERN.test(value.id)
+    || isPermanentlyRetiredCatalogId(value.id)
     || typeof value.iconKey !== 'string'
     || !isLocalizedText(value.title)
     || !isLocalizedText(value.summary)
@@ -1424,6 +1428,7 @@ function parseCatalogItem(value: unknown): Readonly<StoredCatalogClientItem> | n
     || !CATALOG_ICONS.has(value.icon)
     || typeof value.id !== 'string'
     || !CATALOG_ID_PATTERN.test(value.id)
+    || isPermanentlyRetiredCatalogId(value.id)
     || !Number.isSafeInteger(value.revision)
     || (value.revision as number) < 1
     || typeof value.url !== 'string'

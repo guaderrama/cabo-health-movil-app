@@ -5,7 +5,7 @@
     "appleId": "6758285327",
     "bundleIdentifier": "com.cabohealth.app",
     "marketingVersion": "3.0",
-    "buildNumber": "4",
+    "buildNumber": "5",
     "status": "pre-build-configured",
     "appJsonUpdated": true,
     "configUpdated": true,
@@ -13,13 +13,13 @@
     "testFlightBuildId": null
   },
   "ascEvidence": {
-    "observedAt": "2026-08-25T01:15:59Z",
+    "observedAt": "2026-08-26T06:44:42Z",
     "inspectionMode": "read-only",
     "currentRejectedVersion": "3.0",
-    "currentRejectedVersionStatus": "rejected",
+    "currentRejectedVersionStatus": "prepare-for-submission-with-unresolved-rejection",
     "versionEditable": true,
-    "selectedRejectedBinaryVersion": "2.0.0",
-    "selectedRejectedBuild": "2",
+    "selectedRejectedBinaryVersion": "3.0",
+    "selectedRejectedBuild": "4",
     "testFlightBuilds": [
       {
         "marketingVersion": "2.0.0",
@@ -35,11 +35,16 @@
         "marketingVersion": "2.0.0",
         "buildNumber": "3",
         "status": "expired"
+      },
+      {
+        "marketingVersion": "3.0",
+        "buildNumber": "4",
+        "status": "ready-to-submit-obsolete-source"
       }
     ],
-    "highestTestFlightBuild": "3",
-    "highestTestFlightBuildStatus": "expired",
-    "nextCandidateBuild": "4",
+    "highestTestFlightBuild": "4",
+    "highestTestFlightBuildStatus": "ready-to-submit-obsolete-source",
+    "nextCandidateBuild": "5",
     "nextCandidateBuildAvailable": true,
     "latestReviewDate": "2026-02-24",
     "latestReviewGuidelines": [
@@ -118,9 +123,9 @@
       "visibleSettingsEntry": false,
       "consumerBinaryReachable": false,
       "ownerDirectUrlOnly": true,
-      "draftOnlyCatalogChanges": true,
-      "directPublishing": false,
-      "arbitraryRuntimeCatalog": false
+      "draftOnlyCatalogChanges": false,
+      "directPublishing": true,
+      "arbitraryRuntimeCatalog": true
     },
     "access": "mixed-public-and-existing-client-eligibility",
     "accountRequired": {
@@ -133,7 +138,7 @@
     "purchases": false,
     "userGeneratedContent": false,
     "nativeWebBridge": false,
-    "remoteCatalog": false,
+    "remoteCatalog": true,
     "sensitivePermissions": []
   },
   "reviewCredential": {
@@ -160,7 +165,7 @@
       { "/": "/apps/client-resources/*", "exclude": true },
       { "/": "/apps/*/" }
     ],
-    "status": "dynamic-authority-local-candidate-pending-origin-and-apple-cdn"
+    "status": "dynamic-authority-verified-origin-and-apple-cdn"
   },
   "urls": {
     "support": "https://cabohealth.org/app/support/",
@@ -219,13 +224,13 @@
       "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
       "allContentRights": "inventory-revised-pending-owner-reconfirmation-and-per-family-basis",
       "brandEvidenceAttachment": "pending-signed-owner-declaration",
-      "firebaseAndHosting": "core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e",
+      "firebaseAndHosting": "dynamic-public-and-protected-brokers-deployed-and-verified-pending-physical-app-attest-valid-flow-and-exact-rc-e2e",
       "hostedLegalClientAccess": "deployed-and-verified-revised-public-payload",
-      "aasa": "dynamic-authority-local-candidate-pending-origin-and-apple-cdn",
+      "aasa": "dynamic-authority-verified-origin-and-apple-cdn",
       "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
       "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
       "clientAccessModel": "pending-apple-review-determination",
-      "exactReleaseCandidate": "version-build-and-input-attested-pending-eas-environment-build-and-qa",
+      "exactReleaseCandidate": "build-5-preconfigured-pending-build-input-attestation-eas-build-and-qa",
       "screenshots": "pending-exact-rc-capture",
       "appStoreConnectSave": "pending-final-save"
     }
@@ -243,17 +248,17 @@
     "phiRemediation": "verified-owner-authorized",
     "medicalDevice": "owner-confirmed-pending-exact-rc-review",
     "exportCompliance": "owner-confirmed-pending-exact-rc-review",
-    "firebaseAndHosting": "core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e",
+    "firebaseAndHosting": "dynamic-public-and-protected-brokers-deployed-and-verified-pending-physical-app-attest-valid-flow-and-exact-rc-e2e",
     "hostedLegalClientAccess": "deployed-and-verified-revised-public-payload",
-    "aasa": "dynamic-authority-local-candidate-pending-origin-and-apple-cdn",
+    "aasa": "dynamic-authority-verified-origin-and-apple-cdn",
     "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
     "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
     "clientAccessModel": "pending-apple-review-determination",
     "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
     "privacyMapping": "pending-final-linkage-category-review-and-save",
     "brandAndContentRights": "pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis",
-    "exactReleaseCandidate": "version-build-and-input-attested-pending-eas-environment-build-and-qa",
-    "testFlight": "pending-build-upload-selection-and-physical-iphone-qa",
+    "exactReleaseCandidate": "build-5-preconfigured-pending-build-input-attestation-eas-build-and-qa",
+    "testFlight": "build-4-obsolete-build-5-pending-build-upload-selection-and-physical-iphone-qa",
     "screenshots": "pending-exact-rc-capture",
     "accessibilityLabels": "pending-exact-rc-evidence",
     "appStoreConnect": "pending-final-save",

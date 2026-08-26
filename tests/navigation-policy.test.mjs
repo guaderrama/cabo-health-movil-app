@@ -423,6 +423,12 @@ test('a canonical public route waits for the initial live withdrawal check', () 
   }
 });
 
+test('permanently retired public routes fail immediately instead of waiting for catalog refresh', () => {
+  for (const slug of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
+    assert.equal(shouldWaitForPublicCatalogRoute(slug, true), false, slug);
+  }
+});
+
 test('a validated runtime miniapp resolves and stays confined to its exact path prefix', () => {
   assert.equal(resolvePublicMiniappRouteSlug('sun-care', [dynamicMiniapp]), 'sun-care');
   assert.deepEqual(classifyMiniappNavigation({
@@ -443,6 +449,33 @@ test('a validated runtime miniapp resolves and stays confined to its exact path 
     isTopFrame: true,
     isPopup: false,
   }), { decision: 'block', reason: 'cross-miniapp-path' });
+});
+
+test('runtime route resolution rejects every permanently retired supplied miniapp id', () => {
+  for (const slug of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
+    assert.equal(resolvePublicMiniappRouteSlug(slug, [{ ...dynamicMiniapp, slug }]), undefined, slug);
+  }
+});
+
+test('runtime navigation rejects every permanently retired supplied miniapp boundary', () => {
+  for (const slug of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
+    const url = `https://cabohealth.org/apps/${slug}/`;
+    assert.deepEqual(classifyMiniappNavigation({
+      slug,
+      miniapp: {
+        ...dynamicMiniapp,
+        slug,
+        canonicalUrl: url,
+        universalLink: url,
+        allowedPathPrefix: `/apps/${slug}/`,
+      },
+      url,
+      platform: 'ios',
+      navigationType: 'other',
+      isTopFrame: true,
+      isPopup: false,
+    }), { decision: 'block', reason: 'unknown-miniapp' }, slug);
+  }
 });
 
 test('a malformed runtime miniapp object fails closed instead of throwing', () => {

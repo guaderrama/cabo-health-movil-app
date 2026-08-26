@@ -8,7 +8,7 @@ Status: **DATA COLLECTED; FINAL DATA TYPES AND LINKAGE PENDING.** The retained p
 - Client Resources uses a pseudonymous Firebase UID. The app asks for no client name, email, phone number, profile, diagnosis, or treatment information.
 - A random installation identifier is generated locally and held in iOS SecureStore to bind a grant to one installation and limit code sharing.
 - Firebase App Check protects callable access. Production iOS uses App Attest with DeviceCheck fallback.
-- The inspected signed 3.0/build 4 IPA embeds a FirebaseAuth privacy manifest that declares **User ID** as linked to the user for **App Functionality**, and **Other Diagnostic Data** as not linked to the user for **Analytics**. Both entries declare no tracking.
+- The inspected signed 3.0/build 4 diagnostic IPA embeds a FirebaseAuth privacy manifest that declares **User ID** as linked to the user for **App Functionality**, and **Other Diagnostic Data** as not linked to the user for **Analytics**. Both entries declare no tracking. Build 4 is obsolete-source evidence and cannot satisfy the exact 3.0/build 5 RC gate.
 - The Firebase Analytics product remains disabled and the app has no analytics feature. “Analytics” above is the Apple-selectable purpose declared by the FirebaseAuth SDK for its Other Diagnostic Data; it does not mean that Firebase Analytics is enabled.
 - Eligibility codes are 128-bit secrets. The backend stores keyed versioned digests, not plaintext codes or client names.
 - Local favorites, language, appearance, haptics, effects, recipe favorite keys, and checklist state remain on-device.

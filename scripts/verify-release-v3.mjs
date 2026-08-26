@@ -23,14 +23,15 @@ const EXACT_ASC_TESTFLIGHT_BUILDS = [
   { marketingVersion: '2.0.0', buildNumber: '1', status: 'expired' },
   { marketingVersion: '2.0.0', buildNumber: '2', status: 'expired' },
   { marketingVersion: '2.0.0', buildNumber: '3', status: 'expired' },
+  { marketingVersion: '3.0', buildNumber: '4', status: 'ready-to-submit-obsolete-source' },
 ];
 const EXACT_ASC_REVIEW_GUIDELINES = ['1.4.1', '2.1', '4.1'];
 const EXACT_AUTHORITY_SHA256 = Object.freeze({
-  'app.json': 'f044a607226a1c120bb8724404e1222a8bb0cc4883d8d7bda28e4b0ec78815a3',
+  'app.json': '957fe5cecc0f86ac11b7d3f69db6cf7f5f002343d745ee358dc8b80528a8bee9',
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
-  'constants/config.ts': '53d80e4cff7899a52717a284467a90a23dd9c3d604b14a4e0b7342934b072371',
+  'constants/config.ts': 'dbb78626a1b1494f159bff47e3b713d0d95ae3a8b70c025f62f2eda4fc69d3a7',
   'constants/publicMiniapps.ts': '893555428a9ac632f4964912cf98e7ba79f56c125ca6ba745bbdaf95910946aa',
-  'release/app-store/3.0/release-manifest.json': '83d992b2d060d6a59c10c4d6e2db457f73b0532eb93ec0055a881ccba3d4a6cf',
+  'release/app-store/3.0/release-manifest.json': '31116abf403a411f825f2f065b1d8336706b6bfe5dc3265d1013ed3f5479ee87',
   'release/app-store/3.0/age-rating.json': 'b2bd2fdd9a5109a600923dee82eb0186df99a446128f3b05a37d54e2428e19bb',
   'release/app-store/3.0/app-privacy.json': '9e02d9906fb19bbaac82268c45022d071b216ea65c6e4e12cb9de72b72632b10',
 });
@@ -115,9 +116,9 @@ export function verifyCapturedReleaseV3(files) {
 
   if (appJson && (
     appJson.expo?.version !== '3.0'
-    || appJson.expo?.ios?.buildNumber !== '4'
+    || appJson.expo?.ios?.buildNumber !== '5'
   )) {
-    errors.push('app.json must remain 3.0/build 4 after live ASC reconciliation');
+    errors.push('app.json must remain 3.0/build 5 after live ASC reconciliation');
   }
   const productionProfile = easJson?.build?.production;
   if (!hasExactKeys(productionProfile, ['environment', 'node', 'env', 'ios'])
@@ -130,8 +131,8 @@ export function verifyCapturedReleaseV3(files) {
     errors.push('eas.json production must pin environment production, Node 22.22.3, APP_ENV production, and m-medium');
   }
   if (!/version:\s*['"]3\.0['"]/u.test(config)
-    || !/buildNumber:\s*['"]4['"]/u.test(config)) {
-    errors.push('constants/config.ts must remain 3.0/build 4 after live ASC reconciliation');
+    || !/buildNumber:\s*['"]5['"]/u.test(config)) {
+    errors.push('constants/config.ts must remain 3.0/build 5 after live ASC reconciliation');
   }
 
   const sourceSlugs = extractPublicSlugs(publicSource);
@@ -347,10 +348,10 @@ export function verifyCapturedReleaseV3(files) {
     if (staff?.visibleSettingsEntry !== false
       || staff?.consumerBinaryReachable !== false
       || staff?.ownerDirectUrlOnly !== true
-      || staff?.draftOnlyCatalogChanges !== true
-      || staff?.directPublishing !== false
-      || staff?.arbitraryRuntimeCatalog !== false) {
-      errors.push('owner Staff Portal must remain direct-URL-only and unreachable from the consumer binary');
+      || staff?.draftOnlyCatalogChanges !== false
+      || staff?.directPublishing !== true
+      || staff?.arbitraryRuntimeCatalog !== true) {
+      errors.push('owner Staff Portal must remain direct-URL-only, consumer-unreachable, and authorized for the deployed runtime catalog');
     }
 
     const review = manifest.reviewCredential;
@@ -393,17 +394,17 @@ export function verifyCapturedReleaseV3(files) {
       phiRemediation: 'verified-owner-authorized',
       medicalDevice: 'owner-confirmed-pending-exact-rc-review',
       exportCompliance: 'owner-confirmed-pending-exact-rc-review',
-      firebaseAndHosting: 'core-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e',
+      firebaseAndHosting: 'dynamic-public-and-protected-brokers-deployed-and-verified-pending-physical-app-attest-valid-flow-and-exact-rc-e2e',
       hostedLegalClientAccess: 'deployed-and-verified-revised-public-payload',
-      aasa: 'dynamic-authority-local-candidate-pending-origin-and-apple-cdn',
+      aasa: 'dynamic-authority-verified-origin-and-apple-cdn',
       appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
       staffReviewAccess: 'owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested',
       clientAccessModel: 'pending-apple-review-determination',
       ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
       privacyMapping: 'pending-final-linkage-category-review-and-save',
       brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-      exactReleaseCandidate: 'version-build-and-input-attested-pending-eas-environment-build-and-qa',
-      testFlight: 'pending-build-upload-selection-and-physical-iphone-qa',
+      exactReleaseCandidate: 'build-5-preconfigured-pending-build-input-attestation-eas-build-and-qa',
+      testFlight: 'build-4-obsolete-build-5-pending-build-upload-selection-and-physical-iphone-qa',
       screenshots: 'pending-exact-rc-capture',
       accessibilityLabels: 'pending-exact-rc-evidence',
       appStoreConnect: 'pending-final-save',
@@ -416,36 +417,36 @@ export function verifyCapturedReleaseV3(files) {
 
     const aasa = manifest.aasaPlan;
     if (!sameJson(aasa?.components, EXACT_AASA_COMPONENTS)
-      || aasa?.status !== 'dynamic-authority-local-candidate-pending-origin-and-apple-cdn') {
+      || aasa?.status !== 'dynamic-authority-verified-origin-and-apple-cdn') {
       errors.push('AASA plan must retain the ordered protected-route exclusions and dynamic canonical-root include');
     }
 
     if (manifest.candidate?.marketingVersion !== '3.0'
-      || manifest.candidate?.buildNumber !== '4'
+      || manifest.candidate?.buildNumber !== '5'
       || manifest.candidate?.status !== 'pre-build-configured'
       || manifest.candidate?.appJsonUpdated !== true
       || manifest.candidate?.configUpdated !== true
       || manifest.candidate?.rcSourceSha !== null
       || manifest.candidate?.testFlightBuildId !== null) {
-      errors.push('candidate must remain truthful pre-build-configured 3.0/build 4 without premature RC evidence');
+      errors.push('candidate must remain truthful pre-build-configured 3.0/build 5 without premature RC evidence');
     }
     const asc = manifest.ascEvidence;
-    if (asc?.observedAt !== '2026-08-25T01:15:59Z'
+    if (asc?.observedAt !== '2026-08-26T06:44:42Z'
       || asc?.inspectionMode !== 'read-only'
       || asc?.currentRejectedVersion !== '3.0'
-      || asc?.currentRejectedVersionStatus !== 'rejected'
+      || asc?.currentRejectedVersionStatus !== 'prepare-for-submission-with-unresolved-rejection'
       || asc?.versionEditable !== true
-      || asc?.selectedRejectedBinaryVersion !== '2.0.0'
-      || asc?.selectedRejectedBuild !== '2'
+      || asc?.selectedRejectedBinaryVersion !== '3.0'
+      || asc?.selectedRejectedBuild !== '4'
       || !sameJson(asc?.testFlightBuilds, EXACT_ASC_TESTFLIGHT_BUILDS)
-      || asc?.highestTestFlightBuild !== '3'
-      || asc?.highestTestFlightBuildStatus !== 'expired'
-      || asc?.nextCandidateBuild !== '4'
+      || asc?.highestTestFlightBuild !== '4'
+      || asc?.highestTestFlightBuildStatus !== 'ready-to-submit-obsolete-source'
+      || asc?.nextCandidateBuild !== '5'
       || asc?.nextCandidateBuildAvailable !== true
       || asc?.latestReviewDate !== '2026-02-24'
       || !sameArray(asc?.latestReviewGuidelines, EXACT_ASC_REVIEW_GUIDELINES)
       || asc?.informationRequested !== true) {
-      errors.push('ASC read-only evidence must record the fresh editable 3.0 rejection and reserve build 4');
+      errors.push('ASC read-only evidence must record build 4 as obsolete-source and reserve build 5');
     }
     if (manifest.reviewRisk?.appleApprovalGuaranteed !== false) {
       errors.push('Apple approval must never be represented as guaranteed');
@@ -917,7 +918,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  process.stdout.write('Release 3.0/build 4 verified: pre-build-configured.\n');
+  process.stdout.write('Release 3.0/build 5 verified: pre-build-configured.\n');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

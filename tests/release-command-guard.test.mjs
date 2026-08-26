@@ -283,7 +283,7 @@ function exactRcEvidence(root, { sourceTreeSha256, testFlightBuildId }) {
     schemaVersion: 2,
     status: 'exact-rc-captured-and-approved',
     marketingVersion: '3.0',
-    buildNumber: '4',
+    buildNumber: '5',
     deviceClass: 'iPhone 6.9-inch',
     locales: [...SCREENSHOT_LOCALES],
     sceneIds: [...SCREENSHOT_SCENE_IDS],
@@ -800,7 +800,7 @@ test('the final adapter receives every exact ASC build identity and reviewed evi
       appleId: '6758285327',
       bundleIdentifier: 'com.cabohealth.app',
       marketingVersion: '3.0',
-      buildNumber: '4',
+      buildNumber: '5',
     },
     buildArtifactAttestationSha256: 'b'.repeat(64),
     testFlightBuildId: '987654321',
@@ -819,7 +819,7 @@ test('the final adapter receives every exact ASC build identity and reviewed evi
     '--apple-id', '6758285327',
     '--bundle-identifier', 'com.cabohealth.app',
     '--marketing-version', '3.0',
-    '--build-number', '4',
+    '--build-number', '5',
     '--testflight-build-id', '987654321',
     '--rc-attestation', join(projectRoot, 'release/app-store/3.0/rc-attestation.json'),
     '--rc-attestation-sha256', rcSha256,
@@ -959,12 +959,12 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
 
   const initial = {
     '.gitignore': 'release/private/\nnode_modules\n',
-    'app.json': '{"expo":{"version":"3.0","ios":{"buildNumber":"4","bundleIdentifier":"com.cabohealth.app"}}}\n',
+    'app.json': '{"expo":{"version":"3.0","ios":{"buildNumber":"5","bundleIdentifier":"com.cabohealth.app"}}}\n',
     'config/nativeFirebaseExpoConfig.cjs': readFileSync(
       join(projectRoot, 'config/nativeFirebaseExpoConfig.cjs'),
       'utf8',
     ),
-    'constants/config.ts': "export const version = '3.0';\nexport const buildNumber = '4';\n",
+    'constants/config.ts': "export const version = '3.0';\nexport const buildNumber = '5';\n",
     'package-lock.json': '{"lockfileVersion":3}\n',
     'release/app-store/3.0/release-manifest.json': '{"status":"ready-for-build"}\n',
     'scripts/verify-release-v3.mjs': 'process.exitCode = 0;\n',
@@ -998,7 +998,7 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
       appleId: '6758285327',
       bundleIdentifier: 'com.cabohealth.app',
       marketingVersion: '3.0',
-      buildNumber: '4',
+      buildNumber: '5',
     },
     sourceTreeSha256,
     appJsonSha256: hash(readFileSync(join(root, 'app.json'))),
@@ -1042,7 +1042,7 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
   chmodSync(privatePlistPath, 0o600);
 
   const evidence = {
-    'release/private/rc/CaboHealth-3.0-build-4.ipa': Buffer.from('exact ipa bytes'),
+    'release/private/rc/CaboHealth-3.0-build-5.ipa': Buffer.from('exact ipa bytes'),
     'release/private/rc/signed-entitlements.plist': Buffer.from('<plist>exact</plist>'),
     'release/private/rc/embedded-GoogleService-Info.plist': bplistCreator(
       parsePlist(privatePlistBytes),
@@ -1052,7 +1052,7 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
   };
   evidence['release/private/rc/privacy-report.json'] = canonicalAppleEvidenceBytes(
     exactPrivacyReport({
-      ipaSha256: hash(evidence['release/private/rc/CaboHealth-3.0-build-4.ipa']),
+      ipaSha256: hash(evidence['release/private/rc/CaboHealth-3.0-build-5.ipa']),
       signedEntitlementsSha256: hash(
         evidence['release/private/rc/signed-entitlements.plist'],
       ),
@@ -1075,7 +1075,7 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     buildInputAttestationSha256: buildInputSha256,
     sourceTreeSha256,
     easBuildId: '123e4567-e89b-42d3-a456-426614174000',
-    ipaSha256: hash(evidence['release/private/rc/CaboHealth-3.0-build-4.ipa']),
+    ipaSha256: hash(evidence['release/private/rc/CaboHealth-3.0-build-5.ipa']),
     signedEntitlementsSha256: hash(evidence['release/private/rc/signed-entitlements.plist']),
     privacyReportSha256: hash(evidence['release/private/rc/privacy-report.json']),
     embeddedGoogleServicesPlistSha256: hash(
@@ -1165,7 +1165,7 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     rcSha256,
   }), /EXACT_RC_ATTESTATION_INVALID/u);
 
-  write(root, 'release/private/rc/CaboHealth-3.0-build-4.ipa', 'drifted ipa bytes');
+  write(root, 'release/private/rc/CaboHealth-3.0-build-5.ipa', 'drifted ipa bytes');
   assert.throws(() => verifyBuildArtifactAttestation(root, {
     buildInputSha256,
     buildArtifactSha256,
@@ -1205,7 +1205,7 @@ test('the pinned CLI runner receives the exact build and local-IPA upload argume
     '--non-interactive',
   ]);
 
-  const privateIpaPath = join(root, 'private-upload/CaboHealth-3.0-build-4.ipa');
+  const privateIpaPath = join(root, 'private-upload/CaboHealth-3.0-build-5.ipa');
   const uploadArgs = easArgumentsForAction('upload-testflight', { ipaPath: privateIpaPath });
   executeNodeProgram(root, fakeCli, uploadArgs, 'EAS');
   assert.deepEqual(JSON.parse(readFileSync(output, 'utf8')), [

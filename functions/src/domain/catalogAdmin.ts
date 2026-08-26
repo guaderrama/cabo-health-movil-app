@@ -14,6 +14,19 @@ export const CATALOG_ICONS = Object.freeze([
 export type CatalogIcon = typeof CATALOG_ICONS[number];
 export type CatalogAccess = 'public' | 'clients';
 export const CATALOG_ID_PATTERN = /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+export const PERMANENTLY_RETIRED_CATALOG_IDS = Object.freeze([
+  'health-advisor',
+  'ai-cosmetic-scan',
+  'service-hub',
+  'sleep-lab',
+] as const);
+const PERMANENTLY_RETIRED_CATALOG_ID_SET = new Set<string>(
+  PERMANENTLY_RETIRED_CATALOG_IDS,
+);
+
+export function isPermanentlyRetiredCatalogId(value: unknown): boolean {
+  return typeof value === 'string' && PERMANENTLY_RETIRED_CATALOG_ID_SET.has(value);
+}
 
 export interface LocalizedCatalogText {
   readonly en: string;
@@ -302,7 +315,8 @@ function normalizeCatalogUrl(value: unknown): string {
 
 function assertCatalogRoutePolicy(url: string, access: CatalogAccess): void {
   const id = catalogIdFromUrl(url);
-  if (id === 'app-review'
+  if (isPermanentlyRetiredCatalogId(id)
+    || id === 'app-review'
     || id === 'shared'
     || (id === 'client-resources' && access !== 'clients')) {
     throw new CatalogInputError();
@@ -363,6 +377,7 @@ function catalogMutation(
 
 function assertMutationIdentity(id: string, revision: number): void {
   if (!CATALOG_ID_PATTERN.test(id)
+    || isPermanentlyRetiredCatalogId(id)
     || !Number.isSafeInteger(revision)
     || revision < 1) throw new CatalogInputError();
 }

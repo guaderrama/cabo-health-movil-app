@@ -51,7 +51,7 @@ const ATTESTATION_PATHS = Object.freeze({
   rc: 'release/app-store/3.0/rc-attestation.json',
 });
 const PRIVATE_EVIDENCE_PATHS = Object.freeze({
-  ipa: 'release/private/rc/CaboHealth-3.0-build-4.ipa',
+  ipa: 'release/private/rc/CaboHealth-3.0-build-5.ipa',
   signedEntitlements: 'release/private/rc/signed-entitlements.plist',
   privacyReport: 'release/private/rc/privacy-report.json',
   embeddedGoogleServicesPlist: 'release/private/rc/embedded-GoogleService-Info.plist',
@@ -65,11 +65,11 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
 // reviewed. The canonical source digest includes this guard after normalizing
 // only these five one-line authority values, so pinning is not circular while
 // every executable guard behavior remains part of the reviewed source.
-const BUILD_INPUT_ATTESTATION_SHA256 = '38b8502a751bc7e0165d692200b36b4662a34705fdec87e1480b80feab692f82';
-const BUILD_ARTIFACT_ATTESTATION_SHA256 = 'e564be74de294d395fc72eb64a9dc062070dcdb8d28b7283412a93b262e75eb4';
+const BUILD_INPUT_ATTESTATION_SHA256 = null;
+const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;
 const RC_ATTESTATION_SHA256 = null;
 const PINNED_EAS_CLI = 'eyJlbnRyeVJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvYmluL3J1biIsIm5vZGVFeGVjdXRhYmxlU2hhMjU2IjoiNWQ5ZDM4NzI5MTFlMjM0MGE0M2I3MDc5NjJlNjgxNDNkZThhNGU4ZDU0NjI4ODQ1YzBjNGYyZGUxZmI3Y2Q1YyIsIm5vZGVWZXJzaW9uIjoidjIyLjIyLjMiLCJwYWNrYWdlSnNvblJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvcGFja2FnZS5qc29uIiwicGFja2FnZVZlcnNpb24iOiIyMi4yLjAiLCJydW50aW1lUm9vdFJlbGF0aXZlUGF0aCI6Im5vZGVfbW9kdWxlcyIsInJ1bnRpbWVUcmVlU2hhMjU2IjoiZDA1NGU5ZTA5MjI0MWUxZDdkODY0OGI4NTQ3MmJmNGI3NjZmYThmMTFmMDZhNGRlMGQ1ODk4YjczNjdhNWNjYiJ9';
-const PINNED_APP_STORE_SUBMIT_ADAPTER = 'eyJlbnRyeVJlbGF0aXZlUGF0aCI6ImJpbi9zdWJtaXQubWpzIiwibm9kZUV4ZWN1dGFibGVTaGEyNTYiOiI1ZDlkMzg3MjkxMWUyMzQwYTQzYjcwNzk2MmU2ODE0M2RlOGE0ZThkNTQ2Mjg4NDVjMGM0ZjJkZTFmYjdjZDVjIiwibm9kZVZlcnNpb24iOiJ2MjIuMjIuMyIsInBhY2thZ2VKc29uUmVsYXRpdmVQYXRoIjoicGFja2FnZS5qc29uIiwicGFja2FnZVZlcnNpb24iOiIxLjAuMCIsInJ1bnRpbWVSb290UmVsYXRpdmVQYXRoIjoidG9vbHMvYXBwLXN0b3JlLXN1Ym1pdC1hZGFwdGVyIiwicnVudGltZVRyZWVTaGEyNTYiOiIwY2Q1NmVhZjM2YzljOTI2NzI1MTEzYmIzOWI2NmUwYjRkYmIyZGM5NTJhOWM2Yjc0Yjg0OTRlN2NiMjY4YjJjIn0=';
+const PINNED_APP_STORE_SUBMIT_ADAPTER = 'eyJlbnRyeVJlbGF0aXZlUGF0aCI6ImJpbi9zdWJtaXQubWpzIiwibm9kZUV4ZWN1dGFibGVTaGEyNTYiOiI1ZDlkMzg3MjkxMWUyMzQwYTQzYjcwNzk2MmU2ODE0M2RlOGE0ZThkNTQ2Mjg4NDVjMGM0ZjJkZTFmYjdjZDVjIiwibm9kZVZlcnNpb24iOiJ2MjIuMjIuMyIsInBhY2thZ2VKc29uUmVsYXRpdmVQYXRoIjoicGFja2FnZS5qc29uIiwicGFja2FnZVZlcnNpb24iOiIxLjAuMCIsInJ1bnRpbWVSb290UmVsYXRpdmVQYXRoIjoidG9vbHMvYXBwLXN0b3JlLXN1Ym1pdC1hZGFwdGVyIiwicnVudGltZVRyZWVTaGEyNTYiOiI5YTJiNTc1ZTE1NjIxMGNmNTQ2MDIzY2VjZTJmZTE4YzcwYmI4ODMzMGQ5ZDJlM2M4MDY0ZWViNTgzYzhiMGMwIn0=';
 
 const SOURCE_DIGEST_EXCLUSIONS = new Set([
   ...Object.values(ATTESTATION_PATHS),
@@ -89,7 +89,7 @@ const CANDIDATE = Object.freeze({
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '4',
+  buildNumber: '5',
 });
 const PRODUCTION_FIREBASE_PROJECT_ID = 'cabohealth-owner-prod';
 const PRIVATE_GOOGLE_SERVICES_PLIST_MARKER = '<PRIVATE_GOOGLE_SERVICES_PLIST>';

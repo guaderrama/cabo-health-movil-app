@@ -459,6 +459,63 @@ test('catalog input reserves infrastructure slugs and keeps the broker root clie
   }, mutation(23)), CatalogInputError);
 });
 
+test('catalog input permanently rejects historical App Review slugs for every access class', async () => {
+  const service = new CatalogAdminService({
+    store: new FirestoreCatalogStore(new InMemoryDocumentDatabase()),
+  });
+
+  let request = 230;
+  for (const access of ['public', 'clients'] as const) {
+    for (const id of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
+      await assert.rejects(service.create({
+        ...activePublicMiniapp,
+        access,
+        url: `https://cabohealth.org/apps/${id}/`,
+      }, mutation(request++)), CatalogInputError, `${access}:${id}`);
+    }
+  }
+});
+
+test('catalog mutations permanently reject historical App Review ids before storage access', async () => {
+  const service = new CatalogAdminService({
+    store: new FirestoreCatalogStore(new InMemoryDocumentDatabase()),
+  });
+
+  let request = 240;
+  for (const id of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
+    await assert.rejects(
+      service.setActive(id, 1, true, mutation(request++)),
+      CatalogInputError,
+      id,
+    );
+  }
+});
+
+test('Functions fails closed on stored catalog data containing a retired id', async () => {
+  for (const id of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
+    const stored = Object.freeze({
+      ...activePublicMiniapp,
+      id,
+      url: `https://cabohealth.org/apps/${id}/`,
+      revision: 1,
+      createdAtMs: 1_800_000_000_000,
+      updatedAtMs: 1_800_000_000_000,
+    });
+    const service = new CatalogAdminService({
+      store: new FirestoreCatalogStore(new InMemoryDocumentDatabase({
+        '_private_catalog/current': {
+          items: [stored],
+          revision: 1,
+          schemaVersion: 1,
+          updatedAtMs: 1_800_000_000_000,
+        },
+      })),
+    });
+
+    await assert.rejects(service.publishedCatalog(), /invalid_catalog_record/u, id);
+  }
+});
+
 test('catalog mutations retain internal actor attribution but expose only sanitized Staff audit', async () => {
   const database = new InMemoryDocumentDatabase();
   const service = new CatalogAdminService({

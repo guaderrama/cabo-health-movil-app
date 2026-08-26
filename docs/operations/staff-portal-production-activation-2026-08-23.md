@@ -325,3 +325,69 @@ server-authorization, and workspace-loading E2E gate. No credential, token,
 request body, UID, private response, or client record was retained in the
 evidence. It does not complete the separate Apple, TestFlight/physical-iPhone,
 App Attest, reviewer-sandbox, hosted legal, or remaining release gates.
+
+## Dynamic catalog Staff successor — 2026-08-25
+
+The dynamic-catalog eight-file successor is now the active Staff Portal
+release:
+
+- Release ID:
+  `staff-v1-e846056bd4a0a3ec628cbbba3a0d968d4aaadf441d14171fbe73d4e4a0736dc5`;
+- inventory SHA-256:
+  `b612459041b8b148568f1a6a8e1fa5574bc2cf34f3825b3f82f9face06851e89`;
+- artifact SHA-256:
+  `8a5f923dfc8503cb6bafa9ea227b92d8221a09a49eacbd3d61bbeae25578ac40`;
+- file count: 8.
+
+The production artifact was built against the externally pinned Firebase/App
+Check configuration, passed its local immutable-artifact verifier, and was
+staged with exact file hashes and modes. An atomic same-filesystem exchange
+promoted it under the deployment lock while retaining the complete preceding
+Staff directory as rollback. The Internet-side verifier then passed the exact
+release, inventory, artifact, HTML/JavaScript/CSS bytes, content types,
+required CSP and security headers, protected 404, and no-cookie responses. A
+subsequent in-app browser reload showed the current Staff sign-in surface.
+
+This successor adds the separately hosted owner workspace for immediate
+create, edit, activate, deactivate, and permanent-delete catalog controls. It
+does not place Staff Access in the consumer binary. A fresh authenticated owner
+session and a controlled production CRUD exercise with a non-sensitive
+temporary entry plus cleanup remain pending for this successor; the prior
+password-only authentication E2E record above is historical evidence for the
+same protected boundary, not a substitute for that new exercise.
+
+This Staff activation does not complete the dynamic private broker, iOS 3.0
+build 5, TestFlight, physical-device QA, App Store metadata, submission, or
+Apple approval gates. See
+`dynamic-miniapp-production-activation-2026-08-25.md` for the sanitized
+cross-component boundary.
+
+## Retired-ID enforcement successor — 2026-08-26
+
+The current eight-file Staff Portal release is:
+
+- Release ID:
+  `staff-v1-86d9cf222c17893b939acb2c84b9adc3340429d821d23280e4572a2fb40e302b`;
+- inventory SHA-256:
+  `8f8a3743c52c5972b2dd8cd68898d47ee9fa55a8a42fa653edf6f6d72d24ef15`;
+- artifact SHA-256:
+  `3a7cbd92ac28ad7b3b644ffb54bf40b8eaa7a140c32b3c081a939bffb6af2f97`;
+- ZIP transport SHA-256:
+  `5915945bebdbe5b221baf8d8670449c051bf51f1acbf2fe214c87b22e6455da4`;
+- file count: 8.
+
+The production build re-read the exact Firebase web-app identity, backend
+identity, App Check key restrictions, and Functions region before assembling
+the artifact. The local verifier matched every byte and pin. The server then
+verified the immutable archive, exact path list, hashes, file types, modes,
+ownership, and same-filesystem promotion targets before an atomic exchange.
+The complete preceding `e846…` directory remains intact in the rollback slot.
+The Internet-side verifier passed the exact release, inventory, artifact,
+content types, security headers, protected 404, and no-cookie responses.
+
+This successor permanently rejects `health-advisor`, `ai-cosmetic-scan`,
+`service-hub`, and `sleep-lab` before any Staff catalog mutation and rejects a
+persisted response containing any of them. The same exact four-ID policy is
+enforced independently by Functions and the native client. No additional ID
+was retired. A fresh authenticated owner CRUD exercise remains a separate
+operational check and no Apple/TestFlight gate is implied by this deployment.

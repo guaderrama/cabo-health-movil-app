@@ -324,12 +324,23 @@ try {
         $outsideModule . DIRECTORY_SEPARATOR . 'en.json',
         json_encode(dynamicPrivateDocument('en', 'Outside content'), JSON_THROW_ON_ERROR),
     );
-    symlink($outsideModule, $fixtureContent . DIRECTORY_SEPARATOR . 'vip-symlink');
-    dynamicExpectThrows(
-        static fn () => $jsonStore->readResource('vip-symlink', 'en'),
-        ClientResourcesUnavailable::class,
-        'A resource directory symlink must never escape or alias the private root.',
-    );
+    $symlinkPath = $fixtureContent . DIRECTORY_SEPARATOR . 'vip-symlink';
+    if (function_exists('symlink')) {
+        dynamicExpect(
+            symlink($outsideModule, $symlinkPath),
+            'The symlink escape fixture must be created when the PHP capability is available.',
+        );
+        dynamicExpectThrows(
+            static fn () => $jsonStore->readResource('vip-symlink', 'en'),
+            ClientResourcesUnavailable::class,
+            'A resource directory symlink must never escape or alias the private root.',
+        );
+    } else {
+        dynamicExpect(
+            !file_exists($symlinkPath) && !is_link($symlinkPath),
+            'A host that disables the PHP symlink capability must not create the escape fixture.',
+        );
+    }
 } finally {
     dynamicRemoveFixture($fixtureRoot);
 }

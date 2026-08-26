@@ -408,3 +408,56 @@ test('catalog route policy reserves infrastructure and keeps the broker root cli
     url: 'https://cabohealth.org/apps/client-resources/',
   }).url, 'https://cabohealth.org/apps/client-resources/');
 });
+
+test('Staff permanently rejects historical App Review slugs before publication', () => {
+  const base = {
+    access: 'public',
+    active: true,
+    icon: 'guide',
+    summary: { en: 'Summary', 'es-MX': 'Descripción' },
+    title: { en: 'Title', 'es-MX': 'Título' },
+  };
+
+  for (const id of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
+    assert.throws(() => validateCatalogItemInput({
+      ...base,
+      url: `https://cabohealth.org/apps/${id}/`,
+    }), /catalog_item_url_invalid/u, id);
+  }
+});
+
+test('Staff never sends a mutation for a permanently retired catalog id', async () => {
+  let calls = 0;
+  const gateway = createCatalogItemGateway({
+    session: parseServerStaffSession({
+      scope: 'production',
+      permissions: ['client_resource_publish'],
+    }),
+    transport: async () => {
+      calls++;
+      return { item: catalogItem };
+    },
+  });
+
+  for (const id of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
+    await assert.rejects(gateway.setActive(id, 1, true), /catalog_item_identity_invalid/u, id);
+  }
+  assert.equal(calls, 0);
+});
+
+test('Staff rejects a catalog response containing a permanently retired id', async () => {
+  for (const id of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
+    const gateway = createCatalogItemGateway({
+      session: parseServerStaffSession({
+        scope: 'production',
+        permissions: ['client_resource_publish'],
+      }),
+      transport: async () => ({ items: [{
+        ...catalogItem,
+        id,
+        url: `https://cabohealth.org/apps/${id}/`,
+      }] }),
+    });
+    await assert.rejects(gateway.list(), /catalog_item_response_invalid/u, id);
+  }
+});

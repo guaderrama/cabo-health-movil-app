@@ -215,6 +215,28 @@ test('the PHP broker behavior suites are present and run when PHP 8 is available
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.match(result.stdout, output);
   }
+
+  const disabledSymlink = spawnSync(
+    'php',
+    ['-d', 'disable_functions=symlink', 'tools/hosting/tests/dynamic-client-resource-broker.php'],
+    { encoding: 'utf8' },
+  );
+  assert.equal(
+    disabledSymlink.status,
+    0,
+    `Hostinger-compatible disabled symlink branch failed:\n${disabledSymlink.stdout}\n${disabledSymlink.stderr}`,
+  );
+  assert.equal(disabledSymlink.stdout, 'dynamic client resource broker: ok\n');
+  assert.equal(disabledSymlink.stderr, '');
+
+  const disabledCapability = spawnSync(
+    'php',
+    ['-d', 'disable_functions=symlink', '-r', 'echo function_exists("symlink") ? "enabled" : "disabled";'],
+    { encoding: 'utf8' },
+  );
+  assert.equal(disabledCapability.status, 0, disabledCapability.stderr);
+  assert.equal(disabledCapability.stdout, 'disabled');
+  assert.equal(disabledCapability.stderr, '');
 });
 
 test('production activation record remains fail closed and binds the verified private deployment', () => {
@@ -228,15 +250,15 @@ test('production activation record remains fail closed and binds the verified pr
   assert.doesNotMatch(factory, /hmacKeyBase64\s*['"]?\s*=>/u);
   assert.equal(schema.additionalProperties, false);
   assert.deepEqual(schema.required, ['schemaVersion', 'baseUrl', 'expectedHost', 'keyId', 'hmacKeyBase64']);
-  assert.match(runbook, /ACTIVE \/ HOSTING BOUNDARY VERIFIED 2026-08-24/u);
-  assert.match(runbook, /protected-overlays-v1-f3fc2ffb500f41dbfbf16dd4141eef3ccf87ef7055df63a2054b9cbe042b8213/u);
+  assert.match(runbook, /ACTIVE \/ DYNAMIC HOSTING BOUNDARY VERIFIED 2026-08-26/u);
+  assert.match(runbook, /protected-overlays-v1-2a74817a88dd9122bd67f84fc46d280562f0014535a113c1810fbe82a78ea35b/u);
   assert.match(runbook, /outside.*docroot/iu);
   assert.match(runbook, /0600/u);
   assert.match(runbook, /exactly eight rings/iu);
   assert.match(runbook, /CLIENT_DELETION_RECEIPT_PEPPER_RING/u);
   assert.match(runbook, /CLIENT_BROKER_HMAC_KEY_RING/u);
   assert.match(runbook, /protected-overlay-attestor\.php/u);
-  assert.match(runbook, /d687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d/u);
+  assert.match(runbook, /40811f2ea6f8e6b5e28d23db827c76233dac3b6d88b90afe3f7fa9b0d22b44b1/u);
   assert.match(runbook, /same effective web PHP handler/iu);
   assert.match(runbook, /LiteSpeed LSAPI runtime/iu);
   assert.match(runbook, /lowercase value `litespeed`/iu);
@@ -245,8 +267,9 @@ test('production activation record remains fail closed and binds the verified pr
   assert.match(runbook, /never invokes[\s\S]*PHP_BINARY/iu);
   assert.match(runbook, /never inherit attestation-key, broker-HMAC/iu);
   assert.match(runbook, /SSH command[\s\S]*negative test/iu);
-  assert.match(runbook, /Current external gate:\s*\*\*COMPLETED\/VERIFIED 2026-08-24\*\*/u);
-  assert.match(runbook, /763bb35ce0a7b320aabc8e8bcbb7231d91d375e4b3161fce33c6ad319ade657d/u);
+  assert.match(runbook, /Current external gate:\s*\*\*COMPLETED\/VERIFIED 2026-08-26\*\*/u);
+  assert.match(runbook, /f9486e1044f124feeb91b373fad6df409773b752c937d1df4295df127f3a3f65/u);
+  assert.match(runbook, /8ee960f50aaa51d5bef1d05f7b13c82a6e3fa0b2a8d249c580bde20b52acc791/u);
   assert.match(runbook, /protected-overlays:release deactivate-first/u);
   assert.match(runbook, /protected-overlays:release verify-absence/u);
   assert.match(gitignore, /^\/client-resources-private\/config\/broker-config\.json$/mu);

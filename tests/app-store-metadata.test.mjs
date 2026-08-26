@@ -113,7 +113,7 @@ function writeFinalScreenshotAuthority(root) {
     schemaVersion: 2,
     status: 'exact-rc-captured-and-approved',
     marketingVersion: '3.0',
-    buildNumber: '4',
+    buildNumber: '5',
     deviceClass: 'iPhone 6.9-inch',
     locales: [...screenshotLocales],
     sceneIds: [...screenshotSceneIds],
@@ -135,7 +135,7 @@ function writeFinalScreenshotAuthority(root) {
       appleId: '6758285327',
       bundleIdentifier: 'com.cabohealth.app',
       marketingVersion: '3.0',
-      buildNumber: '4',
+      buildNumber: '5',
     },
     buildArtifactAttestationSha256: 'b'.repeat(64),
     sourceTreeSha256,
@@ -187,7 +187,7 @@ function withReleaseFixture(mutate, assertion) {
   }
 }
 
-test('versioned App Store metadata is a valid pre-build-configured 3.0 build 4 candidate', () => {
+test('versioned App Store metadata is a valid pre-build-configured 3.0 build 5 candidate', () => {
   const result = verify(projectRoot);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /pre-build metadata verified; submission remains blocked/i);
@@ -199,11 +199,11 @@ test('metadata verifier rejects stale or contradictory live ASC evidence', async
     ['build list is not an array', (manifest) => { manifest.ascEvidence.testFlightBuilds = {}; }],
     ['version not editable', (manifest) => { manifest.ascEvidence.versionEditable = false; }],
     ['wrong rejected status', (manifest) => { manifest.ascEvidence.currentRejectedVersionStatus = 'ready-for-sale'; }],
-    ['wrong selected binary version', (manifest) => { manifest.ascEvidence.selectedRejectedBinaryVersion = '3.0'; }],
+    ['wrong selected binary version', (manifest) => { manifest.ascEvidence.selectedRejectedBinaryVersion = '2.0.0'; }],
     ['historical build not expired', (manifest) => { manifest.ascEvidence.testFlightBuilds[1].status = 'ready-to-test'; }],
-    ['build 4 already occupied', (manifest) => { manifest.ascEvidence.highestTestFlightBuild = '4'; }],
-    ['wrong next build', (manifest) => { manifest.ascEvidence.nextCandidateBuild = '5'; }],
-    ['build 4 unavailable', (manifest) => { manifest.ascEvidence.nextCandidateBuildAvailable = false; }],
+    ['wrong highest build', (manifest) => { manifest.ascEvidence.highestTestFlightBuild = '5'; }],
+    ['wrong next build', (manifest) => { manifest.ascEvidence.nextCandidateBuild = '6'; }],
+    ['build 5 unavailable', (manifest) => { manifest.ascEvidence.nextCandidateBuildAvailable = false; }],
     ['wrong rejection date', (manifest) => { manifest.ascEvidence.latestReviewDate = '2026-02-23'; }],
     ['missing rejection guideline', (manifest) => { manifest.ascEvidence.latestReviewGuidelines = ['2.1', '4.1']; }],
     ['information request omitted', (manifest) => { manifest.ascEvidence.informationRequested = false; }],
@@ -215,7 +215,7 @@ test('metadata verifier rejects stale or contradictory live ASC evidence', async
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed ASC evidence validation`);
         assert.doesNotMatch(result.stderr, /TypeError|RELEASE_METADATA_INTERNAL_ERROR/u);
-        assert.match(result.stderr, /ASC read-only evidence must (?:retain the exact sanitized authority schema|record the fresh editable 3\.0 rejection and reserve build 4)/i);
+        assert.match(result.stderr, /ASC read-only evidence must (?:retain the exact sanitized authority schema|record build 4 as obsolete-source and reserve build 5)/i);
       },
     ));
   }
@@ -235,7 +235,7 @@ test('metadata verifier keeps the candidate configured but unbuilt', async (t) =
       (root) => mutateJson(root, `${releasePath}/release-manifest.json`, (manifest) => mutate(manifest.candidate)),
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed candidate phase validation`);
-        assert.match(result.stderr, /unbuilt pre-build-configured 3\.0 build 4 authority/i);
+        assert.match(result.stderr, /unbuilt pre-build-configured 3\.0 build 5 authority/i);
       },
     ));
   }
@@ -344,7 +344,14 @@ test('metadata verifier rejects null JSON authorities instead of skipping them',
 
 test('Review Notes retain the prior-review resolution, current privacy facts, and manual-entry behavior', () => {
   const notes = readFileSync(join(projectRoot, releasePath, 'review-notes.md'), 'utf8');
+  const pasteReadyBody = notes.split('## Paste-ready body after all gates are resolved')[1]?.trim() ?? '';
 
+  assert.ok([...pasteReadyBody].length <= 4000, 'paste-ready Review Notes must fit Apple’s 4,000-character limit');
+  assert.match(pasteReadyBody, /two public wellness\/editorial resources plus protected Client Resources/i);
+  assert.match(
+    pasteReadyBody,
+    /GUIDELINE 4\.7 — HOSTED RESOURCES\n1\. Healthy Recipes — public — https:\/\/cabohealth\.org\/apps\/healthy-recipes\/\n2\. CaboHealth Clinic Guide — public — https:\/\/cabohealth\.org\/apps\/clinic-guide\/\n3\. Client Resources — protected existing-client eligibility — https:\/\/cabohealth\.org\/apps\/client-resources\/\n\nAt the time of submission, only these Universal Links enter\./u,
+  );
   assert.doesNotMatch(notes, /\[INSERT VERIFIED HOSTINGER REQUEST-LOG FIELDS/i);
   assert.doesNotMatch(notes, /continues automatically|about 1\.6 seconds/i);
   assert.doesNotMatch(notes, /\bOn Apps\b|\bReturn to Apps\b/i);
@@ -732,8 +739,8 @@ test('metadata verifier keeps the live-reconciled pre-build configuration gate c
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [x] Reconcile live App Store Connect and update `app.json` and `constants/config.ts` together to 3.0/build 4 for the pre-build configuration; no RC, build, IPA, or TestFlight upload exists yet.',
-        '- [ ] Reconcile live App Store Connect and update `app.json` and `constants/config.ts` together to 3.0/build 4 for the pre-build configuration; no RC, build, IPA, or TestFlight upload exists yet.',
+        '- [x] Reconcile live App Store Connect and update `app.json` and `constants/config.ts` together to 3.0/build 5 for the pre-build configuration; build 4 is obsolete-source and no build 5 IPA or TestFlight upload exists yet.',
+        '- [ ] Reconcile live App Store Connect and update `app.json` and `constants/config.ts` together to 3.0/build 5 for the pre-build configuration; build 4 is obsolete-source and no build 5 IPA or TestFlight upload exists yet.',
       ));
     },
     (result) => {
@@ -743,19 +750,19 @@ test('metadata verifier keeps the live-reconciled pre-build configuration gate c
   );
 });
 
-test('metadata verifier keeps the independently reviewed build-input gate completed', () => {
+test('metadata verifier keeps the build-5 build-input attestation gate pending', () => {
   withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [x] Freeze and independently review the canonical build-input attestation;',
-        '- [ ] Freeze and independently review the canonical build-input attestation;',
+        '- [ ] Regenerate, freeze, and independently review the build-5 canonical build-input attestation;',
+        '- [x] Regenerate, freeze, and independently review the build-5 canonical build-input attestation;',
       ));
     },
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /must retain the exact completed build-input attestation checkbox/i);
+      assert.match(result.stderr, /must retain the exact pending build-5 build-input attestation checkbox/i);
     },
   );
 });
@@ -766,7 +773,7 @@ test('metadata verifier keeps the Staff Portal outside the consumer binary', () 
       const file = join(root, releasePath, 'review-notes.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        /The owner-only Staff Portal is not linked or reachable from the consumer binary\. If requested, isolated non-production access will be supplied\.\n/u,
+        /Confirm the owner-only Staff Portal is not linked or reachable from the consumer binary\.\n/u,
         'The production owner portal is linked for every reviewer.\n',
       ));
     },
@@ -861,8 +868,8 @@ test('metadata verifier rejects an arbitrary third hosted resource in Review Not
       const file = join(root, releasePath, 'review-notes.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        'Only these Universal Links enter.',
-        '4. Meditation Studio — public — https://cabohealth.org/apps/meditation/\n\nOnly these Universal Links enter.',
+        'At the time of submission, only these Universal Links enter.',
+        '4. Meditation Studio — public — https://cabohealth.org/apps/meditation/\n\nAt the time of submission, only these Universal Links enter.',
       ));
     },
     (result) => {
@@ -878,8 +885,8 @@ test('metadata verifier rejects a third Review Notes resource even without a URL
       const file = join(root, releasePath, 'review-notes.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        'Only these Universal Links enter.',
-        '4. Meditation Studio — public\n\nOnly these Universal Links enter.',
+        'At the time of submission, only these Universal Links enter.',
+        '4. Meditation Studio — public\n\nAt the time of submission, only these Universal Links enter.',
       ));
     },
     (result) => {
@@ -1052,18 +1059,48 @@ test('metadata verifier preserves exact completed public-web evidence checkboxes
     },
   ));
 
-  await t.test('the dynamic AASA origin/CDN gate cannot be marked complete before deployment', () => withReleaseFixture(
+  await t.test('the completed dynamic AASA origin/CDN gate cannot be reverted to pending', () => withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
-      const prefix = '- [ ] Deploy the nine-component dynamic AASA authority';
-      const mutated = source.replace(prefix, prefix.replace('- [ ]', '- [x]'));
-      assert.notEqual(mutated, source, 'AASA fixture must contain its exact pending gate');
+      const prefix = '- [x] Deploy the nine-component dynamic AASA authority';
+      const mutated = source.replace(prefix, prefix.replace('- [x]', '- [ ]'));
+      assert.notEqual(mutated, source, 'AASA fixture must contain its exact completed gate');
       writeFileSync(file, mutated);
     },
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /must retain the exact pending dynamic AASA origin\/CDN checkbox/iu);
+      assert.match(result.stderr, /must retain the exact completed dynamic AASA origin\/CDN checkbox/iu);
+    },
+  ));
+
+  await t.test('the completed dynamic protected broker gate cannot be reverted to pending', () => withReleaseFixture(
+    (root) => {
+      const file = join(root, releasePath, 'submission-gates.md');
+      const source = readFileSync(file, 'utf8');
+      const prefix = '- [x] Promote and verify the dynamic structured private-content broker';
+      const mutated = source.replace(prefix, prefix.replace('- [x]', '- [ ]'));
+      assert.notEqual(mutated, source, 'protected broker fixture must contain its exact completed gate');
+      writeFileSync(file, mutated);
+    },
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /must retain the exact completed dynamic protected-broker checkbox/iu);
+    },
+  ));
+
+  await t.test('physical App Attest valid-flow remains pending', () => withReleaseFixture(
+    (root) => {
+      const file = join(root, releasePath, 'submission-gates.md');
+      const source = readFileSync(file, 'utf8');
+      const prefix = '- [ ] On physical iPhones with App Attest, prove valid credential resource selection';
+      const mutated = source.replace(prefix, prefix.replace('- [ ]', '- [x]'));
+      assert.notEqual(mutated, source, 'physical App Attest fixture must contain its exact pending gate');
+      writeFileSync(file, mutated);
+    },
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /must retain the exact pending physical App Attest valid-flow checkbox/iu);
     },
   ));
 
@@ -1258,7 +1295,7 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured pre
     ['configured app rolled back', (root) => mutateJson(root, 'app.json', (app) => {
       app.expo.version = '2.0.0';
       app.expo.ios.buildNumber = '3';
-    }), /manifest says appJsonUpdated=true.*3\.0\/build 4/i],
+    }), /manifest says appJsonUpdated=true.*3\.0\/build 5/i],
     ['third actual catalog slug', (root) => {
       const file = join(root, 'constants/publicMiniapps.ts');
       const source = readFileSync(file, 'utf8');
@@ -1634,11 +1671,11 @@ test('metadata verifier rejects extra or contradictory age-rating answers', asyn
 test('metadata verifier binds screenshot planning to the exact candidate build', () => {
   withReleaseFixture(
     (root) => mutateJson(root, `${releasePath}/screenshots-manifest.json`, (screenshots) => {
-      screenshots.buildNumber = '5';
+      screenshots.buildNumber = '4';
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /screenshot manifest must target 3\.0 build 4/i);
+      assert.match(result.stderr, /screenshot manifest must target 3\.0 build 5/i);
     },
   );
 });

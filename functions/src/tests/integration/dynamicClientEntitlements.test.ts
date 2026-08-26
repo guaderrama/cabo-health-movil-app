@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createSecretKey } from 'node:crypto';
 import { test } from 'node:test';
 
-import { AccessCodeIssuer } from '../../domain/accessCodeIssuer.js';
+import { AccessCodeInputError, AccessCodeIssuer } from '../../domain/accessCodeIssuer.js';
 import { ClientAccessPublicError, ClientAccessRedeemer } from '../../domain/clientAccessRedeemer.js';
 import { ClientLaunchService } from '../../domain/clientLaunchService.js';
 import { ClientSessionManager } from '../../domain/clientSessionManager.js';
@@ -16,6 +16,12 @@ import { InMemoryDocumentDatabase } from '../support/inMemoryDocumentDatabase.js
 const nowMs = Date.UTC(2026, 7, 25);
 const installationId = 'dededededededededededededededede';
 const groupMarker = 'client-resources';
+const retiredCatalogIds = Object.freeze([
+  'health-advisor',
+  'ai-cosmetic-scan',
+  'service-hub',
+  'sleep-lab',
+]);
 
 test('a group-marker code follows active client catalog changes on refresh and launch', async () => {
   const first = catalogItem('vip-nutrition', 'nutrition', 'VIP Nutrition', 'Nutrición VIP');
@@ -55,6 +61,91 @@ test('a group-marker code follows active client catalog changes on refresh and l
     invalidAccess,
   );
   await assert.rejects(fixture.launches.consume({ nonce: launch.nonce }), invalidAccess);
+});
+
+test('a group-marker code cannot grant a persisted permanently retired client catalog item', async () => {
+  for (const id of retiredCatalogIds) {
+    const retired = catalogItem(id, 'guide', 'Retired resource', 'Recurso retirado');
+    const database = new InMemoryDocumentDatabase({
+      '_private_catalog/current': catalogSnapshot([retired]),
+      [clientResourcePath(retired.id)]: clientResource(retired),
+    });
+
+    await assert.rejects(issuer(new FirestoreClientAccessStore(database)).issue({
+      expiresAtMs: nowMs + 86_400_000,
+      resourceIds: [groupMarker],
+    }), (error: unknown) => error instanceof AccessCodeInputError, id);
+  }
+});
+
+test('a direct fallback resource cannot issue access for a permanently retired id without a catalog', async () => {
+  for (const id of retiredCatalogIds) {
+    const retired = catalogItem(id, 'guide', 'Retired resource', 'Recurso retirado');
+    const database = new InMemoryDocumentDatabase({
+      [clientResourcePath(retired.id)]: clientResource(retired),
+    });
+
+    await assert.rejects(issuer(new FirestoreClientAccessStore(database)).issue({
+      expiresAtMs: nowMs + 86_400_000,
+      resourceIds: [id],
+    }), (error: unknown) => error instanceof AccessCodeInputError, id);
+  }
+});
+
+test('redemption revalidates an existing group-marker code against persisted retired catalog data', async () => {
+  for (const id of retiredCatalogIds) {
+    const marker = catalogItem(groupMarker, 'guide', 'Client Resources', 'Recursos para Clientes');
+    const retired = catalogItem(id, 'guide', 'Retired resource', 'Recurso retirado');
+    const database = new InMemoryDocumentDatabase({
+      [clientResourcePath(marker.id)]: clientResource(marker),
+    });
+    const store = new FirestoreClientAccessStore(database);
+    const issued = await issuer(store).issue({
+      expiresAtMs: nowMs + 86_400_000,
+      resourceIds: [groupMarker],
+    });
+    await database.runTransaction(async (transaction) => {
+      transaction.create('_private_catalog/current', catalogSnapshot([retired]));
+      transaction.create(clientResourcePath(retired.id), clientResource(retired));
+    });
+    const redeemer = new ClientAccessRedeemer({
+      codeHasher: hasher('code'),
+      installationHasher: hasher('installation'),
+      nowMs: () => nowMs,
+      rateLimitHasher: hasher('rate-limit'),
+      store,
+      tokenIssuer: { createCustomToken: async () => 'unreachable' },
+    });
+
+    await assert.rejects(redeemer.redeem(redemptionInput(issued.oneTimeCode)), invalidAccess, id);
+  }
+});
+
+test('refresh and launch revalidate an existing group entitlement after a retired id is persisted', async () => {
+  for (const id of retiredCatalogIds) {
+    const current = catalogItem('vip-current', 'wellness', 'Current VIP', 'VIP vigente');
+    const retired = catalogItem(id, 'guide', 'Retired resource', 'Recurso retirado');
+    const database = new InMemoryDocumentDatabase({
+      '_private_catalog/current': catalogSnapshot([current]),
+      [clientResourcePath(current.id)]: clientResource(current),
+    });
+    const fixture = await redeemedFixture(database);
+    await database.runTransaction(async (transaction) => {
+      transaction.set('_private_catalog/current', catalogSnapshot([retired], 2, nowMs + 1));
+      transaction.create(clientResourcePath(retired.id), clientResource(retired));
+    });
+
+    await assert.rejects(
+      fixture.sessions.refresh({ installationId, subjectUid: fixture.subjectUid }),
+      invalidAccess,
+      `refresh:${id}`,
+    );
+    await assert.rejects(fixture.launches.create({
+      installationId,
+      resourceId: id,
+      subjectUid: fixture.subjectUid,
+    }), invalidAccess, `launch:${id}`);
+  }
 });
 
 test('a malformed catalog snapshot fails closed even when the legacy marker resource exists', async () => {

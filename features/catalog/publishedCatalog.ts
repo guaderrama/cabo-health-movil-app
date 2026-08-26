@@ -1,3 +1,5 @@
+import { isPermanentlyRetiredCatalogId } from './catalogIdPolicy';
+
 export const PUBLISHED_CATALOG_ICONS = Object.freeze([
   'laboratory',
   'guide',
@@ -45,7 +47,11 @@ const ITEM_KEYS = [
 ] as const;
 const LOCALIZED_KEYS = ['en', 'es-MX'] as const;
 const ID_PATTERN = /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$/u;
-const RESERVED_PUBLIC_IDS = new Set(['app-review', 'shared', 'client-resources']);
+const RESERVED_PUBLIC_IDS = new Set([
+  'app-review',
+  'shared',
+  'client-resources',
+]);
 const MAX_CATALOG_ITEMS = 12;
 // Keep the value inside the four-digit ISO calendar range used by the UI.
 const MAX_CATALOG_TIMESTAMP_MS = 253_402_300_799_999;
@@ -79,6 +85,7 @@ function parsePublishedItem(value: unknown): Readonly<PublishedCatalogItem> | nu
   if (
     typeof value.id !== 'string'
     || !ID_PATTERN.test(value.id)
+    || isPermanentlyRetiredCatalogId(value.id)
     || RESERVED_PUBLIC_IDS.has(value.id)
   ) return null;
   if (value.url !== `https://cabohealth.org/apps/${value.id}/`) return null;

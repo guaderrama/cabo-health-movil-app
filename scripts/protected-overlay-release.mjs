@@ -8,6 +8,7 @@ import {
   createProtectedOverlayArtifact,
   createProtectedOverlayDeploymentEvidence,
   createProtectedOverlayDeploymentEvidenceRequest,
+  createProtectedOverlayHistoricalPredecessorEvidenceRequest,
   deactivateFirstProtectedOverlays,
   promoteProtectedOverlays,
   rollbackProtectedOverlays,
@@ -101,6 +102,21 @@ switch (command) {
     });
     break;
   }
+  case 'create-historical-predecessor-evidence-request': {
+    assertExactArguments(arguments_, [
+      ...deploymentArgumentNames({ includeEvidence: false }),
+      '--out',
+    ]);
+    const request = createProtectedOverlayHistoricalPredecessorEvidenceRequest(
+      readDeploymentArguments(arguments_, { includeEvidence: false }),
+    );
+    writeImmutableJson(arguments_['--out'], request);
+    print({
+      status: 'created',
+      requestSha256: request.requestSha256,
+    });
+    break;
+  }
   case 'assemble-evidence': {
     assertExactArguments(arguments_, [
       '--request',
@@ -127,13 +143,37 @@ switch (command) {
     break;
   }
   case 'promote': {
+    const historicalArgumentNames = historicalPredecessorArgumentNames();
+    const includesHistoricalAuthority = historicalArgumentNames.some((name) => (
+      Object.hasOwn(arguments_, name)
+    ));
     assertExactArguments(arguments_, [
       ...deploymentArgumentNames(),
       '--predecessor-release-id',
+      ...(includesHistoricalAuthority ? historicalArgumentNames : []),
     ]);
     print(promoteProtectedOverlays({
       ...readDeploymentArguments(arguments_),
       expectedPredecessorReleaseId: arguments_['--predecessor-release-id'],
+      ...(includesHistoricalAuthority ? {
+        historicalPredecessorAuthority: {
+          artifact: readCanonicalJson(
+            arguments_['--historical-predecessor-artifact'],
+            0o400,
+          ),
+          evidence: readCanonicalJson(
+            arguments_['--historical-predecessor-evidence'],
+            0o400,
+          ),
+          expectedReleaseId: arguments_['--historical-predecessor-release-id'],
+          expectedInventorySha256:
+            arguments_['--historical-predecessor-inventory-sha256'],
+          expectedArtifactSha256:
+            arguments_['--historical-predecessor-artifact-sha256'],
+          expectedEvidenceSha256:
+            arguments_['--historical-predecessor-evidence-sha256'],
+        },
+      } : {}),
     }));
     break;
   }
@@ -292,6 +332,17 @@ function deploymentArgumentNames({ includeEvidence = true } = {}) {
   ];
   if (includeEvidence) names.push('--evidence', '--evidence-sha256');
   return names;
+}
+
+function historicalPredecessorArgumentNames() {
+  return [
+    '--historical-predecessor-artifact',
+    '--historical-predecessor-release-id',
+    '--historical-predecessor-inventory-sha256',
+    '--historical-predecessor-artifact-sha256',
+    '--historical-predecessor-evidence',
+    '--historical-predecessor-evidence-sha256',
+  ];
 }
 
 function readDeploymentArguments(arguments_, { includeEvidence = true } = {}) {

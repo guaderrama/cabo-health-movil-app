@@ -17,6 +17,12 @@ export const CATALOG_ITEM_ICONS = Object.freeze([
 const CATALOG_ITEM_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const CATALOG_ITEM_ID_MAX_LENGTH = 64;
 const CATALOG_TEXT_CONTROL_PATTERN = /[\u0000-\u001f\u007f]/u;
+const PERMANENTLY_RETIRED_CATALOG_IDS = new Set([
+  'health-advisor',
+  'ai-cosmetic-scan',
+  'service-hub',
+  'sleep-lab',
+]);
 
 export type CatalogItemIcon = (typeof CATALOG_ITEM_ICONS)[number];
 export type CatalogItemAccess = 'public' | 'clients';
@@ -286,6 +292,7 @@ export function isCatalogRevisionConflict(error: unknown): boolean {
 
 function assertCatalogMutationIdentity(id: string, revision: number): void {
   if (!isCatalogItemId(id)
+    || PERMANENTLY_RETIRED_CATALOG_IDS.has(id)
     || !Number.isSafeInteger(revision)
     || revision < 1) {
     throw new Error('catalog_item_identity_invalid');
@@ -308,6 +315,7 @@ function parseCatalogUrl(value: unknown, access: CatalogItemAccess): string {
       || parsed.port !== ''
       || pathMatch === null
       || !isCatalogItemId(pathMatch[1])
+      || PERMANENTLY_RETIRED_CATALOG_IDS.has(pathMatch[1])
       || pathMatch[1] === 'app-review'
       || pathMatch[1] === 'shared'
       || (pathMatch[1] === 'client-resources' && access !== 'clients')) {

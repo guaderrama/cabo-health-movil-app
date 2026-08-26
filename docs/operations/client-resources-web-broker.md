@@ -1,19 +1,19 @@
 # Client Resources web broker
 
-Status: **ACTIVE / HOSTING BOUNDARY VERIFIED 2026-08-24**. Production and App
-Review are installed as one atomic protected release,
-`protected-overlays-v1-f3fc2ffb500f41dbfbf16dd4141eef3ccf87ef7055df63a2054b9cbe042b8213`.
+Status: **ACTIVE / DYNAMIC HOSTING BOUNDARY VERIFIED 2026-08-26**. Production
+and App Review are installed as one atomic protected release,
+`protected-overlays-v1-2a74817a88dd9122bd67f84fc46d280562f0014535a113c1810fbe82a78ea35b`.
 The matching broker configuration and bilingual content remain outside the
 docroot. The PHP harness, signed LiteSpeed attestations, exact deployment gate,
 and live invalid-nonce denial passed. Native credential, replay, revocation,
 and physical-iPhone E2E remain separate Apple-submission gates.
 
-Dynamic-routing code status: **IMPLEMENTED AND LOCALLY VERIFIED 2026-08-25;
-NOT DEPLOYED**. The active release ID above is historical evidence for the
-fixed `client-resources` release and does not contain the dynamic router. A new
-protected-overlay artifact, private-content inventory, signed Hostinger
-attestations, and promotion are required before any additional private miniapp
-can be activated in production.
+Dynamic-routing status: **DEPLOYED AND VERIFIED 2026-08-26**. The active
+release contains the fail-closed server-selected router and a
+`structured-with-client-resources-fallback` private inventory. The historical
+f3 release remains the separately re-attested rollback authority. Exact public
+pins and the completed promotion sequence are recorded in
+[`protected-overlay-dynamic-activation-2026-08-26.md`](protected-overlay-dynamic-activation-2026-08-26.md).
 
 ## Trust boundary
 
@@ -173,11 +173,11 @@ Do not activate the public endpoints until all steps below pass:
 
 ### Dynamic-content release gate
 
-Gate migration status: **IMPLEMENTED AND LOCALLY VERIFIED 2026-08-25; NOT
-DEPLOYED**. The active 2026-08-24 production evidence remains historical and
-must not be edited or relabeled. A dynamic promotion requires a completely new
-artifact, activation, request, two Hostinger attestations, evidence capsule,
-and independently approved pins.
+Gate migration status: **DEPLOYED AND VERIFIED 2026-08-26**. The 2026-08-24
+production evidence remains historical and was not edited or relabeled. The
+dynamic successor has its own artifact, activation, requests, four signed
+Hostinger attestations covering successor and historical rollback in both
+realms, independently assembled evidence capsules, and approved pins.
 
 The production private inventory now accepts exactly one declared mode:
 
@@ -204,7 +204,7 @@ production harnesses:
 - `tools/hosting/tests/client-resource-broker.php` —
   `c8977a71d740ac7be0a745548e0a0c3fc3904028a19fe4b460bdb2755a67ca21`;
 - `tools/hosting/tests/dynamic-client-resource-broker.php` —
-  `9a9df9f409d87555851aaf7e14c4f3e1e430d394bfd304ded2ab90bd6b2518af`.
+  `54a24413498d32e8981f83e14d7c34f78bb08407c68fd9a2ed5835d2d381f6c6`.
 
 Promotion order for a new dynamic private release:
 
@@ -226,6 +226,40 @@ Promotion order for a new dynamic private release:
 6. only then activate the matching catalog item. After rollback is separately
    rehearsed and verified, remove the two legacy flat files in the next private
    release so the steady state becomes `structured`.
+
+#### One-time migration from historical f3
+
+The historical f3 artifact uses the singular `phpHarness` capsule. Do
+not relabel it as a current artifact and do not reuse its 2026-08-24 evidence.
+When repeating this migration, create the normal successor evidence
+and a second, independently signed rollback authority with
+`create-historical-predecessor-evidence-request`. The historical request uses
+the exact f3 release, inventory, and artifact pins, the successor's current
+activation and trust-policy pins, both production harnesses required by the
+currently pinned attestor, and a private content inventory that still contains
+the flat `en.json` and `es-MX.json` fallback. Run and remove both one-shot
+attestor mappings for each request, then assemble each evidence capsule
+separately.
+
+Invoke `promote` with its normal successor arguments plus this complete set;
+supplying only part of the set is rejected:
+
+- `--historical-predecessor-artifact`
+- `--historical-predecessor-release-id`
+- `--historical-predecessor-inventory-sha256`
+- `--historical-predecessor-artifact-sha256`
+- `--historical-predecessor-evidence`
+- `--historical-predecessor-evidence-sha256`
+
+The gate accepts only the exact original f3 managed state or the same exact f3
+artifact and predecessor rebound to the supplied, verified current activation
+and historical evidence. Mixed old/new hashes, another predecessor, altered f3
+bytes, or evidence not bound to the current activation fail closed. A standard
+rollback must pin the historical evidence created above as the predecessor
+evidence. After that rollback, the same fully pinned `promote` command may be
+run again; the gate verifies and restores the exact removed successor candidate
+before the atomic transaction. This promote → verify → rollback → verify →
+re-promote → verify sequence completed successfully on Hostinger on 2026-08-26.
 
 The compatibility-safe order is: additive Functions support, new broker
 runtime still serving the legacy `client-resources` files, attested structured
@@ -272,7 +306,7 @@ The release gate does not trust a typed `status: passed`. Before activation:
    `/opt/alt/[php-version]/usr/bin/php`; discover and measure the actual binary
    for this account rather than hard-coding that example. Include the pinned attestor
    `tools/hosting/protected-overlay-attestor.php` with SHA-256
-   `d687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d`.
+   `40811f2ea6f8e6b5e28d23db827c76233dac3b6d88b90afe3f7fa9b0d22b44b1`.
    Obtain its SHA-256 independently and have Ivan approve/record that pin in
    the secured release record **outside** the activation/evidence capsule.
 3. Run `protected-overlays:release create-activation` with the external
@@ -325,12 +359,16 @@ The release gate does not trust a typed `status: passed`. Before activation:
    request remain private `0400` inputs because they bind absolute paths; only
    the sanitized evidence capsule may be retained in a public release record.
 
-Current external gate: **COMPLETED/VERIFIED 2026-08-24**. Hostinger proved the
+Current external gate: **COMPLETED/VERIFIED 2026-08-26**. Hostinger proved the
 exact LiteSpeed serving identity, document root, pinned PHP CLI, immutable
-private inputs, both distinct signing realms, and both harnesses through signed
-one-shot attestations. The authenticated mappings and credentials were removed
-immediately and returned 404 afterward. The independently reassembled evidence
-pin is `763bb35ce0a7b320aabc8e8bcbb7231d91d375e4b3161fce33c6ad319ade657d`.
+private inputs, both distinct signing realms, all three harnesses, and the
+historical rollback rebound through four signed one-shot attestations. The
+authenticated mappings and credentials were removed immediately, retired paths
+returned 404, and no mapping directory remained. The independently reassembled
+successor evidence pin is
+`f9486e1044f124feeb91b373fad6df409773b752c937d1df4295df127f3a3f65`; the
+historical rollback evidence pin is
+`8ee960f50aaa51d5bef1d05f7b13c82a6e3fa0b2a8d249c580bde20b52acc791`.
 
 ## First-release deactivation to absence
 

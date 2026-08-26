@@ -31,11 +31,13 @@ import {
   createProtectedOverlayArtifact,
   createProtectedOverlayDeploymentEvidence,
   createProtectedOverlayDeploymentEvidenceRequest,
+  createProtectedOverlayHistoricalPredecessorEvidenceRequest,
   deactivateFirstProtectedOverlays,
   promoteProtectedOverlays,
   rollbackProtectedOverlays,
   verifyProtectedOverlayActivationPlan,
   verifyProtectedOverlayArtifact,
+  verifyProtectedOverlayHistoricalArtifact,
   verifyProtectedOverlayAbsence,
   verifyProtectedOverlayDeployment,
 } from '../scripts/protected-overlay-release-gate.mjs';
@@ -149,6 +151,203 @@ test('the release artifact pins both legacy and dynamic production broker harnes
     assert.equal(harness.status, 'external-required');
     assert.match(harness.sha256, /^[a-f0-9]{64}$/u);
   }
+});
+
+test('the exact historical f3 artifact remains a pinned readable predecessor', () => {
+  const historical = createHistoricalF3ArtifactFixture();
+
+  assert.deepEqual(verifyProtectedOverlayHistoricalArtifact({
+    artifact: historical,
+    ...artifactPins(historical),
+  }), historical);
+  assert.equal(
+    historical.releaseId,
+    'protected-overlays-v1-f3fc2ffb500f41dbfbf16dd4141eef3ccf87ef7055df63a2054b9cbe042b8213',
+  );
+  assert.equal(
+    historical.artifactSha256,
+    'a0d40d4caf24b04d39e5b9277e17f6df1f277235b4e1b0a42769b47162112731',
+  );
+
+  const tampered = structuredClone(historical);
+  tampered.realms[0].files[0].bytesBase64 = Buffer.from('tampered').toString('base64');
+  assert.throws(() => verifyProtectedOverlayHistoricalArtifact({
+    artifact: tampered,
+    ...artifactPins(historical),
+  }), /protected_overlay_historical_artifact_invalid/u);
+});
+
+test('historical f3 rollback evidence re-attests the live-compatible flat content authority', (context) => {
+  const deployment = makeDeploymentFixture();
+  context.after(() => rmSync(deployment.root, { recursive: true, force: true }));
+  const historical = createHistoricalF3ArtifactFixture();
+  const activation = createActivation(deployment);
+
+  const request = createProtectedOverlayHistoricalPredecessorEvidenceRequest({
+    activation,
+    artifact: historical,
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    trustPolicy: deployment.trustPolicy,
+    ...artifactPins(historical),
+  });
+  assert.equal(
+    request.requestKind,
+    'cabohealth-protected-overlay-historical-predecessor-evidence-request-v1',
+  );
+  assert.deepEqual(
+    request.realms[0].phpHarnesses.map(({ path }) => path),
+    [
+      'tools/hosting/tests/client-resource-broker.php',
+      'tools/hosting/tests/dynamic-client-resource-broker.php',
+    ],
+  );
+  assert.equal(request.realms[0].inputs.privateContent.layout, 'legacy-flat');
+
+  const attestations = Object.fromEntries(request.realms.map((realm) => [
+    realm.realm,
+    signedAttestation(realm, deployment.attestationKeys[realm.realm].privateKey),
+  ]));
+  const evidence = createProtectedOverlayDeploymentEvidence({
+    attestations,
+    evidenceRequest: request,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    trustPolicy: deployment.trustPolicy,
+  });
+  assert.equal(evidence.requestSha256, request.requestSha256);
+});
+
+test('the dynamic successor promotes from historical f3 and rolls back under re-attested authority', (context) => {
+  const deployment = makeDeploymentFixture();
+  context.after(() => rmSync(deployment.root, { recursive: true, force: true }));
+  writeStructuredProductionContent(deployment, ['client-resources'], { keepLegacy: true });
+  const historical = createHistoricalF3ArtifactFixture();
+  seedHistoricalF3Deployment(deployment.root, historical);
+  const successor = createProtectedOverlayArtifact({ projectRoot });
+  const activation = createActivation(deployment);
+  const successorEvidence = createDeploymentEvidence(
+    deployment,
+    successor,
+    activation,
+  ).evidence;
+  const rollbackRequest = createProtectedOverlayHistoricalPredecessorEvidenceRequest({
+    activation,
+    artifact: historical,
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    trustPolicy: deployment.trustPolicy,
+    ...artifactPins(historical),
+  });
+  const rollbackEvidence = createProtectedOverlayDeploymentEvidence({
+    attestations: Object.fromEntries(rollbackRequest.realms.map((realm) => [
+      realm.realm,
+      signedAttestation(realm, deployment.attestationKeys[realm.realm].privateKey),
+    ])),
+    evidenceRequest: rollbackRequest,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    trustPolicy: deployment.trustPolicy,
+  });
+  const promotionArguments = {
+    activation,
+    artifact: successor,
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedPredecessorReleaseId: historical.releaseId,
+    projectRoot,
+    ...artifactPins(successor),
+    ...securityPins(deployment, successorEvidence),
+  };
+
+  assert.throws(
+    () => promoteProtectedOverlays(promotionArguments),
+    /protected_overlay_historical_predecessor_authority_required/u,
+  );
+  assert.deepEqual(promoteProtectedOverlays({
+    ...promotionArguments,
+    historicalPredecessorAuthority: {
+      artifact: historical,
+      evidence: rollbackEvidence,
+      expectedEvidenceSha256: rollbackEvidence.evidenceSha256,
+      ...artifactPins(historical),
+    },
+  }), {
+    status: 'promoted',
+    currentReleaseId: successor.releaseId,
+    predecessorReleaseId: historical.releaseId,
+  });
+  assert.equal(verifyProtectedOverlayDeployment({
+    ...promotionArguments,
+  }).status, 'verified');
+
+  assert.deepEqual(rollbackProtectedOverlays({
+    activation,
+    currentPins: artifactPins(successor),
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedCurrentEvidenceSha256: successorEvidence.evidenceSha256,
+    expectedCurrentReleaseId: successor.releaseId,
+    expectedPredecessorEvidenceSha256: rollbackEvidence.evidenceSha256,
+    expectedPredecessorReleaseId: historical.releaseId,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    predecessorPins: artifactPins(historical),
+    trustPolicy: deployment.trustPolicy,
+  }), {
+    status: 'rolled-back',
+    removedReleaseId: successor.releaseId,
+    restoredReleaseId: historical.releaseId,
+  });
+  assert.equal(verifyProtectedOverlayDeployment({
+    activation,
+    artifact: historical,
+    deploymentRoot: deployment.root,
+    evidence: rollbackEvidence,
+    expectedActivationSha256: activation.activationSha256,
+    expectedEvidenceSha256: rollbackEvidence.evidenceSha256,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    projectRoot,
+    trustPolicy: deployment.trustPolicy,
+    ...artifactPins(historical),
+  }).status, 'verified');
+
+  const statePath = join(
+    deployment.root,
+    '.cabohealth-protected-overlays/state.json',
+  );
+  const reattestedState = JSON.parse(readFileSync(statePath, 'utf8'));
+  writeFileSync(statePath, `${JSON.stringify({
+    ...reattestedState,
+    current: {
+      ...reattestedState.current,
+      evidenceSha256: '0'.repeat(64),
+    },
+  })}\n`);
+  assert.throws(() => promoteProtectedOverlays({
+    ...promotionArguments,
+    historicalPredecessorAuthority: {
+      artifact: historical,
+      evidence: rollbackEvidence,
+      expectedEvidenceSha256: rollbackEvidence.evidenceSha256,
+      ...artifactPins(historical),
+    },
+  }), /protected_overlay_historical_predecessor_state_invalid/u);
+  writeFileSync(statePath, `${JSON.stringify(reattestedState)}\n`);
+
+  assert.deepEqual(promoteProtectedOverlays({
+    ...promotionArguments,
+    historicalPredecessorAuthority: {
+      artifact: historical,
+      evidence: rollbackEvidence,
+      expectedEvidenceSha256: rollbackEvidence.evidenceSha256,
+      ...artifactPins(historical),
+    },
+  }), {
+    status: 'promoted',
+    currentReleaseId: successor.releaseId,
+    predecessorReleaseId: historical.releaseId,
+  });
+  assert.equal(verifyProtectedOverlayDeployment(promotionArguments).status, 'verified');
 });
 
 test('artifact verification pins exact bytes, security headers, and distinct broker identities', (context) => {
@@ -583,13 +782,14 @@ test('the pinned Hostinger attestor derives signed evidence from runtime measure
   const source = readFileSync(path);
   assert.equal(
     createHash('sha256').update(source).digest('hex'),
-    'd687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d',
+    '40811f2ea6f8e6b5e28d23db827c76233dac3b6d88b90afe3f7fa9b0d22b44b1',
   );
   const text = source.toString('utf8');
   assert.match(text, /getenv\(\$name\)/u);
   assert.match(text, /attestor_measure_file/u);
   assert.match(text, /attestor_measure_private_content/u);
   assert.match(text, /dynamic-client-resource-broker\.php/u);
+  assert.match(text, /count\(\$expectedHarnesses\)\s*!==\s*count\(\$definedHarnesses\)/u);
   assert.match(text, /\[a-z0-9\]\+\(\?:-\[a-z0-9\]\+\)\*/u);
   assert.doesNotMatch(text, /contentFiles/u);
   assert.match(text, /fopen/u);
@@ -820,7 +1020,7 @@ test('public signed evidence proves the recursive inventory and all harnesses wi
     },
     {
       path: 'tools/hosting/tests/dynamic-client-resource-broker.php',
-      sourceSha256: '9a9df9f409d87555851aaf7e14c4f3e1e430d394bfd304ded2ab90bd6b2518af',
+      sourceSha256: '54a24413498d32e8981f83e14d7c34f78bb08407c68fd9a2ed5835d2d381f6c6',
       expectedOutputBase64: Buffer.from('dynamic client resource broker: ok\n').toString('base64'),
     },
   ]);
@@ -1311,6 +1511,180 @@ test('operator CLI creates a canonical read-only capsule and verifies explicit p
     inventorySha256: artifact.inventorySha256,
     artifactSha256: artifact.artifactSha256,
   });
+});
+
+test('operator CLI re-attests historical f3 and requires its complete authority to promote', (context) => {
+  const deployment = makeDeploymentFixture();
+  context.after(() => rmSync(deployment.root, { recursive: true, force: true }));
+  writeStructuredProductionContent(deployment, ['client-resources'], { keepLegacy: true });
+  const historical = createHistoricalF3ArtifactFixture();
+  seedHistoricalF3Deployment(deployment.root, historical);
+  const successor = createProtectedOverlayArtifact({ projectRoot });
+  const activation = createActivation(deployment);
+  const successorEvidence = createDeploymentEvidence(
+    deployment,
+    successor,
+    activation,
+  ).evidence;
+  const successorArguments = writeDeploymentCliCapsules({
+    activation,
+    artifact: successor,
+    deployment,
+    evidence: successorEvidence,
+    name: 'historical-f3-successor',
+    sourceRoot: projectRoot,
+  });
+  const historicalArtifactPath = join(deployment.root, 'historical-f3-artifact.json');
+  const historicalEvidencePath = join(deployment.root, 'historical-f3-evidence.json');
+  const historicalRequestPath = join(deployment.root, 'historical-f3-request.json');
+  writeReadOnlyJson(historicalArtifactPath, historical);
+
+  const expectedRequest = createProtectedOverlayHistoricalPredecessorEvidenceRequest({
+    activation,
+    artifact: historical,
+    deploymentRoot: deployment.root,
+    expectedActivationSha256: activation.activationSha256,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    trustPolicy: deployment.trustPolicy,
+    ...artifactPins(historical),
+  });
+  const requested = runCli([
+    'create-historical-predecessor-evidence-request',
+    '--project-root', projectRoot,
+    '--deployment-root', deployment.root,
+    '--artifact', historicalArtifactPath,
+    '--activation', argumentValue(successorArguments, '--activation'),
+    '--release-id', historical.releaseId,
+    '--inventory-sha256', historical.inventorySha256,
+    '--artifact-sha256', historical.artifactSha256,
+    '--activation-sha256', activation.activationSha256,
+    '--trust-policy', argumentValue(successorArguments, '--trust-policy'),
+    '--trust-policy-sha256', deployment.trustPolicySha256,
+    '--out', historicalRequestPath,
+  ]);
+  assert.equal(requested.status, 0, requested.stderr || requested.stdout);
+  assert.deepEqual(JSON.parse(readFileSync(historicalRequestPath, 'utf8')), expectedRequest);
+
+  const historicalEvidence = createProtectedOverlayDeploymentEvidence({
+    attestations: Object.fromEntries(expectedRequest.realms.map((realm) => [
+      realm.realm,
+      signedAttestation(realm, deployment.attestationKeys[realm.realm].privateKey),
+    ])),
+    evidenceRequest: expectedRequest,
+    expectedTrustPolicySha256: deployment.trustPolicySha256,
+    trustPolicy: deployment.trustPolicy,
+  });
+  writeReadOnlyJson(historicalEvidencePath, historicalEvidence);
+  const historicalAuthorityArguments = [
+    '--historical-predecessor-artifact', historicalArtifactPath,
+    '--historical-predecessor-release-id', historical.releaseId,
+    '--historical-predecessor-inventory-sha256', historical.inventorySha256,
+    '--historical-predecessor-artifact-sha256', historical.artifactSha256,
+    '--historical-predecessor-evidence', historicalEvidencePath,
+    '--historical-predecessor-evidence-sha256', historicalEvidence.evidenceSha256,
+  ];
+  const partialAuthority = runCli([
+    'promote',
+    ...successorArguments,
+    '--predecessor-release-id', historical.releaseId,
+    '--historical-predecessor-artifact', historicalArtifactPath,
+  ]);
+  assert.notEqual(partialAuthority.status, 0, partialAuthority.stdout);
+  assert.match(partialAuthority.stderr, /protected_overlay_arguments_invalid/u);
+
+  const extraAuthorityArgument = runCli([
+    'promote',
+    ...successorArguments,
+    '--predecessor-release-id', historical.releaseId,
+    ...historicalAuthorityArguments,
+    '--unexpected-authority', 'rejected',
+  ]);
+  assert.notEqual(extraAuthorityArgument.status, 0, extraAuthorityArgument.stdout);
+  assert.match(extraAuthorityArgument.stderr, /protected_overlay_arguments_invalid/u);
+
+  const promoted = runCli([
+    'promote',
+    ...successorArguments,
+    '--predecessor-release-id', historical.releaseId,
+    ...historicalAuthorityArguments,
+  ]);
+  assert.equal(promoted.status, 0, promoted.stderr || promoted.stdout);
+  assert.deepEqual(JSON.parse(promoted.stdout), {
+    status: 'promoted',
+    currentReleaseId: successor.releaseId,
+    predecessorReleaseId: historical.releaseId,
+  });
+  assert.equal(runCli(['verify-deployment', ...successorArguments]).status, 0);
+
+  const rolledBack = runCli([
+    'rollback',
+    '--deployment-root', deployment.root,
+    '--activation', argumentValue(successorArguments, '--activation'),
+    '--activation-sha256', activation.activationSha256,
+    '--current-evidence-sha256', successorEvidence.evidenceSha256,
+    '--current-release-id', successor.releaseId,
+    '--current-inventory-sha256', successor.inventorySha256,
+    '--current-artifact-sha256', successor.artifactSha256,
+    '--predecessor-release-id', historical.releaseId,
+    '--predecessor-inventory-sha256', historical.inventorySha256,
+    '--predecessor-artifact-sha256', historical.artifactSha256,
+    '--predecessor-evidence-sha256', historicalEvidence.evidenceSha256,
+    '--trust-policy', argumentValue(successorArguments, '--trust-policy'),
+    '--trust-policy-sha256', deployment.trustPolicySha256,
+  ]);
+  assert.equal(rolledBack.status, 0, rolledBack.stderr || rolledBack.stdout);
+  assert.deepEqual(JSON.parse(rolledBack.stdout), {
+    status: 'rolled-back',
+    removedReleaseId: successor.releaseId,
+    restoredReleaseId: historical.releaseId,
+  });
+  const historicalVerificationArguments = [
+    '--project-root', projectRoot,
+    '--deployment-root', deployment.root,
+    '--artifact', historicalArtifactPath,
+    '--activation', argumentValue(successorArguments, '--activation'),
+    '--release-id', historical.releaseId,
+    '--inventory-sha256', historical.inventorySha256,
+    '--artifact-sha256', historical.artifactSha256,
+    '--activation-sha256', activation.activationSha256,
+    '--evidence', historicalEvidencePath,
+    '--evidence-sha256', historicalEvidence.evidenceSha256,
+    '--trust-policy', argumentValue(successorArguments, '--trust-policy'),
+    '--trust-policy-sha256', deployment.trustPolicySha256,
+  ];
+  assert.equal(
+    runCli(['verify-deployment', ...historicalVerificationArguments]).status,
+    0,
+  );
+
+  const crashedRePromotion = runCli([
+    'promote',
+    ...successorArguments,
+    '--predecessor-release-id', historical.releaseId,
+    ...historicalAuthorityArguments,
+  ], {
+    NODE_ENV: 'test',
+    CABOHEALTH_OVERLAY_TEST_CRASH_AFTER_STEP: 'removed-candidate-restored',
+  });
+  assert.equal(crashedRePromotion.signal, 'SIGKILL', crashedRePromotion.stderr);
+  assert.equal(
+    runCli(['verify-deployment', ...historicalVerificationArguments]).status,
+    0,
+  );
+
+  const rePromoted = runCli([
+    'promote',
+    ...successorArguments,
+    '--predecessor-release-id', historical.releaseId,
+    ...historicalAuthorityArguments,
+  ]);
+  assert.equal(rePromoted.status, 0, rePromoted.stderr || rePromoted.stdout);
+  assert.deepEqual(JSON.parse(rePromoted.stdout), {
+    status: 'promoted',
+    currentReleaseId: successor.releaseId,
+    predecessorReleaseId: historical.releaseId,
+  });
+  assert.equal(runCli(['verify-deployment', ...successorArguments]).status, 0);
 });
 
 test('operator CLI requires external activation evidence before promoting and verifying both realms', (context) => {
@@ -1863,6 +2237,11 @@ function runCli(arguments_, environment = {}) {
   );
 }
 
+function writeReadOnlyJson(path, value) {
+  writeFileSync(path, `${JSON.stringify(value)}\n`, { mode: 0o400 });
+  chmodSync(path, 0o400);
+}
+
 function writeDeploymentCliCapsules({
   activation,
   artifact,
@@ -2162,7 +2541,7 @@ function makeDeploymentFixture() {
       attestationPublicKeyDerBase64: attestationKeys[realm].publicKey
         .export({ format: 'der', type: 'spki' }).toString('base64'),
       attestorPath: 'tools/hosting/protected-overlay-attestor.php',
-      attestorSha256: 'd687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d',
+      attestorSha256: '40811f2ea6f8e6b5e28d23db827c76233dac3b6d88b90afe3f7fa9b0d22b44b1',
     })),
   };
   return {
@@ -2275,6 +2654,87 @@ function securityPins(deployment, evidence) {
     expectedTrustPolicySha256: deployment.trustPolicySha256,
     trustPolicy: deployment.trustPolicy,
   };
+}
+
+function createHistoricalF3ArtifactFixture() {
+  const current = createProtectedOverlayArtifact({ projectRoot });
+  const historicalRuntime = spawnSync('git', [
+    'show',
+    'dbe3e6751a1c7df99556fbd182ed97faf8c9b938:web-hosting/cabohealth.org/apps/client-resources/lib/runtime.php',
+  ], { cwd: projectRoot, encoding: null });
+  assert.equal(historicalRuntime.status, 0, historicalRuntime.stderr?.toString() ?? '');
+  const realms = current.realms.map((realm) => ({
+    realm: realm.realm,
+    sourceRoot: realm.sourceRoot,
+    promoteTarget: realm.promoteTarget,
+    brokerIdentity: realm.brokerIdentity,
+    externalInputs: {
+      status: realm.externalInputs.status,
+      backendFactoryEnvironmentVariable: realm.externalInputs.backendFactoryEnvironmentVariable,
+      brokerConfigEnvironmentVariable: realm.externalInputs.brokerConfigEnvironmentVariable,
+      privateContentEnvironmentVariable: realm.externalInputs.privateContentEnvironmentVariable,
+      configSchema: realm.externalInputs.configSchema,
+      phpHarness: realm.externalInputs.phpHarnesses[0],
+    },
+    files: realm.files.map((file) => {
+      if (realm.realm !== 'production' || file.path !== 'lib/runtime.php') return file;
+      const bytes = historicalRuntime.stdout;
+      return {
+        ...file,
+        size: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+        bytesBase64: bytes.toString('base64'),
+      };
+    }),
+  }));
+  const inventorySha256 = sha256Json(realms.map((realm) => ({
+    ...realm,
+    files: realm.files.map(({ bytesBase64: _bytesBase64, ...metadata }) => metadata),
+  })));
+  const core = {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-protected-hostinger-overlays-v1',
+    releaseId: `protected-overlays-v1-${inventorySha256}`,
+    inventorySha256,
+    promoteTargets: realms.map(({ promoteTarget }) => promoteTarget),
+    realms,
+  };
+  return { ...core, artifactSha256: sha256Json(core) };
+}
+
+function seedHistoricalF3Deployment(root, artifact) {
+  const appsRoot = join(root, 'public_html', 'apps');
+  const managedRoot = join(root, '.cabohealth-protected-overlays');
+  const artifactsRoot = join(managedRoot, 'artifacts');
+  mkdirSync(appsRoot, { mode: 0o755 });
+  mkdirSync(managedRoot, { mode: 0o700 });
+  mkdirSync(artifactsRoot, { mode: 0o700 });
+  for (const realm of artifact.realms) {
+    const realmRoot = join(root, ...realm.promoteTarget.split('/'));
+    mkdirSync(realmRoot, { recursive: true, mode: 0o755 });
+    for (const file of realm.files) {
+      const path = join(realmRoot, ...file.path.split('/'));
+      mkdirSync(dirname(path), { recursive: true, mode: 0o755 });
+      writeFileSync(path, Buffer.from(file.bytesBase64, 'base64'), { mode: 0o644 });
+    }
+  }
+  writeFileSync(
+    join(artifactsRoot, `${artifact.releaseId}.json`),
+    `${JSON.stringify(artifact)}\n`,
+    { mode: 0o400 },
+  );
+  writeFileSync(join(managedRoot, 'state.json'), `${JSON.stringify({
+    schemaVersion: 1,
+    current: {
+      releaseId: artifact.releaseId,
+      inventorySha256: artifact.inventorySha256,
+      artifactSha256: artifact.artifactSha256,
+      activationSha256: '71a53785d9485097c670046730808035bc4a45e85b372ce83135db59a6bcdf31',
+      evidenceSha256: '763bb35ce0a7b320aabc8e8bcbb7231d91d375e4b3161fce33c6ad319ade657d',
+    },
+    predecessorReleaseId:
+      'protected-overlays-v1-b4514f277d691868e9b2274ec473aadf59fabd81d17feec875ad4b32f6c1f3d2',
+  })}\n`, { mode: 0o600 });
 }
 
 function sha256Json(value) {

@@ -116,8 +116,16 @@ test('one malformed or non-public item rejects the whole remote snapshot', () =>
   }
 });
 
-test('reserved review, shared, and client namespaces are never public miniapps', () => {
-  for (const id of ['app-review', 'shared', 'client-resources']) {
+test('reserved infrastructure and historical App Review ids are never public miniapps', () => {
+  for (const id of [
+    'app-review',
+    'shared',
+    'client-resources',
+    'health-advisor',
+    'ai-cosmetic-scan',
+    'service-hub',
+    'sleep-lab',
+  ]) {
     assert.equal(parsePublishedCatalog({
       revision: 8,
       updatedAtMs: 1_780_000_100_000,

@@ -36,9 +36,20 @@ const HASH_PATTERN = /^[a-f0-9]{64}$/u;
 const ACTIVATION_KIND = 'cabohealth-protected-overlay-activation-v1';
 const TRUST_POLICY_KIND = 'cabohealth-protected-overlay-trust-policy-v1';
 const EVIDENCE_REQUEST_KIND = 'cabohealth-protected-overlay-evidence-request-v1';
+const HISTORICAL_PREDECESSOR_EVIDENCE_REQUEST_KIND =
+  'cabohealth-protected-overlay-historical-predecessor-evidence-request-v1';
 const EVIDENCE_KIND = 'cabohealth-protected-overlay-deployment-evidence-v1';
 const ATTESTATION_KIND = 'cabohealth-protected-overlay-hostinger-attestation-v1';
 const ATTESTATION_SIGNATURE_DOMAIN = 'cabohealth-protected-overlay-hostinger-attestation-v1';
+const HISTORICAL_F3_AUTHORITY = Object.freeze({
+  releaseId: 'protected-overlays-v1-f3fc2ffb500f41dbfbf16dd4141eef3ccf87ef7055df63a2054b9cbe042b8213',
+  inventorySha256: 'f3fc2ffb500f41dbfbf16dd4141eef3ccf87ef7055df63a2054b9cbe042b8213',
+  artifactSha256: 'a0d40d4caf24b04d39e5b9277e17f6df1f277235b4e1b0a42769b47162112731',
+  activationSha256: '71a53785d9485097c670046730808035bc4a45e85b372ce83135db59a6bcdf31',
+  evidenceSha256: '763bb35ce0a7b320aabc8e8bcbb7231d91d375e4b3161fce33c6ad319ade657d',
+  predecessorReleaseId:
+    'protected-overlays-v1-b4514f277d691868e9b2274ec473aadf59fabd81d17feec875ad4b32f6c1f3d2',
+});
 const DEACTIVATION_KIND = 'cabohealth-protected-overlay-deactivation-v1';
 const CURRENT_DEACTIVATION_KIND = 'cabohealth-protected-overlay-current-deactivation-v1';
 const ACTIVATION_REALM_INPUT_KEYS = Object.freeze([
@@ -85,12 +96,12 @@ const REALM_DEFINITIONS = Object.freeze([
         }),
         Object.freeze({
           path: 'tools/hosting/tests/dynamic-client-resource-broker.php',
-          sha256: '9a9df9f409d87555851aaf7e14c4f3e1e430d394bfd304ded2ab90bd6b2518af',
+          sha256: '54a24413498d32e8981f83e14d7c34f78bb08407c68fd9a2ed5835d2d381f6c6',
           output: 'dynamic client resource broker: ok\n',
         }),
       ]),
       attestorPath: 'tools/hosting/protected-overlay-attestor.php',
-      attestorSha256: 'd687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d',
+      attestorSha256: '40811f2ea6f8e6b5e28d23db827c76233dac3b6d88b90afe3f7fa9b0d22b44b1',
       attestationKeyEnvironmentVariable: 'CABOHEALTH_CLIENT_RESOURCES_ATTESTATION_KEY',
       privateContentPolicy: 'resource-catalog',
       factoryClass: 'SignedFunctionsClientResourcesBackend',
@@ -129,7 +140,7 @@ const REALM_DEFINITIONS = Object.freeze([
         }),
       ]),
       attestorPath: 'tools/hosting/protected-overlay-attestor.php',
-      attestorSha256: 'd687c636cf85d88fa6c9365ef90789be4e83e45be51361be75b600daf43be36d',
+      attestorSha256: '40811f2ea6f8e6b5e28d23db827c76233dac3b6d88b90afe3f7fa9b0d22b44b1',
       attestationKeyEnvironmentVariable: 'CABOHEALTH_APP_REVIEW_ATTESTATION_KEY',
       privateContentPolicy: Object.freeze({ fixedFiles: Object.freeze(['sample.json']) }),
       factoryClass: 'SignedFunctionsAppReviewBackend',
@@ -239,6 +250,146 @@ export function verifyProtectedOverlayArtifact({
     throw new Error('protected_overlay_artifact_invalid');
   }
   return expected;
+}
+
+export function verifyProtectedOverlayHistoricalArtifact({
+  artifact,
+  expectedReleaseId,
+  expectedInventorySha256,
+  expectedArtifactSha256,
+}) {
+  if (
+    expectedReleaseId !== HISTORICAL_F3_AUTHORITY.releaseId
+    || expectedInventorySha256 !== HISTORICAL_F3_AUTHORITY.inventorySha256
+    || expectedArtifactSha256 !== HISTORICAL_F3_AUTHORITY.artifactSha256
+  ) throw new Error('protected_overlay_historical_artifact_invalid');
+  if (
+    !isRecord(artifact)
+    || !hasExactKeys(artifact, [
+      'schemaVersion',
+      'artifactKind',
+      'releaseId',
+      'inventorySha256',
+      'promoteTargets',
+      'realms',
+      'artifactSha256',
+    ])
+    || artifact.schemaVersion !== 1
+    || artifact.artifactKind !== ARTIFACT_KIND
+    || artifact.releaseId !== expectedReleaseId
+    || artifact.inventorySha256 !== expectedInventorySha256
+    || artifact.artifactSha256 !== expectedArtifactSha256
+    || !Array.isArray(artifact.promoteTargets)
+    || !Array.isArray(artifact.realms)
+    || artifact.realms.length !== REALM_DEFINITIONS.length
+  ) throw new Error('protected_overlay_historical_artifact_invalid');
+  for (let index = 0; index < REALM_DEFINITIONS.length; index += 1) {
+    const definition = REALM_DEFINITIONS[index];
+    const realm = artifact.realms[index];
+    const historicalHarness = definition.externalInputs.phpHarnesses[0];
+    if (
+      artifact.promoteTargets[index] !== definition.promoteTarget
+      || !isRecord(realm)
+      || !hasExactKeys(realm, [
+        'realm',
+        'sourceRoot',
+        'promoteTarget',
+        'brokerIdentity',
+        'externalInputs',
+        'files',
+      ])
+      || realm.realm !== definition.realm
+      || realm.sourceRoot !== definition.sourceRoot
+      || realm.promoteTarget !== definition.promoteTarget
+      || canonical(realm.brokerIdentity) !== canonical(definition.brokerIdentity)
+      || !isRecord(realm.externalInputs)
+      || !hasExactKeys(realm.externalInputs, [
+        'status',
+        'backendFactoryEnvironmentVariable',
+        'brokerConfigEnvironmentVariable',
+        'privateContentEnvironmentVariable',
+        'configSchema',
+        'phpHarness',
+      ])
+      || realm.externalInputs.status !== 'required-outside-docroot'
+      || realm.externalInputs.backendFactoryEnvironmentVariable
+        !== definition.externalInputs.backendFactoryEnvironmentVariable
+      || realm.externalInputs.brokerConfigEnvironmentVariable
+        !== definition.externalInputs.brokerConfigEnvironmentVariable
+      || realm.externalInputs.privateContentEnvironmentVariable
+        !== definition.externalInputs.privateContentEnvironmentVariable
+      || !isRecord(realm.externalInputs.configSchema)
+      || !hasExactKeys(realm.externalInputs.configSchema, ['path', 'size', 'sha256'])
+      || realm.externalInputs.configSchema.path !== definition.externalInputs.configSchemaPath
+      || realm.externalInputs.configSchema.sha256
+        !== definition.externalInputs.configSchemaSha256
+      || !Number.isSafeInteger(realm.externalInputs.configSchema.size)
+      || realm.externalInputs.configSchema.size < 1
+      || !isRecord(realm.externalInputs.phpHarness)
+      || !hasExactKeys(realm.externalInputs.phpHarness, [
+        'path',
+        'minimumVersion',
+        'size',
+        'sha256',
+        'status',
+      ])
+      || realm.externalInputs.phpHarness.path !== historicalHarness.path
+      || realm.externalInputs.phpHarness.minimumVersion !== '8.2'
+      || !Number.isSafeInteger(realm.externalInputs.phpHarness.size)
+      || realm.externalInputs.phpHarness.size < 1
+      || realm.externalInputs.phpHarness.sha256 !== historicalHarness.sha256
+      || realm.externalInputs.phpHarness.status !== 'external-required'
+      || !Array.isArray(realm.files)
+      || realm.files.length !== definition.files.length
+    ) throw new Error('protected_overlay_historical_artifact_invalid');
+    for (let fileIndex = 0; fileIndex < definition.files.length; fileIndex += 1) {
+      const file = realm.files[fileIndex];
+      const expectedPath = definition.files[fileIndex];
+      if (
+        !isRecord(file)
+        || !hasExactKeys(file, [
+          'path',
+          'size',
+          'sha256',
+          'mediaType',
+          'deployMode',
+          'bytesBase64',
+        ])
+        || file.path !== expectedPath
+        || !Number.isSafeInteger(file.size)
+        || file.size < 1
+        || typeof file.sha256 !== 'string'
+        || !HASH_PATTERN.test(file.sha256)
+        || file.mediaType !== mediaTypeFor(file.path)
+        || file.deployMode !== '0644'
+        || typeof file.bytesBase64 !== 'string'
+        || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u
+          .test(file.bytesBase64)
+      ) throw new Error('protected_overlay_historical_artifact_invalid');
+      const bytes = Buffer.from(file.bytesBase64, 'base64');
+      if (
+        bytes.length !== file.size
+        || bytes.toString('base64') !== file.bytesBase64
+        || sha256(bytes) !== file.sha256
+      ) throw new Error('protected_overlay_historical_artifact_invalid');
+    }
+    try {
+      assertRealmSecurityBoundary(definition, realm.files);
+    } catch {
+      throw new Error('protected_overlay_historical_artifact_invalid');
+    }
+  }
+  const computedInventory = sha256(canonical(artifact.realms.map((realm) => ({
+    ...realm,
+    files: realm.files.map(({ bytesBase64: _bytesBase64, ...metadata }) => metadata),
+  }))));
+  const { artifactSha256: _artifactSha256, ...core } = artifact;
+  if (
+    computedInventory !== expectedInventorySha256
+    || artifact.releaseId !== `${RELEASE_PREFIX}${computedInventory}`
+    || sha256(canonical(core)) !== expectedArtifactSha256
+  ) throw new Error('protected_overlay_historical_artifact_invalid');
+  return artifact;
 }
 
 export function createProtectedOverlayActivationPlan({
@@ -425,6 +576,110 @@ export function createProtectedOverlayDeploymentEvidenceRequest({
   );
 }
 
+export function createProtectedOverlayHistoricalPredecessorEvidenceRequest({
+  activation,
+  artifact,
+  deploymentRoot,
+  expectedActivationSha256,
+  expectedArtifactSha256,
+  expectedInventorySha256,
+  expectedReleaseId,
+  expectedTrustPolicySha256,
+  trustPolicy,
+}) {
+  const verifiedArtifact = verifyProtectedOverlayHistoricalArtifact({
+    artifact,
+    expectedArtifactSha256,
+    expectedInventorySha256,
+    expectedReleaseId,
+  });
+  const verifiedActivation = verifyProtectedOverlayActivationPlan({
+    activation,
+    deploymentRoot,
+    expectedActivationSha256,
+    expectedTrustPolicySha256,
+    trustPolicy,
+  });
+  assertHistoricalPredecessorContentCompatibility(verifiedActivation);
+  return buildDeploymentEvidenceRequest(
+    verifiedArtifact,
+    verifiedActivation,
+    expectedTrustPolicySha256,
+    { historicalPredecessor: true },
+  );
+}
+
+function verifyHistoricalPredecessorAuthority({
+  activation,
+  authority,
+  deploymentRoot,
+  expectedActivationSha256,
+  expectedTrustPolicySha256,
+  trustPolicy,
+}) {
+  if (
+    !isRecord(authority)
+    || !hasExactKeys(authority, [
+      'artifact',
+      'evidence',
+      'expectedReleaseId',
+      'expectedInventorySha256',
+      'expectedArtifactSha256',
+      'expectedEvidenceSha256',
+    ])
+  ) throw new Error('protected_overlay_historical_predecessor_authority_invalid');
+  const artifact = verifyProtectedOverlayHistoricalArtifact({
+    artifact: authority.artifact,
+    expectedReleaseId: authority.expectedReleaseId,
+    expectedInventorySha256: authority.expectedInventorySha256,
+    expectedArtifactSha256: authority.expectedArtifactSha256,
+  });
+  const evidenceRequest = createProtectedOverlayHistoricalPredecessorEvidenceRequest({
+    activation,
+    artifact,
+    deploymentRoot,
+    expectedActivationSha256,
+    expectedReleaseId: authority.expectedReleaseId,
+    expectedInventorySha256: authority.expectedInventorySha256,
+    expectedArtifactSha256: authority.expectedArtifactSha256,
+    expectedTrustPolicySha256,
+    trustPolicy,
+  });
+  verifyProtectedOverlayDeploymentEvidence({
+    evidence: authority.evidence,
+    evidenceRequest,
+    expectedEvidenceSha256: authority.expectedEvidenceSha256,
+    expectedTrustPolicySha256,
+    trustPolicy,
+  });
+  return Object.freeze({
+    artifact,
+    evidenceSha256: authority.expectedEvidenceSha256,
+  });
+}
+
+function isExactHistoricalF3State(state) {
+  return isHistoricalF3ArtifactState(state)
+    && state.current.activationSha256 === HISTORICAL_F3_AUTHORITY.activationSha256
+    && state.current.evidenceSha256 === HISTORICAL_F3_AUTHORITY.evidenceSha256;
+}
+
+function isReattestedHistoricalF3State(state, activationSha256, evidenceSha256) {
+  return isHistoricalF3ArtifactState(state)
+    && state.current.activationSha256 === activationSha256
+    && state.current.evidenceSha256 === evidenceSha256;
+}
+
+function isHistoricalF3ArtifactState(state) {
+  return isRecord(state)
+    && state.schemaVersion === 1
+    && state.predecessorReleaseId === HISTORICAL_F3_AUTHORITY.predecessorReleaseId
+    && isRecord(state.current)
+    && state.current.releaseId === HISTORICAL_F3_AUTHORITY.releaseId
+    && state.current.inventorySha256 === HISTORICAL_F3_AUTHORITY.inventorySha256
+    && state.current.artifactSha256 === HISTORICAL_F3_AUTHORITY.artifactSha256;
+}
+
 export function verifyProtectedOverlayDeploymentEvidence({
   evidence,
   evidenceRequest,
@@ -579,11 +834,17 @@ export function createProtectedOverlayDeploymentEvidence({
   });
 }
 
-function buildDeploymentEvidenceRequest(artifact, activation, trustPolicySha256) {
+function buildDeploymentEvidenceRequest(
+  artifact,
+  activation,
+  trustPolicySha256,
+  { historicalPredecessor = false } = {},
+) {
   const realms = Object.freeze(REALM_DEFINITIONS.map((definition, index) => {
     const artifactRealm = artifact.realms[index];
     const activationRealm = activation.realms[index];
-    const phpHarnesses = Object.freeze(definition.externalInputs.phpHarnesses.map((harness) => {
+    const expectedHarnesses = definition.externalInputs.phpHarnesses;
+    const phpHarnesses = Object.freeze(expectedHarnesses.map((harness) => {
       const output = Buffer.from(harness.output, 'utf8');
       return Object.freeze({
         path: harness.path,
@@ -624,7 +885,9 @@ function buildDeploymentEvidenceRequest(artifact, activation, trustPolicySha256)
   }));
   const core = Object.freeze({
     schemaVersion: 1,
-    requestKind: EVIDENCE_REQUEST_KIND,
+    requestKind: historicalPredecessor
+      ? HISTORICAL_PREDECESSOR_EVIDENCE_REQUEST_KIND
+      : EVIDENCE_REQUEST_KIND,
     releaseId: artifact.releaseId,
     inventorySha256: artifact.inventorySha256,
     artifactSha256: artifact.artifactSha256,
@@ -639,6 +902,8 @@ function buildDeploymentEvidenceRequest(artifact, activation, trustPolicySha256)
 }
 
 function validateEvidenceRequest(request, expectedTrustPolicySha256, verifiedTrustPolicy) {
+  const historicalPredecessor = request?.requestKind
+    === HISTORICAL_PREDECESSOR_EVIDENCE_REQUEST_KIND;
   if (
     !isRecord(request)
     || !hasExactKeys(request, [
@@ -653,7 +918,7 @@ function validateEvidenceRequest(request, expectedTrustPolicySha256, verifiedTru
       'requestSha256',
     ])
     || request.schemaVersion !== 1
-    || request.requestKind !== EVIDENCE_REQUEST_KIND
+    || (request.requestKind !== EVIDENCE_REQUEST_KIND && !historicalPredecessor)
     || request.trustPolicySha256 !== expectedTrustPolicySha256
     || typeof request.releaseId !== 'string'
     || !request.releaseId.startsWith(RELEASE_PREFIX)
@@ -664,6 +929,11 @@ function validateEvidenceRequest(request, expectedTrustPolicySha256, verifiedTru
     || !Array.isArray(request.realms)
     || request.realms.length !== REALM_DEFINITIONS.length
   ) throw new Error('protected_overlay_evidence_request_invalid');
+  if (historicalPredecessor && (
+    request.releaseId !== HISTORICAL_F3_AUTHORITY.releaseId
+    || request.inventorySha256 !== HISTORICAL_F3_AUTHORITY.inventorySha256
+    || request.artifactSha256 !== HISTORICAL_F3_AUTHORITY.artifactSha256
+  )) throw new Error('protected_overlay_evidence_request_invalid');
   const core = {
     schemaVersion: request.schemaVersion,
     requestKind: request.requestKind,
@@ -755,18 +1025,27 @@ function validateEvidenceRequest(request, expectedTrustPolicySha256, verifiedTru
       || !isActivationFileMetadata(realm.inputs.brokerConfig)
       || !isRecord(realm.inputs.privateContent)
       || !isPrivateContentMetadata(realm.inputs.privateContent, definition)
-      || !isEvidenceRequestHarnesses(realm.phpHarnesses, definition)
+      || !isEvidenceRequestHarnesses(
+        realm.phpHarnesses,
+        definition.externalInputs.phpHarnesses,
+      )
     ) throw new Error('protected_overlay_evidence_request_invalid');
+  }
+  if (historicalPredecessor) {
+    const productionContent = request.realms[0]?.inputs?.privateContent;
+    if (!isHistoricalPredecessorContentMetadata(productionContent)) {
+      throw new Error('protected_overlay_evidence_request_invalid');
+    }
   }
 }
 
-function isEvidenceRequestHarnesses(value, definition) {
+function isEvidenceRequestHarnesses(value, expectedHarnesses) {
   if (
     !Array.isArray(value)
-    || value.length !== definition.externalInputs.phpHarnesses.length
+    || value.length !== expectedHarnesses.length
   ) return false;
   return value.every((harness, index) => {
-    const expected = definition.externalInputs.phpHarnesses[index];
+    const expected = expectedHarnesses[index];
     const output = Buffer.from(expected.output, 'utf8');
     return (
       isRecord(harness)
@@ -875,6 +1154,24 @@ function isPrivateContentMetadata(value, definition) {
   );
 }
 
+function assertHistoricalPredecessorContentCompatibility(activation) {
+  const production = activation.realms.find(({ realm }) => realm === 'production');
+  if (!production || !isHistoricalPredecessorContentMetadata(production.privateContent)) {
+    throw new Error('protected_overlay_historical_content_incompatible');
+  }
+}
+
+function isHistoricalPredecessorContentMetadata(value) {
+  if (!isRecord(value) || !Array.isArray(value.files)) return false;
+  const filePaths = value.files.map(({ path }) => path);
+  return (
+    (value.layout === 'legacy-flat'
+      || value.layout === 'structured-with-client-resources-fallback')
+    && filePaths.includes('en.json')
+    && filePaths.includes('es-MX.json')
+  );
+}
+
 export function promoteProtectedOverlays({
   activation,
   artifact,
@@ -887,6 +1184,7 @@ export function promoteProtectedOverlays({
   expectedPredecessorReleaseId,
   expectedReleaseId,
   expectedTrustPolicySha256,
+  historicalPredecessorAuthority,
   projectRoot,
   trustPolicy,
 }) {
@@ -950,6 +1248,8 @@ export function promoteProtectedOverlays({
 
     const existingState = readManagedState(root);
     let predecessorArtifact = null;
+    let transitionPredecessor = existingState;
+    let restoreRemovedCandidate = false;
     if (existingState === null) {
       if (expectedPredecessorReleaseId !== 'absent') {
         throw new Error('protected_overlay_predecessor_mismatch');
@@ -968,6 +1268,44 @@ export function promoteProtectedOverlays({
       for (const realm of predecessorArtifact.realms) {
         verifyRealmDirectory(resolve(root, ...realm.promoteTarget.split('/')), realm);
       }
+      if (isHistoricalF3Pins(stateArtifactPins(existingState.current))) {
+        if (historicalPredecessorAuthority === undefined) {
+          throw new Error('protected_overlay_historical_predecessor_authority_required');
+        }
+        const verifiedHistorical = verifyHistoricalPredecessorAuthority({
+          activation: lockedActivation,
+          authority: historicalPredecessorAuthority,
+          deploymentRoot,
+          expectedActivationSha256,
+          expectedTrustPolicySha256,
+          trustPolicy,
+        });
+        const reattestedState = isReattestedHistoricalF3State(
+          existingState,
+          lockedActivation.activationSha256,
+          verifiedHistorical.evidenceSha256,
+        );
+        if (!isExactHistoricalF3State(existingState) && !reattestedState) {
+          throw new Error('protected_overlay_historical_predecessor_state_invalid');
+        }
+        restoreRemovedCandidate = reattestedState;
+        if (canonical(verifiedHistorical.artifact) !== canonical(predecessorArtifact)) {
+          throw new Error('protected_overlay_historical_predecessor_authority_invalid');
+        }
+        transitionPredecessor = Object.freeze({
+          schemaVersion: 1,
+          current: Object.freeze({
+            releaseId: predecessorArtifact.releaseId,
+            inventorySha256: predecessorArtifact.inventorySha256,
+            artifactSha256: predecessorArtifact.artifactSha256,
+            activationSha256: lockedActivation.activationSha256,
+            evidenceSha256: verifiedHistorical.evidenceSha256,
+          }),
+          predecessorReleaseId: existingState.predecessorReleaseId,
+        });
+      } else if (historicalPredecessorAuthority !== undefined) {
+        throw new Error('protected_overlay_historical_predecessor_authority_invalid');
+      }
     }
 
     const artifactsRoot = ensureDurableDirectory(
@@ -981,11 +1319,13 @@ export function promoteProtectedOverlays({
       'protected_overlay_candidate_collision',
     );
     storeImmutableArtifact(artifactsRoot, verifiedArtifact);
+    storeImmutableTransition(managedRoot, verifiedArtifact, transitionPredecessor);
     const releaseCandidateRoot = prepareReleaseCandidate(
       managedRoot,
       candidatesRoot,
       verifiedArtifact,
       token,
+      { restoreRemovedCandidate },
     );
     const appsRoot = ensureDurableDirectory(
       resolve(documentRoot, 'apps'),
@@ -1006,7 +1346,6 @@ export function promoteProtectedOverlays({
         'protected_overlay_predecessor_store_collision',
       );
     }
-    storeImmutableTransition(managedRoot, verifiedArtifact, existingState);
     const afterState = Object.freeze({
       schemaVersion: 1,
       current: Object.freeze({
@@ -1311,13 +1650,15 @@ export function verifyProtectedOverlayDeployment({
   projectRoot,
   trustPolicy,
 }) {
-  const verifiedArtifact = verifyProtectedOverlayArtifact({
-    artifact,
-    projectRoot,
+  const artifactPins = {
     expectedArtifactSha256,
     expectedInventorySha256,
     expectedReleaseId,
-  });
+  };
+  const historicalPredecessor = isHistoricalF3Pins(artifactPins);
+  const verifiedArtifact = historicalPredecessor
+    ? verifyProtectedOverlayHistoricalArtifact({ artifact, ...artifactPins })
+    : verifyProtectedOverlayArtifact({ artifact, projectRoot, ...artifactPins });
   const verifiedActivation = verifyProtectedOverlayActivationPlan({
     activation,
     deploymentRoot,
@@ -1325,10 +1666,14 @@ export function verifyProtectedOverlayDeployment({
     expectedTrustPolicySha256,
     trustPolicy,
   });
+  if (historicalPredecessor) {
+    assertHistoricalPredecessorContentCompatibility(verifiedActivation);
+  }
   const evidenceRequest = buildDeploymentEvidenceRequest(
     verifiedArtifact,
     verifiedActivation,
     expectedTrustPolicySha256,
+    { historicalPredecessor },
   );
   verifyProtectedOverlayDeploymentEvidence({
     evidence,
@@ -1351,10 +1696,14 @@ export function verifyProtectedOverlayDeployment({
       expectedTrustPolicySha256,
       trustPolicy,
     });
+    if (historicalPredecessor) {
+      assertHistoricalPredecessorContentCompatibility(lockedActivation);
+    }
     const lockedEvidenceRequest = buildDeploymentEvidenceRequest(
       verifiedArtifact,
       lockedActivation,
       expectedTrustPolicySha256,
+      { historicalPredecessor },
     );
     verifyProtectedOverlayDeploymentEvidence({
       evidence,
@@ -1555,7 +1904,13 @@ function ensureArtifactParents(root, destination) {
   }
 }
 
-function prepareReleaseCandidate(managedRoot, candidatesRoot, artifact, token) {
+function prepareReleaseCandidate(
+  managedRoot,
+  candidatesRoot,
+  artifact,
+  token,
+  { restoreRemovedCandidate = false } = {},
+) {
   const destination = resolve(candidatesRoot, artifact.releaseId);
   const buildingPrefix = `${artifact.releaseId}.building-`;
   for (const entry of readdirSync(candidatesRoot, { withFileTypes: true })) {
@@ -1569,6 +1924,28 @@ function prepareReleaseCandidate(managedRoot, candidatesRoot, artifact, token) {
       managedRoot,
       'protected_overlay_candidate_collision',
     );
+  }
+  const removed = resolve(managedRoot, 'removed', artifact.releaseId);
+  if (restoreRemovedCandidate && existsSync(removed)) {
+    const removedCandidate = realDirectory(removed, 0o700);
+    assertDirectoryNames(
+      removedCandidate,
+      artifact.realms.map(({ realm }) => realm),
+      'protected_overlay_candidate_collision',
+    );
+    for (const realm of artifact.realms) {
+      verifyRealmDirectory(resolve(removedCandidate, realm.realm), realm);
+    }
+    if (existsSync(destination)) {
+      prepareEmptyDirectory(destination, 0o700, 'protected_overlay_candidate_collision');
+      removeDurableOwnedTree(
+        destination,
+        managedRoot,
+        'protected_overlay_candidate_collision',
+      );
+    }
+    durableRename(removed, destination, 'protected_overlay_candidate_collision');
+    transactionCheckpoint('removed-candidate-restored');
   }
   if (existsSync(destination)) {
     const candidate = realDirectory(destination, 0o700);
@@ -1674,6 +2051,12 @@ function readStoredArtifact(root, pins) {
   if (
     !bytes.equals(Buffer.from(`${canonical(artifact)}\n`, 'utf8'))
   ) throw new Error('protected_overlay_artifact_store_invalid');
+  if (isHistoricalF3Pins(pins)) {
+    return verifyProtectedOverlayHistoricalArtifact({
+      artifact,
+      ...pins,
+    });
+  }
   return validateArtifactCapsule(artifact, pins);
 }
 
@@ -2679,6 +3062,13 @@ function assertPinObject(pins) {
     pins.expectedInventorySha256,
     pins.expectedArtifactSha256,
   );
+}
+
+function isHistoricalF3Pins(pins) {
+  return isRecord(pins)
+    && pins.expectedReleaseId === HISTORICAL_F3_AUTHORITY.releaseId
+    && pins.expectedInventorySha256 === HISTORICAL_F3_AUTHORITY.inventorySha256
+    && pins.expectedArtifactSha256 === HISTORICAL_F3_AUTHORITY.artifactSha256;
 }
 
 function assertExactInventory(root, expectedPaths) {

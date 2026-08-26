@@ -1,7 +1,9 @@
 # Dynamic miniapp catalog
 
-Status: implementation candidate. This document becomes the operating authority
-only after the staged production activation and verification record are complete.
+Status: public and protected dynamic control planes active; physical valid-flow
+App Attest and exact-RC evidence pending. The
+sanitized production boundary and exact active pins are recorded in
+`dynamic-miniapp-production-activation-2026-08-25.md`.
 
 ## Owner outcome
 
@@ -45,8 +47,14 @@ https://cabohealth.org/apps/<lowercase-kebab-id>/
 ```
 
 The ID is 1–64 characters. `app-review` and `shared` are reserved.
-`client-resources` is client-only. Titles are at most 80 characters, summaries
-at most 240, and localized text may not contain ASCII control characters.
+`client-resources` is client-only. The historical App Review rejection IDs
+`health-advisor`, `ai-cosmetic-scan`, `service-hub`, and `sleep-lab` are
+permanently retired for both public and client access. Staff rejects their URLs
+and mutation IDs before any network call, Functions rejects both mutations and
+stored catalog records containing them, and the native parser rejects an entire
+remote or cached snapshot containing one. Do not rename or reuse these IDs.
+Titles are at most 80 characters, summaries at most 240, and localized text may
+not contain ASCII control characters.
 URLs with credentials, ports, queries, fragments, escapes, backslashes,
 whitespace, mixed hosts, or a noncanonical path are rejected.
 
@@ -136,41 +144,53 @@ and the release evidence.
 Official policy authority:
 `https://developer.apple.com/app-store/review/guidelines/#mini-apps-mini-games-streaming-games-chatbots-plugins-and-game-emulators`.
 
-## Local web candidate
+## Active public-web authority
 
-The deterministic public-web candidate for this AASA change is
+The deterministic public-web release for this AASA change is
 `web-v1-40869f4a540a56c420b198aea0fdf58a21053646d280d89ad64d105fd1808948`.
-It retains exactly the two bundled web entry slugs `healthy-recipes` and
-`clinic-guide`; the only payload delta from the live release is the AASA file.
+It is active in production and retains exactly the two bundled web entry slugs
+`healthy-recipes` and `clinic-guide`; the only payload delta from its
+predecessor is the AASA file.
 
 - manifest SHA-256: `2ab49eb8e2d47293cb72d2e7aa34134a2a32b7e5fe38f8cdc8ad6c3e5e807f7e`;
 - transport SHA-256: `3dcdbf88900ff4d93691f36cf2fbeedbd1dc08298f55640574368ea7ea813312`;
 - AASA SHA-256: `e721827da1fe77d4a34247c9c2c515db73614545c6fb20e03f52b25e8594beae`.
 
-This is local assembly evidence, not deployment evidence. The live production
-record remains `web-v1-623fafeb169001829dd63cf701b5eba59f40a487eb71b11521a9d1a9f578c693`
-until an authorized promotion completes exact Hostinger inventory, origin,
-browser, rollback, Apple CDN, and physical-device Universal Link verification.
+The authorized promotion completed exact Hostinger inventory, private
+promotion/rollback rehearsal, origin verification, unrelated-content checks,
+and Apple CDN verification. Origin and Apple's CDN returned the exact AASA
+SHA-256 above. The predecessor remains retained for rollback. The official
+multi-browser measurement for this AASA-only successor and physical-device
+Universal Link verification remain pending and are not implied by the
+origin/CDN result.
 
 ## Staged activation
 
 Use this order so old clients and the old Staff portal keep working throughout
 the change:
 
-1. Run all Functions, portal, native, broker, AASA, and release tests.
-2. Deploy additive Functions and Firestore TTL configuration. Keep the legacy
+1. **Completed:** Run all Functions, portal, native, broker, AASA, and release
+   tests.
+2. **Completed:** Deploy additive Functions and Firestore TTL configuration. Keep the legacy
    draft callables during this release.
-3. Generate a dry-run migration plan from production. Review its SHA-256.
-4. Apply only that exact plan: add `client_resource_publish`, seed the three
+3. **Completed:** Generate a dry-run migration plan from production and review
+   its SHA-256.
+4. **Completed:** Apply only that exact plan: add `client_resource_publish`, seed the three
    existing entries, and import only compatible legacy drafts as inactive.
-5. Promote the protected broker release and verify invalid, replayed, expired,
-   revoked, and multi-resource launches before making client entries active.
-6. Promote the Staff artifact with a preserved rollback directory and verify
-   its exact bytes, CSP, App Check, login, CRUD, audit, and 404 behavior.
-7. Promote and verify the new AASA at origin and Apple's CDN.
-8. Verify public create/edit/deactivate/delete and one-code client expansion in
+5. **Component active; physical valid-flow pending:** The protected broker
+   completed promotion, verification, rollback, historical verification,
+   re-promotion, final verification, and live malformed/unauthorized denial.
+   Replay, expiry, revocation, multi-resource selection, and deletion/retry
+   still require the complete valid App Attest flow on physical iPhones.
+6. **Component active; owner E2E pending:** Promote the Staff artifact with a
+   preserved rollback directory and verify its exact bytes, CSP/App Check
+   policy, catalog/audit UI bundle, no-cookie responses, and protected 404.
+   Complete the fresh owner sign-in and controlled CRUD exercise in step 8.
+7. **Completed:** Promote and verify the new AASA at origin and Apple's CDN.
+8. **Pending:** Verify public create/edit/deactivate/delete and one-code client expansion in
    production using non-sensitive test entries, then remove the test entries.
-9. Freeze the source, create a new iOS build, inspect the exact IPA, upload it to
+9. **Pending:** Freeze the source for CaboHealth 3.0 build 5, create the new iOS
+   build, inspect the exact IPA, upload it to
    TestFlight, and complete physical-device QA before selecting it for review.
 
 Never place catalog contents, HMAC values, owner identity, access codes, launch

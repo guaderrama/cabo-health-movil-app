@@ -1,18 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import ts from 'typescript';
 
-const source = readFileSync(
-  new URL('../features/catalog/publicCatalogState.ts', import.meta.url),
-  'utf8',
-);
-const compiled = ts.transpileModule(source, {
-  compilerOptions: {
-    module: ts.ModuleKind.ESNext,
-    target: ts.ScriptTarget.ES2022,
-  },
-}).outputText;
 const {
   createPublicCatalogState,
   getFavoriteSnapshot,
@@ -22,7 +10,7 @@ const {
   subscribeFavoriteSnapshot,
   toggleFavoriteSnapshot,
   toggleRememberedPublicFavorite,
-} = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+} = await import('../.test-build/features/catalog/publicCatalogState.js');
 
 const MINIAPPS = [
   {
@@ -93,12 +81,20 @@ test('remote public favorites stay remembered while absent catalog items remain 
     'sun-care',
     'sun-care',
     'client-resources',
+    'health-advisor',
+    'ai-cosmetic-scan',
+    'service-hub',
+    'sleep-lab',
     'Unsafe Slug',
   ]);
   assert.deepEqual(remembered, ['healthy-recipes', 'sun-care']);
   assert.deepEqual(
     toggleRememberedPublicFavorite(remembered, 'travel-health'),
     ['healthy-recipes', 'sun-care', 'travel-health'],
+  );
+  assert.deepEqual(
+    toggleRememberedPublicFavorite(remembered, 'health-advisor'),
+    remembered,
   );
 
   const visible = createPublicCatalogState(MINIAPPS, remembered);

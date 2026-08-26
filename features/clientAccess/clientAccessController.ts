@@ -1,3 +1,5 @@
+import { isPermanentlyRetiredCatalogId } from '../catalog/catalogIdPolicy';
+
 const OPAQUE_SESSION = Symbol('cabohealth.clientAccess.session');
 export const CLIENT_RESOURCE_LAUNCH_URL = 'https://cabohealth.org/apps/client-resources/launch/' as const;
 export const APP_REVIEW_LAUNCH_URL = 'https://cabohealth.org/apps/app-review/launch/' as const;
@@ -170,6 +172,7 @@ function parseClientResource(value: unknown): Readonly<ClientResourceView> | nul
     record.access !== 'client'
     || !isNonblankString(record.id, 64)
     || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(record.id)
+    || isPermanentlyRetiredCatalogId(record.id)
     || !isNonblankString(record.iconKey, 40)
     || !CLIENT_RESOURCE_ICON_KEYS.has(record.iconKey)
     || !title

@@ -629,7 +629,7 @@ $definitions = [
             ],
             [
                 'path' => 'tools/hosting/tests/dynamic-client-resource-broker.php',
-                'sha256' => '9a9df9f409d87555851aaf7e14c4f3e1e430d394bfd304ded2ab90bd6b2518af',
+                'sha256' => '54a24413498d32e8981f83e14d7c34f78bb08407c68fd9a2ed5835d2d381f6c6',
                 'output' => "dynamic client resource broker: ok\n",
             ],
         ],

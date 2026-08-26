@@ -32,4 +32,35 @@ The production controller was independently approved at SHA-256 `829276ab7b587c8
 
 ## Remaining Apple gates
 
-This activation closes the public web, hosted legal, AASA origin/CDN, and unrelated-file preservation gates. It does not create the iOS 3.0/build 4 release candidate, TestFlight evidence, App Attest proof, physical-iPhone QA, screenshots, final App Store Connect answers, rights signature, or the final time-limited submission authorization.
+This activation closed the then-current public web, hosted legal, AASA
+origin/CDN, and unrelated-file preservation gates. It did not create an iOS
+release candidate, TestFlight evidence, App Attest proof, physical-iPhone QA,
+screenshots, final App Store Connect answers, rights signature, or the final
+time-limited submission authorization. The later signed build 4 is obsolete
+diagnostic evidence and is not the next release candidate.
+
+## Dynamic AASA-only successor — 2026-08-25
+
+Public release
+`web-v1-40869f4a540a56c420b198aea0fdf58a21053646d280d89ad64d105fd1808948`
+is now active. It retains the same 17-file public content authority and changes
+only the AASA bytes to the ordered nine-component dynamic-catalog contract.
+
+- Canonical manifest SHA-256:
+  `2ab49eb8e2d47293cb72d2e7aa34134a2a32b7e5fe38f8cdc8ad6c3e5e807f7e`
+- Immutable transport SHA-256:
+  `3dcdbf88900ff4d93691f36cf2fbeedbd1dc08298f55640574368ea7ea813312`
+- AASA SHA-256:
+  `e721827da1fe77d4a34247c9c2c515db73614545c6fb20e03f52b25e8594beae`
+
+The exact remote inputs, fresh backup, private promotion/full-rollback
+rehearsal, ten-unit production promotion, inventory, origin responses,
+security headers, protected unknown-slug response, retained controls, and
+unrelated WordPress content checks passed. Origin and Apple's associated-domain
+CDN returned the exact AASA hash above. The predecessor remains retained for
+rollback.
+
+The official multi-browser measurement for this AASA-only successor and
+physical-iPhone Universal Link behavior remain pending. This successor does
+not create CaboHealth 3.0 build 5, TestFlight evidence, physical-device QA,
+App Store submission, or Apple approval.

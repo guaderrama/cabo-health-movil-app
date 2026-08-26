@@ -4,6 +4,7 @@ import {
   PUBLIC_MINIAPPS,
   type CatalogPublicMiniapp,
 } from '../../constants/publicMiniapps';
+import { isPermanentlyRetiredCatalogId } from '../catalog/catalogIdPolicy';
 
 export const EMBEDDED_PRESENTATION_FRAGMENTS = Object.freeze({
   'en:standard': '#embedded-en',
@@ -81,7 +82,7 @@ export function resolvePublicMiniappRouteSlug(
   value: string | string[] | undefined,
   catalog: readonly Readonly<Pick<CatalogPublicMiniapp, 'slug'>>[] = PUBLIC_MINIAPPS,
 ): string | undefined {
-  if (typeof value !== 'string') return undefined;
+  if (typeof value !== 'string' || isPermanentlyRetiredCatalogId(value)) return undefined;
   return catalog.find((miniapp) => miniapp.slug === value)?.slug;
 }
 
@@ -91,7 +92,8 @@ export function shouldWaitForPublicCatalogRoute(
 ): boolean {
   return isLoading
     && typeof value === 'string'
-    && PUBLIC_ROUTE_ID_PATTERN.test(value);
+    && PUBLIC_ROUTE_ID_PATTERN.test(value)
+    && !isPermanentlyRetiredCatalogId(value);
 }
 
 export function classifyMiniappNavigation(
@@ -190,6 +192,7 @@ function hasExactCatalogBoundary(value: unknown): value is Readonly<CatalogPubli
   if (
     typeof miniapp.slug !== 'string'
     || !PUBLIC_ROUTE_ID_PATTERN.test(miniapp.slug)
+    || isPermanentlyRetiredCatalogId(miniapp.slug)
     || ['app-review', 'shared', 'client-resources'].includes(miniapp.slug)
     || miniapp.legalUrls === null
     || typeof miniapp.legalUrls !== 'object'

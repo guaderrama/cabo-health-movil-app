@@ -25,12 +25,17 @@ is the highest observed build, so build `4` was available at that observation.
 This is a point-in-time fact, not a permanent reservation; it must be checked
 again before upload.
 
+Build 4 was later produced and inspected as diagnostic evidence, but its source
+predates the completed dynamic-catalog integration and it is obsolete for
+release. CaboHealth 3.0 build 5 is the next candidate; no build 5 IPA or
+TestFlight upload is claimed by this document.
+
 ## Resolution mapping for the new candidate
 
-| Prior issue | New 3.0/build 4 candidate response | Remaining proof before resubmission |
+| Prior issue | New 3.0/build 5 candidate response | Remaining proof before resubmission |
 | --- | --- | --- |
 | Brand relationship / Guideline 4.1 | Truthfully identifies Ivan Guaderrama as the Individual seller and Cabo Health as his owner-operated trade brand. | Ivan signs the scoped ownership declaration and attaches current domain/content-rights evidence. |
-| Advisory resource failed to open | The legacy advisory resource is excluded from the catalog and release binary. The candidate permits exactly Healthy Recipes, CaboHealth Clinic Guide, and protected Client Resources. | Clean-install and update-path physical-device QA; verify both canonical public URLs from Mexico and the United States. |
+| Advisory resource failed to open | The legacy advisory resource is excluded from the release binary. The initial catalog contains Healthy Recipes, CaboHealth Clinic Guide, and protected Client Resources; the validated owner-managed catalog can publish or withdraw CaboHealth-owned canonical entries under the documented Guideline 4.7 policy. | Clean-install and update-path physical-device QA; verify every active reviewed canonical URL from Mexico and the United States. |
 | Camera-based cosmetic resource crashed | The legacy camera/AI resource is excluded. The candidate requests no camera, photo-library, health, microphone, or location permission. | Inspect the exact signed IPA entitlements/privacy report and test supported iPhone layouts plus, if Apple can install it, the iPhone-compatibility presentation on iPad. |
 | Questions about third-party AI and transmitted user data | The candidate contains no third-party AI feature and sends no user data to an AI provider. | Reconcile the exact RC network/SDK inventory and state this plainly in final Review Notes. |
 | Medical/health information lacked citations | The candidate is general-wellness/editorial, contains no personalized medical recommendation, and uses the reviewed citations/limitations in the two public resources. | Verify every citation is visible and reachable in the exact hosted release; retain the itemized rights/citation inventory. |

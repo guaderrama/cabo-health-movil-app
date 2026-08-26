@@ -1,8 +1,15 @@
 # Protected overlay activation record — 2026-08-24
 
-Status: **ACTIVE / HOSTING BOUNDARY VERIFIED**. This is a sanitized permanent
+Status: **HISTORICAL / SUPERSEDED 2026-08-26**. This is a sanitized permanent
 record. It intentionally excludes account names, server addresses, absolute
 private paths, credentials, HMAC values, Ed25519 private keys, and raw logs.
+
+The pins below preserve the original 2026-08-24 f3 activation exactly; they
+must not be relabeled as the current deployment authority. The dynamic
+successor is now live, and f3 remains only as its separately re-attested
+rollback authority. See
+[`protected-overlay-dynamic-activation-2026-08-26.md`](protected-overlay-dynamic-activation-2026-08-26.md)
+for the current pins and completed promote → rollback → re-promote evidence.
 
 ## Released authority
 

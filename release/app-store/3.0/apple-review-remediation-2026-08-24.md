@@ -9,14 +9,19 @@ A read-only App Store Connect inspection completed at `2026-08-25T01:15:59Z` con
 - Apple ID `6758285327` has an editable rejected iOS version `3.0`.
 - That rejected submission selected the older `2.0.0` build `2` binary.
 - TestFlight contains builds `1`, `2`, and `3`; all are expired.
-- Build `3` is the highest observed build, so `3.0` build `4` is the next available candidate.
+- Build `3` was the highest observed build, so `3.0` build `4` was available at that observation.
 - The latest unresolved review is dated 2026-02-24 and cites Guidelines 1.4.1, 2.1, and 4.1 plus two information requests.
 
 No review credential, access code, password, message attachment, or other secret is recorded here.
 
+Build 4 was subsequently produced and inspected as diagnostic evidence, but it
+predates the completed dynamic-catalog source and is obsolete for release.
+CaboHealth 3.0 build 5 is the next candidate. No build 5 IPA, TestFlight upload,
+physical-device QA, submission, or Apple approval is claimed here.
+
 ## Guideline 2.1 — completeness and stability
 
-The rejected build reported an error when opening the former Health Advisor surface and a crash after selecting Take Photo in the former AI Cosmetic Scan surface. Those named surfaces are outside the reviewed 3.0/build 4 candidate scope. The candidate authority permits exactly Healthy Recipes, CaboHealth Clinic Guide, protected Client Resources, and the isolated App Review sample; release verification rejects the former names from App Store metadata.
+The rejected build reported an error when opening the former Health Advisor surface and a crash after selecting Take Photo in the former AI Cosmetic Scan surface. Those named surfaces are outside the reviewed 3.0/build 5 candidate scope. The initial reviewed catalog contains Healthy Recipes, CaboHealth Clinic Guide, protected Client Resources, and the isolated App Review sample. The owner-managed runtime can publish or withdraw only validated CaboHealth-owned canonical entries under the documented Guideline 4.7 policy; release verification rejects the former names from App Store metadata.
 
 Before resubmission:
 
@@ -28,7 +33,7 @@ Before resubmission:
 
 ## Guideline 1.4.1 — medical citations
 
-The revised Healthy Recipes and Clinic Guide content includes visible source citations. Their exact public bytes, Privacy update, origin behavior, browser behavior, rollback, and Apple CDN AASA bytes were deployed and verified on 2026-08-24. The exact TestFlight candidate must still prove that citations remain easy to find in every medical, health, wellness, recommendation, calculation, or reference surface reachable from the binary.
+The revised Healthy Recipes and Clinic Guide content includes visible source citations. Their exact public bytes, Privacy update, origin behavior, browser behavior, rollback, and then-current Apple CDN AASA bytes were deployed and verified on 2026-08-24. The dynamic nine-component AASA successor was promoted on 2026-08-25 and its exact origin/CDN bytes were verified separately. The exact TestFlight candidate must still prove that citations remain easy to find in every medical, health, wellness, recommendation, calculation, or reference surface reachable from the binary.
 
 ## Guideline 2.1 — information about AI and data sharing
 
@@ -46,10 +51,10 @@ Cabo Health is a trade brand owned and operated by Ivan Guaderrama, an Individua
 
 ## Reviewer access
 
-The prior review could not access the former Service Hub Portal. That former surface is outside the candidate scope. The owner-only Staff Portal is now intentionally absent from Settings and unreachable from the consumer binary; it remains available to the owner only by direct web URL. The exact signed IPA must prove that exclusion. If Apple explicitly requests the separate administrative system, provide isolated non-production Staff access without production privileges or obtain written direction. The candidate still needs a valid isolated App Review credential for the fixed non-client sample and reciprocal production/review isolation checks. The exact credential belongs only in App Store Connect at review time and must never be committed.
+The prior review could not access the former Service Hub Portal. That former surface is outside the candidate scope. The owner-only Staff Portal is now intentionally absent from Settings and unreachable from the consumer binary; it remains available to the owner only by direct web URL for guarded catalog and access administration. The exact signed IPA must prove that exclusion. If Apple explicitly requests the separate administrative system, provide isolated non-production Staff access without production privileges or obtain written direction. The candidate still needs a valid isolated App Review credential for the fixed non-client sample and reciprocal production/review isolation checks. The exact credential belongs only in App Store Connect at review time and must never be committed.
 
 The deployed Privacy notice uses “visible Staff Access portal” to describe that separately hosted direct-URL login surface; it contains no Staff link and does not say the portal is reachable from the app. The final Review Notes and signed-IPA gate state the consumer exclusion unambiguously. Replace that older adjective during the next planned public-web release, not through a one-word emergency promotion that would invalidate otherwise exact public evidence immediately before the RC.
 
 ## Exit criteria
 
-This remediation is complete only when the exact build 4 IPA and processed TestFlight build prove the new scope, citations, network/AI answer, stable reachable flows, reviewer access, brand evidence, two-iPhone QA, iPad compatibility, and final App Store metadata. A separate explicit owner confirmation remains required immediately before Submit for Review.
+This remediation is complete only when the exact build 5 IPA and processed TestFlight build prove the dynamic-catalog scope, citations, network/AI answer, stable reachable flows, reviewer access, brand evidence, two-iPhone QA, iPad compatibility, and final App Store metadata. A separate explicit owner confirmation remains required immediately before Submit for Review.

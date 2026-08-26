@@ -60,7 +60,7 @@ function withFixture(mutate, assertion) {
   }
 }
 
-test('release v3 verifier accepts the truthful pre-build-configured 3.0/build 4 package', () => {
+test('release v3 verifier accepts the truthful pre-build-configured 3.0/build 5 package', () => {
   const result = runVerifier();
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /verified.*pre-build-configured/iu);
@@ -319,7 +319,7 @@ test('release v3 verifier rejects rollback from the ASC-confirmed native version
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /app\.json must remain 3\.0\/build 4/iu);
+      assert.match(result.stderr, /app\.json must remain 3\.0\/build 5/iu);
     },
   );
 });
@@ -358,10 +358,10 @@ test('release v3 verifier rejects executable config drift hidden behind stale co
       const path = join(root, 'constants/config.ts');
       const source = readFileSync(path, 'utf8')
         .replace("version: '3.0',", "version: '3.0.0',")
-        .replace("buildNumber: '4',", "buildNumber: '5',");
+        .replace("buildNumber: '5',", "buildNumber: '6',");
       writeFileSync(
         path,
-        `${source}\n// Stale reviewed values: version: '3.0'; buildNumber: '4'\n`,
+        `${source}\n// Stale reviewed values: version: '3.0'; buildNumber: '5'\n`,
       );
     },
     (result) => {
@@ -761,6 +761,14 @@ test('release v3 verifier keeps every external gate at its exact truthful state'
   assert.equal(
     manifest.appStoreDraft.unresolvedExternalGates.staffReviewAccess,
     'owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested',
+  );
+  assert.equal(
+    manifest.gates.firebaseAndHosting,
+    'dynamic-public-and-protected-brokers-deployed-and-verified-pending-physical-app-attest-valid-flow-and-exact-rc-e2e',
+  );
+  assert.equal(
+    manifest.appStoreDraft.unresolvedExternalGates.firebaseAndHosting,
+    'dynamic-public-and-protected-brokers-deployed-and-verified-pending-physical-app-attest-valid-flow-and-exact-rc-e2e',
   );
   withFixture(
     (root) => mutateJson(root, 'release/app-store/3.0/release-manifest.json', (manifest) => {

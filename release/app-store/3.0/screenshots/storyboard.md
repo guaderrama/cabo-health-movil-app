@@ -1,6 +1,6 @@
 # Screenshot storyboard — exact RC only
 
-Status: Planning only. Capture `en-US` and `es-MX` from the processed CaboHealth 3.0 (build 4) TestFlight RC on a 6.9-inch iPhone class. Never use prototypes, localhost, browser chrome, or build 2/3.
+Status: Planning only. Capture `en-US` and `es-MX` from the processed CaboHealth 3.0 (build 5) TestFlight RC on a 6.9-inch iPhone class. Never use prototypes, localhost, browser chrome, or builds 2–4.
 
 | Order / file stem | Exact in-app state | EN presentation line | es-MX presentation line | Evidence gate |
 | --- | --- | --- | --- | --- |
