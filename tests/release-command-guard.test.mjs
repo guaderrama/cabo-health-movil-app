@@ -440,7 +440,7 @@ test('artifact verification compares complete plist content across XML and binar
   assert.equal(googleServicesPlistsHaveSameContent(xml, Buffer.from('not-a-plist')), false);
 });
 
-test('release guard pins the build 6 input while build 5 post-build evidence remains historical', async () => {
+test('release authorities remain valid as the build 6 phases advance', async () => {
   const {
     verifyBuildArtifactAttestation,
     verifyRcAttestation,
@@ -493,25 +493,27 @@ test('release guard pins the build 6 input while build 5 post-build evidence rem
   const rcPin = optionalShaPin('RC_ATTESTATION_SHA256');
   const adapterPin = optionalToolPin('PINNED_APP_STORE_SUBMIT_ADAPTER');
 
-  assert.equal(buildArtifactPin, null);
-  assert.equal(hash(readFileSync(join(
-    projectRoot,
-    'release/app-store/3.0/build-artifact-attestation.json',
-  ))), 'e7de06c4e0e6db8552e408957f6432a6f218fff5d704ac551727aca9e17aa6cd');
-  assert.equal(
-    JSON.parse(readFileSync(join(
+  if (buildArtifactPin === null) {
+    assert.throws(
+      () => verifyBuildArtifactAttestation(projectRoot, {
+        buildInputSha256: buildInputPin,
+        buildArtifactSha256: null,
+      }),
+      /EXACT_BUILD_ARTIFACT_ATTESTATION_MISSING/u,
+    );
+  } else {
+    assert.equal(hash(readFileSync(join(
       projectRoot,
       'release/app-store/3.0/build-artifact-attestation.json',
-    ), 'utf8')).candidate.buildNumber,
-    '5',
-  );
-  assert.throws(
-    () => verifyBuildArtifactAttestation(projectRoot, {
-      buildInputSha256: buildInputPin,
-      buildArtifactSha256: buildArtifactPin,
-    }),
-    /EXACT_BUILD_ARTIFACT_ATTESTATION_MISSING/u,
-  );
+    ))), buildArtifactPin);
+    assert.equal(
+      JSON.parse(readFileSync(join(
+        projectRoot,
+        'release/app-store/3.0/build-artifact-attestation.json',
+      ), 'utf8')).candidate.buildNumber,
+      '6',
+    );
+  }
 
   if (rcPin === null) {
     assert.throws(
