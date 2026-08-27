@@ -440,7 +440,7 @@ test('artifact verification compares complete plist content across XML and binar
   assert.equal(googleServicesPlistsHaveSameContent(xml, Buffer.from('not-a-plist')), false);
 });
 
-test('build 7 tool authorities are exact while build 6 attestations remain historical', async () => {
+test('build 7 input and tool authorities are exact while build 6 artifact evidence remains historical', async () => {
   const {
     verifyBuildArtifactAttestation,
     verifyRcAttestation,
@@ -462,7 +462,7 @@ test('build 7 tool authorities are exact while build 6 attestations remain histo
   };
   const buildInputPin = optionalShaPin('BUILD_INPUT_ATTESTATION_SHA256');
   const easPin = optionalToolPin('PINNED_EAS_CLI');
-  assert.equal(buildInputPin, null);
+  assert.notEqual(buildInputPin, null);
   assert.notEqual(easPin, null);
   assert.deepEqual(JSON.parse(Buffer.from(easPin, 'base64').toString('utf8')), {
     entryRelativePath: 'eas-cli/bin/run',
@@ -480,14 +480,14 @@ test('build 7 tool authorities are exact while build 6 attestations remain histo
       projectRoot,
       'release/app-store/3.0/build-input-attestation.json',
     ))),
-    'b14bfef1525cb93fc3bde6e0bb7906ac483d7d193cb98fb0f1ea150a7d4fbe97',
+    buildInputPin,
   );
   assert.equal(
     JSON.parse(readFileSync(join(
       projectRoot,
       'release/app-store/3.0/build-input-attestation.json',
     ), 'utf8')).candidate.buildNumber,
-    '6',
+    '7',
   );
   const buildArtifactPin = optionalShaPin('BUILD_ARTIFACT_ATTESTATION_SHA256');
   const rcPin = optionalShaPin('RC_ATTESTATION_SHA256');
@@ -536,7 +536,7 @@ test('build 7 tool authorities are exact while build 6 attestations remain histo
   });
 });
 
-test('the production build 7 command fails closed before EAS while its input pin is absent', () => {
+test('the production build 7 command fails closed before EAS without the private production identity', () => {
   const environment = { ...process.env };
   delete environment.CABOHEALTH_FIREBASE_PROJECT_ID;
   delete environment.CABOHEALTH_GOOGLE_SERVICES_PLIST;
@@ -548,7 +548,7 @@ test('the production build 7 command fails closed before EAS while its input pin
 
   assert.equal(result.status, 1, result.stdout || result.stderr);
   assert.equal(result.stdout, '');
-  assert.equal(result.stderr, 'EXACT_BUILD_INPUT_ATTESTATION_MISSING\n');
+  assert.equal(result.stderr, 'EXACT_BUILD_INPUT_GOOGLE_SERVICES_PLIST_INVALID\n');
 });
 
 test('release guard separates source, built artifact, and final reviewed RC authorities', () => {
