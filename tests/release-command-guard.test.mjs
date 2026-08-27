@@ -440,7 +440,7 @@ test('artifact verification compares complete plist content across XML and binar
   assert.equal(googleServicesPlistsHaveSameContent(xml, Buffer.from('not-a-plist')), false);
 });
 
-test('release guard treats the exact build 5 attestations as historical and blocks build 6 until new pins exist', async () => {
+test('release guard treats build 5 attestations as historical while build 6 tool authorities are pinned', async () => {
   const {
     verifyBuildArtifactAttestation,
     verifyBuildInputAttestation,
@@ -464,7 +464,18 @@ test('release guard treats the exact build 5 attestations as historical and bloc
   const buildInputPin = optionalShaPin('BUILD_INPUT_ATTESTATION_SHA256');
   const easPin = optionalToolPin('PINNED_EAS_CLI');
   assert.equal(buildInputPin, null);
-  assert.equal(easPin, null);
+  assert.notEqual(easPin, null);
+  assert.deepEqual(JSON.parse(Buffer.from(easPin, 'base64').toString('utf8')), {
+    entryRelativePath: 'eas-cli/bin/run',
+    nodeExecutableSha256: hash(readFileSync(realpathSync(process.execPath))),
+    nodeVersion: process.version,
+    packageJsonRelativePath: 'eas-cli/package.json',
+    packageVersion: '22.2.0',
+    runtimeRootRelativePath: 'node_modules',
+    runtimeTreeSha256: (await import(guardPath)).computeRuntimeTreeSha256(
+      join(projectRoot, 'node_modules'),
+    ),
+  });
   assert.equal(
     hash(readFileSync(join(
       projectRoot,
@@ -524,7 +535,18 @@ test('release guard treats the exact build 5 attestations as historical and bloc
     ))), rcPin);
   }
 
-  assert.equal(adapterPin, null);
+  assert.notEqual(adapterPin, null);
+  assert.deepEqual(JSON.parse(Buffer.from(adapterPin, 'base64').toString('utf8')), {
+    entryRelativePath: 'bin/submit.mjs',
+    nodeExecutableSha256: hash(readFileSync(realpathSync(process.execPath))),
+    nodeVersion: process.version,
+    packageJsonRelativePath: 'package.json',
+    packageVersion: '1.0.0',
+    runtimeRootRelativePath: 'tools/app-store-submit-adapter',
+    runtimeTreeSha256: (await import(guardPath)).computeRuntimeTreeSha256(
+      join(projectRoot, 'tools/app-store-submit-adapter'),
+    ),
+  });
 });
 
 test('the production build 6 command fails closed before EAS while only build 5 evidence is present', () => {
