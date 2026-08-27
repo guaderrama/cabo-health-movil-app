@@ -440,10 +440,9 @@ test('artifact verification compares complete plist content across XML and binar
   assert.equal(googleServicesPlistsHaveSameContent(xml, Buffer.from('not-a-plist')), false);
 });
 
-test('release guard treats build 5 attestations as historical while build 6 tool authorities are pinned', async () => {
+test('release guard pins the build 6 input while build 5 post-build evidence remains historical', async () => {
   const {
     verifyBuildArtifactAttestation,
-    verifyBuildInputAttestation,
     verifyRcAttestation,
   } = await import(guardPath);
   const source = readFileSync(guardPath, 'utf8');
@@ -463,7 +462,7 @@ test('release guard treats build 5 attestations as historical while build 6 tool
   };
   const buildInputPin = optionalShaPin('BUILD_INPUT_ATTESTATION_SHA256');
   const easPin = optionalToolPin('PINNED_EAS_CLI');
-  assert.equal(buildInputPin, null);
+  assert.notEqual(buildInputPin, null);
   assert.notEqual(easPin, null);
   assert.deepEqual(JSON.parse(Buffer.from(easPin, 'base64').toString('utf8')), {
     entryRelativePath: 'eas-cli/bin/run',
@@ -481,18 +480,14 @@ test('release guard treats build 5 attestations as historical while build 6 tool
       projectRoot,
       'release/app-store/3.0/build-input-attestation.json',
     ))),
-    'f80df35217c8ed698455647bc506667a737e6ed382baef9e0d8aecb7c3536e8d',
+    buildInputPin,
   );
   assert.equal(
     JSON.parse(readFileSync(join(
       projectRoot,
       'release/app-store/3.0/build-input-attestation.json',
     ), 'utf8')).candidate.buildNumber,
-    '5',
-  );
-  assert.throws(
-    () => verifyBuildInputAttestation(projectRoot, buildInputPin),
-    /EXACT_BUILD_INPUT_ATTESTATION_MISSING/u,
+    '6',
   );
   const buildArtifactPin = optionalShaPin('BUILD_ARTIFACT_ATTESTATION_SHA256');
   const rcPin = optionalShaPin('RC_ATTESTATION_SHA256');
@@ -549,15 +544,19 @@ test('release guard treats build 5 attestations as historical while build 6 tool
   });
 });
 
-test('the production build 6 command fails closed before EAS while only build 5 evidence is present', () => {
+test('the production build 6 command fails closed before EAS without the private production identity', () => {
+  const environment = { ...process.env };
+  delete environment.CABOHEALTH_FIREBASE_PROJECT_ID;
+  delete environment.CABOHEALTH_GOOGLE_SERVICES_PLIST;
   const result = spawnSync(process.execPath, [guardPath, 'build'], {
     cwd: projectRoot,
     encoding: 'utf8',
+    env: environment,
   });
 
   assert.equal(result.status, 1, result.stdout || result.stderr);
   assert.equal(result.stdout, '');
-  assert.equal(result.stderr, 'EXACT_BUILD_INPUT_ATTESTATION_MISSING\n');
+  assert.equal(result.stderr, 'EXACT_BUILD_INPUT_GOOGLE_SERVICES_PLIST_INVALID\n');
 });
 
 test('release guard separates source, built artifact, and final reviewed RC authorities', () => {
