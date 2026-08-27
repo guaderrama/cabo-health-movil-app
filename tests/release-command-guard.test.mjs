@@ -440,7 +440,7 @@ test('artifact verification compares complete plist content across XML and binar
   assert.equal(googleServicesPlistsHaveSameContent(xml, Buffer.from('not-a-plist')), false);
 });
 
-test('build 7 starts fail-closed while exact build 6 attestations remain historical', async () => {
+test('build 7 tool authorities are exact while build 6 attestations remain historical', async () => {
   const {
     verifyBuildArtifactAttestation,
     verifyRcAttestation,
@@ -463,7 +463,18 @@ test('build 7 starts fail-closed while exact build 6 attestations remain histori
   const buildInputPin = optionalShaPin('BUILD_INPUT_ATTESTATION_SHA256');
   const easPin = optionalToolPin('PINNED_EAS_CLI');
   assert.equal(buildInputPin, null);
-  assert.equal(easPin, null);
+  assert.notEqual(easPin, null);
+  assert.deepEqual(JSON.parse(Buffer.from(easPin, 'base64').toString('utf8')), {
+    entryRelativePath: 'eas-cli/bin/run',
+    nodeExecutableSha256: hash(readFileSync(realpathSync(process.execPath))),
+    nodeVersion: process.version,
+    packageJsonRelativePath: 'eas-cli/package.json',
+    packageVersion: '22.2.0',
+    runtimeRootRelativePath: 'node_modules',
+    runtimeTreeSha256: (await import(guardPath)).computeRuntimeTreeSha256(
+      join(projectRoot, 'node_modules'),
+    ),
+  });
   assert.equal(
     hash(readFileSync(join(
       projectRoot,
@@ -511,7 +522,18 @@ test('build 7 starts fail-closed while exact build 6 attestations remain histori
     }),
     /EXACT_RC_ATTESTATION_MISSING/u,
   );
-  assert.equal(adapterPin, null);
+  assert.notEqual(adapterPin, null);
+  assert.deepEqual(JSON.parse(Buffer.from(adapterPin, 'base64').toString('utf8')), {
+    entryRelativePath: 'bin/submit.mjs',
+    nodeExecutableSha256: hash(readFileSync(realpathSync(process.execPath))),
+    nodeVersion: process.version,
+    packageJsonRelativePath: 'package.json',
+    packageVersion: '1.0.0',
+    runtimeRootRelativePath: 'tools/app-store-submit-adapter',
+    runtimeTreeSha256: (await import(guardPath)).computeRuntimeTreeSha256(
+      join(projectRoot, 'tools/app-store-submit-adapter'),
+    ),
+  });
 });
 
 test('the production build 7 command fails closed before EAS while its input pin is absent', () => {
