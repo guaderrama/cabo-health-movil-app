@@ -8,7 +8,7 @@ import {
 
 const hash = (character) => character.repeat(64);
 
-test('build-input producer assembles the exact canonical build 6 authority', () => {
+test('build-input producer assembles the exact canonical build 7 authority', () => {
   const value = assembleBuildInputAttestation({
     reviewedAt: '2026-08-26T07:00:00.000Z',
     sourceTreeSha256: hash('a'),
@@ -25,7 +25,7 @@ test('build-input producer assembles the exact canonical build 6 authority', () 
   });
 
   assert.deepEqual(value.candidate, BUILD_INPUT_CANDIDATE);
-  assert.equal(value.candidate.buildNumber, '6');
+  assert.equal(value.candidate.buildNumber, '7');
   assert.equal(value.firebaseProjectId, 'cabohealth-owner-prod');
   assert.equal(`${JSON.stringify(value)}\n`.endsWith('\n'), true);
   assert.deepEqual(Object.keys(value), [
@@ -64,7 +64,7 @@ test('build-input producer rejects a stale candidate, malformed hash, or ambiguo
 
   assert.throws(() => assembleBuildInputAttestation({
     ...base,
-    candidate: { ...BUILD_INPUT_CANDIDATE, buildNumber: '5' },
+    candidate: { ...BUILD_INPUT_CANDIDATE, buildNumber: '6' },
   }), /BUILD_INPUT_PRODUCER_ARGUMENT_INVALID/u);
   assert.throws(() => assembleBuildInputAttestation({
     ...base,

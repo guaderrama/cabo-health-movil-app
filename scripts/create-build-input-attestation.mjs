@@ -15,7 +15,7 @@ export const BUILD_INPUT_CANDIDATE = Object.freeze({
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '6',
+  buildNumber: '7',
 });
 
 const PRODUCTION_FIREBASE_PROJECT_ID = 'cabohealth-owner-prod';

@@ -14,8 +14,10 @@ is the verified production/App Review authority. The signed iOS 3.0 build 4 is
 retained only as obsolete diagnostic evidence; it is not the next release
 candidate. Build 5 was later built, attested, processed in TestFlight, and
 selected in App Store Connect, but is obsolete for the rebaselined VIP source.
-CaboHealth 3.0 build 6 is the next candidate; it has no build-input attestation,
-IPA, TestFlight upload, physical-device QA, or Apple submission yet.
+Build 6 was later built, exactly attested, processed, and activated for the
+internal TestFlight group, but is obsolete for the full-screen VIP navigation
+source. CaboHealth 3.0 build 7 is the next candidate; it has no build-input
+attestation, IPA, TestFlight upload, physical-device QA, or Apple submission yet.
 
 ## Active and verified components
 
@@ -82,7 +84,7 @@ IPA, TestFlight upload, physical-device QA, or Apple submission yet.
   verification is complete; it is not a substitute for device behavior.
 - A controlled production owner CRUD exercise with a non-sensitive temporary
   entry and cleanup remains separate from the component activation evidence.
-- Build 6 input freeze, EAS build, exact IPA audit, TestFlight processing,
+- Build 7 input freeze, EAS build, exact IPA audit, TestFlight processing,
   two-iPhone QA, screenshots, App Attest valid-flow evidence, final App Store
   metadata, privacy/age answers, rights sign-off, and Apple review remain
   pending.

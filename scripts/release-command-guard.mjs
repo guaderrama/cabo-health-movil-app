@@ -51,7 +51,7 @@ const ATTESTATION_PATHS = Object.freeze({
   rc: 'release/app-store/3.0/rc-attestation.json',
 });
 const PRIVATE_EVIDENCE_PATHS = Object.freeze({
-  ipa: 'release/private/rc/CaboHealth-3.0-build-6.ipa',
+  ipa: 'release/private/rc/CaboHealth-3.0-build-7.ipa',
   signedEntitlements: 'release/private/rc/signed-entitlements.plist',
   privacyReport: 'release/private/rc/privacy-report.json',
   embeddedGoogleServicesPlist: 'release/private/rc/embedded-GoogleService-Info.plist',
@@ -65,14 +65,14 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
 // reviewed. The canonical source digest includes this guard after normalizing
 // only these five one-line authority values, so pinning is not circular while
 // every executable guard behavior remains part of the reviewed source.
-// The checked-in build-5 attestations remain byte-exact historical evidence.
-// They are intentionally not pinned here: build 6 must fail closed until each
+// The checked-in build-6 attestations remain byte-exact historical evidence.
+// They are intentionally not pinned here: build 7 must fail closed until each
 // current authority is replaced and independently reviewed.
-const BUILD_INPUT_ATTESTATION_SHA256 = 'b14bfef1525cb93fc3bde6e0bb7906ac483d7d193cb98fb0f1ea150a7d4fbe97';
-const BUILD_ARTIFACT_ATTESTATION_SHA256 = '6e719a70433b25350afe9bd89c6b22aeb28a2489e9cbc49f724521c86085614d';
+const BUILD_INPUT_ATTESTATION_SHA256 = null;
+const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;
 const RC_ATTESTATION_SHA256 = null;
-const PINNED_EAS_CLI = 'eyJlbnRyeVJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvYmluL3J1biIsIm5vZGVFeGVjdXRhYmxlU2hhMjU2IjoiNWQ5ZDM4NzI5MTFlMjM0MGE0M2I3MDc5NjJlNjgxNDNkZThhNGU4ZDU0NjI4ODQ1YzBjNGYyZGUxZmI3Y2Q1YyIsIm5vZGVWZXJzaW9uIjoidjIyLjIyLjMiLCJwYWNrYWdlSnNvblJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvcGFja2FnZS5qc29uIiwicGFja2FnZVZlcnNpb24iOiIyMi4yLjAiLCJydW50aW1lUm9vdFJlbGF0aXZlUGF0aCI6Im5vZGVfbW9kdWxlcyIsInJ1bnRpbWVUcmVlU2hhMjU2IjoiOTcyYjgxNDk2ZTIxMTU3MDI5MzU0N2EyMGQ1YmZjNDY1OTA4NjYwMjY2MzUzYTk4MzZmZDY4MzUzMmE0YzgzNiJ9';
-const PINNED_APP_STORE_SUBMIT_ADAPTER = 'eyJlbnRyeVJlbGF0aXZlUGF0aCI6ImJpbi9zdWJtaXQubWpzIiwibm9kZUV4ZWN1dGFibGVTaGEyNTYiOiI1ZDlkMzg3MjkxMWUyMzQwYTQzYjcwNzk2MmU2ODE0M2RlOGE0ZThkNTQ2Mjg4NDVjMGM0ZjJkZTFmYjdjZDVjIiwibm9kZVZlcnNpb24iOiJ2MjIuMjIuMyIsInBhY2thZ2VKc29uUmVsYXRpdmVQYXRoIjoicGFja2FnZS5qc29uIiwicGFja2FnZVZlcnNpb24iOiIxLjAuMCIsInJ1bnRpbWVSb290UmVsYXRpdmVQYXRoIjoidG9vbHMvYXBwLXN0b3JlLXN1Ym1pdC1hZGFwdGVyIiwicnVudGltZVRyZWVTaGEyNTYiOiJkNGIxMTI5ZjJkNmE1OTY3ZjcxNmY3MTRlNjMxYTI5ZTU0NjBiZjUyYjhmNTNiNjY5MTFiOTc3ZjMzNmU1YTgyIn0=';
+const PINNED_EAS_CLI = null;
+const PINNED_APP_STORE_SUBMIT_ADAPTER = null;
 
 const SOURCE_DIGEST_EXCLUSIONS = new Set([
   ...Object.values(ATTESTATION_PATHS),
@@ -92,7 +92,7 @@ const CANDIDATE = Object.freeze({
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '6',
+  buildNumber: '7',
 });
 const PRODUCTION_FIREBASE_PROJECT_ID = 'cabohealth-owner-prod';
 const PRIVATE_GOOGLE_SERVICES_PLIST_MARKER = '<PRIVATE_GOOGLE_SERVICES_PLIST>';

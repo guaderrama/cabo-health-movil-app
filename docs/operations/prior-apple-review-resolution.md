@@ -34,12 +34,14 @@ ending at `2026-08-26T09:25:41.734Z` retained builds `1`–`3` as expired and
 builds `4` and `5` as obsolete-source evidence, with build `5` selected and the
 highest observed TestFlight build. Build 5 was not rejected; obsolete-source is
 the local release label for the superseded source.
-CaboHealth 3.0 build 6 is the next candidate; no build 6 input attestation, IPA,
-or TestFlight upload is claimed by this document.
+CaboHealth 3.0 build 6 was subsequently built, exactly attested, processed, and
+activated for the internal TestFlight group, but is obsolete for the full-screen
+VIP navigation source. CaboHealth 3.0 build 7 is the next candidate; no build 7
+input attestation, IPA, or TestFlight upload is claimed by this document.
 
 ## Resolution mapping for the new candidate
 
-| Prior issue | New 3.0/build 6 candidate response | Remaining proof before resubmission |
+| Prior issue | New 3.0/build 7 candidate response | Remaining proof before resubmission |
 | --- | --- | --- |
 | Brand relationship / Guideline 4.1 | Truthfully identifies Ivan Guaderrama as the Individual seller and Cabo Health as his owner-operated trade brand. | Ivan signs the scoped ownership declaration and attaches current domain/content-rights evidence. |
 | Advisory resource failed to open | The legacy advisory resource is excluded from the release binary. The initial catalog contains Healthy Recipes, CaboHealth Clinic Guide, and protected Client Resources; the validated owner-managed catalog can publish or withdraw CaboHealth-owned canonical entries under the documented Guideline 4.7 policy. | Clean-install and update-path physical-device QA; verify every active reviewed canonical URL from Mexico and the United States. |

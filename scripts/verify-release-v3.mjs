@@ -25,14 +25,15 @@ const EXACT_ASC_TESTFLIGHT_BUILDS = [
   { marketingVersion: '2.0.0', buildNumber: '3', status: 'expired' },
   { marketingVersion: '3.0', buildNumber: '4', status: 'ready-to-submit-obsolete-source' },
   { marketingVersion: '3.0', buildNumber: '5', status: 'ready-to-submit-obsolete-source' },
+  { marketingVersion: '3.0', buildNumber: '6', status: 'ready-to-test-obsolete-source' },
 ];
 const EXACT_ASC_REVIEW_GUIDELINES = ['1.4.1', '2.1', '4.1'];
 const EXACT_AUTHORITY_SHA256 = Object.freeze({
-  'app.json': '67ff0b49f4d748914f53804db324ca69de84033f2deb7f78a27a9994dd5b65e1',
+  'app.json': '41c801ad98f891fc103e2cfc3acd730c2feb3375382a8f9d596682c0ebd27530',
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
-  'constants/config.ts': 'e1b88a0c28740135a9615ec87d52c93006b01eb554df04cd8ad5c10f81b887c3',
+  'constants/config.ts': 'a70123950afa81a7948847e397fb0b9a5695ceb5948483bf46b4440d71954515',
   'constants/publicMiniapps.ts': '893555428a9ac632f4964912cf98e7ba79f56c125ca6ba745bbdaf95910946aa',
-  'release/app-store/3.0/release-manifest.json': 'e88f1d8f26390206d799cc6232faf369dc9a0ec6e4b9e00f7efaf67008908591',
+  'release/app-store/3.0/release-manifest.json': '9a0738dfd49f2e8a0f022d8bfd46109eb3e08575836a85a68785c812a5121c33',
   'release/app-store/3.0/age-rating.json': 'b2bd2fdd9a5109a600923dee82eb0186df99a446128f3b05a37d54e2428e19bb',
   'release/app-store/3.0/app-privacy.json': '9e02d9906fb19bbaac82268c45022d071b216ea65c6e4e12cb9de72b72632b10',
 });
@@ -117,9 +118,9 @@ export function verifyCapturedReleaseV3(files) {
 
   if (appJson && (
     appJson.expo?.version !== '3.0'
-    || appJson.expo?.ios?.buildNumber !== '6'
+    || appJson.expo?.ios?.buildNumber !== '7'
   )) {
-    errors.push('app.json must remain 3.0/build 6 after the build-6 rebaseline');
+    errors.push('app.json must remain 3.0/build 7 after the build-7 rebaseline');
   }
   const productionProfile = easJson?.build?.production;
   if (!hasExactKeys(productionProfile, ['environment', 'node', 'env', 'ios'])
@@ -132,8 +133,8 @@ export function verifyCapturedReleaseV3(files) {
     errors.push('eas.json production must pin environment production, Node 22.22.3, APP_ENV production, and m-medium');
   }
   if (!/version:\s*['"]3\.0['"]/u.test(config)
-    || !/buildNumber:\s*['"]6['"]/u.test(config)) {
-    errors.push('constants/config.ts must remain 3.0/build 6 after the build-6 rebaseline');
+    || !/buildNumber:\s*['"]7['"]/u.test(config)) {
+    errors.push('constants/config.ts must remain 3.0/build 7 after the build-7 rebaseline');
   }
 
   const sourceSlugs = extractPublicSlugs(publicSource);
@@ -404,8 +405,8 @@ export function verifyCapturedReleaseV3(files) {
       ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
       privacyMapping: 'pending-final-linkage-category-review-and-save',
       brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-      exactReleaseCandidate: 'build-6-pending-build-input-attestation-eas-build-and-qa',
-      testFlight: 'build-5-processed-obsolete-source-build-6-pending-build-upload-selection-and-physical-iphone-qa',
+      exactReleaseCandidate: 'build-7-pending-build-input-attestation-eas-build-and-qa',
+      testFlight: 'build-6-processed-internal-obsolete-source-build-7-pending-build-upload-selection-and-physical-iphone-qa',
       screenshots: 'pending-exact-rc-capture',
       accessibilityLabels: 'pending-exact-rc-evidence',
       appStoreConnect: 'pending-final-save',
@@ -423,16 +424,16 @@ export function verifyCapturedReleaseV3(files) {
     }
 
     if (manifest.candidate?.marketingVersion !== '3.0'
-      || manifest.candidate?.buildNumber !== '6'
+      || manifest.candidate?.buildNumber !== '7'
       || manifest.candidate?.status !== 'pre-build-configured'
       || manifest.candidate?.appJsonUpdated !== true
       || manifest.candidate?.configUpdated !== true
       || manifest.candidate?.rcSourceSha !== null
       || manifest.candidate?.testFlightBuildId !== null) {
-      errors.push('candidate must remain truthful pre-build-configured 3.0/build 6 without premature RC evidence');
+      errors.push('candidate must remain truthful pre-build-configured 3.0/build 7 without premature RC evidence');
     }
     const asc = manifest.ascEvidence;
-    if (asc?.observedAt !== '2026-08-26T09:25:41.734Z'
+    if (asc?.observedAt !== '2026-08-27T20:35:04.000Z'
       || asc?.inspectionMode !== 'read-only'
       || asc?.currentRejectedVersion !== '3.0'
       || asc?.currentRejectedVersionStatus !== 'prepare-for-submission-with-unresolved-rejection'
@@ -440,14 +441,14 @@ export function verifyCapturedReleaseV3(files) {
       || asc?.selectedRejectedBinaryVersion !== '3.0'
       || asc?.selectedRejectedBuild !== '5'
       || !sameJson(asc?.testFlightBuilds, EXACT_ASC_TESTFLIGHT_BUILDS)
-      || asc?.highestTestFlightBuild !== '5'
-      || asc?.highestTestFlightBuildStatus !== 'ready-to-submit-obsolete-source'
-      || asc?.nextCandidateBuild !== '6'
+      || asc?.highestTestFlightBuild !== '6'
+      || asc?.highestTestFlightBuildStatus !== 'ready-to-test-obsolete-source'
+      || asc?.nextCandidateBuild !== '7'
       || asc?.nextCandidateBuildAvailable !== true
       || asc?.latestReviewDate !== '2026-02-24'
       || !sameArray(asc?.latestReviewGuidelines, EXACT_ASC_REVIEW_GUIDELINES)
       || asc?.informationRequested !== true) {
-      errors.push('ASC read-only evidence must record processed build 5 as selected obsolete-source evidence and reserve build 6');
+      errors.push('ASC read-only evidence must record active internal build 6 as obsolete-source evidence and reserve build 7');
     }
     if (manifest.reviewRisk?.appleApprovalGuaranteed !== false) {
       errors.push('Apple approval must never be represented as guaranteed');
@@ -919,7 +920,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  process.stdout.write('Release 3.0/build 6 verified: pre-build-configured.\n');
+  process.stdout.write('Release 3.0/build 7 verified: pre-build-configured.\n');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

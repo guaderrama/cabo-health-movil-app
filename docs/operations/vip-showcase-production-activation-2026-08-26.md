@@ -59,8 +59,14 @@ No catalog migration was executed as part of this activation.
 
 ## Deliberately pending
 
+- Build 6 was built, exactly attested, processed, and activated for the internal
+  TestFlight group. Its protected-resource launch used the prior native
+  `pageSheet` presentation and is retained only as obsolete-source evidence.
+  Build 7 replaces that presentation with a dedicated full-screen internal
+  route and an in-app back control; it does not hand the launch to Chrome,
+  Safari, or another external browser.
 - Positive V2 catalog retrieval and complete VIP showcase QA depend on the
-  signed CaboHealth 3.0 build 6 running on a physical iPhone with its valid App
+  signed CaboHealth 3.0 build 7 running on a physical iPhone with its valid App
   Check flow.
 - The corresponding Staff Portal release has not yet been promoted.
 - This activation did not submit a build or release to App Review.

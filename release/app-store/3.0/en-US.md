@@ -1,6 +1,6 @@
 # App Store localization — en-US
 
-Status: Draft for CaboHealth 3.0 (build 6). Do not paste into App Store Connect until every gate in `release-manifest.json` is resolved against the exact RC.
+Status: Draft for CaboHealth 3.0 (build 7). Do not paste into App Store Connect until every gate in `release-manifest.json` is resolved against the exact RC.
 
 ## Name
 CaboHealth

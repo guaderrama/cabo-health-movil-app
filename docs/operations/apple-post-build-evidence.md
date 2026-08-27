@@ -1,7 +1,7 @@
 # Apple post-build evidence contracts
 
 This runbook defines the only post-build evidence accepted for CaboHealth
-3.0/build 6. The signed build 4 diagnostic evidence and both exact build 5
+3.0/build 7. The signed build 4 diagnostic evidence and exact build 5–6
 attestations are retained only as obsolete historical records and cannot satisfy
 this contract. The evidence tools validate and canonicalize observations that
 already exist. They do not run a test, take a screenshot, query App Store
@@ -14,7 +14,7 @@ The fixed candidate is:
 - App Store app resource / Apple ID: `6758285327`;
 - bundle identifier: `com.cabohealth.app`;
 - marketing version: `3.0`;
-- build number: `6`;
+- build number: `7`;
 - Team ID: `DQ8PH2DZ3R`;
 - Firebase project: `cabohealth-owner-prod`; and
 - associated domain: `applinks:cabohealth.org`.
@@ -52,7 +52,7 @@ If canonicalization is independently repeated, every binding is mandatory:
 ```sh
 node scripts/apple-post-build-evidence.mjs privacy-report \
   --input /ABS/PRIVATE/draft-privacy-report.json \
-  --output /ABS/PRIVATE/rc-build-6/privacy-report.json \
+  --output /ABS/PRIVATE/rc-build-7/privacy-report.json \
   --ipa-sha256 <64-lowercase-hex> \
   --signed-entitlements-sha256 <64-lowercase-hex> \
   --signing-certificate-sha256 <64-lowercase-hex> \
@@ -89,7 +89,7 @@ with all RC bindings:
 ```sh
 node scripts/apple-post-build-evidence.mjs physical-iphone-qa \
   --input /ABS/PRIVATE/observed-physical-iphone-qa.json \
-  --output /ABS/PRIVATE/rc-build-6/physical-iphone-qa.json \
+  --output /ABS/PRIVATE/rc-build-7/physical-iphone-qa.json \
   --testflight-build-id <numeric-testflight-build-id> \
   --source-tree-sha256 <64-lowercase-hex> \
   --testflight-processed-at <canonical-millisecond-ISO-timestamp>
@@ -119,7 +119,7 @@ is true: `localizations`, `privacy`, `ageRating`, `categories`, `availability`,
 ```sh
 node scripts/apple-post-build-evidence.mjs app-store-connect \
   --input /ABS/PRIVATE/observed-app-store-connect.json \
-  --output /ABS/PRIVATE/rc-build-6/app-store-connect-evidence.json \
+  --output /ABS/PRIVATE/rc-build-7/app-store-connect-evidence.json \
   --testflight-build-id <numeric-testflight-build-id> \
   --testflight-processed-at <canonical-millisecond-ISO-timestamp>
 ```
@@ -159,7 +159,7 @@ node scripts/apple-post-build-evidence.mjs screenshots \
   --testflight-build-id <numeric-testflight-build-id> \
   --source-tree-sha256 <64-lowercase-hex> \
   --testflight-processed-at <canonical-millisecond-ISO-timestamp> \
-  --evidence-root /ABS/PRIVATE/rc-build-6
+  --evidence-root /ABS/PRIVATE/rc-build-7
 ```
 
 The metadata verifier accepts only the exact current pending form or the exact
