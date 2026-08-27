@@ -61,13 +61,12 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
   appStoreConnectEvidence: 'release/private/rc/app-store-connect-evidence.json',
 });
 
-// Each pin remains null until that phase has been produced and independently
-// reviewed. The canonical source digest includes this guard after normalizing
-// only these five one-line authority values, so pinning is not circular while
-// every executable guard behavior remains part of the reviewed source.
-// The checked-in build-6 attestations remain byte-exact historical evidence.
-// They are intentionally not pinned here: build 7 must fail closed until each
-// current authority is replaced and independently reviewed.
+// Each phase pin starts null and becomes authoritative only after that phase
+// has been produced and independently reviewed. The canonical source digest
+// includes this guard after normalizing only these five one-line authority
+// values, so advancing a reviewed pin is not circular while every executable
+// guard behavior remains part of the reviewed source. An unpinned checked-in
+// attestation is historical evidence only and cannot satisfy a current phase.
 const BUILD_INPUT_ATTESTATION_SHA256 = '5f8b84a146798ec30fc1a493696fee2055b0f375177b0ab8f93b8dd2a693ff6f';
 const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;
 const RC_ATTESTATION_SHA256 = null;

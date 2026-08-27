@@ -440,7 +440,7 @@ test('artifact verification compares complete plist content across XML and binar
   assert.equal(googleServicesPlistsHaveSameContent(xml, Buffer.from('not-a-plist')), false);
 });
 
-test('build 7 input and tool authorities are exact while build 6 artifact evidence remains historical', async () => {
+test('release authorities remain valid as the build 7 phases advance', async () => {
   const {
     verifyBuildArtifactAttestation,
     verifyRcAttestation,
@@ -493,35 +493,44 @@ test('build 7 input and tool authorities are exact while build 6 artifact eviden
   const rcPin = optionalShaPin('RC_ATTESTATION_SHA256');
   const adapterPin = optionalToolPin('PINNED_APP_STORE_SUBMIT_ADAPTER');
 
-  assert.equal(buildArtifactPin, null);
-  assert.equal(hash(readFileSync(join(
-    projectRoot,
-    'release/app-store/3.0/build-artifact-attestation.json',
-  ))), '6e719a70433b25350afe9bd89c6b22aeb28a2489e9cbc49f724521c86085614d');
-  assert.equal(
-    JSON.parse(readFileSync(join(
+  if (buildArtifactPin === null) {
+    assert.throws(
+      () => verifyBuildArtifactAttestation(projectRoot, {
+        buildInputSha256: buildInputPin,
+        buildArtifactSha256: null,
+      }),
+      /EXACT_BUILD_ARTIFACT_ATTESTATION_MISSING/u,
+    );
+  } else {
+    assert.equal(hash(readFileSync(join(
       projectRoot,
       'release/app-store/3.0/build-artifact-attestation.json',
-    ), 'utf8')).candidate.buildNumber,
-    '6',
-  );
-  assert.throws(
-    () => verifyBuildArtifactAttestation(projectRoot, {
-      buildInputSha256: buildInputPin,
-      buildArtifactSha256: buildArtifactPin,
-    }),
-    /EXACT_BUILD_ARTIFACT_ATTESTATION_MISSING/u,
-  );
+    ))), buildArtifactPin);
+    assert.equal(
+      JSON.parse(readFileSync(join(
+        projectRoot,
+        'release/app-store/3.0/build-artifact-attestation.json',
+      ), 'utf8')).candidate.buildNumber,
+      '7',
+    );
+  }
 
-  assert.equal(rcPin, null);
-  assert.throws(
-    () => verifyRcAttestation(projectRoot, {
-      buildInputSha256: buildInputPin,
-      buildArtifactSha256: buildArtifactPin,
-      rcSha256: null,
-    }),
-    /EXACT_RC_ATTESTATION_MISSING/u,
-  );
+  if (rcPin === null) {
+    assert.throws(
+      () => verifyRcAttestation(projectRoot, {
+        buildInputSha256: buildInputPin,
+        buildArtifactSha256: buildArtifactPin,
+        rcSha256: null,
+      }),
+      /EXACT_RC_ATTESTATION_MISSING/u,
+    );
+  } else {
+    assert.notEqual(buildArtifactPin, null, 'an RC authority requires a build-artifact authority');
+    assert.equal(hash(readFileSync(join(
+      projectRoot,
+      'release/app-store/3.0/rc-attestation.json',
+    ))), rcPin);
+  }
   assert.notEqual(adapterPin, null);
   assert.deepEqual(JSON.parse(Buffer.from(adapterPin, 'base64').toString('utf8')), {
     entryRelativePath: 'bin/submit.mjs',
