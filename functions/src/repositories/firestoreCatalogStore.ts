@@ -273,12 +273,15 @@ async function assertExistingClientProjection(
   if (item.access !== 'clients') return;
   const value = await transaction.get(clientResourcePath(item.id));
   if (item.active) {
-    if (isDeepStrictEqual(value, clientProjection(item))) return;
+    if (isDeepStrictEqual(value, clientProjection(item))
+      || (isExactLegacyClientResourcesCatalogItem(item)
+        && isDeepStrictEqual(value, LEGACY_CLIENT_RESOURCES))) return;
     throw new Error('invalid_client_resource_projection');
   }
   if (value === undefined
     || isDeepStrictEqual(value, clientProjection(item))
-    || (item.id === 'client-resources' && isDeepStrictEqual(value, LEGACY_CLIENT_RESOURCES))) return;
+    || (isExactLegacyClientResourcesCatalogItem(item)
+      && isDeepStrictEqual(value, LEGACY_CLIENT_RESOURCES))) return;
   throw new Error('invalid_client_resource_projection');
 }
 
@@ -379,6 +382,17 @@ const LEGACY_CLIENT_RESOURCES = Object.freeze({
   }),
   title: Object.freeze({ en: 'Client Resources', es: 'Recursos para clientes' }),
 });
+
+function isExactLegacyClientResourcesCatalogItem(item: CatalogItemView): boolean {
+  return item.access === 'clients'
+    && item.icon === 'featured'
+    && item.id === 'client-resources'
+    && item.summary.en === LEGACY_CLIENT_RESOURCES.summary.en
+    && item.summary['es-MX'] === LEGACY_CLIENT_RESOURCES.summary.es
+    && item.title.en === LEGACY_CLIENT_RESOURCES.title.en
+    && item.title['es-MX'] === LEGACY_CLIENT_RESOURCES.title.es
+    && item.url === 'https://cabohealth.org/apps/client-resources/';
+}
 
 function clientIconKey(icon: CatalogItemView['icon']): string {
   return {

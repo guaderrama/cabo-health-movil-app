@@ -20,6 +20,7 @@ import { loadPublishedCatalogRepository } from '../features/catalog/publishedCat
 
 interface PublicCatalogContextValue {
   readonly miniapps: readonly Readonly<CatalogPublicMiniapp>[];
+  readonly clientPreviews: PublishedCatalogSnapshot['clientPreviews'];
   readonly isLoading: boolean;
   readonly error: 'catalog-refresh-unavailable' | null;
   getMiniapp(slug: string): Readonly<CatalogPublicMiniapp> | undefined;
@@ -27,6 +28,7 @@ interface PublicCatalogContextValue {
 }
 
 const PublicCatalogContext = createContext<PublicCatalogContextValue | undefined>(undefined);
+const EMPTY_CLIENT_PREVIEWS: PublishedCatalogSnapshot['clientPreviews'] = Object.freeze([]);
 
 export function PublicCatalogProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<PublishedCatalogSnapshot | null>(null);
@@ -110,13 +112,15 @@ export function PublicCatalogProvider({ children }: { children: ReactNode }) {
     () => resolvePublicCatalogMiniapps(snapshot, PUBLIC_MINIAPPS, Platform.OS),
     [snapshot],
   );
+  const clientPreviews = snapshot?.clientPreviews ?? EMPTY_CLIENT_PREVIEWS;
   const value = useMemo<PublicCatalogContextValue>(() => ({
     miniapps,
+    clientPreviews,
     isLoading,
     error,
     getMiniapp: (slug: string) => miniapps.find((miniapp) => miniapp.slug === slug),
     refresh,
-  }), [error, isLoading, miniapps, refresh]);
+  }), [clientPreviews, error, isLoading, miniapps, refresh]);
 
   return (
     <PublicCatalogContext.Provider value={value}>

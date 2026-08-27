@@ -1,6 +1,7 @@
 import {
   APP_REVIEW_LAUNCH_URL,
   APP_REVIEW_RESOURCE_ID,
+  ClientAccessSessionInvalidatedError,
   clientGrantRealm,
   CLIENT_RESOURCE_LAUNCH_URL,
   createOpaqueClientSession,
@@ -300,6 +301,18 @@ export function createFirebaseClientAccessAdapter({
     redeem: async (code: string) => {
       const credential = normalizeClientAccessCredential(code);
       if (!credential) return null;
+      const existingPrincipal = auth.currentUser();
+      const existingAccessUid = existingPrincipal && realmForUid(existingPrincipal.uid)
+        ? existingPrincipal.uid
+        : null;
+      const failBeforeReplacement = async (): Promise<never> => {
+        if (!existingAccessUid) await auth.signOut().catch(() => {});
+        throw new Error('invalid_backend_response');
+      };
+      const failAfterReplacement = async (): Promise<never> => {
+        await auth.signOut().catch(() => {});
+        throw new ClientAccessSessionInvalidatedError();
+      };
       const installationId = await getInstallationId();
       const requestId = createRequestId();
       if (!REQUEST_ID_PATTERN.test(requestId)) throw new Error('client_request_unavailable');
@@ -317,16 +330,24 @@ export function createFirebaseClientAccessAdapter({
             requestId,
           });
       } catch (error) {
-        await auth.signOut().catch(() => {});
+        if (!existingAccessUid) await auth.signOut().catch(() => {});
         if (isPermissionDenied(error)) return null;
         throw error;
       }
       const parsed = parseRedeemEnvelope(response);
-      if (!parsed) return failAndSignOut();
+      if (!parsed) return failBeforeReplacement();
       const grant = parseClientGrantView(parsed.grant, now());
-      if (!grant || clientGrantRealm(grant) !== credential.realm) return failAndSignOut();
-      const principal = await auth.signInWithCustomToken(parsed.customToken).catch(() => null);
-      if (!principal || realmForUid(principal.uid) !== credential.realm) return failAndSignOut();
+      if (!grant || clientGrantRealm(grant) !== credential.realm) {
+        return failBeforeReplacement();
+      }
+      let principal: Readonly<{ uid: string }>;
+      try {
+        principal = await auth.signInWithCustomToken(parsed.customToken);
+      } catch (error) {
+        if (auth.currentUser()?.uid !== existingAccessUid) return failAfterReplacement();
+        throw error;
+      }
+      if (realmForUid(principal.uid) !== credential.realm) return failAfterReplacement();
       return Object.freeze({
         session: createOpaqueClientSession(),
         grant,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -17,6 +17,7 @@ import { useClientAccess } from '../../context/ClientAccessContext';
 import { useTheme, useTranslations } from '../../hooks';
 import type { ClientResourceLaunch, ClientResourceView } from './clientAccessController';
 import type { ClientAccountDeletionTrackingState } from './clientDeletionReceiptStore';
+import { resolveRequestedResourceLaunchState } from './clientExactLaunchState';
 import { openClientAccessSupport } from './clientAccessSupport';
 import { ClientResourceWebView } from './ClientResourceWebView';
 
@@ -24,7 +25,19 @@ type ConfirmAction = 'remove' | 'delete-production' | 'delete-review' | null;
 type DeletionTrackingPresentation = ClientAccountDeletionTrackingState
   | Readonly<{ kind: 'checking' }>;
 
-export function ClientAccessModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+export function ClientAccessModal({
+  visible,
+  codeEntryRequested = false,
+  requestedResourceId = null,
+  onClose,
+  onRedeemed,
+}: {
+  visible: boolean;
+  codeEntryRequested?: boolean;
+  requestedResourceId?: string | null;
+  onClose: () => void;
+  onRedeemed?: () => void;
+}) {
   const { colors } = useTheme();
   const { language, t } = useTranslations();
   const insets = useSafeAreaInsets();
@@ -33,6 +46,7 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
     grant,
     error,
     redeem,
+    refresh: refreshClientAccess,
     createLaunch,
     removeAccess,
     deleteAccount,
@@ -53,11 +67,24 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
   const [activeResourceId, setActiveResourceId] = useState<string | null>(null);
   const [activeResourceTitle, setActiveResourceTitle] = useState('');
   const launchGeneration = useRef(0);
+  const requestedResourceHandled = useRef<string | null>(null);
   const busy = status === 'checking'
     || status === 'redeeming'
     || deletionTracking.kind === 'checking';
   const unlocked = status === 'unlocked' && grant !== null;
+  const showCodeEntry = codeEntryRequested || !unlocked;
   const isReviewGrant = grant !== null && 'scope' in grant && grant.scope === 'review_sandbox';
+  const requestedResource = requestedResourceId !== null && unlocked
+    ? grant.resources.find(({ id }) => id === requestedResourceId) ?? null
+    : null;
+  const requestedLaunchState = resolveRequestedResourceLaunchState({
+    handledResourceId: requestedResourceHandled.current,
+    launchError,
+    launchPendingId,
+    requestedResourceAvailable: requestedResource !== null,
+    requestedResourceId,
+    status,
+  });
 
   useEffect(() => {
     if (!visible) {
@@ -72,6 +99,7 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
       setActiveLaunch(null);
       setActiveResourceId(null);
       setActiveResourceTitle('');
+      requestedResourceHandled.current = null;
       launchGeneration.current += 1;
     }
   }, [visible]);
@@ -87,6 +115,7 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
       )
     ) {
       launchGeneration.current += 1;
+      requestedResourceHandled.current = null;
       setActiveLaunch(null);
       setActiveResourceId(null);
       setActiveResourceTitle('');
@@ -98,7 +127,10 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
     const submittedCode = code;
     setCode('');
     setAttempted(true);
-    if (await redeem(submittedCode)) setAttempted(false);
+    if (await redeem(submittedCode)) {
+      setAttempted(false);
+      onRedeemed?.();
+    }
   };
 
   const confirm = async () => {
@@ -118,7 +150,7 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
     if (!result) setDeletionError(true);
   };
 
-  const openResource = async (resource: Readonly<ClientResourceView>) => {
+  const openResource = useCallback(async (resource: Readonly<ClientResourceView>) => {
     if (launchPendingId) return;
     const operationGeneration = ++launchGeneration.current;
     setLaunchPendingId(resource.id);
@@ -133,6 +165,34 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
     setActiveResourceId(resource.id);
     setActiveResourceTitle(resource.title[language === 'es-MX' ? 'es' : 'en']);
     setActiveLaunch(launch);
+  }, [createLaunch, language, launchPendingId, visible]);
+
+  useEffect(() => {
+    if (
+      !visible
+      || !requestedResourceId
+      || !unlocked
+      || !grant
+      || launchPendingId !== null
+      || activeLaunch !== null
+      || requestedResourceHandled.current === requestedResourceId
+    ) return;
+    const resource = grant.resources.find(({ id }) => id === requestedResourceId);
+    if (!resource) return;
+    requestedResourceHandled.current = requestedResourceId;
+    void openResource(resource);
+  }, [activeLaunch, grant, launchPendingId, openResource, requestedResourceId, unlocked, visible]);
+
+  const retryRequestedResource = async () => {
+    if (requestedResourceId === null || launchPendingId !== null) return;
+    setLaunchError(false);
+    if (requestedResource !== null) {
+      requestedResourceHandled.current = requestedResource.id;
+      await openResource(requestedResource);
+      return;
+    }
+    requestedResourceHandled.current = null;
+    await refreshClientAccess();
   };
 
   const closeModal = () => {
@@ -188,6 +248,10 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
           launch={activeLaunch}
           title={activeResourceTitle}
           onClose={() => {
+            if (requestedResourceId) {
+              closeModal();
+              return;
+            }
             setActiveLaunch(null);
             setActiveResourceId(null);
             setActiveResourceTitle('');
@@ -245,7 +309,13 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
               onDone={() => { void finishDeletion(); }}
               onSupport={() => { void openDeletionSupport(); }}
             />
-          ) : unlocked ? (
+          ) : requestedResourceId !== null ? (
+            <RequestedResourceLaunchCard
+              busy={requestedLaunchState === 'busy'}
+              onClose={closeModal}
+              onRetry={() => { void retryRequestedResource(); }}
+            />
+          ) : !showCodeEntry ? (
             <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
               <Ionicons name="checkmark-circle-outline" size={45} color={colors.success} />
               <Text style={[styles.cardTitle, { color: colors.text }]}>{t('clientAccess.activeTitle')}</Text>
@@ -371,6 +441,59 @@ export function ClientAccessModal({ visible, onClose }: { visible: boolean; onCl
         </KeyboardAvoidingView>
       )}
     </Modal>
+  );
+}
+
+function RequestedResourceLaunchCard({
+  busy,
+  onClose,
+  onRetry,
+}: {
+  busy: boolean;
+  onClose: () => void;
+  onRetry: () => void;
+}) {
+  const { colors } = useTheme();
+  const { t } = useTranslations();
+
+  return (
+    <View
+      accessibilityRole="alert"
+      style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+    >
+      {busy
+        ? <ActivityIndicator size="large" color={colors.primary} />
+        : <Ionicons name="alert-circle-outline" size={48} color={colors.error} />}
+      <Text style={[styles.cardTitle, { color: colors.text }]}>
+        {busy ? t('clientAccess.openingResource') : t('clientAccess.launchUnavailable')}
+      </Text>
+      {!busy && (
+        <>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onRetry}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              { backgroundColor: colors.primary },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={[styles.primaryLabel, { color: colors.white }]}>{t('common.retry')}</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onClose}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              { borderColor: colors.primary },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={[styles.secondaryLabel, { color: colors.primary }]}>{t('common.close')}</Text>
+          </Pressable>
+        </>
+      )}
+    </View>
   );
 }
 

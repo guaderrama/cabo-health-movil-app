@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Network from 'expo-network';
 import type { CatalogPublicMiniapp } from '../constants/publicMiniapps';
+import type { PublishedCatalogSnapshot } from '../features/catalog/publishedCatalog';
 import { createPublicCatalogState } from '../features/catalog/publicCatalogState';
 import { WebApp } from '../types';
 import { useFavorites } from '../context/FavoritesContext';
@@ -8,6 +9,7 @@ import { usePublicCatalog } from '../context/PublicCatalogContext';
 
 interface UseWebAppsResult {
   catalogMiniapps: readonly Readonly<CatalogPublicMiniapp>[];
+  clientPreviews: PublishedCatalogSnapshot['clientPreviews'];
   apps: WebApp[];
   favoriteApps: WebApp[];
   nonFavoriteApps: WebApp[];
@@ -22,6 +24,7 @@ export function useWebApps(): UseWebAppsResult {
   const { favorites } = useFavorites();
   const {
     miniapps: catalogMiniapps,
+    clientPreviews,
     isLoading,
     error,
     refresh: refreshPublishedCatalog,
@@ -61,6 +64,7 @@ export function useWebApps(): UseWebAppsResult {
   return {
     ...catalog,
     catalogMiniapps,
+    clientPreviews,
     isLoading,
     error,
     refresh,

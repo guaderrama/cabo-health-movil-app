@@ -46,7 +46,8 @@ Accepted URLs have exactly this form:
 https://cabohealth.org/apps/<lowercase-kebab-id>/
 ```
 
-The ID is 1–64 characters. `app-review` and `shared` are reserved.
+The ID is 1–64 characters. `app-review`, `shared`, and the entire
+`review-sandbox-*` namespace are reserved.
 `client-resources` is client-only. The historical App Review rejection IDs
 `health-advisor`, `ai-cosmetic-scan`, `service-hub`, and `sleep-lab` are
 permanently retired for both public and client access. Staff rejects their URLs
@@ -90,6 +91,56 @@ fail closed instead of opening arbitrary web content.
 Do not restore an older Firestore catalog document as a rollback. Perform a
 new owner mutation so the revision remains monotonic and installed devices
 observe it.
+
+## VIP showcase cards
+
+Status on 2026-08-26: implemented and tested in source. Production activation
+still requires the additive Functions deployment followed by a new signed iOS
+build; this status must not be read as evidence that the installed App Store
+binary already contains the presentation.
+
+The successor iOS Home screen presents every active client entry as an
+individual gold card in the **Client resources** grid, even before access is
+redeemed. A locked card has a lock badge and opens the existing code-entry
+sheet. A successful code redemption closes that sheet, refreshes the secure
+grant state, and unlocks only cards whose exact IDs are present in the grant.
+An unlocked card requests a one-use launch for that exact resource and opens it
+only in the restricted client WebView. Access removal and deletion remain in a
+separate **Manage access** control.
+
+The public teaser boundary is deliberately smaller than a catalog item. It may
+contain only `access`, `id`, `icon`, `title`, and `summary`. It must never expose
+the canonical URL, protected path, private content, launch metadata, access
+code, price or currency amount, purchase/subscription wording, entitlement,
+timestamps, or owner identity.
+The native parser rejects the entire response if a teaser has unknown fields,
+unsafe identifiers, invalid localized copy, duplicate IDs, or overlaps a
+public entry. Isolated medical abbreviations such as `AED`, `CHF`, or `INR`
+remain valid; a currency code is rejected when it is paired with an amount or
+explicit pricing language.
+
+Backward compatibility is handled with two callables:
+
+- `getPublishedCatalog` remains byte-contract compatible with installed older
+  clients and returns only active public entries.
+- `getPublishedCatalogV2` returns the same public entries plus sanitized
+  `clientPreviews` for active client entries. Only the successor binary calls
+  V2.
+
+During the staged migration, V2 recognizes only the exact historical active
+`client-resources` record and emits its neutral teaser summary without changing
+the stored record. Any near-match still fails closed. The catalog migration
+then replaces that exact legacy projection and seed atomically with the neutral
+canonical copy; arbitrary drift is never accepted as legacy compatibility.
+
+Deploy V2 before distributing the successor binary. Verify the legacy callable
+again after that additive deployment, then create the signed iOS build and test
+all four states on a physical device: locked preview, invalid code, successful
+unlock, and exact-resource launch. Pull-to-refresh must update both the public
+showcase snapshot and the secure client grant. Deactivating an entry in Staff
+must remove its teaser after refresh and cause new protected launches to fail
+closed. App Review remains isolated: its fixed review-sandbox resource is never
+published as a production teaser.
 
 ## Client runtime
 
@@ -164,15 +215,18 @@ multi-browser measurement for this AASA-only successor and physical-device
 Universal Link verification remain pending and are not implied by the
 origin/CDN result.
 
-## Staged activation
+## Prior platform activation record
 
-Use this order so old clients and the old Staff portal keep working throughout
-the change:
+The following list records the catalog-platform activation performed before
+the VIP showcase work. A **Completed** label in this section refers to that
+earlier platform release; it does not mean that `getPublishedCatalogV2`, the
+updated Staff artifact, or the successor iOS presentation has been deployed.
 
 1. **Completed:** Run all Functions, portal, native, broker, AASA, and release
    tests.
-2. **Completed:** Deploy additive Functions and Firestore TTL configuration. Keep the legacy
-   draft callables during this release.
+2. **Completed for the prior platform release:** Deploy additive Functions and
+   Firestore TTL configuration. This completion predates and does not include
+   `getPublishedCatalogV2`. Keep the legacy draft callables during this release.
 3. **Completed:** Generate a dry-run migration plan from production and review
    its SHA-256.
 4. **Completed:** Apply only that exact plan: add `client_resource_publish`, seed the three
@@ -192,6 +246,25 @@ the change:
 9. **Pending:** Freeze the source for CaboHealth 3.0 build 5, create the new iOS
    build, inspect the exact IPA, upload it to
    TestFlight, and complete physical-device QA before selecting it for review.
+
+## VIP showcase rollout (pending)
+
+Use this order so the currently installed clients remain compatible while the
+locked gold VIP cards are activated:
+
+1. Deploy the additive `getPublishedCatalogV2` Function and the server-side
+   safe-preview validation. Do not remove or change `getPublishedCatalog`.
+2. Verify that the legacy callable still returns its exact public-only contract,
+   then verify that V2 returns only safe active-client teaser fields.
+3. Promote the updated Staff portal with its preserved rollback artifact and
+   verify that unsafe VIP teaser copy is rejected before submission.
+4. Create a new signed iOS build, inspect the exact IPA, and upload that build to
+   TestFlight. The current installed build cannot gain this UI from a server
+   change alone.
+5. On a physical iPhone, test locked cards, an invalid code, successful unlock,
+   exact-card launch, Manage access separation, foreground refresh, and removal
+   of a deactivated teaser. Record the evidence before selecting the build for
+   App Review.
 
 Never place catalog contents, HMAC values, owner identity, access codes, launch
 nonces, sessions, private paths, or private content in Git or deployment logs.

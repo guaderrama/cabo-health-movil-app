@@ -1,4 +1,7 @@
-import { isPermanentlyRetiredCatalogId } from './catalogIdPolicy';
+import {
+  isPermanentlyRetiredCatalogId,
+  isReservedReviewSandboxCatalogId,
+} from './catalogIdPolicy';
 
 export interface CatalogMiniapp {
   slug: string;
@@ -47,6 +50,7 @@ export function normalizeRememberedPublicFavorites(favorites: readonly unknown[]
       typeof value !== 'string'
       || !PUBLIC_ID_PATTERN.test(value)
       || isPermanentlyRetiredCatalogId(value)
+      || isReservedReviewSandboxCatalogId(value)
       || RESERVED_PRIVATE_IDS.has(value)
       || seen.has(value)
     ) continue;
@@ -65,6 +69,7 @@ export function toggleRememberedPublicFavorite(
   if (
     !PUBLIC_ID_PATTERN.test(id)
     || isPermanentlyRetiredCatalogId(id)
+    || isReservedReviewSandboxCatalogId(id)
     || RESERVED_PRIVATE_IDS.has(id)
   ) return normalized;
   return normalizeRememberedPublicFavorites(

@@ -73,8 +73,8 @@ const CANONICAL_SEEDS = Object.freeze([
     active: true,
     icon: 'featured' as const,
     summary: Object.freeze({
-      en: 'Complimentary educational resources for eligible existing CaboHealth clients.',
-      'es-MX': 'Recursos educativos incluidos para clientes actuales elegibles de CaboHealth.',
+      en: 'Educational resources for eligible existing CaboHealth clients.',
+      'es-MX': 'Recursos educativos para clientes actuales elegibles de CaboHealth.',
     }),
     title: Object.freeze({ en: 'Client Resources', 'es-MX': 'Recursos para clientes' }),
     url: 'https://cabohealth.org/apps/client-resources/',

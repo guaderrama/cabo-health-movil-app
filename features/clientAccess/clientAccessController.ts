@@ -1,4 +1,7 @@
-import { isPermanentlyRetiredCatalogId } from '../catalog/catalogIdPolicy';
+import {
+  isPermanentlyRetiredCatalogId,
+  isReservedReviewSandboxCatalogId,
+} from '../catalog/catalogIdPolicy';
 
 const OPAQUE_SESSION = Symbol('cabohealth.clientAccess.session');
 export const CLIENT_RESOURCE_LAUNCH_URL = 'https://cabohealth.org/apps/client-resources/launch/' as const;
@@ -28,6 +31,14 @@ const CLIENT_RESOURCE_ICON_KEYS = new Set([
   'chatbubble-ellipses-outline',
   'sparkles-outline',
 ]);
+const PRODUCTION_CLIENT_RESERVED_RESOURCE_IDS = new Set(['app-review', 'shared']);
+
+export class ClientAccessSessionInvalidatedError extends Error {
+  constructor() {
+    super('invalid_backend_response');
+    this.name = 'ClientAccessSessionInvalidatedError';
+  }
+}
 
 export interface OpaqueClientSession {
   readonly [OPAQUE_SESSION]: true;
@@ -173,6 +184,8 @@ function parseClientResource(value: unknown): Readonly<ClientResourceView> | nul
     || !isNonblankString(record.id, 64)
     || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(record.id)
     || isPermanentlyRetiredCatalogId(record.id)
+    || isReservedReviewSandboxCatalogId(record.id)
+    || PRODUCTION_CLIENT_RESERVED_RESOURCE_IDS.has(record.id)
     || !isNonblankString(record.iconKey, 40)
     || !CLIENT_RESOURCE_ICON_KEYS.has(record.iconKey)
     || !title
@@ -553,9 +566,32 @@ export function createClientAccessController({
     },
     redeem: async (rawCode) => {
       if (redemptionPending || deletionPending || accountDeletionCleanupPending) return false;
+      const previousSession = currentSession;
+      const previousGrant = snapshot.status === 'unlocked' ? snapshot.grant : null;
+      const restorePreviousAccess = (error: ClientAccessSnapshot['error']): boolean => {
+        if (
+          !previousSession
+          || !previousGrant
+          || currentSession !== previousSession
+          || !clientGrantIsActive(previousGrant, now())
+        ) return false;
+        publish({ status: 'unlocked', grant: previousGrant, error });
+        return true;
+      };
+      const clearExpiredPreviousAccess = async () => {
+        if (
+          previousSession
+          && previousGrant
+          && currentSession === previousSession
+          && !clientGrantIsActive(previousGrant, now())
+        ) await clearLocalSession();
+      };
       const credential = normalizeClientAccessCredential(rawCode);
       if (!credential) {
-        publish({ status: 'locked', grant: null, error: 'invalid-code' });
+        if (!restorePreviousAccess('invalid-code')) {
+          await clearExpiredPreviousAccess();
+          publish({ status: 'locked', grant: null, error: 'invalid-code' });
+        }
         return false;
       }
       const operationGeneration = ++generation;
@@ -564,9 +600,13 @@ export function createClientAccessController({
       let response: Awaited<ReturnType<ClientAccessGateway['redeem']>>;
       try {
         response = await gateway.redeem(credential.canonical);
-      } catch {
+      } catch (error) {
         redemptionPending = false;
         if (operationGeneration !== generation) return false;
+        if (
+          !(error instanceof ClientAccessSessionInvalidatedError)
+          && restorePreviousAccess('unavailable')
+        ) return false;
         await clearLocalSession();
         publish({ status: 'error', grant: null, error: 'unavailable' });
         return false;
@@ -578,7 +618,10 @@ export function createClientAccessController({
       }
       if (!response) {
         redemptionPending = false;
-        publish({ status: 'locked', grant: null, error: 'invalid-code' });
+        if (!restorePreviousAccess('invalid-code')) {
+          await clearExpiredPreviousAccess();
+          publish({ status: 'locked', grant: null, error: 'invalid-code' });
+        }
         return false;
       }
       const parsedGrant = parseClientGrantView(response.grant, now());

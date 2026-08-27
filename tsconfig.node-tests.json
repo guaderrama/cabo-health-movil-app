@@ -23,6 +23,8 @@
     "features/devMiniapps/devMiniappCatalog.ts",
     "features/devMiniapps/devMiniappStore.ts",
     "features/clientAccess/clientAccessController.ts",
+    "features/clientAccess/clientHomePresentation.ts",
+    "features/clientAccess/clientExactLaunchState.ts",
     "features/clientAccess/clientDeletionReceiptStore.ts",
     "features/clientAccess/firebaseClientAccessAdapter.ts",
     "features/clientAccess/clientInstallationStore.ts",

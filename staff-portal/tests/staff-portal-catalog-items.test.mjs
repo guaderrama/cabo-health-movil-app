@@ -274,6 +274,94 @@ test('catalog administration fails closed for untrusted responses and every non-
   await assert.rejects(external.list(), /catalog_item_response_invalid/u);
 });
 
+test('owner can list unsafe legacy client copy, deactivate it, and repair it', async () => {
+  const calls = [];
+  let current = Object.freeze({
+    ...catalogItem,
+    access: 'clients',
+    id: 'vip-library',
+    summary: Object.freeze({
+      en: 'Open /apps/vip-library/launch/ after access.',
+      'es-MX': 'Abre /apps/vip-library/launch/ después del acceso.',
+    }),
+    title: Object.freeze({ en: 'VIP Library', 'es-MX': 'Biblioteca VIP' }),
+    url: 'https://cabohealth.org/apps/vip-library/',
+  });
+  const session = parseServerStaffSession({
+    scope: 'production',
+    permissions: ['client_resource_publish'],
+  });
+  const gateway = createCatalogItemGateway({
+    session,
+    transport: async (name, payload) => {
+      calls.push(name);
+      if (name === 'adminListCatalogItems') return { items: [current] };
+      if (name === 'adminSetCatalogItemActive') {
+        current = Object.freeze({ ...current, active: payload.active, revision: 2 });
+        return { item: current };
+      }
+      if (name === 'adminUpdateCatalogItem') {
+        current = Object.freeze({ ...current, ...payload.item, revision: 3 });
+        return { item: current };
+      }
+      return { deleted: true };
+    },
+  });
+  const repairedDetails = {
+    access: 'clients',
+    icon: current.icon,
+    summary: { en: 'Tailored wellness guidance.', 'es-MX': 'Orientación de bienestar personalizada.' },
+    title: current.title,
+    url: current.url,
+  };
+
+  assert.deepEqual(await gateway.list(), [current]);
+  assert.equal((await gateway.setActive(current.id, 1, false)).active, false);
+  assert.deepEqual((await gateway.update(current.id, 2, repairedDetails)).summary, repairedDetails.summary);
+  await gateway.delete(current.id, 3);
+  assert.deepEqual(calls, [
+    'adminListCatalogItems',
+    'adminSetCatalogItemActive',
+    'adminUpdateCatalogItem',
+    'adminDeleteCatalogItem',
+  ]);
+});
+
+test('owner can list, deactivate, and delete a legacy client item with a newly restricted id', async () => {
+  const calls = [];
+  const id = 'ch-abcdef01-23456789-a1b2c3d4-e5f60718';
+  let current = Object.freeze({
+    ...catalogItem,
+    access: 'clients',
+    id,
+    url: `https://cabohealth.org/apps/${id}/`,
+  });
+  const gateway = createCatalogItemGateway({
+    session: parseServerStaffSession({
+      scope: 'production',
+      permissions: ['client_resource_publish'],
+    }),
+    transport: async (name, payload) => {
+      calls.push(name);
+      if (name === 'adminListCatalogItems') return { items: [current] };
+      if (name === 'adminSetCatalogItemActive') {
+        current = Object.freeze({ ...current, active: payload.active, revision: 2 });
+        return { item: current };
+      }
+      return { deleted: true };
+    },
+  });
+
+  assert.deepEqual(await gateway.list(), [current]);
+  assert.equal((await gateway.setActive(id, 1, false)).active, false);
+  await gateway.delete(id, 2);
+  assert.deepEqual(calls, [
+    'adminListCatalogItems',
+    'adminSetCatalogItemActive',
+    'adminDeleteCatalogItem',
+  ]);
+});
+
 test('browser input validation mirrors the server title and summary limits', () => {
   const base = {
     access: 'clients',
@@ -293,6 +381,316 @@ test('browser input validation mirrors the server title and summary limits', () 
     ...base,
     summary: { ...base.summary, en: 'S'.repeat(241) },
   }), /catalog_item_text_invalid/u);
+});
+
+test('client teaser copy rejects sensitive launch details without banning benign private wording', () => {
+  const base = {
+    access: 'clients',
+    active: true,
+    icon: 'wellness',
+    summary: { en: 'Members-only wellness guidance.', 'es-MX': 'Orientación de bienestar para clientes.' },
+    title: { en: 'Private VIP Test', 'es-MX': 'Prueba VIP privada' },
+    url: 'https://cabohealth.org/apps/vip-preview/',
+  };
+  const sensitiveCopy = [
+    ['https URL', 'Open https://cabohealth.org/apps/client-resources/launch/'],
+    ['mailto URI', 'Email mailto:vip@example.test'],
+    ['tel URI', 'Call tel:+526241234567'],
+    ['javascript URI', 'Run javascript:alert(1)'],
+    ['custom URI', 'Open custom+vip:member-preview'],
+    ['relative API path', 'Call api/client-preview'],
+    ['relative broker path', 'Continue at broker/session'],
+    ['relative client resources path', 'Open client-resources/launch after access'],
+    ['relative launch path', 'Open launch/session after access'],
+    ['arbitrary relative route', 'Open vip-library/launch after access'],
+    ['App Review relative route', 'Open app-review/launch after access'],
+    ['relative client resources query', 'Continue at client-resources?token=abc'],
+    ['App Review relative query', 'Continue at app-review?token=abc'],
+    ['one-letter URI', 'Open x:private-token'],
+    ['bare domain', 'Visit www.example.com/vip'],
+    ['CaboHealth bare domain', 'Visit cabohealth.org/member'],
+    ['bare domain before punctuation', 'Learn more at www.cabohealth.org.'],
+    ['IP host', 'Open 192.168.0.1:8080/vip'],
+    ['bracketed IPv6 loopback', 'Connect to [::1]'],
+    ['bare IPv6 loopback', 'Connect to ::1'],
+    ['IPv6 unspecified', 'Connect to [::]'],
+    ['full IPv6 loopback', 'Connect to 0:0:0:0:0:0:0:1'],
+    ['full IPv6 unspecified', 'Connect to [0:0:0:0:0:0:0:0]'],
+    ['private IPv6', 'Connect to fd00::1'],
+    ['link-local IPv6', 'Connect to fe80::1'],
+    ['apps path', 'Open /apps/client-resources/launch/'],
+    ['API path', 'Call /api/client-preview'],
+    ['private path', 'Read private/production/catalog.json'],
+    ['private infrastructure path', 'Read /_private/client-catalog/'],
+    ['absolute home path', 'Read /Users/staff/catalog.json'],
+    ['absolute root path', 'Read /root/catalog'],
+    ['absolute usr path', 'Read /usr/local/catalog'],
+    ['absolute Library path', 'Read /Library/CaboHealth/catalog'],
+    ['Windows home path', 'Read C:\\Users\\staff\\catalog'],
+    ['Windows private path', 'Read \\private\\catalog'],
+    ['arbitrary Windows absolute path', 'Read C:\\deploy\\vip.json'],
+    ['arbitrary POSIX absolute path', 'Read /secrets/client.json'],
+    ['mounted absolute path', 'Read /Volumes/Private/client.json'],
+    ['CH credential', 'Code CH-00112233-44556677-8899AABB-CCDDEEFF'],
+    ['AR credential with Unicode separators', 'Code AR 00112233‐44556677‑8899AABB−CCDDEEFF'],
+    ['credential with interleaved separators', 'Code CH A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9'],
+    ['currency symbol', '€49 membership'],
+    ['currency code', 'Membership is MXN 1,250'],
+    ['currency amount word', 'Membership is 99 dollars'],
+    ['Spanish currency amount word', 'Disponible por 1,500 pesos'],
+    ['rial amount', 'Available for 99 rials'],
+    ['krone amount', 'Available for 99 krone'],
+    ['quetzal amount', 'Available for 99 quetzal'],
+    ['soles amount', 'Available for 99 soles'],
+    ['shilling amount', 'Available for 99 shillings'],
+    ['naira amount', 'Available for 99 naira'],
+    ['cedi amount', 'Available for 99 cedis'],
+    ['boliviano amount', 'Disponible por 99 bolivianos'],
+    ['colones amount', 'Disponible por 99 colones'],
+    ['contextual pounds price', 'Available for 99 pounds'],
+    ['contextual libras price', 'Disponible por 99 libras'],
+    ['contextual dinars price', 'Available for 99 dinars'],
+    ['contextual quetzales price', 'Disponible por 99 quetzales'],
+    ['Brazilian real code', 'Available for 99 BRL'],
+    ['Qatari riyal code', 'Available for 99 QAR'],
+    ['lowercase Qatari riyal code with amount', 'Membership 99 qar'],
+    ['lowercase West African franc code with amount', 'Membership 99 xof'],
+    ['standalone West African franc code', 'Membership currency: XOF'],
+    ['Kuwaiti dinar code', 'Membership 99 KWD'],
+    ['Bahraini dinar code first', 'BHD 20 membership'],
+    ['Brazilian real name', 'Disponible por 1,500 reales'],
+    ['price wording', 'Special price available'],
+    ['Spanish price wording', 'Consulta el precio VIP'],
+    ['monthly cadence', 'Membership billed per month'],
+    ['Spanish monthly cadence', 'Membresía cobrada por mes'],
+    ['monthly membership', 'Monthly membership'],
+    ['Spanish monthly membership', 'Membresía mensual'],
+    ['Spanish monthly benefits', 'Beneficios mensuales'],
+    ['membership', 'Membership available'],
+    ['subscription', 'Subscribe for access'],
+    ['purchase', 'Purchase access'],
+    ['buy', 'Buy access'],
+    ['payment', 'Payment required'],
+    ['paid membership', 'Paid membership'],
+    ['Spanish subscription', 'Suscripción disponible'],
+    ['Spanish purchase', 'Comprar acceso'],
+    ['Spanish payment', 'Pago requerido'],
+    ['Spanish pay', 'Pagar para acceder'],
+    ['checkout', 'Checkout available'],
+    ['billing', 'Billing available'],
+    ['billed', 'Billed annually'],
+    ['charge', 'No charge for access'],
+    ['sale', 'Sale available'],
+    ['sales', 'Sales available'],
+    ['for sale', 'Resource for sale'],
+    ['IAP', 'IAP available'],
+    ['IAP enabled', 'IAP enabled'],
+    ['free access', 'Free VIP access'],
+    ['free resource access', 'Free resource access'],
+    ['access is free', 'Access is free'],
+    ['complimentary access', 'Complimentary client access'],
+    ['Spanish free access', 'Acceso gratis'],
+    ['Spanish charge', 'Cobro anual'],
+    ['Spanish sale', 'Venta disponible'],
+    ['Spanish sales', 'Ventas disponibles'],
+    ['Spanish billing', 'Facturación disponible'],
+    ['zero-width formatting', 'VIP\u200B access'],
+    ['bidi formatting', 'VIP\u202E access'],
+    ['Unicode format control', 'VIP\u061C access'],
+  ];
+
+  assert.deepEqual(validateCatalogItemInput(base), base);
+  for (const [label, copy] of sensitiveCopy) {
+    assert.throws(() => validateCatalogItemInput({
+      ...base,
+      title: { ...base.title, en: copy },
+    }), /catalog_item_text_invalid/u, `${label} in title`);
+    assert.throws(() => validateCatalogItemInput({
+      ...base,
+      summary: { ...base.summary, 'es-MX': copy },
+    }), /catalog_item_text_invalid/u, `${label} in summary`);
+    assert.equal(validateCatalogItemInput({
+      ...base,
+      access: 'public',
+      title: { ...base.title, en: copy },
+    }).title.en, copy, `${label} remains valid for public copy`);
+  }
+});
+
+test('client teaser copy allows clinical cadence and weight language that is not pricing', () => {
+  const input = {
+    access: 'clients',
+    active: true,
+    icon: 'wellness',
+    summary: {
+      en: 'CHF Guide for CAD prevention, CRC screening, INR monitoring, and care related to SLE, SLL, or STD. GHS reference. Available for 10 minutes per day; use 10 min at 100 bpm for up to 10 hrs and lose 10 pounds safely. Client access is VIP.',
+      'es-MX': 'Disponible por 10 minutos al día; entrena con pesos libres una vez por semana.',
+    },
+    title: { en: 'Private VIP Test: AED Training', 'es-MX': 'Prueba VIP privada' },
+    url: 'https://cabohealth.org/apps/vip-preview/',
+  };
+
+  assert.deepEqual(validateCatalogItemInput(input), input);
+
+  const freeLanguageInput = {
+    ...input,
+    summary: {
+      en: 'Free weights for VIP clients and sugar-free nutrition support clinical care.',
+      'es-MX': 'Consejos para cuando sales a caminar. Pesos libres para clientes VIP apoyan el cuidado clínico.',
+    },
+    title: { en: 'Free weights guide', 'es-MX': 'Guía de pesos libres' },
+    url: 'https://cabohealth.org/apps/free-weights-guide/',
+  };
+  assert.deepEqual(validateCatalogItemInput(freeLanguageInput), freeLanguageInput);
+
+  const freeWeightResourceInput = {
+    ...input,
+    summary: {
+      en: 'A resource about free weights. Try 10 minutes of 10 real-world exercises. Ratios 1:2 and times 10:30 or 10:30:00 support clinical guidance.',
+      'es-MX': 'Un recurso sobre ejercicios con pesos libres.',
+    },
+    title: { en: 'Free weights resource', 'es-MX': 'Recurso de fuerza' },
+    url: 'https://cabohealth.org/apps/strength-training-guide/',
+  };
+  assert.deepEqual(validateCatalogItemInput(freeWeightResourceInput), freeWeightResourceInput);
+
+  const iapClinicalInput = {
+    ...input,
+    summary: {
+      en: 'IAP monitoring guide for intra-abdominal pressure.',
+      'es-MX': 'Guía de monitoreo de presión intraabdominal.',
+    },
+    title: { en: 'IAP Monitoring', 'es-MX': 'Monitoreo de presión' },
+    url: 'https://cabohealth.org/apps/pressure-monitoring/',
+  };
+  assert.deepEqual(validateCatalogItemInput(iapClinicalInput), iapClinicalInput);
+});
+
+test('client catalog ids cannot encode credentials or commercial metadata', () => {
+  const base = {
+    access: 'clients',
+    active: true,
+    icon: 'featured',
+    summary: { en: 'A tailored wellness experience.', 'es-MX': 'Una experiencia de bienestar personalizada.' },
+    title: { en: 'VIP Library', 'es-MX': 'Biblioteca VIP' },
+  };
+  const restrictedIds = [
+    'ch-abcdef01-23456789-a1b2c3d4-e5f60718',
+    'ar-01234567-89abcdef-01234567-89abcdef',
+    'ar0123456789abcdef0123456789abcdef',
+    'ch-abcd-ef01-2345-6789-a1b2-c3d4-e5f6-0718',
+    'vip-price',
+    'pricing-vip',
+    'vip-precio',
+    'care-cost',
+    'costo-care',
+    'membership-fee',
+    'tarifa-vip',
+    'monthly-vip',
+    'vip-mensual',
+    'vip-99-brl',
+    'vip-inr-1500',
+    'vip-99-qar',
+    'vip-kwd-1500',
+    'vip-bhd-20',
+    'vip-omr-9',
+    'vip-99-xof',
+    'vip-99-dollars',
+    'vip-dollars-99',
+    'vip-99-pesos',
+    'vip-99-euros',
+    'vip-99-rials',
+    'vip-99-krone',
+    'vip-99-quetzal',
+    'vip-99-soles',
+    'vip-99-shillings',
+    'vip-99-naira',
+    'vip-99-cedis',
+    'vip-99-bolivianos',
+    'vip-99-colones',
+    'vip-99usd',
+    'vip-usd99',
+    'vip-99dollars',
+    'vip-dollars99',
+    'vip-price99',
+    'vip-99price',
+    'vip-monthly99',
+    'vip-checkout99',
+    'vip-99-pen',
+    'vip-try-1500',
+    'vip-currency-xof',
+    'vip-moneda-mxn',
+    'vip-ngn-membership',
+    'mxn-membership',
+    'vip-subscription',
+    'vip-subscribed',
+    'vip-purchasing',
+    'vip-buy-access',
+    'vip-buys',
+    'vip-buying',
+    'vip-payment',
+    'membresia-vip',
+    'vip-suscripcion',
+    'vip-pago',
+    'vip-checkout',
+    'vip-billing',
+    'vip-billed',
+    'vip-charge',
+    'vip-charging',
+    'vip-sale',
+    'vip-sales',
+    'vip-cobro',
+    'vip-venta',
+    'vip-facturacion',
+    'iap-purchase',
+    'iap-payment',
+    'iap-checkout',
+    'iap-available',
+    'iap-enabled',
+    'available-iap',
+    'enabled-iap',
+    'vip-free-access',
+    'resource-free',
+  ];
+
+  for (const id of restrictedIds) {
+    const url = `https://cabohealth.org/apps/${id}/`;
+    assert.throws(() => validateCatalogItemInput({ ...base, url }), /catalog_item_url_invalid/u, id);
+    assert.equal(validateCatalogItemInput({ ...base, access: 'public', url }).url, url, `${id} remains valid for public access`);
+  }
+  for (const id of [
+    'private-vip-test',
+    'priceless-guide',
+    'costume-guide',
+    'try-this-guide',
+    'pen-and-paper',
+    'inr-guide',
+    'aed-training',
+    'vip-usd',
+    'free-weights-guide',
+    'sugar-free-guide',
+    'vip-free-weights-guide',
+    'client-free-weights-guide',
+    'vip-gratis',
+    'client-complimentary',
+    'iap-monitoring',
+    'vip-iap',
+    'lose-10-pounds',
+    '10-pesos-libres',
+    '10pesos-libres',
+    'priceless99-guide',
+    'costume99-guide',
+    '10min-guide',
+    '100bpm-guide',
+    '10hrs-guide',
+    'colon-care-guide',
+    'sol-care-guide',
+    'real-world-guide',
+    '10-real-world-exercises',
+  ]) {
+    const url = `https://cabohealth.org/apps/${id}/`;
+    assert.equal(validateCatalogItemInput({ ...base, url }).url, url, id);
+  }
 });
 
 test('catalog titles and summaries reject every native-disallowed ASCII control range', async () => {
@@ -393,6 +791,8 @@ test('catalog route policy reserves infrastructure and keeps the broker root cli
   };
   for (const url of [
     'https://cabohealth.org/apps/app-review/',
+    'https://cabohealth.org/apps/review-sandbox-app-review-sample-v1/',
+    'https://cabohealth.org/apps/review-sandbox-future-sample/',
     'https://cabohealth.org/apps/shared/',
   ]) {
     assert.throws(() => validateCatalogItemInput({ ...base, access: 'public', url }), /catalog_item_url_invalid/u);
@@ -442,6 +842,33 @@ test('Staff never sends a mutation for a permanently retired catalog id', async 
   for (const id of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
     await assert.rejects(gateway.setActive(id, 1, true), /catalog_item_identity_invalid/u, id);
   }
+  assert.equal(calls, 0);
+});
+
+test('Staff rejects every review-sandbox mutation before calling the transport', async () => {
+  let calls = 0;
+  const gateway = createCatalogItemGateway({
+    session: parseServerStaffSession({
+      scope: 'production',
+      permissions: ['client_resource_publish'],
+    }),
+    transport: async (name) => {
+      calls++;
+      return name === 'adminDeleteCatalogItem' ? { deleted: true } : { item: catalogItem };
+    },
+  });
+  const id = 'review-sandbox-future-sample';
+  const details = {
+    access: catalogItem.access,
+    icon: catalogItem.icon,
+    summary: catalogItem.summary,
+    title: catalogItem.title,
+    url: catalogItem.url,
+  };
+
+  await assert.rejects(gateway.setActive(id, 1, true), /catalog_item_identity_invalid/u);
+  await assert.rejects(gateway.update(id, 1, details), /catalog_item_identity_invalid/u);
+  await assert.rejects(gateway.delete(id, 1), /catalog_item_identity_invalid/u);
   assert.equal(calls, 0);
 });
 

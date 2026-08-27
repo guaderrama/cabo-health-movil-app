@@ -280,6 +280,64 @@ test('the backend generic invalid-access error maps to a null redemption without
   assert.deepEqual(harness.calls, [['signOut']]);
 });
 
+test('invalid or unavailable replacement codes preserve an existing production or review principal', async () => {
+  for (const [currentUid, credential] of [
+    ['client_abcdefghijklmnopqrstuvwxyz123456', 'CH-01234567-89ABCDEF-01234567-89ABCDEF'],
+    ['review_abcdefghijklmnopqrstuvwxyz123456', 'AR-01234567-89ABCDEF-01234567-89ABCDEF'],
+  ]) {
+    const denied = makeHarness({ currentUid });
+    denied.replaceCall(async (name, data) => {
+      denied.calls.push(['call', name, data]);
+      const error = new Error('invalid_access');
+      error.code = 'functions/permission-denied';
+      throw error;
+    });
+
+    assert.equal(await denied.adapter.gateway.redeem(credential), null);
+    assert.equal(denied.auth.currentUser()?.uid, currentUid);
+    assert.equal(denied.calls.some(([kind]) => kind === 'signOut'), false);
+
+    const offline = makeHarness({ currentUid });
+    offline.replaceCall(async (name, data) => {
+      offline.calls.push(['call', name, data]);
+      throw new Error('offline');
+    });
+
+    await assert.rejects(offline.adapter.gateway.redeem(credential), /offline/u);
+    assert.equal(offline.auth.currentUser()?.uid, currentUid);
+    assert.equal(offline.calls.some(([kind]) => kind === 'signOut'), false);
+
+    const signInOffline = makeHarness({ currentUid });
+    signInOffline.auth.signInWithCustomToken = async (customToken) => {
+      signInOffline.calls.push(['signIn', customToken]);
+      throw new Error('sign-in-offline');
+    };
+
+    await assert.rejects(signInOffline.adapter.gateway.redeem(credential), /sign-in-offline/u);
+    assert.equal(signInOffline.auth.currentUser()?.uid, currentUid);
+    assert.equal(signInOffline.calls.some(([kind]) => kind === 'signOut'), false);
+  }
+});
+
+test('a wrong-realm replacement principal clears the prior controller grant and session', async () => {
+  const harness = makeHarness({
+    currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456',
+    signedInUid: 'review_abcdefghijklmnopqrstuvwxyz123456',
+  });
+  const controller = createClientAccessController({
+    gateway: harness.adapter.gateway,
+    sessionStore: harness.adapter.sessionStore,
+  });
+  await controller.initialize();
+  assert.equal(controller.getSnapshot().status, 'unlocked');
+
+  assert.equal(await controller.redeem('CH-01234567-89ABCDEF-01234567-89ABCDEF'), false);
+  assert.equal(controller.getSnapshot().status, 'error');
+  assert.equal(controller.getSnapshot().grant, null);
+  assert.equal(harness.auth.currentUser(), null);
+  assert.equal(harness.calls.filter(([kind]) => kind === 'signOut').length >= 1, true);
+});
+
 test('restore accepts only a ready client Firebase principal', async () => {
   const valid = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
   assert.deepEqual(Object.keys(await valid.adapter.sessionStore.restore()), []);

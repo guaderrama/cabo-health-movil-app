@@ -17,6 +17,98 @@ export const CATALOG_ITEM_ICONS = Object.freeze([
 const CATALOG_ITEM_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const CATALOG_ITEM_ID_MAX_LENGTH = 64;
 const CATALOG_TEXT_CONTROL_PATTERN = /[\u0000-\u001f\u007f]/u;
+const CLIENT_CATALOG_COMMERCIAL_TERMS = Object.freeze([
+  'price', 'prices', 'pricing', 'precio', 'precios',
+  'cost', 'costs', 'costo', 'costos',
+  'fee', 'fees', 'tarifa', 'tarifas',
+  'currency', 'currencies', 'moneda', 'monedas',
+  'monthly', 'mensual', 'mensuales',
+  'membership', 'memberships', 'membresía', 'membresías', 'membresia', 'membresias',
+  'subscription', 'subscriptions', 'subscribe', 'subscribed',
+  'suscripción', 'suscripciones', 'suscripcion', 'suscribir', 'suscríbete',
+  'purchase', 'purchases', 'purchasing', 'comprar', 'compra', 'compras',
+  'buy', 'buys', 'buying',
+  'payment', 'payments', 'paid', 'pago', 'pagos', 'pagar',
+  'checkout', 'checkouts', 'billing', 'billed',
+  'charge', 'charges', 'charged', 'charging', 'cobro', 'cobros',
+  'venta', 'ventas', 'facturación', 'facturacion', 'facturaciones',
+]);
+const CLIENT_CATALOG_COMMERCIAL_ID_SEGMENTS = new Set(CLIENT_CATALOG_COMMERCIAL_TERMS);
+const CLIENT_CATALOG_SALE_ID_SEGMENTS = new Set(['sale', 'sales']);
+const CLIENT_CATALOG_IAP_ID_CONTEXT_SEGMENTS = new Set(['available', 'enabled']);
+const CLIENT_CATALOG_FREE_ID_SEGMENTS = new Set(['free', 'gratis', 'complimentary']);
+const CLIENT_CATALOG_FREE_ID_CONTEXT_SEGMENTS = new Set([
+  'access', 'resource', 'resources', 'membership', 'memberships',
+  'acceso', 'accesos', 'recurso', 'recursos', 'membresia', 'membresias',
+]);
+const CLIENT_CATALOG_CURRENCY_ID_WORDS = new Set([
+  'afghani', 'afghanis', 'lek', 'leks', 'dinar', 'dinars', 'dinares',
+  'dirham', 'dirhams', 'kwanza', 'kwanzas',
+  'dollar', 'dollars', 'dolar', 'dolares', 'dólar', 'dólares',
+  'florin', 'florins', 'guilder', 'guilders', 'manat', 'manats', 'marka',
+  'taka', 'lev', 'leva', 'franc', 'francs', 'franco', 'francos',
+  'ngultrum', 'ngultrums', 'boliviano', 'bolivianos',
+  'real', 'reais', 'reales', 'pula',
+  'ruble', 'rubles', 'rouble', 'roubles', 'rublo', 'rublos',
+  'yuan', 'renminbi', 'colón', 'colones', 'koruna', 'korunas',
+  'krona', 'kronor', 'krone', 'kroner', 'nakfa', 'birr',
+  'euro', 'euros', 'lari', 'cedi', 'cedis', 'dalasi',
+  'shilling', 'shillings', 'quetzal', 'quetzales', 'lempira', 'lempiras',
+  'gourde', 'gourdes', 'forint', 'forints', 'rupiah',
+  'shekel', 'shekels', 'rupee', 'rupees', 'rupia', 'rupias',
+  'rial', 'rials', 'riales', 'yen', 'yenes', 'kip', 'lira', 'liras',
+  'loti', 'maloti', 'leu', 'lei', 'ariary', 'denar', 'denars',
+  'kyat', 'tugrik', 'tugriks', 'pataca', 'patacas', 'ouguiya', 'ouguiyas',
+  'kwacha', 'ringgit', 'metical', 'meticais', 'naira',
+  'cordoba', 'cordobas', 'córdoba', 'córdobas', 'balboa', 'balboas',
+  'sol', 'soles', 'kina', 'guarani', 'guaranies', 'guaraní', 'guaraníes',
+  'zloty', 'zlotys', 'złoty', 'złotys', 'riyal', 'riyals', 'riel', 'riels',
+  'won', 'leone', 'leones', 'somoni', 'paanga', 'hryvnia', 'hryvnias',
+  'som', 'soms', 'dong', 'vatu', 'tala', 'rand', 'peso', 'pesos',
+]);
+const CLIENT_CATALOG_ID_NUMBER_PATTERN = /^\d+$/u;
+const CLIENT_CATALOG_ID_NUMBERED_TOKEN_PATTERN = /^(?:\d+([a-z]+)|([a-z]+)\d+)$/u;
+const CLIENT_TEASER_FORMAT_PATTERN = /\p{Cf}/u;
+const CLIENT_TEASER_URI_PATTERN = /\b[a-z][a-z0-9+.-]{0,31}:(?:\/\/)?[^\s]+/iu;
+const CLIENT_TEASER_BARE_DOMAIN_PATTERN = /\b(?:www\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}\b/iu;
+const CLIENT_TEASER_IP_HOST_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?:\/[^\s]*)?/u;
+const CLIENT_TEASER_IPV6_HOST_PATTERN = /(?:^|[^\p{L}\p{N}:])\[?(?:(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|(?=[0-9a-f:]*::)[0-9a-f:]{2,39})\]?(?=$|[^\p{L}\p{N}:])/iu;
+const CLIENT_TEASER_INFRA_PATH_PATTERN = /(?:^|[^a-z0-9])(?:(?:[a-z]:)?[\\/]{1,2}(?=[a-z0-9._~-])|[a-z0-9][a-z0-9._~-]*(?:[\\/][a-z0-9._~/?#=&-]*|[?#][a-z0-9._~%=&-]+))/iu;
+const CLIENT_TEASER_CREDENTIAL_PATTERN = /(?:^|[^a-z0-9])(?:CH|AR)[ \-\u2010-\u2015\u2212]*(?:[a-f0-9][ \-\u2010-\u2015\u2212]*){32}(?=$|[^a-f0-9])/iu;
+const CLIENT_TEASER_CURRENCY_SYMBOL_PATTERN = /\p{Sc}/u;
+const CLIENT_TEASER_CURRENCY_CODES = new Set<string>([
+  'AED', 'AFN', 'ALL', 'AMD', 'ANG', 'AOA', 'ARS', 'AUD', 'AWG', 'AZN',
+  'BAM', 'BBD', 'BDT', 'BGN', 'BHD', 'BIF', 'BMD', 'BND', 'BOB', 'BOV', 'BRL', 'BSD', 'BTN', 'BWP', 'BYN', 'BYR', 'BZD',
+  'CAD', 'CDF', 'CHE', 'CHF', 'CHW', 'CLF', 'CLP', 'CNH', 'CNY', 'COP', 'COU', 'CRC', 'CUC', 'CUP', 'CVE', 'CZK',
+  'DJF', 'DKK', 'DOP', 'DZD', 'EGP', 'ERN', 'ETB', 'EUR', 'FJD', 'FKP',
+  'GBP', 'GEL', 'GHS', 'GIP', 'GMD', 'GNF', 'GTQ', 'GYD', 'HKD', 'HNL', 'HRK', 'HTG', 'HUF',
+  'IDR', 'ILS', 'INR', 'IQD', 'IRR', 'ISK', 'JMD', 'JOD', 'JPY',
+  'KES', 'KGS', 'KHR', 'KMF', 'KPW', 'KRW', 'KWD', 'KYD', 'KZT',
+  'LAK', 'LBP', 'LKR', 'LRD', 'LSL', 'LTL', 'LVL', 'LYD',
+  'MAD', 'MDL', 'MGA', 'MKD', 'MMK', 'MNT', 'MOP', 'MRO', 'MRU', 'MUR', 'MVR', 'MWK', 'MXN', 'MXV', 'MYR', 'MZN',
+  'NAD', 'NGN', 'NIO', 'NOK', 'NPR', 'NZD', 'OMR',
+  'PAB', 'PEN', 'PGK', 'PHP', 'PKR', 'PLN', 'PYG', 'QAR', 'RMB', 'RON', 'RSD', 'RUB', 'RWF',
+  'SAR', 'SBD', 'SCR', 'SDG', 'SEK', 'SGD', 'SHP', 'SLE', 'SLL', 'SOS', 'SRD', 'SSP', 'STD', 'STN', 'SVC', 'SYP', 'SZL',
+  'THB', 'TJS', 'TMT', 'TND', 'TOP', 'TRY', 'TTD', 'TWD', 'TZS',
+  'UAH', 'UGX', 'USD', 'USN', 'UYI', 'UYU', 'UYW', 'UZS',
+  'VED', 'VEF', 'VES', 'VND', 'VUV', 'WST',
+  'XAF', 'XAG', 'XAU', 'XBA', 'XBB', 'XBC', 'XBD', 'XCD', 'XCG', 'XDR', 'XOF', 'XPD', 'XPF', 'XPT', 'XSU', 'XTS', 'XUA', 'XXX',
+  'YER', 'ZAR', 'ZMK', 'ZMW', 'ZWD', 'ZWG', 'ZWL', 'ZWN', 'ZWR',
+]);
+const CLIENT_TEASER_CURRENCY_CODE_AMOUNT_PATTERN = /\b(?:\d[\d.,]*\s*[A-Z]{3}|[A-Z]{3}\s*\d[\d.,]*)\b/u;
+const CLIENT_TEASER_CURRENCY_CODE_AMOUNT_CANDIDATE_PATTERN = /\b(?:\d[\d.,]*\s*([a-z]{3})|([a-z]{3})\s*\d[\d.,]*)\b/giu;
+const CLIENT_TEASER_CURRENCY_WORD_AFTER_AMOUNT_PATTERN = /\b\d[\d.,]*\s*(\p{L}+)\b/giu;
+const CLIENT_TEASER_CURRENCY_WORD_BEFORE_AMOUNT_PATTERN = /\b(\p{L}+)\s*\d[\d.,]*\b/giu;
+const CLIENT_TEASER_POUND_COMMERCIAL_AMOUNT_PATTERN = /\b(?:available\s+for|buy\s+for|disponible\s+por|comprar?\s+por)\s+\d[\d.,]*\s*(?:pounds?|libras?)\b/iu;
+const CLIENT_TEASER_COMMERCIAL_TERM_ALTERNATION = CLIENT_CATALOG_COMMERCIAL_TERMS.join('|');
+const CLIENT_TEASER_PRICE_PATTERN = new RegExp(
+  String.raw`\b(?:${CLIENT_TEASER_COMMERCIAL_TERM_ALTERNATION})\b|\b(?:per\s+month|por\s+mes)\b`,
+  'iu',
+);
+const CLIENT_TEASER_FREE_ACCESS_PATTERN = /(?:(?<![-\p{L}\p{N}])(?:free|gratis|complimentary)\b(?=[^.!?\n]{0,80}\b(?:access|resources?|memberships?|accesos?|recursos?|membres[ií]as?)\b)|\b(?:access|resources?|memberships?|accesos?|recursos?|membres[ií]as?)\b(?=[^.!?\n]{0,80}(?<![-\p{L}\p{N}])(?:free|gratis|complimentary)\b))/iu;
+const CLIENT_TEASER_SALE_PATTERN = /\b(?:(?:sale|sales)\s+available|(?:for|on)\s+sale)\b/iu;
+const CLIENT_TEASER_IAP_COMMERCIAL_PATTERN = /\b(?:iap\s+(?:available|enabled)|(?:available|enabled)\s+iap)\b/iu;
+const REVIEW_SANDBOX_CATALOG_ID_PREFIX = 'review-sandbox-';
 const PERMANENTLY_RETIRED_CATALOG_IDS = new Set([
   'health-advisor',
   'ai-cosmetic-scan',
@@ -238,7 +330,7 @@ function parseCatalogItem(value: unknown): CatalogItem {
     throw new Error('catalog_item_response_invalid');
   }
   try {
-    const details = validateCatalogItemDetails({
+    const details = parseCatalogItemDetails({
       access: value.access,
       icon: value.icon,
       summary: value.summary,
@@ -262,6 +354,22 @@ function parseCatalogItem(value: unknown): CatalogItem {
 }
 
 export function validateCatalogItemDetails(value: unknown): CatalogItemDetailsInput {
+  const details = parseCatalogItemDetails(value);
+  if (details.access === 'clients') {
+    if (isRestrictedClientCatalogId(catalogIdFromUrl(details.url))) {
+      throw new Error('catalog_item_url_invalid');
+    }
+    if (containsSensitiveClientTeaserCopy(details.summary.en)
+      || containsSensitiveClientTeaserCopy(details.summary['es-MX'])
+      || containsSensitiveClientTeaserCopy(details.title.en)
+      || containsSensitiveClientTeaserCopy(details.title['es-MX'])) {
+      throw new Error('catalog_item_text_invalid');
+    }
+  }
+  return details;
+}
+
+function parseCatalogItemDetails(value: unknown): CatalogItemDetailsInput {
   if (!hasExactKeys(value, ['access', 'icon', 'summary', 'title', 'url'])) {
     throw new Error('catalog_item_fields_invalid');
   }
@@ -293,6 +401,7 @@ export function isCatalogRevisionConflict(error: unknown): boolean {
 function assertCatalogMutationIdentity(id: string, revision: number): void {
   if (!isCatalogItemId(id)
     || PERMANENTLY_RETIRED_CATALOG_IDS.has(id)
+    || id.startsWith(REVIEW_SANDBOX_CATALOG_ID_PREFIX)
     || !Number.isSafeInteger(revision)
     || revision < 1) {
     throw new Error('catalog_item_identity_invalid');
@@ -316,6 +425,7 @@ function parseCatalogUrl(value: unknown, access: CatalogItemAccess): string {
       || pathMatch === null
       || !isCatalogItemId(pathMatch[1])
       || PERMANENTLY_RETIRED_CATALOG_IDS.has(pathMatch[1])
+      || pathMatch[1].startsWith(REVIEW_SANDBOX_CATALOG_ID_PREFIX)
       || pathMatch[1] === 'app-review'
       || pathMatch[1] === 'shared'
       || (pathMatch[1] === 'client-resources' && access !== 'clients')) {
@@ -333,11 +443,64 @@ function isCatalogItemId(value: unknown): value is string {
     && CATALOG_ITEM_ID_PATTERN.test(value);
 }
 
+function isRestrictedClientCatalogId(value: string): boolean {
+  const segments = value.split('-');
+  return CLIENT_TEASER_CREDENTIAL_PATTERN.test(value)
+    || (segments.includes('iap')
+      && segments.some((segment) => CLIENT_CATALOG_IAP_ID_CONTEXT_SEGMENTS.has(segment)))
+    || (segments.some((segment) => CLIENT_CATALOG_FREE_ID_SEGMENTS.has(segment))
+      && segments.some((segment) => CLIENT_CATALOG_FREE_ID_CONTEXT_SEGMENTS.has(segment)))
+    || segments.some((segment, index) => CLIENT_CATALOG_COMMERCIAL_ID_SEGMENTS.has(segment)
+      || CLIENT_CATALOG_SALE_ID_SEGMENTS.has(segment)
+      || containsClientCatalogNumberedPricingSegment(segments, segment, index)
+      || containsClientCatalogCurrencyAmountSegment(segments, segment, index));
+}
+
+function containsClientCatalogNumberedPricingSegment(
+  segments: readonly string[],
+  segment: string,
+  index: number,
+): boolean {
+  const match = CLIENT_CATALOG_ID_NUMBERED_TOKEN_PATTERN.exec(segment);
+  const token = match?.[1] ?? match?.[2];
+  return Boolean(token
+    && !isClientCatalogBenignCurrencySegment(token, segments, index)
+    && (CLIENT_TEASER_CURRENCY_CODES.has(token.toUpperCase())
+      || CLIENT_CATALOG_CURRENCY_ID_WORDS.has(token)
+      || CLIENT_CATALOG_COMMERCIAL_ID_SEGMENTS.has(token)
+      || CLIENT_CATALOG_SALE_ID_SEGMENTS.has(token)));
+}
+
+function containsClientCatalogCurrencyAmountSegment(
+  segments: readonly string[],
+  segment: string,
+  index: number,
+): boolean {
+  const hasAdjacentAmount = CLIENT_CATALOG_ID_NUMBER_PATTERN.test(segments[index - 1] ?? '')
+    || CLIENT_CATALOG_ID_NUMBER_PATTERN.test(segments[index + 1] ?? '');
+  if (!hasAdjacentAmount) return false;
+  if (CLIENT_TEASER_CURRENCY_CODES.has(segment.toUpperCase())) return true;
+  if (!CLIENT_CATALOG_CURRENCY_ID_WORDS.has(segment)) return false;
+  return !isClientCatalogBenignCurrencySegment(segment, segments, index);
+}
+
+function isClientCatalogBenignCurrencySegment(
+  segment: string,
+  segments: readonly string[],
+  index: number,
+): boolean {
+  return ((segment === 'peso' || segment === 'pesos') && segments[index + 1] === 'libres')
+    || (segment === 'real' && segments[index + 1] === 'world');
+}
+
 function catalogIdFromUrl(url: string): string {
   return new URL(url).pathname.split('/')[2] ?? '';
 }
 
-function parseLocalizedText(value: unknown, maxLength: number): LocalizedCatalogText {
+function parseLocalizedText(
+  value: unknown,
+  maxLength: number,
+): LocalizedCatalogText {
   if (!hasExactKeys(value, ['en', 'es-MX'])) throw new Error('catalog_item_text_invalid');
   const rawEn = typeof value.en === 'string' ? value.en : '';
   const rawEsMx = typeof value['es-MX'] === 'string' ? value['es-MX'] : '';
@@ -347,10 +510,72 @@ function parseLocalizedText(value: unknown, maxLength: number): LocalizedCatalog
   }
   const en = rawEn.trim();
   const esMx = rawEsMx.trim();
-  if (en === '' || esMx === '' || en.length > maxLength || esMx.length > maxLength) {
+  if (en === ''
+    || esMx === ''
+    || en.length > maxLength
+    || esMx.length > maxLength) {
     throw new Error('catalog_item_text_invalid');
   }
   return Object.freeze({ en, 'es-MX': esMx });
+}
+
+function containsClientTeaserCurrencyCodeAmount(value: string): boolean {
+  if (CLIENT_TEASER_CURRENCY_CODE_AMOUNT_PATTERN.test(value)) return true;
+  for (const match of value.matchAll(CLIENT_TEASER_CURRENCY_CODE_AMOUNT_CANDIDATE_PATTERN)) {
+    const code = match[1] ?? match[2];
+    if (code
+      && CLIENT_TEASER_CURRENCY_CODES.has(code.toUpperCase())
+      && !isBenignClientTeaserTryAmount(value, match)) return true;
+  }
+  return false;
+}
+
+function isBenignClientTeaserTryAmount(value: string, match: RegExpMatchArray): boolean {
+  if (match[2]?.toLocaleLowerCase('en-US') !== 'try') return false;
+  const trailingText = value.slice((match.index ?? 0) + match[0].length);
+  return /^\s+(?:minutes?|mins?|hours?|hrs?|seconds?|secs?|exercises?|reps?|steps?)\b/iu.test(trailingText);
+}
+
+function containsClientTeaserCurrencyWordAmount(value: string): boolean {
+  for (const pattern of [
+    CLIENT_TEASER_CURRENCY_WORD_AFTER_AMOUNT_PATTERN,
+    CLIENT_TEASER_CURRENCY_WORD_BEFORE_AMOUNT_PATTERN,
+  ]) {
+    for (const match of value.matchAll(pattern)) {
+      const word = match[1]?.toLocaleLowerCase('es-MX');
+      if (!word || !CLIENT_CATALOG_CURRENCY_ID_WORDS.has(word)) continue;
+      const trailingText = value.slice((match.index ?? 0) + match[0].length);
+      if (((word === 'peso' || word === 'pesos') && /^\s+libres\b/iu.test(trailingText))
+        || (word === 'real' && /^-world\b/iu.test(trailingText))) continue;
+      return true;
+    }
+  }
+  return CLIENT_TEASER_POUND_COMMERCIAL_AMOUNT_PATTERN.test(value);
+}
+
+function containsClientTeaserFreeAccess(value: string): boolean {
+  const withoutFreeWeightPhrases = value.replace(
+    /\bfree\s+weights?\b/giu,
+    'weight exercise',
+  );
+  return CLIENT_TEASER_FREE_ACCESS_PATTERN.test(withoutFreeWeightPhrases);
+}
+
+function containsSensitiveClientTeaserCopy(value: string): boolean {
+  return CLIENT_TEASER_CREDENTIAL_PATTERN.test(value)
+    || CLIENT_TEASER_CURRENCY_SYMBOL_PATTERN.test(value)
+    || containsClientTeaserCurrencyCodeAmount(value)
+    || containsClientTeaserCurrencyWordAmount(value)
+    || containsClientTeaserFreeAccess(value)
+    || CLIENT_TEASER_FORMAT_PATTERN.test(value)
+    || CLIENT_TEASER_INFRA_PATH_PATTERN.test(value)
+    || CLIENT_TEASER_IP_HOST_PATTERN.test(value)
+    || CLIENT_TEASER_IPV6_HOST_PATTERN.test(value)
+    || CLIENT_TEASER_IAP_COMMERCIAL_PATTERN.test(value)
+    || CLIENT_TEASER_PRICE_PATTERN.test(value)
+    || CLIENT_TEASER_SALE_PATTERN.test(value)
+    || CLIENT_TEASER_URI_PATTERN.test(value)
+    || CLIENT_TEASER_BARE_DOMAIN_PATTERN.test(value);
 }
 
 function assertCatalogAdministrationAllowed(session: ServerStaffSession): void {

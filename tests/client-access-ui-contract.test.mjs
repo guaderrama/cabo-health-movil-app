@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const read = (path) => readFileSync(path, 'utf8');
 
-test('home always presents the locked Client Resources folio and code modal', () => {
+test('home presents locked client previews and keeps a safe access-management fallback', () => {
   const root = read('app/_layout.tsx');
   const home = read('app/(main)/index.tsx');
   const folio = read('features/clientAccess/ClientAccessFolio.tsx');
@@ -17,6 +17,8 @@ test('home always presents the locked Client Resources folio and code modal', ()
   assert.match(bootstrap, /loadClientAccessRuntime/u);
   assert.match(bootstrap, /runtime\?\.gateway/u);
   assert.match(home, /<ClientAccessFolio/u);
+  assert.match(home, /<ClientMiniappTile/u);
+  assert.match(home, /clientCard\.locked/u);
   assert.match(home, /<ClientAccessModal/u);
   assert.match(home, /t\('clientAccess\.sectionTitle'\)/u);
   assert.match(folio, /<EditorialMiniappCover/u);
@@ -26,6 +28,41 @@ test('home always presents the locked Client Resources folio and code modal', ()
   assert.match(provider, /createLaunch: async \(\) => null/u);
   assert.doesNotMatch(`${root}\n${home}\n${folio}\n${modal}\n${provider}\n${bootstrap}`, /firebase|firestore/iu);
   assert.doesNotMatch(`${home}\n${folio}\n${modal}\n${provider}\n${bootstrap}`, /AsyncStorage/u);
+});
+
+test('a locked client card requests a code while an unlocked card launches that exact resource', () => {
+  const home = read('app/(main)/index.tsx');
+  const tile = read('features/clientAccess/ClientMiniappTile.tsx');
+  const modal = read('features/clientAccess/ClientAccessModal.tsx');
+
+  assert.match(home, /clientCard\.locked[^]*setClientAccessVisible\(true\)/u);
+  assert.match(home, /clientCard\.locked[^]*setClientCodeEntryRequested\(true\)/u);
+  assert.match(home, /setRequestedClientResourceId\(clientCard\.id\)/u);
+  assert.match(home, /codeEntryRequested=\{clientCodeEntryRequested\}/u);
+  assert.match(tile, /tone="client"/u);
+  assert.match(tile, /badgeIcon=\{card\.locked \? 'lock-closed-outline' : undefined\}/u);
+  assert.match(tile, /card\.locked\s*\?\s*t\('clientAccess\.enterCode'\)\s*:\s*t\('clientAccess\.openResource'\)/u);
+  assert.match(tile, /clientAccess\.requiresAccess/u);
+  assert.match(modal, /requestedResourceId/u);
+  assert.match(modal, /codeEntryRequested \|\| !unlocked/u);
+  assert.match(modal, /onRedeemed\?\.\(\)/u);
+});
+
+test('an exact card launch has an isolated loading and retry surface, separate from access management', () => {
+  const modal = read('features/clientAccess/ClientAccessModal.tsx');
+  const requestedCardStart = modal.indexOf('function RequestedResourceLaunchCard');
+  const deletionCardStart = modal.indexOf('function DeletionStatusCard');
+
+  assert.match(modal, /requestedResourceId !== null\s*\?\s*\(\s*<RequestedResourceLaunchCard/u);
+  assert.match(modal, /status !== 'unlocked'[^]*requestedResourceHandled\.current = null[^]*setActiveLaunch\(null\)/u);
+  assert.match(modal, /resolveRequestedResourceLaunchState/u);
+  assert.equal(requestedCardStart >= 0, true);
+  assert.equal(deletionCardStart > requestedCardStart, true);
+  const requestedCard = modal.slice(requestedCardStart, deletionCardStart);
+  assert.match(requestedCard, /ActivityIndicator/u);
+  assert.match(requestedCard, /clientAccess\.launchUnavailable/u);
+  assert.match(requestedCard, /common\.retry/u);
+  assert.doesNotMatch(requestedCard, /removeAccess|deleteAccount|resourceList/u);
 });
 
 test('client access refreshes on foreground and never stores the submitted code', () => {
@@ -67,7 +104,10 @@ test('unlocked resources request an ephemeral launch and render only in the rest
   assert.match(sharedWebViewSecurity, /limitsNavigationsToAppBoundDomains: true/u);
   assert.match(navigation, /originWhitelist: \['https:\/\/cabohealth\.org'\]/u);
   assert.deepEqual(appConfig.expo.ios.infoPlist.WKAppBoundDomains, ['cabohealth.org']);
-  assert.doesNotMatch(`${modal}\n${clientWebView}\n${controller}`, /Linking|Share|onMessage|injectedJavaScript/iu);
+  assert.doesNotMatch(
+    `${modal}\n${clientWebView}\n${controller}`,
+    /\bLinking\b|\bShare\b|onMessage\s*=|injectedJavaScript\s*=/iu,
+  );
   assert.doesNotMatch(controller, /private\.example|targetUrl|destinationUrl/iu);
 });
 

@@ -22,6 +22,18 @@ const LEGACY_ADMIN = Object.freeze({
   schemaVersion: 1,
   scope: 'production',
 });
+const LEGACY_CLIENT_RESOURCE_PROJECTION = Object.freeze({
+  access: 'client',
+  iconKey: 'featured',
+  id: 'client-resources',
+  schemaVersion: 1,
+  status: 'active',
+  summary: Object.freeze({
+    en: 'Complimentary educational resources for eligible existing CaboHealth clients.',
+    es: 'Recursos educativos incluidos para clientes actuales elegibles de CaboHealth.',
+  }),
+  title: Object.freeze({ en: 'Client Resources', es: 'Recursos para clientes' }),
+});
 
 test('dry-run plans the three canonical active miniapps and exact owner permission migration', async () => {
   const database = new InMemoryDocumentDatabase({
@@ -50,6 +62,13 @@ test('dry-run plans the three canonical active miniapps and exact owner permissi
     { access: 'public', active: true, icon: 'guide', id: 'clinic-guide', source: 'seed' },
     { access: 'clients', active: true, icon: 'featured', id: 'client-resources', source: 'seed' },
   ]);
+  assert.deepEqual(
+    plan.operations.find(({ item }) => item.url.endsWith('/client-resources/'))?.item.summary,
+    {
+      en: 'Educational resources for eligible existing CaboHealth clients.',
+      'es-MX': 'Recursos educativos para clientes actuales elegibles de CaboHealth.',
+    },
+  );
   assert.match(hashCatalogMigrationPlan(plan), /^[a-f0-9]{64}$/u);
   assert.equal(hashCatalogMigrationPlan(plan), hashCatalogMigrationPlan(plan));
 });
@@ -133,6 +152,7 @@ test('legacy drafts import only compatible CaboHealth miniapps as inactive and r
 test('apply verifies the owner, seeds through audited idempotent catalog mutations, then promotes permission atomically', async () => {
   const database = new InMemoryDocumentDatabase({
     [`_private_admins/${OWNER_UID}`]: LEGACY_ADMIN,
+    '_private_client_resources/client-resources': LEGACY_CLIENT_RESOURCE_PROJECTION,
   }, { rejectDuplicateWrites: true });
   const catalog = new CatalogAdminService({
     nowMs: () => 1_800_000_000_000,
@@ -173,6 +193,21 @@ test('apply verifies the owner, seeds through audited idempotent catalog mutatio
   assert.equal(JSON.stringify(evidence).includes('Healthy Recipes'), false);
   assert.equal((await catalog.list()).length, 3);
   assert.equal((await database.listCollection('_private_audit_events')).length, 3);
+  assert.deepEqual(
+    JSON.parse(database.serializedState())['_private_client_resources/client-resources'],
+    {
+      access: 'client',
+      iconKey: 'sparkles-outline',
+      id: 'client-resources',
+      schemaVersion: 1,
+      status: 'active',
+      summary: {
+        en: 'Educational resources for eligible existing CaboHealth clients.',
+        es: 'Recursos educativos para clientes actuales elegibles de CaboHealth.',
+      },
+      title: { en: 'Client Resources', es: 'Recursos para clientes' },
+    },
+  );
   assert.deepEqual(
     JSON.parse(database.serializedState())[`_private_admins/${OWNER_UID}`],
     {

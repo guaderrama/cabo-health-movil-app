@@ -18,6 +18,12 @@ import { resolveCatalogCardColumns } from '../../features/catalog/catalogPresent
 import type { PremiumHomeTool } from '../../features/home/premiumHomePresentation';
 import { ClientAccessFolio } from '../../features/clientAccess/ClientAccessFolio';
 import { ClientAccessModal } from '../../features/clientAccess/ClientAccessModal';
+import { ClientMiniappTile } from '../../features/clientAccess/ClientMiniappTile';
+import {
+  buildClientHomeCards,
+  type ClientHomeCard,
+} from '../../features/clientAccess/clientHomePresentation';
+import { useClientAccess } from '../../context/ClientAccessContext';
 import { useFavorites, useTheme, useTranslations, useWebApps } from '../../hooks';
 
 const HOME_TOOLS: readonly PremiumHomeTool[] = Object.freeze([
@@ -30,14 +36,33 @@ export default function HomeScreen() {
   const { width, fontScale } = useWindowDimensions();
   const { colors, isDark } = useTheme();
   const { language, t } = useTranslations();
-  const { catalogMiniapps, isLoading, isOffline, refresh } = useWebApps();
+  const {
+    catalogMiniapps,
+    clientPreviews,
+    isLoading,
+    isOffline,
+    refresh: refreshPublicCatalog,
+  } = useWebApps();
+  const {
+    status: clientAccessStatus,
+    grant: clientGrant,
+    refresh: refreshClientAccess,
+  } = useClientAccess();
   const { isFavorite, toggleFavorite } = useFavorites();
   const model = useMemo(() => ({
     resources: catalogMiniapps,
     tools: HOME_TOOLS,
   }), [catalogMiniapps]);
   const [clientAccessVisible, setClientAccessVisible] = useState(false);
+  const [clientCodeEntryRequested, setClientCodeEntryRequested] = useState(false);
+  const [requestedClientResourceId, setRequestedClientResourceId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const clientCards = useMemo(() => buildClientHomeCards(clientPreviews, {
+    status: clientAccessStatus,
+    grant: clientGrant,
+  }), [clientAccessStatus, clientGrant, clientPreviews]);
   const columns = resolveCatalogCardColumns({ width, fontScale });
+  const manageAccessColor = isDark ? colors.accentLight : colors.accentDark;
 
   const openMiniapp = useCallback((miniapp: Readonly<CatalogPublicMiniapp>) => {
     router.push({ pathname: '/apps/[slug]', params: { slug: miniapp.slug } });
@@ -46,6 +71,42 @@ export default function HomeScreen() {
   const openTool = useCallback((tool: PremiumHomeTool) => {
     router.push(tool.destination as never);
   }, [router]);
+
+  const openClientCard = useCallback((clientCard: Readonly<ClientHomeCard>) => {
+    if (clientCard.locked) {
+      setClientCodeEntryRequested(true);
+      setRequestedClientResourceId(null);
+      setClientAccessVisible(true);
+      return;
+    }
+    setClientCodeEntryRequested(false);
+    setRequestedClientResourceId(clientCard.id);
+    setClientAccessVisible(true);
+  }, []);
+
+  const openClientAccessManager = useCallback(() => {
+    setClientCodeEntryRequested(false);
+    setRequestedClientResourceId(null);
+    setClientAccessVisible(true);
+  }, []);
+
+  const closeClientAccess = useCallback(() => {
+    setClientAccessVisible(false);
+    setClientCodeEntryRequested(false);
+    setRequestedClientResourceId(null);
+  }, []);
+
+  const refreshHome = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refreshPublicCatalog(),
+        refreshClientAccess(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refreshClientAccess, refreshPublicCatalog]);
 
   const titleFor = useCallback((miniapp: Readonly<CatalogPublicMiniapp>) => (
     miniapp.title[language === 'es-MX' ? 'es' : 'en']
@@ -64,9 +125,9 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={(
           <RefreshControl
-            refreshing={isLoading}
+            refreshing={isRefreshing || isLoading}
             tintColor={colors.primary}
-            onRefresh={() => { void refresh(); }}
+            onRefresh={() => { void refreshHome(); }}
           />
         )}
       >
@@ -113,13 +174,43 @@ export default function HomeScreen() {
           <View style={styles.clientSection}>
             <SectionLabel label={t('clientAccess.sectionTitle')} color={colors.primary} />
             <View style={styles.miniappGrid}>
-              <View style={columns === 2 ? styles.halfTile : styles.fullTile}>
-                <ClientAccessFolio
-                  index={model.resources.length}
-                  onPress={() => setClientAccessVisible(true)}
-                />
-              </View>
+              {clientCards.length === 0 ? (
+                <View style={columns === 2 ? styles.halfTile : styles.fullTile}>
+                  <ClientAccessFolio
+                    index={model.resources.length}
+                    onPress={openClientAccessManager}
+                  />
+                </View>
+              ) : clientCards.map((clientCard, index) => (
+                <View
+                  key={clientCard.id}
+                  style={columns === 2 ? styles.halfTile : styles.fullTile}
+                >
+                  <ClientMiniappTile
+                    card={clientCard}
+                    index={model.resources.length + index}
+                    onPress={() => openClientCard(clientCard)}
+                  />
+                </View>
+              ))}
             </View>
+            {clientAccessStatus === 'unlocked' && clientGrant !== null && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('clientAccess.manageAccess')}
+                onPress={openClientAccessManager}
+                style={({ pressed }) => [
+                  styles.manageAccess,
+                  { borderColor: manageAccessColor, backgroundColor: colors.glass },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons name="key-outline" size={18} color={manageAccessColor} />
+                <Text style={[styles.manageAccessText, { color: manageAccessColor }]}>
+                  {t('clientAccess.manageAccess')}
+                </Text>
+              </Pressable>
+            )}
           </View>
 
           {isOffline && (
@@ -165,7 +256,10 @@ export default function HomeScreen() {
       </ScrollView>
       <ClientAccessModal
         visible={clientAccessVisible}
-        onClose={() => setClientAccessVisible(false)}
+        codeEntryRequested={clientCodeEntryRequested}
+        requestedResourceId={requestedClientResourceId}
+        onRedeemed={closeClientAccess}
+        onClose={closeClientAccess}
       />
     </View>
   );
@@ -270,6 +364,18 @@ const styles = StyleSheet.create({
   fullTile: { width: '100%' },
   toolsSection: { marginTop: 34 },
   clientSection: { marginTop: 24 },
+  manageAccess: {
+    minHeight: 48,
+    marginTop: 18,
+    borderWidth: 1,
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  manageAccessText: { fontSize: 14, lineHeight: 19, fontWeight: '800' },
   toolsSurface: { marginTop: 0 },
   toolRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 9 },
   toolIcon: { width: 44, height: 44, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },

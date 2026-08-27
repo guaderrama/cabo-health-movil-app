@@ -2,20 +2,55 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
+import { darkColors, lightColors } from '../.test-build/constants/colors.js';
+
 const read = (path) => readFileSync(path, 'utf8');
 
-test('Home presents only approved production resources in the responsive tile grid', () => {
+const luminance = (hex) => {
+  const channels = hex.slice(1).match(/.{2}/gu).map((value) => Number.parseInt(value, 16) / 255);
+  const linear = channels.map((value) => value <= 0.04045
+    ? value / 12.92
+    : ((value + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+};
+
+const contrast = (first, second) => {
+  const [bright, dark] = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (bright + 0.05) / (dark + 0.05);
+};
+
+test('Home presents public and client preview resources in responsive editorial grids', () => {
   const home = read('app/(main)/index.tsx');
 
   assert.match(home, /useWindowDimensions/u);
   assert.match(home, /resolveCatalogCardColumns/u);
   assert.match(home, /<PremiumMiniappTile/u);
+  assert.match(home, /<ClientMiniappTile/u);
   assert.match(home, /<ClientAccessFolio/u);
+  assert.match(home, /buildClientHomeCards/u);
+  assert.match(home, /useClientAccess/u);
   assert.doesNotMatch(home, /<DevMiniappTile|features\/devMiniapps/u);
   assert.match(home, /styles\.miniappGrid/u);
   assert.match(home, /columns === 2/u);
   assert.doesNotMatch(home, /<PremiumResourceRow/u);
   assert.doesNotMatch(home, /<DevMiniappRow/u);
+});
+
+test('Home refreshes both public previews and secure client grants', () => {
+  const home = read('app/(main)/index.tsx');
+
+  assert.match(home, /refreshClientAccess/u);
+  assert.match(home, /refreshPublicCatalog/u);
+  assert.match(home, /Promise\.all/u);
+  assert.match(home, /refreshing=\{isRefreshing/u);
+});
+
+test('the Manage access action uses readable bronze in light and dark mode', () => {
+  const home = read('app/(main)/index.tsx');
+
+  assert.match(home, /isDark \? colors\.accentLight : colors\.accentDark/u);
+  assert.ok(contrast(lightColors.accentDark, lightColors.cardBackground) >= 4.5);
+  assert.ok(contrast(darkColors.accentLight, darkColors.background) >= 4.5);
 });
 
 test('public miniapps render as editorial covers with full-card navigation and a separate 44-point favorite action', () => {

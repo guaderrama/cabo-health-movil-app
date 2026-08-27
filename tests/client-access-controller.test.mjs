@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  ClientAccessSessionInvalidatedError,
   createClientAccessController,
   createOpaqueClientSession,
   normalizeClientAccessCredential,
@@ -56,8 +57,17 @@ test('production grants reject resource IDs outside the exact 64-character kebab
   }
 });
 
-test('production grants reject every permanently retired App Review resource id', () => {
-  for (const id of ['health-advisor', 'ai-cosmetic-scan', 'service-hub', 'sleep-lab']) {
+test('production grants reject every retired id and the isolated App Review namespace', () => {
+  for (const id of [
+    'health-advisor',
+    'ai-cosmetic-scan',
+    'service-hub',
+    'sleep-lab',
+    'app-review',
+    'shared',
+    'review-sandbox-app-review-sample-v1',
+    'review-sandbox-future-sample',
+  ]) {
     assert.equal(parseClientGrantView({
       ...grant,
       resources: [{ ...grant.resources[0], id }],
@@ -218,6 +228,130 @@ test('malformed codes fail locally without reaching the gateway or storage', asy
     grant: null,
     error: 'invalid-code',
   });
+});
+
+test('replacement redemption failures preserve an existing production or review grant', async () => {
+  const credentials = {
+    production: 'CH-ABCDEF01-23456789-A1B2C3D4-E5F60718',
+    review: 'AR-01234567-89ABCDEF-01234567-89ABCDEF',
+  };
+  for (const [realm, existingGrant] of [
+    ['production', grant],
+    ['review', reviewGrant],
+  ]) {
+    for (const scenario of ['malformed', 'invalid', 'unavailable']) {
+      const effects = [];
+      const session = createOpaqueClientSession();
+      const controller = createClientAccessController({
+        gateway: {
+          redeem: async () => {
+            effects.push('redeem');
+            if (scenario === 'invalid') return null;
+            throw new Error('offline');
+          },
+          refresh: async () => existingGrant,
+          createLaunch: async () => null,
+          removeAccess: async () => {},
+          deleteAccount: async () => {},
+          signOut: async () => { effects.push('sign-out'); },
+        },
+        sessionStore: {
+          restore: async () => session,
+          commit: async () => { effects.push('commit'); },
+          clear: async () => { effects.push('clear'); },
+        },
+      });
+      await controller.initialize();
+
+      const accepted = await controller.redeem(
+        scenario === 'malformed' ? 'not-a-code' : credentials[realm],
+      );
+
+      assert.equal(accepted, false, `${realm}:${scenario}`);
+      assert.deepEqual(controller.getSnapshot(), {
+        status: 'unlocked',
+        grant: existingGrant,
+        error: scenario === 'unavailable' ? 'unavailable' : 'invalid-code',
+      }, `${realm}:${scenario}`);
+      assert.deepEqual(effects, scenario === 'malformed' ? [] : ['redeem'], `${realm}:${scenario}`);
+    }
+  }
+});
+
+test('a destructive replacement failure clears the prior grant and opaque session', async () => {
+  const effects = [];
+  const session = createOpaqueClientSession();
+  const controller = createClientAccessController({
+    gateway: {
+      redeem: async () => {
+        effects.push('redeem');
+        throw new ClientAccessSessionInvalidatedError();
+      },
+      refresh: async () => grant,
+      createLaunch: async () => null,
+      removeAccess: async () => {},
+      deleteAccount: async () => {},
+      signOut: async () => { effects.push('sign-out'); },
+    },
+    sessionStore: {
+      restore: async () => session,
+      commit: async () => {},
+      clear: async () => { effects.push('clear'); },
+    },
+  });
+  await controller.initialize();
+
+  assert.equal(await controller.redeem('CH-ABCDEF01-23456789-A1B2C3D4-E5F60718'), false);
+  assert.deepEqual(controller.getSnapshot(), {
+    status: 'error',
+    grant: null,
+    error: 'unavailable',
+  });
+  assert.deepEqual(effects, ['redeem', 'sign-out', 'clear']);
+});
+
+test('a failed or invalid replacement never restores a grant that expires while pending', async () => {
+  for (const scenario of ['unavailable', 'invalid']) {
+    const effects = [];
+    const session = createOpaqueClientSession();
+    let currentTime = future - 1;
+    let settleReplacement;
+    const replacement = new Promise((resolve, reject) => {
+      settleReplacement = scenario === 'invalid' ? () => resolve(null) : reject;
+    });
+    const controller = createClientAccessController({
+      now: () => currentTime,
+      gateway: {
+        redeem: async () => {
+          effects.push('redeem');
+          return replacement;
+        },
+        refresh: async () => grant,
+        createLaunch: async () => null,
+        removeAccess: async () => {},
+        deleteAccount: async () => {},
+        signOut: async () => { effects.push('sign-out'); },
+      },
+      sessionStore: {
+        restore: async () => session,
+        commit: async () => {},
+        clear: async () => { effects.push('clear'); },
+      },
+    });
+    await controller.initialize();
+
+    const redemption = controller.redeem('CH-ABCDEF01-23456789-A1B2C3D4-E5F60718');
+    currentTime = future;
+    settleReplacement(new Error('offline'));
+
+    assert.equal(await redemption, false, scenario);
+    assert.deepEqual(controller.getSnapshot(), {
+      status: scenario === 'invalid' ? 'locked' : 'error',
+      grant: null,
+      error: scenario === 'invalid' ? 'invalid-code' : 'unavailable',
+    }, scenario);
+    assert.deepEqual(effects, ['redeem', 'sign-out', 'clear'], scenario);
+  }
 });
 
 test('an expired grant is rejected and its newly established session is cleared', async () => {
