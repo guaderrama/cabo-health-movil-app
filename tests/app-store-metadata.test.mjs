@@ -113,7 +113,7 @@ function writeFinalScreenshotAuthority(root) {
     schemaVersion: 2,
     status: 'exact-rc-captured-and-approved',
     marketingVersion: '3.0',
-    buildNumber: '5',
+    buildNumber: '6',
     deviceClass: 'iPhone 6.9-inch',
     locales: [...screenshotLocales],
     sceneIds: [...screenshotSceneIds],
@@ -135,7 +135,7 @@ function writeFinalScreenshotAuthority(root) {
       appleId: '6758285327',
       bundleIdentifier: 'com.cabohealth.app',
       marketingVersion: '3.0',
-      buildNumber: '5',
+      buildNumber: '6',
     },
     buildArtifactAttestationSha256: 'b'.repeat(64),
     sourceTreeSha256,
@@ -187,7 +187,7 @@ function withReleaseFixture(mutate, assertion) {
   }
 }
 
-test('versioned App Store metadata is a valid pre-build-configured 3.0 build 5 candidate', () => {
+test('versioned App Store metadata is a valid pre-build-configured 3.0 build 6 candidate', () => {
   const result = verify(projectRoot);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /pre-build metadata verified; submission remains blocked/i);
@@ -201,9 +201,11 @@ test('metadata verifier rejects stale or contradictory live ASC evidence', async
     ['wrong rejected status', (manifest) => { manifest.ascEvidence.currentRejectedVersionStatus = 'ready-for-sale'; }],
     ['wrong selected binary version', (manifest) => { manifest.ascEvidence.selectedRejectedBinaryVersion = '2.0.0'; }],
     ['historical build not expired', (manifest) => { manifest.ascEvidence.testFlightBuilds[1].status = 'ready-to-test'; }],
-    ['wrong highest build', (manifest) => { manifest.ascEvidence.highestTestFlightBuild = '5'; }],
-    ['wrong next build', (manifest) => { manifest.ascEvidence.nextCandidateBuild = '6'; }],
-    ['build 5 unavailable', (manifest) => { manifest.ascEvidence.nextCandidateBuildAvailable = false; }],
+    ['wrong selected build', (manifest) => { manifest.ascEvidence.selectedRejectedBuild = '4'; }],
+    ['processed build 5 status drift', (manifest) => { manifest.ascEvidence.testFlightBuilds[4].status = 'expired'; }],
+    ['wrong highest build', (manifest) => { manifest.ascEvidence.highestTestFlightBuild = '4'; }],
+    ['wrong next build', (manifest) => { manifest.ascEvidence.nextCandidateBuild = '5'; }],
+    ['build 6 unavailable', (manifest) => { manifest.ascEvidence.nextCandidateBuildAvailable = false; }],
     ['wrong rejection date', (manifest) => { manifest.ascEvidence.latestReviewDate = '2026-02-23'; }],
     ['missing rejection guideline', (manifest) => { manifest.ascEvidence.latestReviewGuidelines = ['2.1', '4.1']; }],
     ['information request omitted', (manifest) => { manifest.ascEvidence.informationRequested = false; }],
@@ -215,7 +217,7 @@ test('metadata verifier rejects stale or contradictory live ASC evidence', async
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed ASC evidence validation`);
         assert.doesNotMatch(result.stderr, /TypeError|RELEASE_METADATA_INTERNAL_ERROR/u);
-        assert.match(result.stderr, /ASC read-only evidence must (?:retain the exact sanitized authority schema|record build 4 as obsolete-source and reserve build 5)/i);
+        assert.match(result.stderr, /ASC read-only evidence must (?:retain the exact sanitized authority schema|record processed build 5 as selected obsolete-source evidence and reserve build 6)/i);
       },
     ));
   }
@@ -235,7 +237,7 @@ test('metadata verifier keeps the candidate configured but unbuilt', async (t) =
       (root) => mutateJson(root, `${releasePath}/release-manifest.json`, (manifest) => mutate(manifest.candidate)),
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed candidate phase validation`);
-        assert.match(result.stderr, /unbuilt pre-build-configured 3\.0 build 5 authority/i);
+        assert.match(result.stderr, /unbuilt pre-build-configured 3\.0 build 6 authority/i);
       },
     ));
   }
@@ -261,6 +263,21 @@ test('metadata verifier rejects empty required release and authoritative artifac
 });
 
 test('metadata verifier binds the exact content-rights inventory to every listed source hash', async (t) => {
+  await t.test('inventory candidate build drift', () => withReleaseFixture(
+    (root) => writeFileSync(
+      join(root, releasePath, 'content-rights-inventory.md'),
+      readFileSync(join(root, releasePath, 'content-rights-inventory.md'), 'utf8')
+        .replace('build `6`', 'build `5`'),
+    ),
+    (result) => {
+      assert.equal(result.status, 1, 'stale content-rights candidate build bypassed verifier');
+      assert.match(
+        result.stderr,
+        /Content-rights inventory must target Apple ID 6758285327, bundle com\.cabohealth\.app, version 3\.0, and build 6/iu,
+      );
+    },
+  ));
+
   await t.test('inventory prose drift', () => withReleaseFixture(
     (root) => writeFileSync(
       join(root, releasePath, 'content-rights-inventory.md'),
@@ -739,8 +756,8 @@ test('metadata verifier keeps the live-reconciled pre-build configuration gate c
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [x] Reconcile live App Store Connect and update `app.json` and `constants/config.ts` together to 3.0/build 5 for the pre-build configuration; build 4 is obsolete-source and no build 5 IPA or TestFlight upload exists yet.',
-        '- [ ] Reconcile live App Store Connect and update `app.json` and `constants/config.ts` together to 3.0/build 5 for the pre-build configuration; build 4 is obsolete-source and no build 5 IPA or TestFlight upload exists yet.',
+        '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 6 after preserving the exact build-5 attestations as obsolete historical evidence; no build 6 input attestation, IPA, or TestFlight upload exists yet.',
+        '- [ ] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 6 after preserving the exact build-5 attestations as obsolete historical evidence; no build 6 input attestation, IPA, or TestFlight upload exists yet.',
       ));
     },
     (result) => {
@@ -763,6 +780,23 @@ test('metadata verifier keeps the build-5 build-input attestation gate completed
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
       assert.match(result.stderr, /must retain the exact completed build-5 build-input attestation checkbox/i);
+    },
+  );
+});
+
+test('metadata verifier keeps the build-6 build-input attestation gate pending', () => {
+  withReleaseFixture(
+    (root) => {
+      const file = join(root, releasePath, 'submission-gates.md');
+      const source = readFileSync(file, 'utf8');
+      writeFileSync(file, source.replace(
+        '- [ ] Generate, independently review, and pin the build-6 canonical build-input attestation against the rebaselined 3.0/build 6 source and exact external mode-0600 production plist before any EAS build; do not reuse either obsolete build-5 attestation.',
+        '- [x] Generate, independently review, and pin the build-6 canonical build-input attestation against the rebaselined 3.0/build 6 source and exact external mode-0600 production plist before any EAS build; do not reuse either obsolete build-5 attestation.',
+      ));
+    },
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /must retain the exact pending build-6 build-input attestation checkbox/i);
     },
   );
 });
@@ -1295,7 +1329,7 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured pre
     ['configured app rolled back', (root) => mutateJson(root, 'app.json', (app) => {
       app.expo.version = '2.0.0';
       app.expo.ios.buildNumber = '3';
-    }), /manifest says appJsonUpdated=true.*3\.0\/build 5/i],
+    }), /manifest says appJsonUpdated=true.*3\.0\/build 6/i],
     ['third actual catalog slug', (root) => {
       const file = join(root, 'constants/publicMiniapps.ts');
       const source = readFileSync(file, 'utf8');
@@ -1675,7 +1709,7 @@ test('metadata verifier binds screenshot planning to the exact candidate build',
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /screenshot manifest must target 3\.0 build 5/i);
+      assert.match(result.stderr, /screenshot manifest must target 3\.0 build 6/i);
     },
   );
 });

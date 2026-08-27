@@ -12,9 +12,10 @@ active. Protected release
 `protected-overlays-v1-2a74817a88dd9122bd67f84fc46d280562f0014535a113c1810fbe82a78ea35b`
 is the verified production/App Review authority. The signed iOS 3.0 build 4 is
 retained only as obsolete diagnostic evidence; it is not the next release
-candidate. CaboHealth 3.0 build 5 is the next candidate, but it has not been
-built, uploaded to TestFlight, selected in App Store Connect, physically
-tested, or submitted to Apple.
+candidate. Build 5 was later built, attested, processed in TestFlight, and
+selected in App Store Connect, but is obsolete for the rebaselined VIP source.
+CaboHealth 3.0 build 6 is the next candidate; it has no build-input attestation,
+IPA, TestFlight upload, physical-device QA, or Apple submission yet.
 
 ## Active and verified components
 
@@ -81,7 +82,7 @@ tested, or submitted to Apple.
   verification is complete; it is not a substitute for device behavior.
 - A controlled production owner CRUD exercise with a non-sensitive temporary
   entry and cleanup remains separate from the component activation evidence.
-- Build 5 input freeze, EAS build, exact IPA audit, TestFlight processing,
+- Build 6 input freeze, EAS build, exact IPA audit, TestFlight processing,
   two-iPhone QA, screenshots, App Attest valid-flow evidence, final App Store
   metadata, privacy/age answers, rights sign-off, and Apple review remain
   pending.

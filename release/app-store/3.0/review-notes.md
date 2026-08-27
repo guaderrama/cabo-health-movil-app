@@ -1,10 +1,10 @@
-# App Review Notes — CaboHealth 3.0 (build 5)
+# App Review Notes — CaboHealth 3.0 (build 6)
 
 Status: **DRAFT — DO NOT PASTE YET.** Submission remains blocked until the exact RC, controlled owner catalog E2E, physical App Attest and valid-credential broker flows, App Review credential, proof that the owner-only Staff Portal is absent from the consumer binary, recalculated age rating, privacy answers, signed rights evidence, screenshots, TestFlight checks, and App Store Connect saves are verified.
 
 ## Paste-ready body after all gates are resolved
 
-CaboHealth 3.0 (build 5): two public wellness/editorial resources plus protected Client Resources.
+CaboHealth 3.0 (build 6): two public wellness/editorial resources plus protected Client Resources.
 
 This app is submitted by Ivan Guaderrama, an individual Apple Developer Program member. Cabo Health is a trade brand owned and operated by Ivan Guaderrama and is not represented as a separate legal entity.
 

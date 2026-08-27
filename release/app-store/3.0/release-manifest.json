@@ -5,7 +5,7 @@
     "appleId": "6758285327",
     "bundleIdentifier": "com.cabohealth.app",
     "marketingVersion": "3.0",
-    "buildNumber": "5",
+    "buildNumber": "6",
     "status": "pre-build-configured",
     "appJsonUpdated": true,
     "configUpdated": true,
@@ -13,13 +13,13 @@
     "testFlightBuildId": null
   },
   "ascEvidence": {
-    "observedAt": "2026-08-26T06:44:42Z",
+    "observedAt": "2026-08-26T09:25:41.734Z",
     "inspectionMode": "read-only",
     "currentRejectedVersion": "3.0",
     "currentRejectedVersionStatus": "prepare-for-submission-with-unresolved-rejection",
     "versionEditable": true,
     "selectedRejectedBinaryVersion": "3.0",
-    "selectedRejectedBuild": "4",
+    "selectedRejectedBuild": "5",
     "testFlightBuilds": [
       {
         "marketingVersion": "2.0.0",
@@ -40,11 +40,16 @@
         "marketingVersion": "3.0",
         "buildNumber": "4",
         "status": "ready-to-submit-obsolete-source"
+      },
+      {
+        "marketingVersion": "3.0",
+        "buildNumber": "5",
+        "status": "ready-to-submit-obsolete-source"
       }
     ],
-    "highestTestFlightBuild": "4",
+    "highestTestFlightBuild": "5",
     "highestTestFlightBuildStatus": "ready-to-submit-obsolete-source",
-    "nextCandidateBuild": "5",
+    "nextCandidateBuild": "6",
     "nextCandidateBuildAvailable": true,
     "latestReviewDate": "2026-02-24",
     "latestReviewGuidelines": [
@@ -230,7 +235,7 @@
       "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
       "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
       "clientAccessModel": "pending-apple-review-determination",
-      "exactReleaseCandidate": "build-5-input-attested-pending-eas-build-and-qa",
+      "exactReleaseCandidate": "build-6-pending-build-input-attestation-eas-build-and-qa",
       "screenshots": "pending-exact-rc-capture",
       "appStoreConnectSave": "pending-final-save"
     }
@@ -257,8 +262,8 @@
     "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
     "privacyMapping": "pending-final-linkage-category-review-and-save",
     "brandAndContentRights": "pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis",
-    "exactReleaseCandidate": "build-5-input-attested-pending-eas-build-and-qa",
-    "testFlight": "build-4-obsolete-build-5-pending-build-upload-selection-and-physical-iphone-qa",
+    "exactReleaseCandidate": "build-6-pending-build-input-attestation-eas-build-and-qa",
+    "testFlight": "build-5-processed-obsolete-source-build-6-pending-build-upload-selection-and-physical-iphone-qa",
     "screenshots": "pending-exact-rc-capture",
     "accessibilityLabels": "pending-exact-rc-evidence",
     "appStoreConnect": "pending-final-save",

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync } from 'node:fs';
+import { chmodSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,20 @@ import {
 } from './helpers.mjs';
 
 const adapterRoot = fileURLToPath(new URL('..', import.meta.url));
+
+test('the adapter README identifies the exact build 6 candidate', () => {
+  const source = readFileSync(join(adapterRoot, 'README.md'), 'utf8');
+  const fields = Object.fromEntries(
+    [...source.matchAll(/^- ([^:]+): `([^`]+)`$/gmu)].map((match) => [match[1], match[2]]),
+  );
+
+  assert.deepEqual(fields, {
+    'Apple app resource ID': '6758285327',
+    'bundle ID': 'com.cabohealth.app',
+    'marketing version': '3.0',
+    'build number': '6',
+  });
+});
 
 test('runAdapter accepts an injected fixture transport without loading credentials', async () => {
   const fixture = createEvidenceFixture();

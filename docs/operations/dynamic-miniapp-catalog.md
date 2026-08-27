@@ -243,7 +243,7 @@ updated Staff artifact, or the successor iOS presentation has been deployed.
 7. **Completed:** Promote and verify the new AASA at origin and Apple's CDN.
 8. **Pending:** Verify public create/edit/deactivate/delete and one-code client expansion in
    production using non-sensitive test entries, then remove the test entries.
-9. **Pending:** Freeze the source for CaboHealth 3.0 build 5, create the new iOS
+9. **Pending:** Freeze the source for CaboHealth 3.0 build 6, create the new iOS
    build, inspect the exact IPA, upload it to
    TestFlight, and complete physical-device QA before selecting it for review.
 

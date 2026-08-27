@@ -31,7 +31,7 @@ const { stringify: stringifyPlist } = require('simple-plist');
 const EXPECTED = Object.freeze({
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '5',
+  buildNumber: '6',
   teamIdentifier: 'DQ8PH2DZ3R',
   firebaseProjectId: 'cabohealth-owner-prod',
   appAttestEnvironment: 'production',
@@ -333,7 +333,7 @@ test('Firebase plist comparison is semantic and rejects any dictionary drift', (
 });
 
 test('signature identities, App Attest, and associated domains fail closed', () => {
-  withFixture({ infoOverrides: { CFBundleVersion: '6' } }, (root) => {
+  withFixture({ infoOverrides: { CFBundleVersion: '7' } }, (root) => {
     assert.throws(() => auditFixture(root), /IPA_BUNDLE_IDENTITY_MISMATCH/u);
   });
   withFixture({}, (root) => {

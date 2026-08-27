@@ -24,14 +24,15 @@ const EXACT_ASC_TESTFLIGHT_BUILDS = [
   { marketingVersion: '2.0.0', buildNumber: '2', status: 'expired' },
   { marketingVersion: '2.0.0', buildNumber: '3', status: 'expired' },
   { marketingVersion: '3.0', buildNumber: '4', status: 'ready-to-submit-obsolete-source' },
+  { marketingVersion: '3.0', buildNumber: '5', status: 'ready-to-submit-obsolete-source' },
 ];
 const EXACT_ASC_REVIEW_GUIDELINES = ['1.4.1', '2.1', '4.1'];
 const EXACT_AUTHORITY_SHA256 = Object.freeze({
-  'app.json': '957fe5cecc0f86ac11b7d3f69db6cf7f5f002343d745ee358dc8b80528a8bee9',
+  'app.json': '67ff0b49f4d748914f53804db324ca69de84033f2deb7f78a27a9994dd5b65e1',
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
-  'constants/config.ts': 'dbb78626a1b1494f159bff47e3b713d0d95ae3a8b70c025f62f2eda4fc69d3a7',
+  'constants/config.ts': 'e1b88a0c28740135a9615ec87d52c93006b01eb554df04cd8ad5c10f81b887c3',
   'constants/publicMiniapps.ts': '893555428a9ac632f4964912cf98e7ba79f56c125ca6ba745bbdaf95910946aa',
-  'release/app-store/3.0/release-manifest.json': 'e693fb8dd3158ecb265b531648a0d376a1daecb83a472c8942bfbe93594d0922',
+  'release/app-store/3.0/release-manifest.json': 'e88f1d8f26390206d799cc6232faf369dc9a0ec6e4b9e00f7efaf67008908591',
   'release/app-store/3.0/age-rating.json': 'b2bd2fdd9a5109a600923dee82eb0186df99a446128f3b05a37d54e2428e19bb',
   'release/app-store/3.0/app-privacy.json': '9e02d9906fb19bbaac82268c45022d071b216ea65c6e4e12cb9de72b72632b10',
 });
@@ -116,9 +117,9 @@ export function verifyCapturedReleaseV3(files) {
 
   if (appJson && (
     appJson.expo?.version !== '3.0'
-    || appJson.expo?.ios?.buildNumber !== '5'
+    || appJson.expo?.ios?.buildNumber !== '6'
   )) {
-    errors.push('app.json must remain 3.0/build 5 after live ASC reconciliation');
+    errors.push('app.json must remain 3.0/build 6 after the build-6 rebaseline');
   }
   const productionProfile = easJson?.build?.production;
   if (!hasExactKeys(productionProfile, ['environment', 'node', 'env', 'ios'])
@@ -131,8 +132,8 @@ export function verifyCapturedReleaseV3(files) {
     errors.push('eas.json production must pin environment production, Node 22.22.3, APP_ENV production, and m-medium');
   }
   if (!/version:\s*['"]3\.0['"]/u.test(config)
-    || !/buildNumber:\s*['"]5['"]/u.test(config)) {
-    errors.push('constants/config.ts must remain 3.0/build 5 after live ASC reconciliation');
+    || !/buildNumber:\s*['"]6['"]/u.test(config)) {
+    errors.push('constants/config.ts must remain 3.0/build 6 after the build-6 rebaseline');
   }
 
   const sourceSlugs = extractPublicSlugs(publicSource);
@@ -403,8 +404,8 @@ export function verifyCapturedReleaseV3(files) {
       ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
       privacyMapping: 'pending-final-linkage-category-review-and-save',
       brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-      exactReleaseCandidate: 'build-5-input-attested-pending-eas-build-and-qa',
-      testFlight: 'build-4-obsolete-build-5-pending-build-upload-selection-and-physical-iphone-qa',
+      exactReleaseCandidate: 'build-6-pending-build-input-attestation-eas-build-and-qa',
+      testFlight: 'build-5-processed-obsolete-source-build-6-pending-build-upload-selection-and-physical-iphone-qa',
       screenshots: 'pending-exact-rc-capture',
       accessibilityLabels: 'pending-exact-rc-evidence',
       appStoreConnect: 'pending-final-save',
@@ -422,31 +423,31 @@ export function verifyCapturedReleaseV3(files) {
     }
 
     if (manifest.candidate?.marketingVersion !== '3.0'
-      || manifest.candidate?.buildNumber !== '5'
+      || manifest.candidate?.buildNumber !== '6'
       || manifest.candidate?.status !== 'pre-build-configured'
       || manifest.candidate?.appJsonUpdated !== true
       || manifest.candidate?.configUpdated !== true
       || manifest.candidate?.rcSourceSha !== null
       || manifest.candidate?.testFlightBuildId !== null) {
-      errors.push('candidate must remain truthful pre-build-configured 3.0/build 5 without premature RC evidence');
+      errors.push('candidate must remain truthful pre-build-configured 3.0/build 6 without premature RC evidence');
     }
     const asc = manifest.ascEvidence;
-    if (asc?.observedAt !== '2026-08-26T06:44:42Z'
+    if (asc?.observedAt !== '2026-08-26T09:25:41.734Z'
       || asc?.inspectionMode !== 'read-only'
       || asc?.currentRejectedVersion !== '3.0'
       || asc?.currentRejectedVersionStatus !== 'prepare-for-submission-with-unresolved-rejection'
       || asc?.versionEditable !== true
       || asc?.selectedRejectedBinaryVersion !== '3.0'
-      || asc?.selectedRejectedBuild !== '4'
+      || asc?.selectedRejectedBuild !== '5'
       || !sameJson(asc?.testFlightBuilds, EXACT_ASC_TESTFLIGHT_BUILDS)
-      || asc?.highestTestFlightBuild !== '4'
+      || asc?.highestTestFlightBuild !== '5'
       || asc?.highestTestFlightBuildStatus !== 'ready-to-submit-obsolete-source'
-      || asc?.nextCandidateBuild !== '5'
+      || asc?.nextCandidateBuild !== '6'
       || asc?.nextCandidateBuildAvailable !== true
       || asc?.latestReviewDate !== '2026-02-24'
       || !sameArray(asc?.latestReviewGuidelines, EXACT_ASC_REVIEW_GUIDELINES)
       || asc?.informationRequested !== true) {
-      errors.push('ASC read-only evidence must record build 4 as obsolete-source and reserve build 5');
+      errors.push('ASC read-only evidence must record processed build 5 as selected obsolete-source evidence and reserve build 6');
     }
     if (manifest.reviewRisk?.appleApprovalGuaranteed !== false) {
       errors.push('Apple approval must never be represented as guaranteed');
@@ -918,7 +919,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  process.stdout.write('Release 3.0/build 5 verified: pre-build-configured.\n');
+  process.stdout.write('Release 3.0/build 6 verified: pre-build-configured.\n');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -2,7 +2,7 @@
 
 Status: **REVISED ITEMIZED DRAFT — OWNER RECONFIRMATION, PER-FAMILY BASIS, SIGNED DECLARATION, AND PRIVATE EVIDENCE PENDING.** On 2026-08-22 Ivan Guaderrama confirmed the earlier itemized scope for app, website, App Store metadata, screenshots, distribution, and updates in Mexico and the United States. The 2026-08-24 revision removes unsupported original-authorship wording, updates editorial citations, and adds previously omitted exact source families. Ivan has not yet reconfirmed these revised bytes. This inventory is not a signed declaration, trademark registration, licence, assignment, or proof that a third party granted rights.
 
-Release scope: Apple ID `6758285327`; bundle ID `com.cabohealth.app`; marketing version `3.0`; build `5`; initial territories Mexico and United States.
+Release scope: Apple ID `6758285327`; bundle ID `com.cabohealth.app`; marketing version `3.0`; build `6`; initial territories Mexico and United States.
 
 ## Cabo Health brand and local visual assets
 
@@ -64,7 +64,7 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 
 | Material | Exact source | SHA-256 / boundary | Final basis/evidence |
 | --- | --- | --- | --- |
-| Native bilingual interface copy | `i18n/messages.ts` | `a52bd2c1a5fe9978af94b1cb44ffc7f23f8e5fe4964a2932cb3082a0362c3d65` | Pending |
+| Native bilingual interface copy | `i18n/messages.ts` | `c78f8b9c2a7f4fc287df77ae4ee5ac04d2309c82f74ae0e79b2d8852edcb3176` | Pending |
 | Native introduction copy | `features/onboarding/IntroScreen.tsx` | `fb60620a37efac4e4deb265ddc3a4e89642ecded2643a5cb25006da3dd14e720` | Pending |
 | Native public catalog/editorial labels and dynamic-catalog type boundary | `constants/publicMiniapps.ts` | `893555428a9ac632f4964912cf98e7ba79f56c125ca6ba745bbdaf95910946aa` | Pending |
 | Native reviewed-citation presentation and exact-link boundary | `features/resources/CitationList.tsx` | `12cf2bef93d1155370b1d8030f8dd1099e7d2d73e96ec7669e8b40ee0249b8bf` | Pending |
@@ -76,13 +76,13 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 | Client Resources, English | `client-resources-private/content/en.json` | `e3ebb6e0d7e94ffa04f123c2f2fe8cd746bf0dba80f3824746fdd7d9492f6593` | Pending |
 | Client Resources, es-MX | `client-resources-private/content/es-MX.json` | `e29960ae5490c90ffb3e869a040d3c2bf970465215065cb4debc4f97b1363555` | Pending |
 | Fixed non-client App Review sample | `app-review-private/content/sample.json` | `03b558d9c0afc6a405f6fddf1d06fd67915170444baa596b713a150e9e8d0911` | Pending |
-| Staff Access interface copy, including owner catalog controls and audit labels | `staff-portal/src/i18n/messages.ts` | `9aa0be98218af997636cab2aaa7b5e524077539f60c5977f45c04f32ee4616f5` | Pending |
+| Staff Access interface copy, including owner catalog controls and audit labels | `staff-portal/src/i18n/messages.ts` | `4d8d4f76da44c689b1fb6d168514a8cd462fe2bdd16e2ee4da43f3dad0400959` | Pending |
 | Public Marketing URL copy | `web-hosting/cabohealth.org/app/index.html` | `8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147` | Pending |
 | Hosted Privacy copy | `web-hosting/cabohealth.org/app/privacy/index.html` | `560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125` | Verified unchanged in live dynamic-AASA release `web-v1-40869f4a540a56c420b198aea0fdf58a21053646d280d89ad64d105fd1808948` |
 | Hosted Terms copy | `web-hosting/cabohealth.org/app/terms/index.html` | `b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22` | Pending final owner reconfirmation |
 | Hosted Support copy | `web-hosting/cabohealth.org/app/support/index.html` | `06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa` | Pending final owner reconfirmation |
 | Hosted Report Content copy | `web-hosting/cabohealth.org/app/report-content/index.html` | `f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c` | Pending final owner reconfirmation |
-| App Store metadata and Review Notes | `release/app-store/3.0/` | Must be reconciled to the exact 3.0 (5) RC and saved ASC record | Pending |
+| App Store metadata and Review Notes | `release/app-store/3.0/` | Must be reconciled to the exact 3.0 (6) RC and saved ASC record | Pending |
 | App Store screenshots | Exact RC captures | Not captured | Pending |
 
 `Firebase`, `Google Cloud`, `Hostinger`, `Apple`, `App Store`, `App Attest`, and `DeviceCheck` appear only to identify actual providers, platform features, review processes, or contractual disclosures. No ownership or endorsement is claimed.

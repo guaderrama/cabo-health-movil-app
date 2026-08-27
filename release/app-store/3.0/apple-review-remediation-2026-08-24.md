@@ -14,14 +14,17 @@ A read-only App Store Connect inspection completed at `2026-08-25T01:15:59Z` con
 
 No review credential, access code, password, message attachment, or other secret is recorded here.
 
-Build 4 was subsequently produced and inspected as diagnostic evidence, but it
-predates the completed dynamic-catalog source and is obsolete for release.
-CaboHealth 3.0 build 5 is the next candidate. No build 5 IPA, TestFlight upload,
-physical-device QA, submission, or Apple approval is claimed here.
+A subsequent read-only inspection ending at `2026-08-26T09:25:41.734Z` showed
+3.0/build `5` selected and processed as `VALID` / Ready to Submit. Build 5 was
+not rejected; it is labeled obsolete-source because the VIP source was
+rebaselined afterward. Builds `1`–`3` were expired, while builds `4` and `5`
+were retained as obsolete-source evidence.
+
+Build 4 was subsequently produced and inspected as diagnostic evidence, but it predates the completed dynamic-catalog source and is obsolete for release. Build 5 was subsequently built, pinned by the exact build-input and build-artifact attestations, and processed in TestFlight as Ready to Submit, but it is obsolete for the rebaselined source. CaboHealth 3.0 build 6 is the next candidate. No build 6 input attestation, IPA, TestFlight upload, physical-device QA, submission, or Apple approval is claimed here.
 
 ## Guideline 2.1 — completeness and stability
 
-The rejected build reported an error when opening the former Health Advisor surface and a crash after selecting Take Photo in the former AI Cosmetic Scan surface. Those named surfaces are outside the reviewed 3.0/build 5 candidate scope. The initial reviewed catalog contains Healthy Recipes, CaboHealth Clinic Guide, protected Client Resources, and the isolated App Review sample. The owner-managed runtime can publish or withdraw only validated CaboHealth-owned canonical entries under the documented Guideline 4.7 policy; release verification rejects the former names from App Store metadata.
+The rejected build reported an error when opening the former Health Advisor surface and a crash after selecting Take Photo in the former AI Cosmetic Scan surface. Those named surfaces are outside the reviewed 3.0/build 6 candidate scope. The initial reviewed catalog contains Healthy Recipes, CaboHealth Clinic Guide, protected Client Resources, and the isolated App Review sample. The owner-managed runtime can publish or withdraw only validated CaboHealth-owned canonical entries under the documented Guideline 4.7 policy; release verification rejects the former names from App Store metadata.
 
 Before resubmission:
 
@@ -57,4 +60,4 @@ The deployed Privacy notice uses “visible Staff Access portal” to describe t
 
 ## Exit criteria
 
-This remediation is complete only when the exact build 5 IPA and processed TestFlight build prove the dynamic-catalog scope, citations, network/AI answer, stable reachable flows, reviewer access, brand evidence, two-iPhone QA, iPad compatibility, and final App Store metadata. A separate explicit owner confirmation remains required immediately before Submit for Review.
+This remediation is complete only when the exact build 6 IPA and processed TestFlight build prove the dynamic-catalog scope, citations, network/AI answer, stable reachable flows, reviewer access, brand evidence, two-iPhone QA, iPad compatibility, and final App Store metadata. A separate explicit owner confirmation remains required immediately before Submit for Review.
