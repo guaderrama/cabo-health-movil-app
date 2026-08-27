@@ -5,6 +5,7 @@ import { BrandedBackground } from '../../components';
 import { useTheme } from '../../hooks';
 import { ClientAccessFolio } from './ClientAccessFolio';
 import { ClientAccessModal } from './ClientAccessModal';
+import { buildClientResourceRoute } from './clientResourceRoute';
 
 export function ClientResourceDeepLinkGate() {
   const router = useRouter();
@@ -16,13 +17,18 @@ export function ClientResourceDeepLinkGate() {
     router.replace('/(main)');
   };
 
+  const openResource = (resourceId: string) => {
+    setVisible(false);
+    router.replace(buildClientResourceRoute(resourceId));
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <BrandedBackground density="rich" moleculeOpacity={isDark ? 0.58 : 0.9} />
       <View pointerEvents={visible ? 'none' : 'auto'} style={styles.folio}>
         <ClientAccessFolio onPress={() => setVisible(true)} />
       </View>
-      <ClientAccessModal visible={visible} onClose={close} />
+      <ClientAccessModal visible={visible} onClose={close} onOpenResource={openResource} />
     </View>
   );
 }

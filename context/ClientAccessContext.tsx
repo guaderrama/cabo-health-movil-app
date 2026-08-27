@@ -143,7 +143,15 @@ export function ClientAccessProvider({
   ), [controller]);
   const refresh = checkDeletionStatus;
   const createLaunch = useCallback(
-    (resourceId: string) => controller.createLaunch(resourceId),
+    async (resourceId: string) => {
+      if (deletionTrackingRef.current.kind !== 'none') return null;
+      const operationGeneration = synchronizationGeneration.current;
+      const launch = await controller.createLaunch(resourceId);
+      return (
+        synchronizationGeneration.current === operationGeneration
+        && deletionTrackingRef.current.kind === 'none'
+      ) ? launch : null;
+    },
     [controller],
   );
   const removeAccess = useCallback(() => controller.removeAccess(), [controller]);

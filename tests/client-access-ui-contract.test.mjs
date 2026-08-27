@@ -30,39 +30,36 @@ test('home presents locked client previews and keeps a safe access-management fa
   assert.doesNotMatch(`${home}\n${folio}\n${modal}\n${provider}\n${bootstrap}`, /AsyncStorage/u);
 });
 
-test('a locked client card requests a code while an unlocked card launches that exact resource', () => {
+test('a locked client card requests a code while an unlocked card opens its protected full-screen route', () => {
   const home = read('app/(main)/index.tsx');
   const tile = read('features/clientAccess/ClientMiniappTile.tsx');
   const modal = read('features/clientAccess/ClientAccessModal.tsx');
 
   assert.match(home, /clientCard\.locked[^]*setClientAccessVisible\(true\)/u);
   assert.match(home, /clientCard\.locked[^]*setClientCodeEntryRequested\(true\)/u);
-  assert.match(home, /setRequestedClientResourceId\(clientCard\.id\)/u);
+  assert.match(home, /router\.push\(buildClientResourceRoute\(clientCard\.id\)\)/u);
   assert.match(home, /codeEntryRequested=\{clientCodeEntryRequested\}/u);
   assert.match(tile, /tone="client"/u);
   assert.match(tile, /badgeIcon=\{card\.locked \? 'lock-closed-outline' : undefined\}/u);
   assert.match(tile, /card\.locked\s*\?\s*t\('clientAccess\.enterCode'\)\s*:\s*t\('clientAccess\.openResource'\)/u);
   assert.match(tile, /clientAccess\.requiresAccess/u);
-  assert.match(modal, /requestedResourceId/u);
   assert.match(modal, /codeEntryRequested \|\| !unlocked/u);
   assert.match(modal, /onRedeemed\?\.\(\)/u);
+  assert.doesNotMatch(home, /requestedClientResourceId/u);
+  assert.doesNotMatch(modal, /requestedResourceId/u);
 });
 
-test('an exact card launch has an isolated loading and retry surface, separate from access management', () => {
+test('the protected resource route owns loading and retry, separate from access management', () => {
+  const route = read('app/client-resource/[resourceId].tsx');
   const modal = read('features/clientAccess/ClientAccessModal.tsx');
-  const requestedCardStart = modal.indexOf('function RequestedResourceLaunchCard');
-  const deletionCardStart = modal.indexOf('function DeletionStatusCard');
 
-  assert.match(modal, /requestedResourceId !== null\s*\?\s*\(\s*<RequestedResourceLaunchCard/u);
-  assert.match(modal, /status !== 'unlocked'[^]*requestedResourceHandled\.current = null[^]*setActiveLaunch\(null\)/u);
-  assert.match(modal, /resolveRequestedResourceLaunchState/u);
-  assert.equal(requestedCardStart >= 0, true);
-  assert.equal(deletionCardStart > requestedCardStart, true);
-  const requestedCard = modal.slice(requestedCardStart, deletionCardStart);
-  assert.match(requestedCard, /ActivityIndicator/u);
-  assert.match(requestedCard, /clientAccess\.launchUnavailable/u);
-  assert.match(requestedCard, /common\.retry/u);
-  assert.doesNotMatch(requestedCard, /removeAccess|deleteAccount|resourceList/u);
+  assert.match(route, /<ClientResourceWebView/u);
+  assert.match(route, /ActivityIndicator/u);
+  assert.match(route, /clientAccess\.launchUnavailable/u);
+  assert.match(route, /common\.retry/u);
+  assert.doesNotMatch(route, /<Modal\b/u);
+  assert.doesNotMatch(route, /removeAccess|deleteAccount|resourceList/u);
+  assert.doesNotMatch(modal, /ClientResourceWebView|RequestedResourceLaunchCard/u);
 });
 
 test('client access refreshes on foreground and never stores the submitted code', () => {
@@ -86,17 +83,32 @@ test('development miniapps use an in-app confirmation that works on web', () => 
   assert.match(panel, /onRemove\(removeCandidate\.id\)/u);
 });
 
-test('unlocked resources request an ephemeral launch and render only in the restricted client WebView', () => {
+test('unlocked resources request an ephemeral launch only inside the protected full-screen route', () => {
+  const route = read('app/client-resource/[resourceId].tsx');
+  const routeLogic = read('features/clientAccess/clientResourceRoute.ts');
   const modal = read('features/clientAccess/ClientAccessModal.tsx');
+  const provider = read('context/ClientAccessContext.tsx');
   const clientWebView = read('features/clientAccess/ClientResourceWebView.tsx');
   const navigation = read('features/clientAccess/clientResourceNavigation.ts');
   const sharedWebViewSecurity = read('features/launch/restrictedWebViewBehavior.ts');
   const controller = read('features/clientAccess/clientAccessController.ts');
   const appConfig = JSON.parse(read('app.json'));
 
-  assert.match(modal, /createLaunch\(resource\.id\)/u);
-  assert.match(modal, /<ClientResourceWebView/u);
-  assert.match(modal, /status !== 'unlocked'[^]*setActiveLaunch\(null\)/u);
+  assert.match(routeLogic, /createLaunch\(resourceId\)/u);
+  assert.match(route, /<ClientResourceWebView/u);
+  assert.match(route, /const accessLost = status === 'locked'[^]*setActiveLaunch\(null\)/u);
+  assert.match(route, /const currentlyAuthorized = deletionTracking\.kind === 'none' && resource !== null/u);
+  assert.match(route, /activeLaunch !== null && currentlyAuthorized/u);
+  assert.match(route, /getClientResourceRouteExpiryDelay/u);
+  assert.match(route, /const revalidating = status === 'checking'[^]*resumeAfterRevalidation\.current = true/u);
+  assert.match(route, /status === 'unlocked'[^]*resumeAfterRevalidation\.current[^]*setAttempt/u);
+  assert.match(route, /launchAttemptPending\.current = true[^]*resolveClientResourceRouteLaunchFailure/u);
+  assert.match(route, /routeFlowStarted\.current[^]*accessLost[^]*launchAttemptPending\.current/u);
+  assert.match(
+    provider,
+    /const operationGeneration = synchronizationGeneration\.current[^]*controller\.createLaunch\(resourceId\)[^]*synchronizationGeneration\.current === operationGeneration[^]*deletionTrackingRef\.current\.kind === 'none'/u,
+  );
+  assert.doesNotMatch(modal, /createLaunch\(|<ClientResourceWebView/u);
   assert.match(clientWebView, /<WebView/u);
   assert.match(clientWebView, /classifyClientResourceNavigation\(request\.url, launch\.realm\)/u);
   assert.match(clientWebView, /getClientResourceWebViewPolicyProps/u);
@@ -105,7 +117,7 @@ test('unlocked resources request an ephemeral launch and render only in the rest
   assert.match(navigation, /originWhitelist: \['https:\/\/cabohealth\.org'\]/u);
   assert.deepEqual(appConfig.expo.ios.infoPlist.WKAppBoundDomains, ['cabohealth.org']);
   assert.doesNotMatch(
-    `${modal}\n${clientWebView}\n${controller}`,
+    `${route}\n${routeLogic}\n${modal}\n${clientWebView}\n${controller}`,
     /\bLinking\b|\bShare\b|onMessage\s*=|injectedJavaScript\s*=/iu,
   );
   assert.doesNotMatch(controller, /private\.example|targetUrl|destinationUrl/iu);

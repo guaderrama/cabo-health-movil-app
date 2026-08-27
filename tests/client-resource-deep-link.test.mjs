@@ -77,6 +77,7 @@ test('native routes reuse the existing context folio and modal without preloadin
   const subroute = read('app/apps/client-resources/[...path].tsx');
   const gate = read('features/clientAccess/ClientResourceDeepLinkGate.tsx');
   const modal = read('features/clientAccess/ClientAccessModal.tsx');
+  const protectedRoute = read('app/client-resource/[resourceId].tsx');
   const publicRoute = read('app/apps/[slug].tsx');
 
   assert.match(nativeIntent, /redirectClientResourceSystemPath\(path\)/u);
@@ -87,6 +88,7 @@ test('native routes reuse the existing context folio and modal without preloadin
   assert.match(subroute, /<ClientResourceDeepLinkGate\s*\/>/u);
   assert.match(gate, /<ClientAccessFolio/u);
   assert.match(gate, /<ClientAccessModal\s+visible/u);
+  assert.match(gate, /buildClientResourceRoute\(resourceId\)/u);
   assert.doesNotMatch(
     `${nativeIntent}\n${layout}\n${indexRoute}\n${subroute}\n${gate}`,
     /WebView|RestrictedWebView|fetch\(|createLaunch\(|onMessage|injectedJavaScript/u,
@@ -95,7 +97,10 @@ test('native routes reuse the existing context folio and modal without preloadin
   assert.match(modal, /const unlocked = status === 'unlocked' && grant !== null/u);
   assert.match(modal, /grant\.resources\.map/u);
   assert.match(modal, /secureTextEntry/u);
-  assert.match(modal, /const launch = await createLaunch\(resource\.id\)[^]*setActiveLaunch\(launch\)/u);
+  assert.match(modal, /onOpenResource\(resource\.id\)/u);
+  assert.doesNotMatch(modal, /createLaunch\(|ClientResourceWebView/u);
+  assert.match(protectedRoute, /<ClientResourceWebView/u);
+  assert.doesNotMatch(protectedRoute, /<Modal\b/u);
 
   assert.match(publicRoute, /getPublicMiniapp\(resolvedSlug\)/u);
   assert.match(publicRoute, /<RestrictedWebView miniapp=\{miniapp\}/u);

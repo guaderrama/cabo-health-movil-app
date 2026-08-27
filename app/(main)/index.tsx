@@ -23,6 +23,7 @@ import {
   buildClientHomeCards,
   type ClientHomeCard,
 } from '../../features/clientAccess/clientHomePresentation';
+import { buildClientResourceRoute } from '../../features/clientAccess/clientResourceRoute';
 import { useClientAccess } from '../../context/ClientAccessContext';
 import { useFavorites, useTheme, useTranslations, useWebApps } from '../../hooks';
 
@@ -55,7 +56,6 @@ export default function HomeScreen() {
   }), [catalogMiniapps]);
   const [clientAccessVisible, setClientAccessVisible] = useState(false);
   const [clientCodeEntryRequested, setClientCodeEntryRequested] = useState(false);
-  const [requestedClientResourceId, setRequestedClientResourceId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const clientCards = useMemo(() => buildClientHomeCards(clientPreviews, {
     status: clientAccessStatus,
@@ -75,26 +75,27 @@ export default function HomeScreen() {
   const openClientCard = useCallback((clientCard: Readonly<ClientHomeCard>) => {
     if (clientCard.locked) {
       setClientCodeEntryRequested(true);
-      setRequestedClientResourceId(null);
       setClientAccessVisible(true);
       return;
     }
-    setClientCodeEntryRequested(false);
-    setRequestedClientResourceId(clientCard.id);
-    setClientAccessVisible(true);
-  }, []);
+    router.push(buildClientResourceRoute(clientCard.id));
+  }, [router]);
 
   const openClientAccessManager = useCallback(() => {
     setClientCodeEntryRequested(false);
-    setRequestedClientResourceId(null);
     setClientAccessVisible(true);
   }, []);
 
   const closeClientAccess = useCallback(() => {
     setClientAccessVisible(false);
     setClientCodeEntryRequested(false);
-    setRequestedClientResourceId(null);
   }, []);
+
+  const openClientResourceFromManager = useCallback((resourceId: string) => {
+    setClientAccessVisible(false);
+    setClientCodeEntryRequested(false);
+    router.push(buildClientResourceRoute(resourceId));
+  }, [router]);
 
   const refreshHome = useCallback(async () => {
     setIsRefreshing(true);
@@ -257,9 +258,9 @@ export default function HomeScreen() {
       <ClientAccessModal
         visible={clientAccessVisible}
         codeEntryRequested={clientCodeEntryRequested}
-        requestedResourceId={requestedClientResourceId}
         onRedeemed={closeClientAccess}
         onClose={closeClientAccess}
+        onOpenResource={openClientResourceFromManager}
       />
     </View>
   );
