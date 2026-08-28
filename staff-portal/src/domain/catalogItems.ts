@@ -176,29 +176,29 @@ export function createCatalogItemGateway(input: Readonly<{
     create: async (item: CatalogItemInput) => {
       assertCatalogAdministrationAllowed(input.session);
       const normalized = validateCatalogItemInput(item);
-      return parseCatalogItemMutation(await invokeIdempotentMutation(input.transport, 'adminCreateCatalogItem', {
+      return parseCreatedCatalogItemMutation(await invokeIdempotentMutation(input.transport, 'adminCreateCatalogItem', {
         item: normalized,
-      }));
+      }), normalized);
     },
     update: async (id: string, revision: number, item: CatalogItemDetailsInput) => {
       assertCatalogAdministrationAllowed(input.session);
       assertCatalogMutationIdentity(id, revision);
       const normalized = validateCatalogItemDetails(item);
-      return parseCatalogItemMutation(await invokeIdempotentMutation(input.transport, 'adminUpdateCatalogItem', {
+      return parseUpdatedCatalogItemMutation(await invokeIdempotentMutation(input.transport, 'adminUpdateCatalogItem', {
         id,
         revision,
         item: normalized,
-      }));
+      }), id, revision, normalized);
     },
     setActive: async (id: string, revision: number, active: boolean) => {
       assertCatalogAdministrationAllowed(input.session);
       assertCatalogMutationIdentity(id, revision);
       if (typeof active !== 'boolean') throw new Error('catalog_item_active_invalid');
-      return parseCatalogItemMutation(await invokeIdempotentMutation(input.transport, 'adminSetCatalogItemActive', {
+      return parseActivatedCatalogItemMutation(await invokeIdempotentMutation(input.transport, 'adminSetCatalogItemActive', {
         id,
         revision,
         active,
-      }));
+      }), id, revision, active);
     },
     delete: async (id: string, revision: number) => {
       assertCatalogAdministrationAllowed(input.session);
@@ -252,22 +252,44 @@ export function createCatalogItemModel(gateway: CatalogItemGateway): CatalogItem
     getSnapshot: () => snapshot,
     load: async () => { setItems(await gateway.list()); },
     create: async (item: CatalogItemInput) => {
-      const created = await gateway.create(validateCatalogItemInput(item));
+      const normalized = validateCatalogItemInput(item);
+      const created = correlateCreatedCatalogItem(
+        parseCatalogItem(await gateway.create(normalized)),
+        normalized,
+      );
+      if (snapshot.items.some((candidate) => candidate.id === created.id)) {
+        throw new Error('catalog_item_response_invalid');
+      }
       setItems([...snapshot.items, created]);
       return created;
     },
     update: async (id: string, revision: number, item: CatalogItemDetailsInput) => {
-      const normalized = validateCatalogItemDetails(item);
       const stored = snapshot.items.find((candidate) => candidate.id === id);
-      if (stored && normalized.url !== stored.url) {
+      if (!stored) throw new Error('catalog_item_not_found');
+      if (item.url !== stored.url) {
         throw new Error('catalog_item_url_immutable');
       }
-      const updated = await gateway.update(id, revision, normalized);
+      const normalized = validateCatalogItemDetails(item);
+      const updated = correlateUpdatedCatalogItem(
+        parseCatalogItem(await gateway.update(id, revision, normalized)),
+        id,
+        revision,
+        normalized,
+        stored,
+      );
       replace(updated);
       return updated;
     },
     setActive: async (id: string, revision: number, active: boolean) => {
-      const updated = await gateway.setActive(id, revision, active);
+      const stored = snapshot.items.find((candidate) => candidate.id === id);
+      if (!stored) throw new Error('catalog_item_not_found');
+      const updated = correlateActivatedCatalogItem(
+        parseCatalogItem(await gateway.setActive(id, revision, active)),
+        id,
+        revision,
+        active,
+        stored,
+      );
       replace(updated);
       return updated;
     },
@@ -313,6 +335,121 @@ function parseCatalogItemMutation(value: unknown): CatalogItem {
     throw new Error('catalog_item_response_invalid');
   }
   return parseCatalogItem(value.item);
+}
+
+function parseCreatedCatalogItemMutation(
+  value: unknown,
+  expected: CatalogItemInput,
+): CatalogItem {
+  return correlateCreatedCatalogItem(parseCatalogItemMutation(value), expected);
+}
+
+function parseUpdatedCatalogItemMutation(
+  value: unknown,
+  id: string,
+  revision: number,
+  expected: CatalogItemDetailsInput,
+): CatalogItem {
+  return correlateUpdatedCatalogItem(
+    parseCatalogItemMutation(value),
+    id,
+    revision,
+    expected,
+  );
+}
+
+function parseActivatedCatalogItemMutation(
+  value: unknown,
+  id: string,
+  revision: number,
+  active: boolean,
+): CatalogItem {
+  return correlateActivatedCatalogItem(
+    parseCatalogItemMutation(value),
+    id,
+    revision,
+    active,
+  );
+}
+
+function correlateCreatedCatalogItem(
+  item: CatalogItem,
+  expected: CatalogItemInput,
+): CatalogItem {
+  const destination = parseSafeCatalogUrl(expected.url);
+  if (!destination
+    || item.revision !== 1
+    || item.createdAtMs !== item.updatedAtMs
+    || !catalogInputMatches(item, expected)
+    || (destination.kind === 'cabohealth'
+      ? item.id !== destination.id
+      : !EXTERNAL_CATALOG_ID_PATTERN.test(item.id))) {
+    throw new Error('catalog_item_response_invalid');
+  }
+  return item;
+}
+
+function correlateUpdatedCatalogItem(
+  item: CatalogItem,
+  id: string,
+  revision: number,
+  expected: CatalogItemDetailsInput,
+  stored?: CatalogItem,
+): CatalogItem {
+  if (item.id !== id
+    || item.revision !== revision + 1
+    || !catalogDetailsMatch(item, expected)
+    || (stored !== undefined
+      && (item.active !== stored.active
+        || item.createdAtMs !== stored.createdAtMs
+        || item.updatedAtMs < stored.updatedAtMs))) {
+    throw new Error('catalog_item_response_invalid');
+  }
+  return item;
+}
+
+function correlateActivatedCatalogItem(
+  item: CatalogItem,
+  id: string,
+  revision: number,
+  active: boolean,
+  stored?: CatalogItem,
+): CatalogItem {
+  if (item.id !== id
+    || item.revision !== revision + 1
+    || item.active !== active
+    || (stored !== undefined
+      && (!catalogDetailsMatch(item, stored)
+        || item.createdAtMs !== stored.createdAtMs
+        || item.updatedAtMs < stored.updatedAtMs))) {
+    throw new Error('catalog_item_response_invalid');
+  }
+  return item;
+}
+
+function catalogInputMatches(
+  item: CatalogItem,
+  expected: CatalogItemInput,
+): boolean {
+  return item.active === expected.active && catalogDetailsMatch(item, expected);
+}
+
+function catalogDetailsMatch(
+  item: CatalogItemDetailsInput,
+  expected: CatalogItemDetailsInput,
+): boolean {
+  return item.access === expected.access
+    && item.icon === expected.icon
+    && item.url === expected.url
+    && localizedCatalogTextMatches(item.summary, expected.summary)
+    && localizedCatalogTextMatches(item.title, expected.title);
+}
+
+function localizedCatalogTextMatches(
+  value: LocalizedCatalogText,
+  expected: LocalizedCatalogText,
+): boolean {
+  return value.en === expected.en && value['es-MX'] === expected['es-MX'];
 }
 
 function parseCatalogItem(value: unknown): CatalogItem {

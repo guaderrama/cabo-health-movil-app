@@ -29,10 +29,35 @@ const catalogItem = Object.freeze({
   url: 'https://cabohealth.org/apps/clinic-guide/',
 });
 
+const externalCatalogItem = Object.freeze({
+  ...catalogItem,
+  createdAtMs: 1_799_999_999_000,
+  id: 'external-0123456789abcdef0123456789abcdef',
+  updatedAtMs: 1_800_000_000_000,
+  url: 'https://example.org/a',
+});
+
 const urlCases = JSON.parse(await readFile(
   resolve(process.cwd(), '../tests/fixtures/external-https-url-cases.json'),
   'utf8',
 ));
+
+async function createMutationResponseModel(stored, mutationName, response) {
+  const gateway = createCatalogItemGateway({
+    session: parseServerStaffSession({
+      scope: 'production',
+      permissions: ['client_resource_publish'],
+    }),
+    transport: async (name) => {
+      if (name === 'adminListCatalogItems') return { items: [stored] };
+      assert.equal(name, mutationName);
+      return { item: response };
+    },
+  });
+  const model = createCatalogItemModel(gateway);
+  await model.load();
+  return model;
+}
 
 test('staff URL validation exactly matches the shared external HTTPS fixture', () => {
   for (const fixture of urlCases.accepted) {
@@ -161,6 +186,205 @@ test('an edit cannot replace the stored destination or transmit a mutation', asy
     url: 'https://example.org/replacement/',
   }), /catalog_item_url_immutable/u);
   assert.equal(transportCalls.length, 0);
+});
+
+test('canonical-equivalent raw URL spellings cannot bypass immutable edits', async () => {
+  const transportCalls = [];
+  const gateway = {
+    async list() { return [externalCatalogItem]; },
+    async create() { throw new Error('unexpected_create'); },
+    async update(...args) {
+      transportCalls.push(args);
+      throw new Error('unexpected_update');
+    },
+    async setActive() { throw new Error('unexpected_set_active'); },
+    async delete() { throw new Error('unexpected_delete'); },
+  };
+  const model = createCatalogItemModel(gateway);
+  await model.load();
+  const details = {
+    access: externalCatalogItem.access,
+    icon: externalCatalogItem.icon,
+    summary: externalCatalogItem.summary,
+    title: externalCatalogItem.title,
+  };
+
+  for (const url of [
+    'https://example.org:443/a',
+    'https://EXAMPLE.ORG/a',
+    'https://example.org/%61',
+  ]) {
+    await assert.rejects(
+      model.update(externalCatalogItem.id, externalCatalogItem.revision, { ...details, url }),
+      /catalog_item_url_immutable/u,
+      url,
+    );
+  }
+  assert.equal(transportCalls.length, 0);
+  assert.deepEqual(model.getSnapshot().items, [externalCatalogItem]);
+});
+
+test('an update without a matching loaded item fails locally', async () => {
+  let updateCalls = 0;
+  const gateway = {
+    async list() { return [catalogItem]; },
+    async create() { throw new Error('unexpected_create'); },
+    async update() {
+      updateCalls += 1;
+      throw new Error('unexpected_update');
+    },
+    async setActive() { throw new Error('unexpected_set_active'); },
+    async delete() { throw new Error('unexpected_delete'); },
+  };
+  const details = {
+    access: catalogItem.access,
+    icon: catalogItem.icon,
+    summary: catalogItem.summary,
+    title: catalogItem.title,
+    url: catalogItem.url,
+  };
+  const unloadedModel = createCatalogItemModel(gateway);
+  await assert.rejects(
+    unloadedModel.update(catalogItem.id, catalogItem.revision, details),
+    /catalog_item_not_found/u,
+  );
+
+  const missingModel = createCatalogItemModel(gateway);
+  await missingModel.load();
+  await assert.rejects(
+    missingModel.update('missing-guide', catalogItem.revision, details),
+    /catalog_item_not_found/u,
+  );
+  assert.equal(updateCalls, 0);
+  assert.deepEqual(missingModel.getSnapshot().items, [catalogItem]);
+});
+
+test('create rejects every uncorrelated valid response without changing the model snapshot', async () => {
+  const input = {
+    access: 'public',
+    active: true,
+    icon: 'guide',
+    summary: { en: 'External recovery guidance.', 'es-MX': 'Guía externa de recuperación.' },
+    title: { en: 'External recovery', 'es-MX': 'Recuperación externa' },
+    url: 'https://example.org/a',
+  };
+  const expected = {
+    ...input,
+    createdAtMs: 1_800_000_000_100,
+    id: 'external-11111111111111111111111111111111',
+    revision: 1,
+    updatedAtMs: 1_800_000_000_100,
+  };
+  const variants = [
+    ['identity', {
+      ...expected,
+      id: 'different-recovery',
+      url: 'https://cabohealth.org/apps/different-recovery/',
+    }],
+    ['initial revision', { ...expected, revision: 2 }],
+    ['access', { ...expected, access: 'clients' }],
+    ['active', { ...expected, active: false }],
+    ['icon', { ...expected, icon: 'wellness' }],
+    ['title', { ...expected, title: { en: 'Different title', 'es-MX': 'Título diferente' } }],
+    ['summary', { ...expected, summary: { en: 'Different summary.', 'es-MX': 'Resumen diferente.' } }],
+    ['URL', { ...expected, url: 'https://example.org/b' }],
+    ['initial timestamps', { ...expected, updatedAtMs: expected.createdAtMs + 1 }],
+  ];
+
+  for (const [label, response] of variants) {
+    const model = await createMutationResponseModel(catalogItem, 'adminCreateCatalogItem', response);
+    await assert.rejects(model.create(input), /catalog_item_response_invalid/u, label);
+    assert.deepEqual(model.getSnapshot().items, [catalogItem], label);
+  }
+
+  const correlated = await createMutationResponseModel(catalogItem, 'adminCreateCatalogItem', expected);
+  assert.deepEqual(await correlated.create(input), expected);
+  assert.deepEqual(correlated.getSnapshot().items, [catalogItem, expected]);
+});
+
+test('update rejects every uncorrelated valid response without changing the model snapshot', async () => {
+  const details = {
+    access: 'public',
+    icon: 'wellness',
+    summary: { en: 'Updated external guidance.', 'es-MX': 'Guía externa actualizada.' },
+    title: { en: 'Updated recovery', 'es-MX': 'Recuperación actualizada' },
+    url: externalCatalogItem.url,
+  };
+  const expected = {
+    ...externalCatalogItem,
+    ...details,
+    revision: 2,
+    updatedAtMs: externalCatalogItem.updatedAtMs + 100,
+  };
+  const variants = [
+    ['id', { ...expected, id: 'external-22222222222222222222222222222222' }],
+    ['skipped revision', { ...expected, revision: 1 }],
+    ['jumped revision', { ...expected, revision: 3 }],
+    ['access', { ...expected, access: 'clients' }],
+    ['icon', { ...expected, icon: 'guide' }],
+    ['title', { ...expected, title: externalCatalogItem.title }],
+    ['summary', { ...expected, summary: externalCatalogItem.summary }],
+    ['URL', { ...expected, url: 'https://example.org/b' }],
+    ['active state', { ...expected, active: false }],
+    ['created identity', { ...expected, createdAtMs: externalCatalogItem.createdAtMs + 1 }],
+    ['updated timestamp', { ...expected, updatedAtMs: externalCatalogItem.updatedAtMs - 1 }],
+  ];
+
+  for (const [label, response] of variants) {
+    const model = await createMutationResponseModel(externalCatalogItem, 'adminUpdateCatalogItem', response);
+    await assert.rejects(
+      model.update(externalCatalogItem.id, externalCatalogItem.revision, details),
+      /catalog_item_response_invalid/u,
+      label,
+    );
+    assert.deepEqual(model.getSnapshot().items, [externalCatalogItem], label);
+  }
+
+  const correlated = await createMutationResponseModel(externalCatalogItem, 'adminUpdateCatalogItem', expected);
+  assert.deepEqual(
+    await correlated.update(externalCatalogItem.id, externalCatalogItem.revision, details),
+    expected,
+  );
+  assert.deepEqual(correlated.getSnapshot().items, [expected]);
+});
+
+test('activation rejects every uncorrelated valid response without changing the model snapshot', async () => {
+  const expected = {
+    ...externalCatalogItem,
+    active: false,
+    revision: 2,
+    updatedAtMs: externalCatalogItem.updatedAtMs + 100,
+  };
+  const variants = [
+    ['id', { ...expected, id: 'external-22222222222222222222222222222222' }],
+    ['skipped revision', { ...expected, revision: 1 }],
+    ['jumped revision', { ...expected, revision: 3 }],
+    ['active state', { ...expected, active: true }],
+    ['access', { ...expected, access: 'clients' }],
+    ['icon', { ...expected, icon: 'wellness' }],
+    ['title', { ...expected, title: { en: 'Different title', 'es-MX': 'Título diferente' } }],
+    ['summary', { ...expected, summary: { en: 'Different summary.', 'es-MX': 'Resumen diferente.' } }],
+    ['URL', { ...expected, url: 'https://example.org/b' }],
+    ['created identity', { ...expected, createdAtMs: externalCatalogItem.createdAtMs + 1 }],
+    ['updated timestamp', { ...expected, updatedAtMs: externalCatalogItem.updatedAtMs - 1 }],
+  ];
+
+  for (const [label, response] of variants) {
+    const model = await createMutationResponseModel(externalCatalogItem, 'adminSetCatalogItemActive', response);
+    await assert.rejects(
+      model.setActive(externalCatalogItem.id, externalCatalogItem.revision, false),
+      /catalog_item_response_invalid/u,
+      label,
+    );
+    assert.deepEqual(model.getSnapshot().items, [externalCatalogItem], label);
+  }
+
+  const correlated = await createMutationResponseModel(externalCatalogItem, 'adminSetCatalogItemActive', expected);
+  assert.deepEqual(
+    await correlated.setActive(externalCatalogItem.id, externalCatalogItem.revision, false),
+    expected,
+  );
+  assert.deepEqual(correlated.getSnapshot().items, [expected]);
 });
 
 test('VIP commercial route checks are internal-only while teaser secrecy applies to external links', () => {
@@ -373,7 +597,7 @@ test('a lost-network retry reuses the same idempotency key for the same mutation
     transport: async (name, payload) => {
       calls.push({ name, payload });
       if (calls.length === 1) throw new TypeError('Failed to fetch');
-      return { item: catalogItem };
+      return { item: { ...catalogItem, revision: 2 } };
     },
   });
 
