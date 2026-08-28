@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
 
+import {
+  catalogIdentityMatches,
+  externalCatalogIdFromRequestId,
+  isLegacyCompatibleCatalogUrl,
+  parseSafeCatalogUrl,
+} from './catalogUrlPolicy.js';
+
 export const CATALOG_ICONS = Object.freeze([
   'laboratory',
   'guide',
@@ -66,14 +73,26 @@ export interface CatalogSnapshot {
   readonly updatedAtMs: number;
 }
 
+export interface PublishedClientPreview {
+  readonly access: 'clients';
+  readonly icon: CatalogIcon;
+  readonly id: string;
+  readonly summary: LocalizedCatalogText;
+  readonly title: LocalizedCatalogText;
+}
+
 export interface PublishedCatalogSnapshot extends CatalogSnapshot {
-  readonly clientPreviews: readonly Readonly<{
-    access: 'clients';
-    icon: CatalogIcon;
-    id: string;
-    summary: LocalizedCatalogText;
-    title: LocalizedCatalogText;
-  }>[];
+  readonly clientPreviews: readonly PublishedClientPreview[];
+}
+
+export interface PublishedCatalogV3 {
+  readonly clientPreviews: readonly PublishedClientPreview[];
+  readonly items: readonly (CatalogItemView & Readonly<{
+    destinationKind: 'cabohealth' | 'external_https';
+  }>)[];
+  readonly revision: number;
+  readonly schemaVersion: 3;
+  readonly updatedAtMs: number;
 }
 
 export type CatalogAuditAction =
@@ -126,7 +145,7 @@ export interface CatalogStore {
     id: string;
     mutation: CatalogMutationRecord;
     revision: number;
-  }>): Promise<CatalogItemView | 'conflict' | 'not_found'>;
+  }>): Promise<CatalogItemView | 'conflict' | 'immutable_url' | 'not_found'>;
 }
 
 export class CatalogInputError extends Error {
@@ -176,7 +195,11 @@ export class CatalogAdminService {
     const normalized = validateCatalogItemInput(input);
     assertSafeClientPreviewInput(normalized);
     const createdAtMs = validNow(this.#nowMs());
-    const id = catalogIdFromUrl(normalized.url);
+    const destination = parseSafeCatalogUrl(normalized.url);
+    if (!destination) throw new CatalogInputError();
+    const id = destination.kind === 'cabohealth'
+      ? destination.id
+      : externalCatalogIdFromRequestId(context.requestId);
     const result = await this.#store.create(Object.freeze({
       ...normalized,
       createdAtMs,
@@ -227,7 +250,11 @@ export class CatalogAdminService {
   async publishedCatalog(): Promise<CatalogSnapshot> {
     const snapshot = await this.#store.snapshot();
     return Object.freeze({
-      items: Object.freeze(snapshot.items.filter((item) => item.active && item.access === 'public')),
+      items: Object.freeze(snapshot.items.filter((item) => (
+        item.active
+        && item.access === 'public'
+        && isLegacyCompatibleCatalogUrl(item.url)
+      ))),
       revision: snapshot.revision,
       updatedAtMs: snapshot.updatedAtMs,
     });
@@ -237,20 +264,37 @@ export class CatalogAdminService {
     const snapshot = await this.#store.snapshot();
     return Object.freeze({
       clientPreviews: Object.freeze(snapshot.items
-        .filter((item) => item.active && item.access === 'clients')
-        .map((item) => {
-          const previewItem = normalizeExactLegacyClientResourcesPreview(item);
-          assertSafeClientPreviewInput(previewItem);
-          return Object.freeze({
-            access: 'clients' as const,
-            icon: previewItem.icon,
-            id: previewItem.id,
-            summary: previewItem.summary,
-            title: previewItem.title,
-          });
-        })),
-      items: Object.freeze(snapshot.items.filter((item) => item.active && item.access === 'public')),
+        .filter((item) => (
+          item.active
+          && item.access === 'clients'
+          && isLegacyCompatibleCatalogUrl(item.url)
+        ))
+        .map(publishedClientPreview)),
+      items: Object.freeze(snapshot.items.filter((item) => (
+        item.active
+        && item.access === 'public'
+        && isLegacyCompatibleCatalogUrl(item.url)
+      ))),
       revision: snapshot.revision,
+      updatedAtMs: snapshot.updatedAtMs,
+    });
+  }
+
+  async publishedCatalogV3(): Promise<PublishedCatalogV3> {
+    const snapshot = await this.#store.snapshot();
+    return Object.freeze({
+      clientPreviews: Object.freeze(snapshot.items
+        .filter((item) => item.active && item.access === 'clients')
+        .map(publishedClientPreview)),
+      items: Object.freeze(snapshot.items
+        .filter((item) => item.active && item.access === 'public')
+        .map((item) => {
+          const destination = parseSafeCatalogUrl(item.url);
+          if (!destination) throw new CatalogInputError();
+          return Object.freeze({ ...item, destinationKind: destination.kind });
+        })),
+      revision: snapshot.revision,
+      schemaVersion: 3,
       updatedAtMs: snapshot.updatedAtMs,
     });
   }
@@ -294,7 +338,7 @@ export class CatalogAdminService {
     assertMutationIdentity(id, revision);
     const normalized = validateCatalogItemDetailsInput(details);
     assertSafeClientPreviewInput(normalized);
-    if (catalogIdFromUrl(normalized.url) !== id) throw new CatalogInputError();
+    if (!catalogIdentityMatches(id, normalized.url)) throw new CatalogInputError();
     const occurredAtMs = validNow(this.#nowMs());
     const result = await this.#store.update(Object.freeze({
       details: normalized,
@@ -309,6 +353,7 @@ export class CatalogAdminService {
       revision,
     }));
     if (result === 'conflict') throw new CatalogConflictError();
+    if (result === 'immutable_url') throw new CatalogInputError();
     if (result === 'not_found') throw new CatalogNotFoundError();
     return result;
   }
@@ -454,19 +499,17 @@ export function catalogIdFromUrl(url: string): string {
 }
 
 function normalizeCatalogUrl(value: unknown): string {
-  if (typeof value !== 'string'
-    || value.length > 2_048
-    || /[\u0000-\u0020\u007f\\%?#]/u.test(value)) {
-    throw new CatalogInputError();
-  }
-  catalogIdFromUrl(value);
-  return value;
+  const parsed = parseSafeCatalogUrl(value);
+  if (!parsed) throw new CatalogInputError();
+  return parsed.url;
 }
 
 function assertCatalogRoutePolicy(url: string, access: CatalogAccess): void {
-  const id = catalogIdFromUrl(url);
-  if (isGloballyReservedCatalogId(id)
-    || (id === 'client-resources' && access !== 'clients')) {
+  const destination = parseSafeCatalogUrl(url);
+  if (!destination) throw new CatalogInputError();
+  if (destination.kind === 'cabohealth'
+    && (isGloballyReservedCatalogId(destination.id)
+      || (destination.id === 'client-resources' && access !== 'clients'))) {
     throw new CatalogInputError();
   }
 }
@@ -553,7 +596,11 @@ function assertSafeClientPreviewInput(
   input: Readonly<Pick<CatalogItemInput, 'access' | 'summary' | 'title' | 'url'>>,
 ): void {
   if (input.access !== 'clients') return;
-  if (isUnsafeClientPreviewId(catalogIdFromUrl(input.url))) throw new CatalogInputError();
+  const destination = parseSafeCatalogUrl(input.url);
+  if (!destination
+    || (destination.kind === 'cabohealth' && isUnsafeClientPreviewId(destination.id))) {
+    throw new CatalogInputError();
+  }
   assertSafeClientPreviewCopy(input.summary);
   assertSafeClientPreviewCopy(input.title);
 }
@@ -611,6 +658,18 @@ function normalizeExactLegacyClientResourcesPreview(item: CatalogItemView): Cata
     return item;
   }
   return Object.freeze({ ...item, summary: NEUTRAL_CLIENT_RESOURCES_SUMMARY });
+}
+
+function publishedClientPreview(item: CatalogItemView): PublishedClientPreview {
+  const previewItem = normalizeExactLegacyClientResourcesPreview(item);
+  assertSafeClientPreviewInput(previewItem);
+  return Object.freeze({
+    access: 'clients',
+    icon: previewItem.icon,
+    id: previewItem.id,
+    summary: previewItem.summary,
+    title: previewItem.title,
+  });
 }
 
 function validNow(value: number): number {

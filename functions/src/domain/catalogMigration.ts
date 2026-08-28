@@ -9,6 +9,7 @@ import {
   validateCatalogItemInput,
 } from './catalogAdmin.js';
 import { validateCatalogDraftInput } from './catalogDraftAdmin.js';
+import { catalogIdentityMatches, parseSafeCatalogUrl } from './catalogUrlPolicy.js';
 import type { DocumentDatabase } from '../repositories/firestoreClientAccessStore.js';
 
 const PRODUCTION_PROJECT_ID = 'cabohealth-owner-prod';
@@ -222,13 +223,17 @@ function buildMigrationDecisions(
       skips.push(Object.freeze({ draftId: document.id, reason: 'archived' }));
       continue;
     }
+    if (parseSafeCatalogUrl(parsed.input.url)?.kind === 'external_https') {
+      skips.push(Object.freeze({ draftId: document.id, reason: 'external-url' }));
+      continue;
+    }
     let item: CatalogItemInput;
     try {
       item = validateCatalogItemInput({ ...parsed.input, active: false });
     } catch {
       skips.push(Object.freeze({
         draftId: document.id,
-        reason: isExternalUrl(parsed.input.url) ? 'external-url' : 'incompatible',
+        reason: 'incompatible',
       }));
       continue;
     }
@@ -322,14 +327,6 @@ function sameCatalogInput(view: CatalogItemView, input: CatalogItemInput): boole
     title: view.title,
     url: view.url,
   }, input);
-}
-
-function isExternalUrl(value: string): boolean {
-  try {
-    return new URL(value).hostname !== 'cabohealth.org';
-  } catch {
-    return false;
-  }
 }
 
 function safeDraftLabel(value: string): string {
@@ -545,7 +542,7 @@ function parseCatalogItemView(value: unknown): CatalogItemView {
     title: value.title,
     url: value.url,
   })) throw invalidPlan();
-  if (catalogIdFromUrl(item.url) !== value.id) throw invalidPlan();
+  if (!catalogIdentityMatches(value.id, item.url)) throw invalidPlan();
   return Object.freeze({
     ...item,
     createdAtMs: value.createdAtMs as number,

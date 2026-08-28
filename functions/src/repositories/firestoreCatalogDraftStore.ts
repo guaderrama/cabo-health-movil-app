@@ -7,6 +7,7 @@ import type {
   StaffAuditEvent,
 } from '../domain/catalogDraftAdmin.js';
 import { validateCatalogDraftInput } from '../domain/catalogDraftAdmin.js';
+import { parseSafeCatalogUrl } from '../domain/catalogUrlPolicy.js';
 import type { DocumentDatabase } from './firestoreClientAccessStore.js';
 
 const CATALOG_DRAFT_PREFIX = '_private_catalog_drafts';
@@ -200,6 +201,7 @@ function parseStoredCatalogDraft(value: unknown): StoredCatalogDraft | null {
     || !Number.isSafeInteger(value.updatedAtMs)
   ) return null;
   try {
+    if (!parseSafeCatalogUrl(value.url)) return null;
     validateCatalogDraftInput({
       access: value.access,
       icon: value.icon,

@@ -1,5 +1,7 @@
 import { randomBytes as nodeRandomBytes } from 'node:crypto';
 
+import { parseSafeCatalogUrl } from './catalogUrlPolicy.js';
+
 export const CATALOG_DRAFT_ICONS = Object.freeze([
   'laboratory',
   'guide',
@@ -186,27 +188,9 @@ export function validateCatalogDraftInput(input: unknown): CatalogDraftInput {
 }
 
 function normalizeDraftUrl(value: unknown): string {
-  if (
-    typeof value !== 'string'
-    || value.length > 2_048
-    || /[\u0000-\u0020\u007f\\]/u.test(value)
-  ) throw new CatalogDraftInputError();
-  try {
-    const parsed = new URL(value);
-    if (
-      parsed.protocol !== 'https:'
-      || parsed.hostname === ''
-      || parsed.username !== ''
-      || parsed.password !== ''
-      || parsed.port !== ''
-      || parsed.search !== ''
-      || parsed.hash !== ''
-    ) throw new CatalogDraftInputError();
-    return parsed.toString();
-  } catch (error) {
-    if (error instanceof CatalogDraftInputError) throw error;
-    throw new CatalogDraftInputError();
-  }
+  const parsed = parseSafeCatalogUrl(value);
+  if (!parsed) throw new CatalogDraftInputError();
+  return parsed.url;
 }
 
 function parseLocalizedText(value: unknown): LocalizedDraftText {

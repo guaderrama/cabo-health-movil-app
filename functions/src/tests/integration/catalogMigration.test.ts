@@ -149,6 +149,29 @@ test('legacy drafts import only compatible CaboHealth miniapps as inactive and r
   ]);
 });
 
+test('historical migration still reports and skips an external draft', async () => {
+  const draftId = 'dr_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+  const database = new InMemoryDocumentDatabase({
+    [`_private_admins/${OWNER_UID}`]: LEGACY_ADMIN,
+    [`_private_catalog_drafts/${draftId}`]: legacyDraft({
+      draftId,
+      url: 'https://www.eightsleep.com/mx/',
+    }),
+  });
+  const catalog = new CatalogAdminService({ store: new FirestoreCatalogStore(database) });
+
+  const plan = await createCatalogMigrationPlan({
+    catalog,
+    database,
+    ownerUid: OWNER_UID,
+    projectId: 'cabohealth-owner-prod',
+  });
+
+  assert.deepEqual(plan.skips, [{ draftId, reason: 'external-url' }]);
+  assert.equal(plan.operations.some(({ sourceDraftId }) => sourceDraftId === draftId), false);
+  assert.deepEqual(await catalog.list(), []);
+});
+
 test('apply verifies the owner, seeds through audited idempotent catalog mutations, then promotes permission atomically', async () => {
   const database = new InMemoryDocumentDatabase({
     [`_private_admins/${OWNER_UID}`]: LEGACY_ADMIN,

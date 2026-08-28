@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
 import {
@@ -9,9 +10,9 @@ import {
   type CatalogSnapshot,
   type CatalogStore,
   CATALOG_ID_PATTERN,
-  catalogIdFromUrl,
   validateCatalogItemInput,
 } from '../domain/catalogAdmin.js';
+import { catalogIdentityMatches } from '../domain/catalogUrlPolicy.js';
 import {
   clientResourcePath,
   type DocumentDatabase,
@@ -30,7 +31,9 @@ interface StoredCatalog {
   readonly updatedAtMs: number;
 }
 
-type StoredCatalogRequest = Readonly<{
+type StoredCatalogReceiptItem = Readonly<Omit<CatalogItemView, 'url'>>;
+
+type StoredCatalogRequestV1 = Readonly<{
   action: CatalogAuditAction;
   actorUid: string;
   expiresAtMs: number;
@@ -43,6 +46,23 @@ type StoredCatalogRequest = Readonly<{
   schemaVersion: 1;
   targetId: string;
 }>;
+
+type StoredCatalogRequestV2 = Readonly<{
+  action: CatalogAuditAction;
+  actorUid: string;
+  expiresAtMs: number;
+  fingerprint: string;
+  requestId: string;
+  response: Readonly<
+    | { item: StoredCatalogReceiptItem; kind: 'item' }
+    | { kind: 'deleted' }
+  >;
+  schemaVersion: 2;
+  targetId: string;
+}>;
+
+type StoredCatalogRequest = StoredCatalogRequestV1 | StoredCatalogRequestV2;
+type NewCatalogResponse = StoredCatalogRequestV2['response'];
 
 export class FirestoreCatalogStore implements CatalogStore {
   readonly #database: DocumentDatabase;
@@ -189,7 +209,7 @@ export class FirestoreCatalogStore implements CatalogStore {
     id: string;
     mutation: CatalogMutationRecord;
     revision: number;
-  }>): Promise<CatalogItemView | 'conflict' | 'not_found'> {
+  }>): Promise<CatalogItemView | 'conflict' | 'immutable_url' | 'not_found'> {
     return this.#database.runTransaction(async (transaction) => {
       const replay = await readCatalogReplay(transaction, command.mutation);
       if (replay === 'mismatch' || replay === 'deleted') return 'conflict';
@@ -201,6 +221,7 @@ export class FirestoreCatalogStore implements CatalogStore {
       const index = current.items.findIndex((item) => item.id === command.id);
       if (index === -1) return 'not_found';
       const item = current.items[index]!;
+      if (item.url !== command.details.url) return 'immutable_url';
       if (item.revision !== command.revision) return 'conflict';
       const updatedAtMs = Math.max(
         current.updatedAtMs,
@@ -313,24 +334,79 @@ async function readCatalogReplay(
     || stored.fingerprint !== mutation.fingerprint
     || stored.requestId !== mutation.requestId
     || stored.targetId !== mutation.targetId) return 'mismatch';
-  return stored.response.kind === 'deleted' ? 'deleted' : stored.response.item;
+  if (stored.response.kind === 'deleted') return 'deleted';
+  if (stored.schemaVersion === 1) return stored.response.item;
+  if (!('item' in stored.response)) return 'mismatch';
+  const receiptItem = stored.response.item;
+
+  const currentValue = await transaction.get(CATALOG_PATH);
+  if (currentValue === undefined) return 'mismatch';
+  const current = parseCatalog(currentValue);
+  if (!current) throw new Error('invalid_catalog_record');
+  const authority = current.items.find(({ id }) => id === receiptItem.id);
+  if (!authority
+    || authority.createdAtMs !== receiptItem.createdAtMs
+    || !catalogIdentityMatches(receiptItem.id, authority.url)
+    || catalogReceiptFingerprint(stored.action, receiptItem, authority.url, stored.targetId)
+      !== stored.fingerprint) return 'mismatch';
+  return Object.freeze({ ...receiptItem, url: authority.url });
+}
+
+function catalogReceiptFingerprint(
+  action: CatalogAuditAction,
+  item: StoredCatalogReceiptItem,
+  url: string,
+  targetId: string,
+): string {
+  if (action === 'miniapp.deleted') return '';
+  let payload: unknown;
+  if (action === 'miniapp.created') {
+    payload = {
+      access: item.access,
+      active: item.active,
+      icon: item.icon,
+      summary: item.summary,
+      title: item.title,
+      url,
+    };
+  } else if (action === 'miniapp.updated') {
+    payload = {
+      details: {
+        access: item.access,
+        icon: item.icon,
+        summary: item.summary,
+        title: item.title,
+        url,
+      },
+      revision: item.revision - 1,
+    };
+  } else {
+    payload = { active: item.active, revision: item.revision - 1 };
+  }
+  return createHash('sha256')
+    .update('cabohealth/catalog-mutation/v1\0', 'utf8')
+    .update(JSON.stringify({ action, payload, targetId }), 'utf8')
+    .digest('base64url');
 }
 
 function writeCatalogMutation(
   transaction: DocumentTransaction,
   mutation: CatalogMutationRecord,
-  response: StoredCatalogRequest['response'],
+  response: Readonly<{ item: CatalogItemView; kind: 'item' } | { kind: 'deleted' }>,
 ): void {
+  const storedResponse: NewCatalogResponse = response.kind === 'deleted'
+    ? Object.freeze({ kind: 'deleted' })
+    : Object.freeze({ item: urlFreeReceiptItem(response.item), kind: 'item' });
   transaction.create(`${CATALOG_REQUEST_PREFIX}/${mutation.requestId}`, Object.freeze({
     action: mutation.action,
     actorUid: mutation.actorUid,
     expiresAtMs: mutation.expiresAtMs,
     fingerprint: mutation.fingerprint,
     requestId: mutation.requestId,
-    response,
-    schemaVersion: 1,
+    response: storedResponse,
+    schemaVersion: 2,
     targetId: mutation.targetId,
-  } satisfies StoredCatalogRequest));
+  } satisfies StoredCatalogRequestV2));
   transaction.create(`${AUDIT_EVENT_PREFIX}/${mutation.auditEventId}`, Object.freeze({
     action: mutation.action,
     actorLabel: 'Staff',
@@ -342,6 +418,20 @@ function writeCatalogMutation(
     schemaVersion: 3,
     targetSuffix: mutation.targetId.slice(-12),
   }));
+}
+
+function urlFreeReceiptItem(item: CatalogItemView): StoredCatalogReceiptItem {
+  return Object.freeze({
+    access: item.access,
+    active: item.active,
+    createdAtMs: item.createdAtMs,
+    icon: item.icon,
+    id: item.id,
+    revision: item.revision,
+    summary: item.summary,
+    title: item.title,
+    updatedAtMs: item.updatedAtMs,
+  });
 }
 
 function syncClientResource(
@@ -421,11 +511,19 @@ function parseCatalogRequest(value: unknown): StoredCatalogRequest | null {
     || !/^[A-Za-z0-9_-]{43}$/u.test(value.fingerprint)
     || typeof value.requestId !== 'string'
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value.requestId)
-    || value.schemaVersion !== 1
+    || (value.schemaVersion !== 1 && value.schemaVersion !== 2)
     || typeof value.targetId !== 'string'
     || !CATALOG_ID_PATTERN.test(value.targetId)
     || !isRecord(value.response)) return null;
-  let response: StoredCatalogRequest['response'];
+  const record = value as Record<string, unknown> & { response: Record<string, unknown> };
+  if (value.schemaVersion === 1) return parseLegacyCatalogRequest(record);
+  return parseUrlFreeCatalogRequest(record);
+}
+
+function parseLegacyCatalogRequest(
+  value: Record<string, unknown> & { response: Record<string, unknown> },
+): StoredCatalogRequestV1 | null {
+  let response: StoredCatalogRequestV1['response'];
   if (hasExactKeys(value.response, ['kind']) && value.response.kind === 'deleted') {
     response = Object.freeze({ kind: 'deleted' });
   } else if (hasExactKeys(value.response, ['item', 'kind']) && value.response.kind === 'item') {
@@ -435,16 +533,82 @@ function parseCatalogRequest(value: unknown): StoredCatalogRequest | null {
   } else {
     return null;
   }
+  if ((value.action === 'miniapp.deleted') !== (response.kind === 'deleted')) return null;
   return Object.freeze({
-    action: value.action,
-    actorUid: value.actorUid,
+    action: value.action as CatalogAuditAction,
+    actorUid: value.actorUid as string,
     expiresAtMs: value.expiresAtMs as number,
-    fingerprint: value.fingerprint,
-    requestId: value.requestId,
+    fingerprint: value.fingerprint as string,
+    requestId: value.requestId as string,
     response,
     schemaVersion: 1,
-    targetId: value.targetId,
+    targetId: value.targetId as string,
   });
+}
+
+function parseUrlFreeCatalogRequest(
+  value: Record<string, unknown> & { response: Record<string, unknown> },
+): StoredCatalogRequestV2 | null {
+  let response: StoredCatalogRequestV2['response'];
+  if (hasExactKeys(value.response, ['kind']) && value.response.kind === 'deleted') {
+    response = Object.freeze({ kind: 'deleted' });
+  } else if (hasExactKeys(value.response, ['item', 'kind']) && value.response.kind === 'item') {
+    const item = parseReceiptItem(value.response.item);
+    if (!item || item.id !== value.targetId) return null;
+    response = Object.freeze({ item, kind: 'item' });
+  } else {
+    return null;
+  }
+  if ((value.action === 'miniapp.deleted') !== (response.kind === 'deleted')) return null;
+  return Object.freeze({
+    action: value.action as CatalogAuditAction,
+    actorUid: value.actorUid as string,
+    expiresAtMs: value.expiresAtMs as number,
+    fingerprint: value.fingerprint as string,
+    requestId: value.requestId as string,
+    response,
+    schemaVersion: 2,
+    targetId: value.targetId as string,
+  });
+}
+
+function parseReceiptItem(value: unknown): StoredCatalogReceiptItem | null {
+  if (!isRecord(value)
+    || !hasExactKeys(value, [
+      'access', 'active', 'createdAtMs', 'icon', 'id', 'revision',
+      'summary', 'title', 'updatedAtMs',
+    ])
+    || typeof value.id !== 'string'
+    || !CATALOG_ID_PATTERN.test(value.id)
+    || !Number.isSafeInteger(value.revision)
+    || (value.revision as number) < 1
+    || !Number.isSafeInteger(value.createdAtMs)
+    || (value.createdAtMs as number) < 0
+    || !Number.isSafeInteger(value.updatedAtMs)
+    || (value.updatedAtMs as number) < (value.createdAtMs as number)) return null;
+  try {
+    const input = validateCatalogItemInput({
+      access: value.access,
+      active: value.active,
+      icon: value.icon,
+      summary: value.summary,
+      title: value.title,
+      url: 'https://receipt.cabohealth.com/',
+    });
+    return Object.freeze({
+      access: input.access,
+      active: input.active,
+      createdAtMs: value.createdAtMs as number,
+      icon: input.icon,
+      id: value.id,
+      revision: value.revision as number,
+      summary: input.summary,
+      title: input.title,
+      updatedAtMs: value.updatedAtMs as number,
+    });
+  } catch {
+    return null;
+  }
 }
 
 function isCatalogAuditAction(value: unknown): value is CatalogAuditAction {
@@ -513,7 +677,7 @@ function parseItem(value: unknown): CatalogItemView | null {
       title: value.title,
       url: value.url,
     });
-    if (catalogIdFromUrl(input.url) !== value.id) return null;
+    if (!catalogIdentityMatches(value.id, input.url)) return null;
     return Object.freeze({
       ...input,
       createdAtMs: value.createdAtMs as number,

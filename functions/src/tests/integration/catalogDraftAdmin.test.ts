@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
+import { resolve } from 'node:path';
 
 import {
   CatalogDraftAdminService,
@@ -22,7 +24,7 @@ const draftInput: CatalogDraftInput = Object.freeze({
   icon: 'nutrition',
   summary: Object.freeze({ en: 'Science-backed nutrition.', 'es-MX': 'Nutrición basada en ciencia.' }),
   title: Object.freeze({ en: 'Nutrition guide', 'es-MX': 'Guía de nutrición' }),
-  url: 'https://resources.example.test/nutrition',
+  url: 'https://resources.example.org/nutrition',
 });
 
 test('creates an opaque draft and lists its exact portal view without publishing it', async () => {
@@ -44,7 +46,7 @@ test('creates an opaque draft and lists its exact portal view without publishing
     summary: { en: 'Science-backed nutrition.', 'es-MX': 'Nutrición basada en ciencia.' },
     title: { en: 'Nutrition guide', 'es-MX': 'Guía de nutrición' },
     updatedAtMs: 1_800_000_000_000,
-    url: 'https://resources.example.test/nutrition',
+    url: 'https://resources.example.org/nutrition',
   });
   assert.deepEqual(await service.list(), [created]);
 
@@ -53,7 +55,7 @@ test('creates an opaque draft and lists its exact portal view without publishing
   assert.doesNotMatch(state, /_private_client_resources|signed_catalog|published/u);
   const audit = await database.listCollection('_private_audit_events');
   assert.equal(audit.length, 1);
-  assert.doesNotMatch(JSON.stringify(audit), /resources\.example\.test/u, 'audit records must not copy the URL');
+  assert.doesNotMatch(JSON.stringify(audit), /resources\.example\.org/u, 'audit records must not copy the URL');
 });
 
 test('updates and archives only the exact current revision while recording bounded sanitized audit', async () => {
@@ -103,7 +105,31 @@ test('updates and archives only the exact current revision while recording bound
     assert.equal(event.outcome, 'success');
     assert.match(event.targetSuffix, /^[A-Za-z0-9_-]{1,12}$/u);
   }
-  assert.doesNotMatch(JSON.stringify(await service.listAudit()), /resources\.example\.test/u);
+  assert.doesNotMatch(JSON.stringify(await service.listAudit()), /resources\.example\.org/u);
+});
+
+test('draft validation accepts the shared safe external URL for Public and VIP and rejects every unsafe fixture URL', async () => {
+  const fixtureText = await readFile(
+    resolve(process.cwd(), '../tests/fixtures/external-https-url-cases.json'),
+    'utf8',
+  );
+  const cases = JSON.parse(fixtureText) as Readonly<{
+    accepted: readonly Readonly<{ canonical: string; input: string; kind: string }>[];
+    rejected: readonly string[];
+  }>;
+  const external = cases.accepted.find(({ kind }) => kind === 'external_https');
+  assert.ok(external);
+
+  for (const access of ['public', 'clients'] as const) {
+    assert.equal(validateCatalogDraftInput({
+      ...draftInput,
+      access,
+      url: external.input,
+    }).url, external.canonical);
+  }
+  for (const url of cases.rejected) {
+    assert.throws(() => validateCatalogDraftInput({ ...draftInput, url }), CatalogDraftInputError, url);
+  }
 });
 
 test('rejects non-exact drafts and ambiguous or unsafe HTTPS URLs', () => {

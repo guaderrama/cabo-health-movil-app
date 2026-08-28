@@ -336,6 +336,16 @@ export const getPublishedCatalogV2 = onCall(baseCallableOptions, async (request)
   }
 });
 
+export const getPublishedCatalogV3 = onCall(baseCallableOptions, async (request) => {
+  assertClientAppCheck(request);
+  assertEmptyData(request.data, 'invalid_catalog_request');
+  try {
+    return await createCatalogService().publishedCatalogV3();
+  } catch {
+    throw new HttpsError('internal', 'catalog_operation_failed');
+  }
+});
+
 export const adminListAudit = onCall(baseCallableOptions, async (request) => {
   assertStaffAppCheck(request);
   assertEmptyData(request.data, 'invalid_admin_input');

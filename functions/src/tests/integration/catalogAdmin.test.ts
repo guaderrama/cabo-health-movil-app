@@ -37,6 +37,257 @@ const activeClientMiniapp: CatalogItemInput = Object.freeze({
   url: 'https://cabohealth.org/apps/vip-library/',
 });
 
+const externalPublicMiniapp: CatalogItemInput = Object.freeze({
+  ...activePublicMiniapp,
+  url: 'https://www.eightsleep.com/mx/',
+});
+
+const externalClientMiniapp: CatalogItemInput = Object.freeze({
+  ...activeClientMiniapp,
+  url: 'https://www.eightsleep.com/mx/',
+});
+
+test('creates deterministic opaque external IDs per idempotent request while allowing the same URL twice', async () => {
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(new InMemoryDocumentDatabase()),
+  });
+
+  const first = await service.create(externalPublicMiniapp, mutation(701));
+  const second = await service.create(externalClientMiniapp, mutation(702));
+
+  assert.equal(first.id, 'external-85f9f7aa3188c1061611ba74b463db22');
+  assert.equal(second.id, 'external-27a347980334eac51436818d0b1ca496');
+  assert.notEqual(first.id, second.id);
+  assert.deepEqual(await service.create(externalPublicMiniapp, mutation(701)), first);
+});
+
+test('keeps an external destination immutable', async () => {
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(new InMemoryDocumentDatabase()),
+  });
+  const created = await service.create(externalPublicMiniapp, mutation(703));
+
+  await assert.rejects(service.update(created.id, created.revision, {
+    access: created.access,
+    icon: created.icon,
+    summary: created.summary,
+    title: created.title,
+    url: 'https://example.org/replacement/',
+  }, mutation(704)), CatalogInputError);
+});
+
+test('fails closed if an opaque external ID already belongs to another create request', async () => {
+  const externalId = 'external-3116157660e526fc9064454a5328037a';
+  const existing = Object.freeze({
+    ...externalPublicMiniapp,
+    createdAtMs: 1_799_999_999_999,
+    id: externalId,
+    revision: 1,
+    updatedAtMs: 1_799_999_999_999,
+  });
+  const database = new InMemoryDocumentDatabase({
+    '_private_catalog/current': {
+      items: [existing],
+      revision: 1,
+      schemaVersion: 1,
+      updatedAtMs: 1_799_999_999_999,
+    },
+  });
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+
+  await assert.rejects(
+    service.create({ ...externalPublicMiniapp, url: 'https://example.org/other/' }, mutation(706)),
+    CatalogConflictError,
+  );
+  assert.deepEqual(await service.list(), [existing]);
+});
+
+test('legacy V1 and V2 omit external items while V3 discriminates public items and keeps VIP previews URL-free', async () => {
+  const service = new CatalogAdminService({
+    nowMs: (() => {
+      let now = 1_800_000_000_000;
+      return () => now++;
+    })(),
+    store: new FirestoreCatalogStore(new InMemoryDocumentDatabase()),
+  });
+  const internalPublic = await service.create(activePublicMiniapp, mutation(707));
+  const externalPublic = await service.create(externalPublicMiniapp, mutation(708));
+  const externalVip = await service.create(externalClientMiniapp, mutation(709));
+
+  assert.deepEqual((await service.publishedCatalog()).items.map(({ id }) => id), [internalPublic.id]);
+  const v2 = await service.publishedShowcaseCatalog();
+  assert.deepEqual(v2.items.map(({ id }) => id), [internalPublic.id]);
+  assert.equal(v2.clientPreviews.some(({ id }) => id === externalVip.id), false);
+
+  const v3 = await service.publishedCatalogV3();
+  assert.deepEqual(v3, {
+    schemaVersion: 3,
+    revision: 3,
+    updatedAtMs: 1_800_000_000_002,
+    items: [
+      { ...internalPublic, destinationKind: 'cabohealth' },
+      { ...externalPublic, destinationKind: 'external_https' },
+    ],
+    clientPreviews: [{
+      access: 'clients',
+      icon: externalVip.icon,
+      id: externalVip.id,
+      summary: externalVip.summary,
+      title: externalVip.title,
+    }],
+  });
+  assert.equal(JSON.stringify(v3.clientPreviews).includes('https://'), false);
+});
+
+test('stores exact URL-free v2 item receipts and reconstructs replay only from protected catalog authority', async () => {
+  const database = new InMemoryDocumentDatabase({}, { rejectReadsAfterWrites: true });
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+  const context = mutation(705);
+  const created = await service.create(externalPublicMiniapp, context);
+  const receipt = (await database.listCollection('_private_catalog_requests'))[0]?.value;
+
+  assert.deepEqual(receipt, {
+    action: 'miniapp.created',
+    actorUid: context.actorUid,
+    expiresAtMs: 1_802_592_000_000,
+    fingerprint: 'UAK88oprwhYiWWPzdZ3nLPqIzFVwEsRjOlRyg6hqCIQ',
+    requestId: context.requestId,
+    response: {
+      item: {
+        access: 'public',
+        active: true,
+        createdAtMs: 1_800_000_000_000,
+        icon: 'recipes',
+        id: 'external-de23a7493eedf59f98e23279abe6dc6e',
+        revision: 1,
+        summary: externalPublicMiniapp.summary,
+        title: externalPublicMiniapp.title,
+        updatedAtMs: 1_800_000_000_000,
+      },
+      kind: 'item',
+    },
+    schemaVersion: 2,
+    targetId: 'external-de23a7493eedf59f98e23279abe6dc6e',
+  });
+  assert.equal(JSON.stringify(receipt).includes('https://'), false);
+  assert.deepEqual(await service.create(externalPublicMiniapp, context), created);
+});
+
+test('URL-free item replay conflicts after its protected catalog authority is deleted', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+  const context = mutation(710);
+  const created = await service.create(externalPublicMiniapp, context);
+  await database.runTransaction(async (transaction) => {
+    transaction.set('_private_catalog/current', {
+      items: [],
+      revision: 2,
+      schemaVersion: 1,
+      updatedAtMs: created.updatedAtMs,
+    });
+  });
+
+  await assert.rejects(service.create(externalPublicMiniapp, context), CatalogConflictError);
+});
+
+test('URL-free item replay conflicts if its protected catalog authority has a different creation identity', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+  const context = mutation(711);
+  const created = await service.create(externalPublicMiniapp, context);
+  await database.runTransaction(async (transaction) => {
+    transaction.set('_private_catalog/current', {
+      items: [{
+        ...created,
+        createdAtMs: created.createdAtMs + 1,
+        updatedAtMs: created.updatedAtMs + 1,
+      }],
+      revision: 2,
+      schemaVersion: 1,
+      updatedAtMs: created.updatedAtMs + 1,
+    });
+  });
+
+  await assert.rejects(service.create(externalPublicMiniapp, context), CatalogConflictError);
+});
+
+test('URL-free item replay conflicts if the protected catalog URL was substituted in place', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+  const context = mutation(713);
+  const created = await service.create(externalPublicMiniapp, context);
+  await database.runTransaction(async (transaction) => {
+    transaction.set('_private_catalog/current', {
+      items: [{ ...created, url: 'https://example.org/substituted/' }],
+      revision: 2,
+      schemaVersion: 1,
+      updatedAtMs: created.updatedAtMs,
+    });
+  });
+
+  await assert.rejects(service.create(externalPublicMiniapp, context), CatalogConflictError);
+});
+
+test('continues reading an exact legacy schema-v1 item receipt', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+  const context = mutation(712);
+  const created = await service.create(activePublicMiniapp, context);
+  const receiptPath = `_private_catalog_requests/${context.requestId}`;
+  const receipt = (await database.listCollection('_private_catalog_requests'))[0]?.value as Record<string, unknown>;
+  await database.runTransaction(async (transaction) => {
+    transaction.set(receiptPath, {
+      ...receipt,
+      response: { item: created, kind: 'item' },
+      schemaVersion: 1,
+    });
+  });
+
+  assert.deepEqual(await service.create(activePublicMiniapp, context), created);
+});
+
+test('stored catalog parsing rejects an external URL paired with a CaboHealth slug identity', async () => {
+  const mismatched = Object.freeze({
+    ...externalPublicMiniapp,
+    createdAtMs: 1_800_000_000_000,
+    id: 'healthy-recipes',
+    revision: 1,
+    updatedAtMs: 1_800_000_000_000,
+  });
+  const service = new CatalogAdminService({
+    store: new FirestoreCatalogStore(new InMemoryDocumentDatabase({
+      '_private_catalog/current': {
+        items: [mismatched],
+        revision: 1,
+        schemaVersion: 1,
+        updatedAtMs: 1_800_000_000_000,
+      },
+    })),
+  });
+
+  await assert.rejects(service.list(), /invalid_catalog_record/u);
+});
+
 test('owner creates an active miniapp and it is immediately present in the runtime catalog', async () => {
   const service = new CatalogAdminService({
     nowMs: () => 1_800_000_000_000,
@@ -469,13 +720,12 @@ test('stale revisions and request-id reuse with different payloads are rejected 
   assert.equal((await service.list())[0]?.active, false);
 });
 
-test('catalog input rejects external, ambiguous, non-canonical, and id-changing URLs', async () => {
+test('catalog input rejects unsafe, non-canonical CaboHealth, and id-changing URLs', async () => {
   const service = new CatalogAdminService({
     store: new FirestoreCatalogStore(new InMemoryDocumentDatabase()),
   });
   for (const url of [
     'http://cabohealth.org/apps/healthy-recipes/',
-    'https://www.cabohealth.org/apps/healthy-recipes/',
     'https://cabohealth.org/apps/healthy-recipes',
     'https://cabohealth.org/apps/healthy-recipes/?preview=1',
     'https://cabohealth.org/apps/%68ealthy-recipes/',
