@@ -12,7 +12,7 @@ import {
 
 const future = Date.now() + 60_000;
 const grant = Object.freeze({
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: 'active',
   expiresAtMs: future,
   resources: Object.freeze([
@@ -27,6 +27,15 @@ const grant = Object.freeze({
       access: 'client',
     }),
   ]),
+});
+
+const externalGrant = Object.freeze({
+  ...grant,
+  resources: Object.freeze([Object.freeze({
+    ...grant.resources[0],
+    id: 'external-0123456789abcdef0123456789abcdef',
+    title: Object.freeze({ en: 'Sleep Resource', es: 'Recurso de sueño' }),
+  })]),
 });
 
 const reviewGrant = Object.freeze({
@@ -73,6 +82,20 @@ test('production grants reject every retired id and the isolated App Review name
       resources: [{ ...grant.resources[0], id }],
     }, Date.now()), null, id);
   }
+});
+
+test('production accepts only URL-free schema V2 grants while App Review remains exact schema V1', () => {
+  assert.equal(parseClientGrantView(grant, Date.now())?.schemaVersion, 2);
+  assert.equal(parseClientGrantView({ ...grant, schemaVersion: 1 }, Date.now()), null);
+  assert.equal(parseClientGrantView(reviewGrant, Date.now())?.schemaVersion, 1);
+  assert.equal(JSON.stringify(parseClientGrantView(externalGrant, Date.now())).includes('https://'), false);
+  assert.equal(parseClientGrantView({
+    ...externalGrant,
+    resources: [{
+      ...externalGrant.resources[0],
+      url: 'https://www.eightsleep.com/mx/',
+    }],
+  }, Date.now()), null);
 });
 
 test('CH and AR credentials canonicalize to distinct 128-bit realms', () => {
@@ -190,6 +213,7 @@ test('an App Review grant creates only the fixed review POST launch source', asy
   await controller.redeem('AR-01234567-89ABCDEF-01234567-89ABCDEF');
 
   assert.deepEqual(await controller.createLaunch('review-sandbox-app-review-sample-v1'), {
+    kind: 'broker',
     realm: 'review_sandbox',
     expiresAtMs: 1_900_000_060_000,
     source: {
@@ -911,6 +935,7 @@ test('an unlocked assigned resource creates only a short-lived CaboHealth POST l
       createLaunch: async (receivedSession, resourceId) => {
         effects.push([receivedSession, resourceId]);
         return {
+          kind: 'broker',
           launchUrl: 'https://cabohealth.org/apps/client-resources/launch/',
           method: 'POST',
           nonce: '8m3Vtw10f7A0W6U7uDiRAHs6og3LL5dckSDzbOqrnDs',
@@ -933,6 +958,7 @@ test('an unlocked assigned resource creates only a short-lived CaboHealth POST l
 
   assert.deepEqual(effects, [[session, 'microbiota-guide']]);
   assert.deepEqual(launch, {
+    kind: 'broker',
     realm: 'production_client',
     source: {
       uri: 'https://cabohealth.org/apps/client-resources/launch/',
@@ -954,30 +980,35 @@ test('launches fail closed for unassigned resources and malformed or overlong re
   const effects = [];
   const responses = [
     {
+      kind: 'broker',
       launchUrl: 'https://cabohealth.org/apps/client-resources/launch/?resource=secret',
       method: 'POST',
       nonce: '8m3Vtw10f7A0W6U7uDiRAHs6og3LL5dckSDzbOqrnDs',
       expiresAtMs: future,
     },
     {
+      kind: 'broker',
       launchUrl: 'https://cabohealth.org/apps/client-resources/launch/',
       method: 'GET',
       nonce: '8m3Vtw10f7A0W6U7uDiRAHs6og3LL5dckSDzbOqrnDs',
       expiresAtMs: future,
     },
     {
+      kind: 'broker',
       launchUrl: 'https://cabohealth.org/apps/client-resources/launch/',
       method: 'POST',
       nonce: 'too-short',
       expiresAtMs: future,
     },
     {
+      kind: 'broker',
       launchUrl: 'https://cabohealth.org/apps/client-resources/launch/',
       method: 'POST',
       nonce: '8m3Vtw10f7A0W6U7uDiRAHs6og3LL5dckSDzbOqrnDs',
       expiresAtMs: future + 300_000,
     },
     {
+      kind: 'broker',
       launchUrl: 'https://cabohealth.org/apps/client-resources/launch/',
       method: 'POST',
       nonce: '8m3Vtw10f7A0W6U7uDiRAHs6og3LL5dckSDzbOqrnDs',
@@ -1067,6 +1098,7 @@ test('removing access invalidates an older in-flight launch nonce', async () => 
   const launch = controller.createLaunch('microbiota-guide');
   await controller.removeAccess();
   resolveLaunch({
+    kind: 'broker',
     launchUrl: 'https://cabohealth.org/apps/client-resources/launch/',
     method: 'POST',
     nonce: '8m3Vtw10f7A0W6U7uDiRAHs6og3LL5dckSDzbOqrnDs',
@@ -1075,4 +1107,87 @@ test('removing access invalidates an older in-flight launch nonce', async () => 
 
   assert.equal(await launch, null);
   assert.equal(controller.getSnapshot().status, 'locked');
+});
+
+test('an authorized production external launch is transient, canonical, and discriminated', async () => {
+  const nowMs = 1_900_000_000_000;
+  const session = createOpaqueClientSession();
+  const effects = [];
+  const currentExternalGrant = Object.freeze({
+    ...externalGrant,
+    expiresAtMs: nowMs + 300_000,
+  });
+  const controller = createClientAccessController({
+    now: () => nowMs,
+    gateway: {
+      redeem: async () => null,
+      refresh: async () => currentExternalGrant,
+      createLaunch: async (_session, resourceId) => {
+        effects.push(resourceId);
+        return {
+          kind: 'external_https',
+          expiresAtMs: nowMs + 60_000,
+          url: 'https://www.eightsleep.com/mx/',
+        };
+      },
+      removeAccess: async () => {},
+      deleteAccount: async () => {},
+      signOut: async () => {},
+    },
+    sessionStore: {
+      restore: async () => session,
+      commit: async () => {},
+      clear: async () => {},
+    },
+  });
+  await controller.initialize();
+
+  const launch = await controller.createLaunch('external-0123456789abcdef0123456789abcdef');
+
+  assert.deepEqual(launch, {
+    kind: 'external_https',
+    realm: 'production_client',
+    expiresAtMs: nowMs + 60_000,
+    source: { uri: 'https://www.eightsleep.com/mx/' },
+    origin: 'https://www.eightsleep.com',
+  });
+  assert.deepEqual(effects, ['external-0123456789abcdef0123456789abcdef']);
+  assert.equal(JSON.stringify(controller.getSnapshot()).includes('https://www.eightsleep.com/mx/'), false);
+});
+
+test('external launch parsing rejects unsafe, noncanonical, extra-key, expired, and overlong envelopes', async () => {
+  const nowMs = 1_900_000_000_000;
+  const session = createOpaqueClientSession();
+  const responses = [
+    { kind: 'external_https', expiresAtMs: nowMs + 60_000, url: 'http://www.eightsleep.com/mx/' },
+    { kind: 'external_https', expiresAtMs: nowMs + 60_000, url: 'https://WWW.eightsleep.com:443/mx/' },
+    { kind: 'external_https', expiresAtMs: nowMs + 60_000, url: 'https://www.eightsleep.com/mx/', nonce: 'forbidden' },
+    { kind: 'external_https', expiresAtMs: nowMs, url: 'https://www.eightsleep.com/mx/' },
+    { kind: 'external_https', expiresAtMs: nowMs + 120_001, url: 'https://www.eightsleep.com/mx/' },
+    { kind: 'unknown', expiresAtMs: nowMs + 60_000, url: 'https://www.eightsleep.com/mx/' },
+  ];
+  const controller = createClientAccessController({
+    now: () => nowMs,
+    gateway: {
+      redeem: async () => null,
+      refresh: async () => externalGrant,
+      createLaunch: async () => responses.shift(),
+      removeAccess: async () => {},
+      deleteAccount: async () => {},
+      signOut: async () => {},
+    },
+    sessionStore: {
+      restore: async () => session,
+      commit: async () => {},
+      clear: async () => {},
+    },
+  });
+  await controller.initialize();
+
+  for (let index = 0; index < 6; index += 1) {
+    assert.equal(
+      await controller.createLaunch('external-0123456789abcdef0123456789abcdef'),
+      null,
+    );
+  }
 });

@@ -96,14 +96,15 @@ test('unlocked resources request an ephemeral launch only inside the protected f
 
   assert.match(routeLogic, /createLaunch\(resourceId\)/u);
   assert.match(route, /<ClientResourceWebView/u);
-  assert.match(route, /const accessLost = status === 'locked'[^]*setActiveLaunch\(null\)/u);
+  assert.match(route, /resolveClientResourceRouteAuthorizationTransition/u);
+  assert.match(route, /setActiveLaunch\(transition\.activeLaunch\)/u);
   assert.match(route, /const currentlyAuthorized = deletionTracking\.kind === 'none' && resource !== null/u);
   assert.match(route, /activeLaunch !== null && currentlyAuthorized/u);
   assert.match(route, /getClientResourceRouteExpiryDelay/u);
-  assert.match(route, /const revalidating = status === 'checking'[^]*resumeAfterRevalidation\.current = true/u);
-  assert.match(route, /status === 'unlocked'[^]*resumeAfterRevalidation\.current[^]*setAttempt/u);
+  assert.match(routeLogic, /status === 'checking'[^]*activeLaunch: null/u);
+  assert.match(routeLogic, /status === 'unlocked'[^]*resumeAfterRevalidation[^]*resume-launch/u);
   assert.match(route, /launchAttemptPending\.current = true[^]*resolveClientResourceRouteLaunchFailure/u);
-  assert.match(route, /routeFlowStarted\.current[^]*accessLost[^]*launchAttemptPending\.current/u);
+  assert.match(routeLogic, /routeFlowStarted[^]*accessLost[^]*launchAttemptPending/u);
   assert.match(
     provider,
     /const operationGeneration = synchronizationGeneration\.current[^]*controller\.createLaunch\(resourceId\)[^]*synchronizationGeneration\.current === operationGeneration[^]*deletionTrackingRef\.current\.kind === 'none'/u,

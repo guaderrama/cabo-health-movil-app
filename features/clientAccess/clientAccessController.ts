@@ -2,6 +2,7 @@ import {
   isPermanentlyRetiredCatalogId,
   isReservedReviewSandboxCatalogId,
 } from '../catalog/catalogIdPolicy';
+import { parseSafeExternalHttpsDestination } from '../launch/externalHttpsUrlPolicy';
 
 const OPAQUE_SESSION = Symbol('cabohealth.clientAccess.session');
 export const CLIENT_RESOURCE_LAUNCH_URL = 'https://cabohealth.org/apps/client-resources/launch/' as const;
@@ -53,7 +54,7 @@ export interface ClientResourceView {
 }
 
 export interface ProductionClientGrantView {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly status: 'active';
   readonly expiresAtMs: number;
   readonly resources: readonly Readonly<ClientResourceView>[];
@@ -79,16 +80,49 @@ export interface ClientAccessSnapshot {
   readonly error: 'invalid-code' | 'unavailable' | null;
 }
 
-export interface ClientResourceLaunch {
-  readonly realm: ClientAccessRealm;
-  readonly source: Readonly<{
-    uri: typeof CLIENT_RESOURCE_LAUNCH_URL | typeof APP_REVIEW_LAUNCH_URL;
+export type BrokerPostSource = Readonly<{
+  uri: typeof CLIENT_RESOURCE_LAUNCH_URL | typeof APP_REVIEW_LAUNCH_URL;
+  method: 'POST';
+  body: string;
+  headers: Readonly<{ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }>;
+}>;
+
+export type ClientResourceLaunch = Readonly<
+  | {
+    kind: 'broker';
+    realm: ClientAccessRealm;
+    expiresAtMs: number;
+    source: BrokerPostSource;
+  }
+  | {
+    kind: 'external_https';
+    realm: 'production_client';
+    expiresAtMs: number;
+    source: Readonly<{ uri: string }>;
+    origin: string;
+  }
+>;
+
+export type ClientLaunchEnvelope = Readonly<
+  | {
+    kind: 'broker';
+    expiresAtMs: number;
+    launchUrl: typeof CLIENT_RESOURCE_LAUNCH_URL;
     method: 'POST';
-    body: string;
-    headers: Readonly<{ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }>;
-  }>;
-  readonly expiresAtMs: number;
-}
+    nonce: string;
+  }
+  | {
+    kind: 'external_https';
+    expiresAtMs: number;
+    url: string;
+  }
+  | {
+    expiresAtMs: number;
+    launchUrl: typeof APP_REVIEW_LAUNCH_URL;
+    method: 'POST';
+    nonce: string;
+  }
+>;
 
 export interface ClientAccessGateway {
   redeem(code: string): Promise<{
@@ -206,7 +240,7 @@ export function parseClientGrantView(value: unknown, nowMs: number): Readonly<Cl
   if (record.scope === 'review_sandbox') return parseAppReviewGrant(record);
   if (!hasExactKeys(record, ['expiresAtMs', 'resources', 'schemaVersion', 'status'])) return null;
   if (
-    record.schemaVersion !== 1
+    record.schemaVersion !== 2
     || record.status !== 'active'
     || !Number.isSafeInteger(record.expiresAtMs)
     || (record.expiresAtMs as number) <= nowMs
@@ -222,7 +256,7 @@ export function parseClientGrantView(value: unknown, nowMs: number): Readonly<Cl
     resources.push(resource);
   }
   return Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: 'active',
     expiresAtMs: record.expiresAtMs as number,
     resources: Object.freeze(resources),
@@ -307,42 +341,107 @@ function clientGrantIsActive(grant: Readonly<ClientGrantView>, nowMs: number): b
   return grant.expiresAtMs === null || grant.expiresAtMs > nowMs;
 }
 
+export function parseClientLaunchEnvelope(
+  value: unknown,
+  realm: ClientAccessRealm,
+  nowMs: number,
+): Readonly<ClientLaunchEnvelope> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    (realm !== 'production_client' && realm !== 'review_sandbox')
+    || !Number.isSafeInteger(nowMs)
+    || nowMs < 0
+    || Object.is(nowMs, -0)
+  ) return null;
+
+  if (realm === 'review_sandbox') {
+    if (!hasExactKeys(record, ['expiresAtMs', 'launchUrl', 'method', 'nonce'])) return null;
+    if (
+      record.launchUrl !== APP_REVIEW_LAUNCH_URL
+      || record.method !== 'POST'
+      || !isCurrentLaunchExpiry(record.expiresAtMs, nowMs)
+      || typeof record.nonce !== 'string'
+      || !/^[A-Za-z0-9_-]{32}$/u.test(record.nonce)
+    ) return null;
+    return Object.freeze({
+      expiresAtMs: record.expiresAtMs as number,
+      launchUrl: APP_REVIEW_LAUNCH_URL,
+      method: 'POST',
+      nonce: record.nonce,
+    });
+  }
+
+  if (record.kind === 'external_https') {
+    if (!hasExactKeys(record, ['expiresAtMs', 'kind', 'url'])) return null;
+    if (!isCurrentLaunchExpiry(record.expiresAtMs, nowMs) || typeof record.url !== 'string') {
+      return null;
+    }
+    const destination = parseSafeExternalHttpsDestination(record.url);
+    if (!destination || destination.canonicalUrl !== record.url) return null;
+    return Object.freeze({
+      expiresAtMs: record.expiresAtMs as number,
+      kind: 'external_https',
+      url: destination.canonicalUrl,
+    });
+  }
+
+  if (!hasExactKeys(record, ['expiresAtMs', 'kind', 'launchUrl', 'method', 'nonce'])) {
+    return null;
+  }
+  if (
+    record.kind !== 'broker'
+    || record.launchUrl !== CLIENT_RESOURCE_LAUNCH_URL
+    || record.method !== 'POST'
+    || !isCurrentLaunchExpiry(record.expiresAtMs, nowMs)
+    || typeof record.nonce !== 'string'
+    || !/^[A-Za-z0-9_-]{32,256}$/u.test(record.nonce)
+  ) return null;
+  return Object.freeze({
+    expiresAtMs: record.expiresAtMs as number,
+    kind: 'broker',
+    launchUrl: CLIENT_RESOURCE_LAUNCH_URL,
+    method: 'POST',
+    nonce: record.nonce,
+  });
+}
+
+function isCurrentLaunchExpiry(value: unknown, nowMs: number): value is number {
+  return Number.isSafeInteger(value)
+    && (value as number) > nowMs
+    && (value as number) - nowMs <= 120_000;
+}
+
 function parseClientResourceLaunch(
   value: unknown,
   nowMs: number,
   realm: ClientAccessRealm,
 ): Readonly<ClientResourceLaunch> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const record = value as Record<string, unknown>;
-  if (!hasExactKeys(record, ['expiresAtMs', 'launchUrl', 'method', 'nonce'])) return null;
-  const noncePattern = realm === 'production_client'
-    ? /^[A-Za-z0-9_-]{32,256}$/u
-    : /^[A-Za-z0-9_-]{32}$/u;
-  if (
-    record.launchUrl !== (
-      realm === 'production_client' ? CLIENT_RESOURCE_LAUNCH_URL : APP_REVIEW_LAUNCH_URL
-    )
-    || record.method !== 'POST'
-    || !Number.isSafeInteger(record.expiresAtMs)
-    || (record.expiresAtMs as number) <= nowMs
-    || (record.expiresAtMs as number) > nowMs + 120_000
-    || typeof record.nonce !== 'string'
-    || !noncePattern.test(record.nonce)
-  ) return null;
-  const launchUrl = realm === 'production_client'
-    ? CLIENT_RESOURCE_LAUNCH_URL
-    : APP_REVIEW_LAUNCH_URL;
+  const envelope = parseClientLaunchEnvelope(value, realm, nowMs);
+  if (!envelope) return null;
+  if ('kind' in envelope && envelope.kind === 'external_https') {
+    const destination = parseSafeExternalHttpsDestination(envelope.url);
+    if (!destination || destination.canonicalUrl !== envelope.url) return null;
+    return Object.freeze({
+      kind: 'external_https',
+      realm: 'production_client',
+      expiresAtMs: envelope.expiresAtMs,
+      source: Object.freeze({ uri: destination.canonicalUrl }),
+      origin: destination.origin,
+    });
+  }
   return Object.freeze({
+    kind: 'broker',
     realm,
     source: Object.freeze({
-      uri: launchUrl,
+      uri: envelope.launchUrl,
       method: 'POST' as const,
-      body: `nonce=${encodeURIComponent(record.nonce)}`,
+      body: `nonce=${encodeURIComponent(envelope.nonce)}`,
       headers: Object.freeze({
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' as const,
       }),
     }),
-    expiresAtMs: record.expiresAtMs as number,
+    expiresAtMs: envelope.expiresAtMs,
   });
 }
 

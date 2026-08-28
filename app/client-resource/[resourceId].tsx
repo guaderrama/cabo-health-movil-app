@@ -17,6 +17,7 @@ import {
   getClientResourceRouteExpiryDelay,
   normalizeClientResourceRouteParam,
   requestClientResourceRouteLaunch,
+  resolveClientResourceRouteAuthorizationTransition,
   resolveClientResourceRouteLaunchFailure,
   resolveClientResourceRouteResource,
 } from '../../features/clientAccess/clientResourceRoute';
@@ -122,50 +123,32 @@ export default function ClientResourceRoute() {
   }, [attempt, createLaunch, refresh, resourceId, router]);
 
   useEffect(() => {
-    const revalidating = status === 'checking'
-      || status === 'redeeming'
-      || deletionTracking.kind === 'checking';
-    if (
-      routeFlowStarted.current
-      && !launchAttemptPending.current
-      && revalidating
-    ) {
+    const transition = resolveClientResourceRouteAuthorizationTransition({
+      activeLaunch,
+      deletionTrackingKind: deletionTracking.kind,
+      launchAttemptPending: launchAttemptPending.current,
+      resourceAvailable: resource !== null,
+      resumeAfterRevalidation: resumeAfterRevalidation.current,
+      routeFlowStarted: routeFlowStarted.current,
+      status,
+    });
+    if (transition.action === 'wait-for-revalidation') {
       operationGeneration.current += 1;
-      setActiveLaunch(null);
+      setActiveLaunch(transition.activeLaunch);
       setPhase('loading');
       resumeAfterRevalidation.current = true;
       return;
     }
-
-    const deletionSuspended = deletionTracking.kind !== 'none'
-      && deletionTracking.kind !== 'checking';
-    const accessLost = status === 'locked'
-      || status === 'error'
-      || (status === 'unlocked' && resource === null);
-    if (
-      routeFlowStarted.current
-      && (
-        deletionSuspended
-        || (!launchAttemptPending.current && accessLost)
-      )
-    ) {
+    if (transition.action === 'return-home') {
       operationGeneration.current += 1;
       resumeAfterRevalidation.current = false;
       routeFlowStarted.current = false;
       launchAttemptPending.current = false;
-      setActiveLaunch(null);
+      setActiveLaunch(transition.activeLaunch);
       router.replace('/(main)');
       return;
     }
-
-    if (
-      status === 'unlocked'
-      && deletionTracking.kind === 'none'
-      && resource !== null
-      && activeLaunch === null
-      && resumeAfterRevalidation.current
-      && !launchAttemptPending.current
-    ) {
+    if (transition.action === 'resume-launch') {
       resumeAfterRevalidation.current = false;
       setAttempt((value) => value + 1);
     }

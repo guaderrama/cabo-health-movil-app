@@ -14,13 +14,19 @@ import type {
   ShouldStartLoadRequest,
   WebViewErrorEvent,
   WebViewHttpErrorEvent,
+  WebViewOpenWindowEvent,
 } from 'react-native-webview/lib/WebViewTypes';
 import { useTheme, useTranslations } from '../../hooks';
 import type { ClientResourceLaunch } from './clientAccessController';
 import {
   classifyClientResourceNavigation,
+  getExternalClientResourceWebViewPolicyProps,
   getClientResourceWebViewPolicyProps,
 } from './clientResourceNavigation';
+import {
+  classifyExternalHttpsNavigation,
+  handleExternalPopup,
+} from '../launch/externalHttpsNavigationPolicy';
 
 export function ClientResourceWebView({
   launch,
@@ -43,12 +49,29 @@ export function ClientResourceWebView({
   }, [t]);
 
   const handleNavigationRequest = useCallback((request: ShouldStartLoadRequest) => {
+    if (launch.kind === 'external_https') {
+      const decision = classifyExternalHttpsNavigation(request.url, launch.origin);
+      if (decision.decision === 'allow') return true;
+      setLoading(false);
+      setErrorMessage(t('clientAccess.navigationBlocked'));
+      return false;
+    }
     const decision = classifyClientResourceNavigation(request.url, launch.realm);
     if (decision.decision === 'allow') return true;
     setLoading(false);
     setErrorMessage(t('clientAccess.navigationBlocked'));
     return false;
-  }, [launch.realm, t]);
+  }, [launch, t]);
+
+  const handleOpenWindow = useCallback((event: WebViewOpenWindowEvent) => {
+    if (launch.kind !== 'external_https') return;
+    handleExternalPopup(event.nativeEvent.targetUrl, {
+      showError: () => {
+        setLoading(false);
+        setErrorMessage(t('clientAccess.navigationBlocked'));
+      },
+    });
+  }, [launch.kind, t]);
 
   const handleLoadError = useCallback((_event: WebViewErrorEvent) => {
     showUnavailable();
@@ -58,10 +81,18 @@ export function ClientResourceWebView({
     if (event.nativeEvent.statusCode >= 400) showUnavailable();
   }, [showUnavailable]);
 
-  const policyProps = getClientResourceWebViewPolicyProps(
-    launch.source,
-    handleNavigationRequest,
-  );
+  const commonWebViewProps = {
+    cacheEnabled: false,
+    incognito: true,
+    onError: handleLoadError,
+    onHttpError: handleHttpError,
+    onLoadEnd: () => setLoading(false),
+    onLoadStart: () => {
+      setLoading(true);
+      setErrorMessage(null);
+    },
+    style: styles.webview,
+  } as const;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -91,19 +122,24 @@ export function ClientResourceWebView({
       </View>
 
       <View style={styles.content}>
-        <WebView
-          cacheEnabled={false}
-          incognito
-          onError={handleLoadError}
-          onHttpError={handleHttpError}
-          onLoadEnd={() => setLoading(false)}
-          onLoadStart={() => {
-            setLoading(true);
-            setErrorMessage(null);
-          }}
-          style={styles.webview}
-          {...policyProps}
-        />
+        {launch.kind === 'external_https' ? (
+          <WebView
+            {...commonWebViewProps}
+            {...getExternalClientResourceWebViewPolicyProps(
+              launch,
+              handleNavigationRequest,
+              handleOpenWindow,
+            )}
+          />
+        ) : (
+          <WebView
+            {...commonWebViewProps}
+            {...getClientResourceWebViewPolicyProps(
+              launch.source,
+              handleNavigationRequest,
+            )}
+          />
+        )}
 
         {loading && !errorMessage && (
           <View style={[styles.loading, { backgroundColor: colors.background }]}>

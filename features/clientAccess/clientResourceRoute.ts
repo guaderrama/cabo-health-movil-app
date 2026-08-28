@@ -61,6 +61,54 @@ export type ClientResourceRouteLaunchFailureAction =
   | 'return-home'
   | 'show-unavailable';
 
+export type ClientResourceRouteAuthorizationTransition = Readonly<{
+  action: 'none' | 'wait-for-revalidation' | 'return-home' | 'resume-launch';
+  activeLaunch: Readonly<ClientResourceLaunch> | null;
+}>;
+
+export function resolveClientResourceRouteAuthorizationTransition({
+  activeLaunch,
+  deletionTrackingKind,
+  launchAttemptPending,
+  resourceAvailable,
+  resumeAfterRevalidation,
+  routeFlowStarted,
+  status,
+}: Readonly<{
+  activeLaunch: Readonly<ClientResourceLaunch> | null;
+  deletionTrackingKind: 'none' | 'checking' | 'pending' | 'completed' | 'unavailable';
+  launchAttemptPending: boolean;
+  resourceAvailable: boolean;
+  resumeAfterRevalidation: boolean;
+  routeFlowStarted: boolean;
+  status: ClientAccessStatus;
+}>): ClientResourceRouteAuthorizationTransition {
+  if (!routeFlowStarted) return Object.freeze({ action: 'none', activeLaunch });
+  const revalidating = status === 'checking'
+    || status === 'redeeming'
+    || deletionTrackingKind === 'checking';
+  if (!launchAttemptPending && revalidating) {
+    return Object.freeze({ action: 'wait-for-revalidation', activeLaunch: null });
+  }
+  const deletionSuspended = deletionTrackingKind !== 'none'
+    && deletionTrackingKind !== 'checking';
+  const accessLost = status === 'locked'
+    || status === 'error'
+    || (status === 'unlocked' && !resourceAvailable);
+  if (deletionSuspended || (!launchAttemptPending && accessLost)) {
+    return Object.freeze({ action: 'return-home', activeLaunch: null });
+  }
+  if (
+    status === 'unlocked'
+    && deletionTrackingKind === 'none'
+    && resourceAvailable
+    && activeLaunch === null
+    && resumeAfterRevalidation
+    && !launchAttemptPending
+  ) return Object.freeze({ action: 'resume-launch', activeLaunch: null });
+  return Object.freeze({ action: 'none', activeLaunch });
+}
+
 export function resolveClientResourceRouteLaunchFailure({
   automaticRetryUsed,
   deletionTrackingKind,

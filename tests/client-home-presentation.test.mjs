@@ -24,10 +24,24 @@ const resource = (overrides = {}) => ({
 });
 
 const grant = (resources) => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: 'active',
   expiresAtMs: 1_900_000_000_000,
   resources,
+});
+
+test('external VIP cards carry only URL-free grant and preview metadata', () => {
+  const externalId = 'external-0123456789abcdef0123456789abcdef';
+  const cards = buildClientHomeCards([
+    preview({ id: externalId }),
+  ], {
+    status: 'unlocked',
+    grant: grant([resource({ id: externalId })]),
+  });
+
+  assert.equal(cards[0].id, externalId);
+  assert.equal(cards[0].locked, false);
+  assert.equal(JSON.stringify(cards).includes('https://www.eightsleep.com/mx/'), false);
 });
 
 test('locked previews normalize es-MX copy and every catalog icon to existing card icons', () => {

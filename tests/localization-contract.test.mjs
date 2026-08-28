@@ -86,6 +86,28 @@ test('catalog copy stays truthful for a dynamic catalog and external resources',
   assert.equal(MESSAGES['es-MX']['catalog.thirdPartyNetwork'], 'Al abrirlo se contacta un sitio web de terceros');
 });
 
+test('client launch failures use truthful generic copy for broker and external resources', () => {
+  assert.equal(
+    MESSAGES.en['clientAccess.launchUnavailable'],
+    'This resource is unavailable right now. Return to your resources and try again.',
+  );
+  assert.equal(
+    MESSAGES['es-MX']['clientAccess.launchUnavailable'],
+    'Este recurso no está disponible en este momento. Regresa a tus recursos e inténtalo de nuevo.',
+  );
+  assert.equal(
+    MESSAGES.en['clientAccess.navigationBlocked'],
+    'This resource tried to open an unsupported page, so CaboHealth blocked the navigation.',
+  );
+  assert.equal(
+    MESSAGES['es-MX']['clientAccess.navigationBlocked'],
+    'Este recurso intentó abrir una página no compatible, por lo que CaboHealth bloqueó la navegación.',
+  );
+  assert.equal(MESSAGES.en['clientAccess.navigationBlocked'].includes('protected CaboHealth client area'), false);
+  assert.equal(MESSAGES['es-MX']['clientAccess.navigationBlocked'].includes('área protegida'), false);
+  assert.equal(JSON.stringify(MESSAGES).includes('https://www.eightsleep.com/mx/'), false);
+});
+
 test('account deletion acknowledgements are explicit and localized for App Review', () => {
   assert.equal(
     MESSAGES.en['clientAccess.deleteReviewAccount'],

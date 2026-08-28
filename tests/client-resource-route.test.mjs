@@ -6,6 +6,7 @@ import {
   getClientResourceRouteExpiryDelay,
   normalizeClientResourceRouteParam,
   requestClientResourceRouteLaunch,
+  resolveClientResourceRouteAuthorizationTransition,
   resolveClientResourceRouteResource,
   resolveClientResourceRouteLaunchFailure,
 } from '../.test-build/features/clientAccess/clientResourceRoute.js';
@@ -21,11 +22,12 @@ const resource = Object.freeze({
 const grant = Object.freeze({
   expiresAtMs: 1_900_000_000_000,
   resources: Object.freeze([resource]),
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: 'active',
 });
 
 const launch = Object.freeze({
+  kind: 'broker',
   expiresAtMs: 1_900_000_000_000,
   realm: 'production_client',
   source: Object.freeze({
@@ -36,6 +38,14 @@ const launch = Object.freeze({
     method: 'POST',
     uri: 'https://cabohealth.org/apps/client-resources/launch/',
   }),
+});
+
+const externalLaunch = Object.freeze({
+  expiresAtMs: 1_900_000_000_000,
+  kind: 'external_https',
+  origin: 'https://www.eightsleep.com',
+  realm: 'production_client',
+  source: Object.freeze({ uri: 'https://www.eightsleep.com/mx/' }),
 });
 
 test('the internal route serializes only the exact resource id', () => {
@@ -173,6 +183,47 @@ test('leaving while the nonce is in flight discards the late launch', async () =
   assert.equal(await pending, null);
 });
 
+test('a late external launch is discarded after the route generation changes', async () => {
+  let current = true;
+  let finishLaunch;
+  const deferredLaunch = new Promise((resolve) => { finishLaunch = resolve; });
+  const pending = requestClientResourceRouteLaunch({
+    resourceId: 'external-0123456789abcdef0123456789abcdef',
+    refresh: async () => {},
+    createLaunch: async () => deferredLaunch,
+    isCurrent: () => current,
+  });
+
+  await Promise.resolve();
+  current = false;
+  finishLaunch(externalLaunch);
+
+  assert.equal(await pending, null);
+});
+
+test('VIP destination never enters the URL-free route or grant state', () => {
+  const route = buildClientResourceRoute('external-0123456789abcdef0123456789abcdef');
+  const externalResourceGrant = {
+    ...grant,
+    resources: [{
+      ...resource,
+      id: 'external-0123456789abcdef0123456789abcdef',
+    }],
+  };
+
+  assert.equal(JSON.stringify(route).includes('https://www.eightsleep.com/mx/'), false);
+  assert.equal(JSON.stringify(externalResourceGrant).includes('https://www.eightsleep.com/mx/'), false);
+  assert.equal(
+    resolveClientResourceRouteResource(
+      'external-0123456789abcdef0123456789abcdef',
+      'unlocked',
+      externalResourceGrant,
+      1_899_999_999_999,
+    )?.id,
+    'external-0123456789abcdef0123456789abcdef',
+  );
+});
+
 test('an overlapped foreground refresh resumes once, while true access loss returns home', () => {
   assert.equal(resolveClientResourceRouteLaunchFailure({
     automaticRetryUsed: false,
@@ -203,5 +254,35 @@ test('an overlapped foreground refresh resumes once, while true access loss retu
       automaticRetryUsed: false,
       ...accessLoss,
     }), 'return-home');
+  }
+});
+
+test('every revalidation and authorization-loss transition destroys an external VIP launch source', () => {
+  const scenarios = [
+    ['foreground checking', { status: 'checking' }],
+    ['resource removed', { resourceAvailable: false }],
+    ['item deactivated', { resourceAvailable: false }],
+    ['grant revoked', { status: 'locked', resourceAvailable: false }],
+    ['code replaced', { status: 'redeeming' }],
+    ['account deleted', { deletionTrackingKind: 'pending' }],
+    ['access error', { status: 'error', resourceAvailable: false }],
+    ['grant expired', { resourceAvailable: false }],
+  ];
+
+  for (const [label, overrides] of scenarios) {
+    const transition = resolveClientResourceRouteAuthorizationTransition({
+      activeLaunch: externalLaunch,
+      deletionTrackingKind: 'none',
+      launchAttemptPending: false,
+      resourceAvailable: true,
+      resumeAfterRevalidation: false,
+      routeFlowStarted: true,
+      status: 'unlocked',
+      ...overrides,
+    });
+
+    assert.equal(transition.activeLaunch, null, label);
+    assert.equal(JSON.stringify(transition).includes('https://www.eightsleep.com/mx/'), false, label);
+    assert.notEqual(transition.action, 'none', label);
   }
 });

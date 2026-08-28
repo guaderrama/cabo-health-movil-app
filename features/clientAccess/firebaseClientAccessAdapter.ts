@@ -1,9 +1,7 @@
 import {
-  APP_REVIEW_LAUNCH_URL,
   APP_REVIEW_RESOURCE_ID,
   ClientAccessSessionInvalidatedError,
   clientGrantRealm,
-  CLIENT_RESOURCE_LAUNCH_URL,
   createOpaqueClientSession,
   type ClientAccessGateway,
   type ClientAccessRealm,
@@ -13,6 +11,7 @@ import {
   type ClientSessionStore,
   normalizeClientAccessCredential,
   type OpaqueClientSession,
+  parseClientLaunchEnvelope,
   parseClientGrantView,
 } from './clientAccessController';
 import {
@@ -319,7 +318,7 @@ export function createFirebaseClientAccessAdapter({
       let response: unknown;
       try {
         response = credential.realm === 'production_client'
-          ? await functions.call('redeemClientAccessCode', {
+          ? await functions.call('redeemClientAccessCodeV2', {
             code: credential.canonical,
             installationId,
             requestId,
@@ -360,7 +359,7 @@ export function createFirebaseClientAccessAdapter({
       try {
         response = await functions.call(
           principal.realm === 'production_client'
-            ? 'refreshClientAccess'
+            ? 'refreshClientAccessV2'
             : 'refreshAppReviewAccess', {
           installationId: await getInstallationId(),
         });
@@ -382,9 +381,9 @@ export function createFirebaseClientAccessAdapter({
         throw new Error('invalid_review_resource');
       }
       const response = principal.realm === 'production_client'
-        ? await functions.call('createClientLaunch', { installationId, resourceId })
+        ? await functions.call('createClientLaunchV2', { installationId, resourceId })
         : await functions.call('createAppReviewLaunch', { installationId });
-      const launch = parseLaunchEnvelope(response, principal.realm, now());
+      const launch = parseClientLaunchEnvelope(response, principal.realm, now());
       if (!launch) return failAndSignOut();
       return launch;
     },
@@ -470,40 +469,6 @@ function realmForUid(uid: string): ClientAccessRealm | null {
   if (CLIENT_UID_PATTERN.test(uid)) return 'production_client';
   if (REVIEW_UID_PATTERN.test(uid)) return 'review_sandbox';
   return null;
-}
-
-function parseLaunchEnvelope(
-  value: unknown,
-  realm: ClientAccessRealm,
-  nowMs: number,
-): Readonly<{
-  expiresAtMs: number;
-  launchUrl: typeof CLIENT_RESOURCE_LAUNCH_URL | typeof APP_REVIEW_LAUNCH_URL;
-  method: 'POST';
-  nonce: string;
-}> | null {
-  if (!hasExactKeys(value, ['expiresAtMs', 'launchUrl', 'method', 'nonce'])) return null;
-  const expectedUrl = realm === 'production_client'
-    ? CLIENT_RESOURCE_LAUNCH_URL
-    : APP_REVIEW_LAUNCH_URL;
-  const noncePattern = realm === 'production_client'
-    ? /^[A-Za-z0-9_-]{32,256}$/u
-    : /^[A-Za-z0-9_-]{32}$/u;
-  if (
-    value.launchUrl !== expectedUrl
-    || value.method !== 'POST'
-    || !Number.isSafeInteger(value.expiresAtMs)
-    || (value.expiresAtMs as number) <= nowMs
-    || (value.expiresAtMs as number) > nowMs + 120_000
-    || typeof value.nonce !== 'string'
-    || !noncePattern.test(value.nonce)
-  ) return null;
-  return Object.freeze({
-    expiresAtMs: value.expiresAtMs as number,
-    launchUrl: expectedUrl,
-    method: 'POST',
-    nonce: value.nonce,
-  });
 }
 
 function parseRedeemEnvelope(value: unknown): Readonly<{

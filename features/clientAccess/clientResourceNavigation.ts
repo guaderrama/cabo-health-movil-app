@@ -1,8 +1,10 @@
 import {
   APP_REVIEW_LAUNCH_URL,
+  type BrokerPostSource,
   type ClientAccessRealm,
   type ClientResourceLaunch,
 } from './clientAccessController';
+import { getExternalHttpsWebViewPolicyProps } from '../launch/externalHttpsNavigationPolicy';
 import { RESTRICTED_WEBVIEW_SECURITY_PROPS } from '../launch/restrictedWebViewBehavior';
 
 const CLIENT_RESOURCE_PATH_PREFIX = '/apps/client-resources/';
@@ -71,7 +73,7 @@ export function classifyClientResourceNavigation(
 }
 
 export function getClientResourceWebViewPolicyProps<ShouldStart>(
-  source: Readonly<ClientResourceLaunch['source']>,
+  source: BrokerPostSource,
   onShouldStartLoadWithRequest: ShouldStart,
 ) {
   const isFixedReviewPage = source.uri === APP_REVIEW_LAUNCH_URL;
@@ -84,6 +86,20 @@ export function getClientResourceWebViewPolicyProps<ShouldStart>(
     onShouldStartLoadWithRequest,
     onOpenWindow: () => {},
   };
+}
+
+export function getExternalClientResourceWebViewPolicyProps<ShouldStart, OpenWindow>(
+  launch: Extract<ClientResourceLaunch, { kind: 'external_https' }>,
+  onShouldStartLoadWithRequest: ShouldStart,
+  onOpenWindow: OpenWindow,
+) {
+  return getExternalHttpsWebViewPolicyProps({
+    canonicalUrl: launch.source.uri,
+    origin: launch.origin,
+  }, {
+    onShouldStartLoadWithRequest,
+    onOpenWindow,
+  });
 }
 
 function block(

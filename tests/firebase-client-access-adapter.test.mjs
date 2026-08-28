@@ -12,7 +12,7 @@ import {
 } from '../.test-build/features/clientAccess/clientAccessController.js';
 
 const ACTIVE_GRANT = Object.freeze({
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: 'active',
   expiresAtMs: 2_000_000_000_000,
   resources: Object.freeze([Object.freeze({
@@ -86,16 +86,17 @@ function makeHarness({
   };
   let callImpl = async (name, data) => {
       calls.push(['call', name, data]);
-      if (name === 'redeemClientAccessCode') {
+      if (name === 'redeemClientAccessCodeV2') {
         return { customToken: 'firebase-custom-token', grant: ACTIVE_GRANT };
       }
-      if (name === 'refreshClientAccess') return { grant: ACTIVE_GRANT };
+      if (name === 'refreshClientAccessV2') return { grant: ACTIVE_GRANT };
       if (name === 'redeemAppReviewCredential') {
         return { customToken: 'firebase-review-custom-token', grant: REVIEW_GRANT };
       }
       if (name === 'refreshAppReviewAccess') return { grant: REVIEW_GRANT };
-      if (name === 'createClientLaunch') {
+      if (name === 'createClientLaunchV2') {
         return {
+          kind: 'broker',
           expiresAtMs: 1_900_000_060_000,
           launchUrl: 'https://cabohealth.org/apps/client-resources/launch/',
           method: 'POST',
@@ -177,7 +178,7 @@ test('redeem sends the code once, signs in, and exposes only an opaque session p
   assert.deepEqual(result.grant, ACTIVE_GRANT);
   assert.deepEqual(Object.keys(result.session), []);
   assert.deepEqual(calls, [
-    ['call', 'redeemClientAccessCode', {
+    ['call', 'redeemClientAccessCodeV2', {
       code,
       installationId: 'installation_abcdefghijklmnopqrstuvwxyz123456',
       requestId: 'request_abcdefghijklmnop',
@@ -390,7 +391,7 @@ test('a rotated or revoked review grant signs out and returns locked refresh sem
 test('refresh fails closed when either backend crosses the authenticated realm', async () => {
   for (const [currentUid, crossedGrant, expectedCallable] of [
     ['review_abcdefghijklmnopqrstuvwxyz123456', ACTIVE_GRANT, 'refreshAppReviewAccess'],
-    ['client_abcdefghijklmnopqrstuvwxyz123456', REVIEW_GRANT, 'refreshClientAccess'],
+    ['client_abcdefghijklmnopqrstuvwxyz123456', REVIEW_GRANT, 'refreshClientAccessV2'],
   ]) {
     const harness = makeHarness({ currentUid });
     harness.replaceCall(async (name, data) => {
@@ -420,10 +421,10 @@ test('refresh and launch use only the live Firebase principal and installation i
   assert.equal(launch.launchUrl, 'https://cabohealth.org/apps/client-resources/launch/');
   assert.equal(launch.method, 'POST');
   assert.deepEqual(calls, [
-    ['call', 'refreshClientAccess', {
+    ['call', 'refreshClientAccessV2', {
       installationId: 'installation_abcdefghijklmnopqrstuvwxyz123456',
     }],
-    ['call', 'createClientLaunch', {
+    ['call', 'createClientLaunchV2', {
       installationId: 'installation_abcdefghijklmnopqrstuvwxyz123456',
       resourceId: 'client-resources',
     }],
@@ -461,6 +462,99 @@ test('review launch has no caller-selected resource and never calls the producti
   assert.equal(calls.some((entry) => entry.includes('createClientLaunch')), false);
 });
 
+test('production uses only V2 callables and sends no URL to launch', async () => {
+  const { adapter, calls } = makeHarness({
+    currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456',
+  });
+  const session = await adapter.sessionStore.restore();
+  assert.ok(session);
+
+  await adapter.gateway.refresh(session);
+  await adapter.gateway.createLaunch(session, 'external-0123456789abcdef0123456789abcdef');
+
+  assert.deepEqual(calls, [
+    ['call', 'refreshClientAccessV2', {
+      installationId: 'installation_abcdefghijklmnopqrstuvwxyz123456',
+    }],
+    ['call', 'createClientLaunchV2', {
+      installationId: 'installation_abcdefghijklmnopqrstuvwxyz123456',
+      resourceId: 'external-0123456789abcdef0123456789abcdef',
+    }],
+  ]);
+  assert.equal(JSON.stringify(calls).includes('https://'), false);
+  assert.equal(calls.some((entry) => entry.includes('refreshClientAccess')), false);
+  assert.equal(calls.some((entry) => entry.includes('createClientLaunch')), false);
+});
+
+test('production accepts the exact external launch branch and rejects malformed or unsafe variants', async () => {
+  const valid = {
+    kind: 'external_https',
+    expiresAtMs: 1_900_000_060_000,
+    url: 'https://www.eightsleep.com/mx/',
+  };
+  const invalid = [
+    { ...valid, extra: true },
+    { ...valid, nonce: 'forbidden' },
+    { ...valid, url: 'http://www.eightsleep.com/mx/' },
+    { ...valid, url: 'https://WWW.eightsleep.com:443/mx/' },
+    { ...valid, expiresAtMs: 1_900_000_120_001 },
+    { ...valid, kind: 'unknown' },
+  ];
+
+  const accepted = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+  accepted.replaceCall(async (name, data) => {
+    accepted.calls.push(['call', name, data]);
+    return valid;
+  });
+  const acceptedSession = await accepted.adapter.sessionStore.restore();
+  assert.deepEqual(
+    await accepted.adapter.gateway.createLaunch(
+      acceptedSession,
+      'external-0123456789abcdef0123456789abcdef',
+    ),
+    valid,
+  );
+
+  for (const response of invalid) {
+    const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+    harness.replaceCall(async (name, data) => {
+      harness.calls.push(['call', name, data]);
+      return response;
+    });
+    const session = await harness.adapter.sessionStore.restore();
+    await assert.rejects(
+      harness.adapter.gateway.createLaunch(
+        session,
+        'external-0123456789abcdef0123456789abcdef',
+      ),
+      /invalid_backend_response/u,
+    );
+    assert.deepEqual(harness.calls.at(-1), ['signOut']);
+  }
+});
+
+test('App Review rejects the external launch union without changing its fixed V1 broker path', async () => {
+  const harness = makeHarness({
+    currentUid: 'review_abcdefghijklmnopqrstuvwxyz123456',
+  });
+  harness.replaceCall(async (name, data) => {
+    harness.calls.push(['call', name, data]);
+    return {
+      kind: 'external_https',
+      expiresAtMs: 1_900_000_060_000,
+      url: 'https://www.eightsleep.com/mx/',
+    };
+  });
+  const session = await harness.adapter.sessionStore.restore();
+
+  await assert.rejects(
+    harness.adapter.gateway.createLaunch(session, 'review-sandbox-app-review-sample-v1'),
+    /invalid_backend_response/u,
+  );
+  assert.equal(harness.calls[0][1], 'createAppReviewLaunch');
+  assert.deepEqual(harness.calls.at(-1), ['signOut']);
+});
+
 test('launch rejects a response URL from the other realm before a WebView can open', async () => {
   for (const [currentUid, resourceId, crossedUrl] of [
     [
@@ -478,6 +572,7 @@ test('launch rejects a response URL from the other realm before a WebView can op
     harness.replaceCall(async (name, data) => {
       harness.calls.push(['call', name, data]);
       return {
+        ...(currentUid.startsWith('client_') ? { kind: 'broker' } : {}),
         expiresAtMs: 1_900_000_060_000,
         launchUrl: crossedUrl,
         method: 'POST',
@@ -808,7 +903,7 @@ test('not-found cannot discard an ambiguous prepared receipt or restore the old 
   let offline = true;
   harness.replaceCall(async (name, data) => {
     harness.calls.push(['call', name, data]);
-    if (name === 'refreshClientAccess') return { grant: ACTIVE_GRANT };
+    if (name === 'refreshClientAccessV2') return { grant: ACTIVE_GRANT };
     if (name === 'deleteClientAccount' || offline) throw new Error('offline');
     const error = new Error('invalid_access');
     error.code = 'functions/not-found';

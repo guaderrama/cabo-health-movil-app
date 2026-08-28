@@ -39,18 +39,27 @@ test('every callable opts into limited-use App Check tokens for replay protectio
   const bridge = createReactNativeFirebaseBridge(modules);
   const port = bridge.functionsForRegion('us-central1');
 
-  await port.call('redeemClientAccessCode', { requestId: 'request_one_123456' });
-  await port.call('refreshClientAccess', { installationId: 'installation_12345678901234567890' });
+  await port.call('redeemClientAccessCodeV2', { requestId: 'request_one_123456' });
+  await port.call('refreshClientAccessV2', { installationId: 'installation_12345678901234567890' });
+  await port.call('createClientLaunchV2', {
+    installationId: 'installation_12345678901234567890',
+    resourceId: 'external-0123456789abcdef0123456789abcdef',
+  });
 
   assert.deepEqual(callableCreations, [
     {
       instance: { region: 'us-central1' },
-      name: 'redeemClientAccessCode',
+      name: 'redeemClientAccessCodeV2',
       options: { limitedUseAppCheckTokens: true },
     },
     {
       instance: { region: 'us-central1' },
-      name: 'refreshClientAccess',
+      name: 'refreshClientAccessV2',
+      options: { limitedUseAppCheckTokens: true },
+    },
+    {
+      instance: { region: 'us-central1' },
+      name: 'createClientLaunchV2',
       options: { limitedUseAppCheckTokens: true },
     },
   ]);

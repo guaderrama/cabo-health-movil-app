@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   classifyClientResourceNavigation,
+  getExternalClientResourceWebViewPolicyProps,
   getClientResourceWebViewPolicyProps,
 } from '../.test-build/features/clientAccess/clientResourceNavigation.js';
 
@@ -104,6 +105,37 @@ test('client launch policy uses POST and the shared app-bound WebView hardening'
   assert.equal(props.thirdPartyCookiesEnabled, false);
   assert.equal(props.allowFileAccess, false);
   assert.equal(props.mixedContentMode, 'never');
+  assert.equal('onMessage' in props, false);
+  assert.equal('injectedJavaScript' in props, false);
+});
+
+test('external VIP launch reuses the exact same-origin external security policy', () => {
+  const launch = {
+    kind: 'external_https',
+    realm: 'production_client',
+    expiresAtMs: 1_900_000_060_000,
+    source: { uri: 'https://www.eightsleep.com/mx/' },
+    origin: 'https://www.eightsleep.com',
+  };
+  const shouldStart = () => true;
+  const openWindow = () => false;
+  const props = getExternalClientResourceWebViewPolicyProps(
+    launch,
+    shouldStart,
+    openWindow,
+  );
+
+  assert.deepEqual(props.source, { uri: 'https://www.eightsleep.com/mx/' });
+  assert.deepEqual(props.originWhitelist, ['https://www.eightsleep.com']);
+  assert.equal(props.onShouldStartLoadWithRequest, shouldStart);
+  assert.equal(props.onOpenWindow, openWindow);
+  assert.equal(props.limitsNavigationsToAppBoundDomains, false);
+  assert.equal(props.sharedCookiesEnabled, false);
+  assert.equal(props.thirdPartyCookiesEnabled, false);
+  assert.equal(props.allowFileAccess, false);
+  assert.equal(props.mixedContentMode, 'never');
+  assert.equal(props.mediaCapturePermissionGrantType, 'deny');
+  assert.equal(props.geolocationEnabled, false);
   assert.equal('onMessage' in props, false);
   assert.equal('injectedJavaScript' in props, false);
 });
