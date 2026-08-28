@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createSecretKey } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
 import { AccessCodeInputError, AccessCodeIssuer } from '../../domain/accessCodeIssuer.js';
@@ -16,6 +17,7 @@ import { InMemoryDocumentDatabase } from '../support/inMemoryDocumentDatabase.js
 const nowMs = Date.UTC(2026, 7, 25);
 const installationId = 'dededededededededededededededede';
 const groupMarker = 'client-resources';
+const externalId = 'external-0123456789abcdef0123456789abcdef';
 const retiredCatalogIds = Object.freeze([
   'health-advisor',
   'ai-cosmetic-scan',
@@ -61,6 +63,124 @@ test('a group-marker code follows active client catalog changes on refresh and l
     invalidAccess,
   );
   await assert.rejects(fixture.launches.consume({ nonce: launch.nonce }), invalidAccess);
+});
+
+test('legacy grants filter external resources while V2 grants expose only URL-free metadata', async () => {
+  const internal = catalogItem(groupMarker, 'guide', 'Client Resources', 'Recursos para Clientes');
+  const external = catalogItem(
+    externalId,
+    'wellness',
+    'External VIP',
+    'VIP Externo',
+    'https://wellness.example.org/private/',
+  );
+  const database = new InMemoryDocumentDatabase({
+    '_private_catalog/current': catalogSnapshot([internal, external]),
+    [clientResourcePath(internal.id)]: clientResource(internal),
+    [clientResourcePath(external.id)]: clientResource(external),
+  });
+  const store = new FirestoreClientAccessStore(database);
+  const issued = await issuer(store).issue({
+    expiresAtMs: nowMs + 86_400_000,
+    resourceIds: [groupMarker],
+  });
+  const common = {
+    codeHasher: hasher('code'),
+    installationHasher: hasher('installation'),
+    nowMs: () => nowMs,
+    rateLimitHasher: hasher('rate-limit'),
+    store,
+    tokenIssuer: { createCustomToken: async () => 'test-token' },
+  };
+  const legacyDependencies = {
+    ...common,
+    resourceResolutionMode: 'legacy_cabohealth' as const,
+  };
+  const v2Dependencies = {
+    ...common,
+    resourceResolutionMode: 'v2_all' as const,
+  };
+  const legacyRedeemer = new ClientAccessRedeemer(legacyDependencies);
+  const v2Redeemer = new ClientAccessRedeemer(v2Dependencies);
+
+  const legacy = await legacyRedeemer.redeem(redemptionInput(issued.oneTimeCode));
+  const v2 = await v2Redeemer.redeem({
+    ...redemptionInput(issued.oneTimeCode),
+    requestId: 'dynamic-entitlements-request-02',
+  });
+
+  assert.deepEqual(legacy.grant.resources.map(({ id }) => id), [groupMarker]);
+  assert.equal(legacy.grant.schemaVersion, 1);
+  assert.deepEqual(v2.grant.resources.map(({ id }) => id), [groupMarker, externalId]);
+  assert.equal(v2.grant.schemaVersion, 2);
+  assert.equal(JSON.stringify(v2.grant).includes('https://'), false);
+});
+
+test('legacy filtering validates mismatched external identities before omitting them', async () => {
+  const internal = catalogItem(groupMarker, 'guide', 'Client Resources', 'Recursos para Clientes');
+  const external = catalogItem(
+    externalId,
+    'wellness',
+    'External VIP',
+    'VIP Externo',
+    'https://wellness.example.org/private/',
+  );
+  const database = new InMemoryDocumentDatabase({
+    '_private_catalog/current': catalogSnapshot([internal, external]),
+    [clientResourcePath(internal.id)]: clientResource(internal),
+    [clientResourcePath(external.id)]: clientResource(external),
+  });
+  const store = new FirestoreClientAccessStore(database);
+  const issued = await issuer(store).issue({
+    expiresAtMs: nowMs + 86_400_000,
+    resourceIds: [groupMarker],
+  });
+  await database.runTransaction(async (transaction) => {
+    transaction.set(clientResourcePath(external.id), {
+      ...clientResource(external),
+      title: { en: 'Mismatched external title', es: external.title['es-MX'] },
+    });
+  });
+  const dependencies = {
+    codeHasher: hasher('code'),
+    installationHasher: hasher('installation'),
+    nowMs: () => nowMs,
+    rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth' as const,
+    store,
+    tokenIssuer: { createCustomToken: async () => 'unreachable' },
+  };
+
+  await assert.rejects(
+    new ClientAccessRedeemer(dependencies).redeem(redemptionInput(issued.oneTimeCode)),
+    invalidAccess,
+  );
+});
+
+test('every client-resource resolution call site selects an explicit compatibility mode', async () => {
+  const source = await readFile('src/repositories/firestoreClientAccessStore.ts', 'utf8');
+  const calls = [...source.matchAll(/(?:resolveClientResources|readLiveSession)\([\s\S]*?\)/gu)]
+    .map(([call]) => call)
+    .filter((call) => !call.includes(': DocumentTransaction'));
+  assert.ok(calls.length >= 9);
+  assert.equal(calls.every((call) => (
+    call.includes("'legacy_cabohealth'")
+    || call.includes("'v2_all'")
+    || call.includes('command.resourceResolutionMode')
+    || /,\s*mode\s*\)$/u.test(call)
+  )), true, calls.join('\n---\n'));
+
+  assert.match(source, /createActiveCode[\s\S]*?resolveClientResources\([\s\S]*?'v2_all'[\s\S]*?\)/u);
+  assert.match(source, /createLaunch[\s\S]*?readLiveSession\([\s\S]*?'legacy_cabohealth'[\s\S]*?\)/u);
+  assert.match(source, /consumeLaunch[\s\S]*?resolveClientResources\([\s\S]*?'legacy_cabohealth'[\s\S]*?\)/u);
+  assert.match(source, /redeemLaunchForWeb[\s\S]*?resolveClientResources\([\s\S]*?'legacy_cabohealth'[\s\S]*?\)/u);
+  assert.match(source, /introspectWebSession[\s\S]*?resolveClientResources\([\s\S]*?'legacy_cabohealth'[\s\S]*?\)/u);
+
+  const indexSource = await readFile('src/index.ts', 'utf8');
+  assert.match(indexSource, /redeemClientAccessCode =[\s\S]*?redeemProductionClientAccess\(request, 'legacy_cabohealth'\)/u);
+  assert.match(indexSource, /redeemClientAccessCodeV2 =[\s\S]*?redeemProductionClientAccess\(request, 'v2_all'\)/u);
+  assert.match(indexSource, /refreshClientAccess =[\s\S]*?refreshProductionClientAccess\(request, 'legacy_cabohealth'\)/u);
+  assert.match(indexSource, /refreshClientAccessV2 =[\s\S]*?refreshProductionClientAccess\(request, 'v2_all'\)/u);
 });
 
 test('a group-marker code cannot grant a persisted permanently retired client catalog item', async () => {
@@ -400,7 +520,13 @@ function invalidAccess(error: unknown): boolean {
   return error instanceof ClientAccessPublicError && error.code === 'invalid_access';
 }
 
-function catalogItem(id: string, icon: string, en: string, esMx: string) {
+function catalogItem(
+  id: string,
+  icon: string,
+  en: string,
+  esMx: string,
+  url = `https://cabohealth.org/apps/${id}/`,
+) {
   return {
     access: 'clients',
     active: true,
@@ -411,7 +537,7 @@ function catalogItem(id: string, icon: string, en: string, esMx: string) {
     summary: { en: `${en} private summary.`, 'es-MX': `Resumen privado de ${esMx}.` },
     title: { en, 'es-MX': esMx },
     updatedAtMs: nowMs,
-    url: `https://cabohealth.org/apps/${id}/`,
+    url,
   } as const;
 }
 

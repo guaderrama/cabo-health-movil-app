@@ -6,7 +6,9 @@ import {
   type AccessCodeCreateRecord,
   type AccessCodeStore,
 } from '../../domain/accessCodeIssuer.js';
+import { clientResourcePath, FirestoreClientAccessStore } from '../../repositories/firestoreClientAccessStore.js';
 import { VersionedHmac } from '../../security/versionedHmac.js';
+import { InMemoryDocumentDatabase } from '../support/inMemoryDocumentDatabase.js';
 
 class AtomicMemoryStore implements AccessCodeStore {
   readonly records: AccessCodeCreateRecord[] = [];
@@ -55,4 +57,55 @@ test('the owner can issue an individual code for every chosen client even when r
   const storedPayload = JSON.stringify(store.records);
   assert.equal(oneTimeCodes.some((code) => storedPayload.includes(code)), false);
   assert.equal(storedPayload.includes('clientReference'), false);
+});
+
+test('new access codes may resolve active external VIP resources without storing a URL', async () => {
+  const nowMs = Date.UTC(2026, 7, 28);
+  const externalId = 'external-fedcba9876543210fedcba9876543210';
+  const external = {
+    access: 'clients',
+    active: true,
+    createdAtMs: nowMs,
+    icon: 'wellness',
+    id: externalId,
+    revision: 1,
+    summary: { en: 'External VIP summary.', 'es-MX': 'Resumen VIP externo.' },
+    title: { en: 'External VIP', 'es-MX': 'VIP Externo' },
+    updatedAtMs: nowMs,
+    url: 'https://wellness.example.org/private/',
+  } as const;
+  const database = new InMemoryDocumentDatabase({
+    '_private_catalog/current': {
+      items: [external], revision: 1, schemaVersion: 1, updatedAtMs: nowMs,
+    },
+    [clientResourcePath(externalId)]: {
+      access: 'client',
+      iconKey: 'heart-outline',
+      id: externalId,
+      schemaVersion: 1,
+      status: 'active',
+      summary: { en: external.summary.en, es: external.summary['es-MX'] },
+      title: { en: external.title.en, es: external.title['es-MX'] },
+    },
+  });
+  const store = new FirestoreClientAccessStore(database);
+  const issuer = new AccessCodeIssuer({
+    codeHasher: VersionedHmac.fromTestKeys({
+      currentVersion: '2026-08',
+      keys: { '2026-08': 'test-only-current-pepper-with-at-least-32-bytes' },
+    }),
+    nowMs: () => nowMs,
+    randomSource: () => Buffer.alloc(16, 77),
+    store,
+  });
+
+  const issued = await issuer.issue({
+    expiresAtMs: nowMs + 86_400_000,
+    resourceIds: [externalId],
+  });
+  const storedCodes = await database.listCollection('_private_access_codes');
+  const stored = storedCodes.find(({ id }) => id === issued.summary.codeId)?.value;
+  assert.ok(stored);
+  assert.equal(JSON.stringify(stored).includes('https://'), false);
+  assert.equal(JSON.stringify(stored).includes(external.url), false);
 });

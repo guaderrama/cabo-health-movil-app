@@ -53,7 +53,9 @@ test('every callable is wired to the correct iOS or staff-web App Check surface'
   ];
   const clientCallables = [
     'redeemClientAccessCode',
+    'redeemClientAccessCodeV2',
     'refreshClientAccess',
+    'refreshClientAccessV2',
     'removeClientAccess',
     'deleteClientAccount',
     'getClientAccountDeletionStatus',
@@ -80,5 +82,5 @@ test('every callable is wired to the correct iOS or staff-web App Check surface'
     ));
   }
   assert.equal(source.match(/assertStaffAppCheck\(request\)/gu)?.length, 16);
-  assert.equal(source.match(/assertClientAppCheck\(request\)/gu)?.length, 14);
+  assert.equal(source.match(/assertClientAppCheck\(request\)/gu)?.length, 16);
 });

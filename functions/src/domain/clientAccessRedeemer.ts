@@ -22,6 +22,16 @@ export interface ClientGrantView {
   readonly status: 'active';
 }
 
+export interface ClientGrantViewV2 {
+  readonly expiresAtMs: number;
+  readonly resources: readonly Readonly<ClientResourceView>[];
+  readonly schemaVersion: 2;
+  readonly status: 'active';
+}
+
+export type ClientResourceResolutionMode = 'legacy_cabohealth' | 'v2_all';
+export type VersionedClientGrantView = ClientGrantView | ClientGrantViewV2;
+
 export interface RedeemCommand {
   readonly codeLookups: readonly Readonly<HmacDigest>[];
   readonly currentCodeLookup: Readonly<HmacDigest>;
@@ -34,10 +44,11 @@ export interface RedeemCommand {
     maximumFailures: number;
   }>[];
   readonly requestIdHash: string;
+  readonly resourceResolutionMode: ClientResourceResolutionMode;
 }
 
 export type RedemptionResult =
-  | Readonly<{ kind: 'granted'; grant: Readonly<ClientGrantView>; subjectUid: string }>
+  | Readonly<{ kind: 'granted'; grant: Readonly<VersionedClientGrantView>; subjectUid: string }>
   | Readonly<{ kind: 'invalid' }>
   | Readonly<{ kind: 'rate_limited'; retryAfterSeconds: number }>;
 
@@ -66,6 +77,7 @@ export class ClientAccessRedeemer {
   readonly #installationHasher: VersionedHmac;
   readonly #nowMs: () => number;
   readonly #rateLimitHasher: VersionedHmac;
+  readonly #resourceResolutionMode: ClientResourceResolutionMode;
   readonly #store: RedemptionStore;
   readonly #tokenIssuer: CustomTokenIssuer;
 
@@ -74,6 +86,7 @@ export class ClientAccessRedeemer {
     readonly installationHasher: VersionedHmac;
     readonly nowMs?: () => number;
     readonly rateLimitHasher: VersionedHmac;
+    readonly resourceResolutionMode?: ClientResourceResolutionMode;
     readonly store: RedemptionStore;
     readonly tokenIssuer: CustomTokenIssuer;
   }) {
@@ -81,6 +94,7 @@ export class ClientAccessRedeemer {
     this.#installationHasher = dependencies.installationHasher;
     this.#nowMs = dependencies.nowMs ?? Date.now;
     this.#rateLimitHasher = dependencies.rateLimitHasher;
+    this.#resourceResolutionMode = dependencies.resourceResolutionMode ?? 'legacy_cabohealth';
     this.#store = dependencies.store;
     this.#tokenIssuer = dependencies.tokenIssuer;
   }
@@ -90,7 +104,7 @@ export class ClientAccessRedeemer {
     readonly installationId: string;
     readonly requestId: string;
     readonly sourceAddress: string;
-  }): Promise<Readonly<{ customToken: string; grant: Readonly<ClientGrantView> }>> {
+  }): Promise<Readonly<{ customToken: string; grant: Readonly<VersionedClientGrantView> }>> {
     const normalizedCode = normalizeAccessCode(input.code);
     if (
       !INSTALLATION_ID_PATTERN.test(input.installationId)
@@ -127,6 +141,7 @@ export class ClientAccessRedeemer {
         Object.freeze({ clearOnSuccess: true, lookupId: installationBucketId, maximumFailures: 5 }),
       ]),
       requestIdHash,
+      resourceResolutionMode: this.#resourceResolutionMode,
     }));
 
     if (result.kind === 'invalid') throw new ClientAccessPublicError('invalid_access');

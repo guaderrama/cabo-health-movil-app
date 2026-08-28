@@ -1,6 +1,7 @@
 import {
   ClientAccessPublicError,
-  type ClientGrantView,
+  type ClientResourceResolutionMode,
+  type VersionedClientGrantView,
 } from './clientAccessRedeemer.js';
 import { type HmacDigest, VersionedHmac } from '../security/versionedHmac.js';
 
@@ -11,12 +12,13 @@ export interface ClientSessionCommand {
   readonly currentInstallationHash: Readonly<HmacDigest>;
   readonly installationHashes: readonly Readonly<HmacDigest>[];
   readonly nowMs: number;
+  readonly resourceResolutionMode: ClientResourceResolutionMode;
   readonly subjectUid: string;
 }
 
 export interface ClientSessionStore {
   refreshSession(command: Readonly<ClientSessionCommand>): Promise<
-    Readonly<{ kind: 'active'; grant: Readonly<ClientGrantView> } | { kind: 'invalid' }>
+    Readonly<{ kind: 'active'; grant: Readonly<VersionedClientGrantView> } | { kind: 'invalid' }>
   >;
   removeSession(command: Readonly<ClientSessionCommand>): Promise<
     Readonly<{ kind: 'invalid' } | { kind: 'removed' }>
@@ -26,22 +28,25 @@ export interface ClientSessionStore {
 export class ClientSessionManager {
   readonly #installationHasher: VersionedHmac;
   readonly #nowMs: () => number;
+  readonly #resourceResolutionMode: ClientResourceResolutionMode;
   readonly #store: ClientSessionStore;
 
   constructor(dependencies: {
     readonly installationHasher: VersionedHmac;
     readonly nowMs?: () => number;
+    readonly resourceResolutionMode?: ClientResourceResolutionMode;
     readonly store: ClientSessionStore;
   }) {
     this.#installationHasher = dependencies.installationHasher;
     this.#nowMs = dependencies.nowMs ?? Date.now;
+    this.#resourceResolutionMode = dependencies.resourceResolutionMode ?? 'legacy_cabohealth';
     this.#store = dependencies.store;
   }
 
   async refresh(input: {
     readonly installationId: string;
     readonly subjectUid: string;
-  }): Promise<Readonly<ClientGrantView>> {
+  }): Promise<Readonly<VersionedClientGrantView>> {
     const result = await this.#store.refreshSession(this.#command(input));
     if (result.kind !== 'active') throw new ClientAccessPublicError('invalid_access');
     return result.grant;
@@ -69,6 +74,7 @@ export class ClientSessionManager {
       currentInstallationHash: installationHashes[0]!,
       installationHashes,
       nowMs: this.#nowMs(),
+      resourceResolutionMode: this.#resourceResolutionMode,
       subjectUid: input.subjectUid,
     });
   }

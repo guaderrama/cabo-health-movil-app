@@ -17,6 +17,7 @@ import {
 import {
   ClientAccessPublicError,
   ClientAccessRedeemer,
+  type ClientResourceResolutionMode,
 } from './domain/clientAccessRedeemer.js';
 import { AdminClientAccessRevocationService } from './domain/adminClientAccessRevocation.js';
 import { ClientAccessRemovalService } from './domain/clientAccessRemoval.js';
@@ -507,6 +508,21 @@ export const redeemClientAccessCode = onCall({
   secrets: [CODE_PEPPER_RING, INSTALLATION_PEPPER_RING, RATE_LIMIT_PEPPER_RING],
 }, async (request) => {
   assertClientAppCheck(request);
+  return redeemProductionClientAccess(request, 'legacy_cabohealth');
+});
+
+export const redeemClientAccessCodeV2 = onCall({
+  ...baseCallableOptions,
+  secrets: [CODE_PEPPER_RING, INSTALLATION_PEPPER_RING, RATE_LIMIT_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  return redeemProductionClientAccess(request, 'v2_all');
+});
+
+async function redeemProductionClientAccess(
+  request: CallableRequest<unknown>,
+  resourceResolutionMode: ClientResourceResolutionMode,
+) {
   const input = parseRedeemInput(request);
   const redeemer = new ClientAccessRedeemer({
     codeHasher: hasherFromSecret(CODE_PEPPER_RING, 'cabohealth/access-code/v1'),
@@ -518,6 +534,7 @@ export const redeemClientAccessCode = onCall({
       RATE_LIMIT_PEPPER_RING,
       'cabohealth/rate-limit/v1',
     ),
+    resourceResolutionMode,
     store: createStore(),
     tokenIssuer: {
       createCustomToken: (subjectUid) => getAuth().createCustomToken(subjectUid),
@@ -537,16 +554,31 @@ export const redeemClientAccessCode = onCall({
     }
     throw new HttpsError('internal', 'client_access_operation_failed');
   }
-});
+}
 
 export const refreshClientAccess = onCall({
   ...baseCallableOptions,
   secrets: [INSTALLATION_PEPPER_RING],
 }, async (request) => {
   assertClientAppCheck(request);
+  return refreshProductionClientAccess(request, 'legacy_cabohealth');
+});
+
+export const refreshClientAccessV2 = onCall({
+  ...baseCallableOptions,
+  secrets: [INSTALLATION_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  return refreshProductionClientAccess(request, 'v2_all');
+});
+
+async function refreshProductionClientAccess(
+  request: CallableRequest<unknown>,
+  resourceResolutionMode: ClientResourceResolutionMode,
+) {
   const subjectUid = assertClientAuth(request);
   try {
-    const grant = await createSessionManager().refresh({
+    const grant = await createSessionManager(resourceResolutionMode).refresh({
       installationId: parseInstallationId(request.data),
       subjectUid,
     });
@@ -554,7 +586,7 @@ export const refreshClientAccess = onCall({
   } catch (error) {
     throw mapClientAccessError(error);
   }
-});
+}
 
 export const removeClientAccess = onCall({
   ...baseCallableOptions,
@@ -874,6 +906,7 @@ function createCatalogService(): CatalogAdminService {
 }
 
 function createSessionManager(
+  resourceResolutionMode: ClientResourceResolutionMode,
   store: FirestoreClientAccessStore = createStore(),
 ): ClientSessionManager {
   return new ClientSessionManager({
@@ -881,6 +914,7 @@ function createSessionManager(
       INSTALLATION_PEPPER_RING,
       'cabohealth/installation/v1',
     ),
+    resourceResolutionMode,
     store,
   });
 }
@@ -897,7 +931,7 @@ function createClientAccessRemovalService(): ClientAccessRemovalService {
   const store = createStore();
   return new ClientAccessRemovalService({
     accountDeletion: createAccountDeletionService(store),
-    sessions: createSessionManager(store),
+    sessions: createSessionManager('legacy_cabohealth', store),
   });
 }
 

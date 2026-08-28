@@ -40,14 +40,16 @@ test('redeeming sends only digests to persistence and returns a token plus sanit
       return 'test-custom-token';
     },
   };
-  const redeemer = new ClientAccessRedeemer({
+  const dependencies = {
     codeHasher: testHasher('code'),
     installationHasher: testHasher('installation'),
     nowMs: () => Date.UTC(2026, 7, 21),
     rateLimitHasher: testHasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth' as const,
     store,
     tokenIssuer,
-  });
+  };
+  const redeemer = new ClientAccessRedeemer(dependencies);
 
   const result = await redeemer.redeem({
     code: 'CH-00112233-44556677-8899AABB-CCDDEEFF',
@@ -63,6 +65,11 @@ test('redeeming sends only digests to persistence and returns a token plus sanit
   assert.equal(persistencePayload.includes('3b8d6f01'), false);
   assert.equal(persistencePayload.includes('203.0.113.42'), false);
   assert.equal(persistencePayload.includes('83044b11'), false);
+  assert.equal(
+    (capturedCommand as RedeemCommand & { resourceResolutionMode?: string })
+      .resourceResolutionMode,
+    'legacy_cabohealth',
+  );
 });
 
 function testHasher(namespace: string): VersionedHmac {

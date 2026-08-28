@@ -5,11 +5,12 @@ import {
   type AccessCodeStore,
 } from '../domain/accessCodeIssuer.js';
 import {
-  type ClientGrantView,
   type ClientResourceView,
+  type ClientResourceResolutionMode,
   type RedeemCommand,
   type RedemptionResult,
   type RedemptionStore,
+  type VersionedClientGrantView,
 } from '../domain/clientAccessRedeemer.js';
 import {
   type ClientAccountDeletionCommand,
@@ -33,6 +34,11 @@ import {
   CATALOG_ID_PATTERN,
   isPermanentlyRetiredCatalogId,
 } from '../domain/catalogAdmin.js';
+import {
+  catalogIdentityMatches,
+  EXTERNAL_CATALOG_ID_PATTERN,
+  isLegacyCompatibleCatalogUrl,
+} from '../domain/catalogUrlPolicy.js';
 import { type WebSessionStore } from '../domain/webSessionBroker.js';
 import type { HmacDigest } from '../security/versionedHmac.js';
 
@@ -195,7 +201,7 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
     record: AccessCodeCreateRecord,
   ): Promise<'created' | 'collision' | 'invalid_resource'> {
     return this.#database.runTransaction(async (transaction) => {
-      const resources = await resolveClientResources(transaction, record.resourceIds);
+      const resources = await resolveClientResources(transaction, record.resourceIds, 'v2_all');
       if (resources === null) return 'invalid_resource';
       const lookupPath = `${ACCESS_CODE_LOOKUP_PREFIX}/${record.lookupId}`;
       const codePath = `${ACCESS_CODE_PREFIX}/${record.codeId}`;
@@ -355,10 +361,14 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
   }
 
   refreshSession(command: Readonly<ClientSessionCommand>): Promise<
-    Readonly<{ kind: 'active'; grant: Readonly<ClientGrantView> } | { kind: 'invalid' }>
+    Readonly<{ kind: 'active'; grant: Readonly<VersionedClientGrantView> } | { kind: 'invalid' }>
   > {
     return this.#database.runTransaction(async (transaction) => {
-      const session = await readLiveSession(transaction, command);
+      const session = await readLiveSession(
+        transaction,
+        command,
+        command.resourceResolutionMode,
+      );
       if (!session) return Object.freeze({ kind: 'invalid' as const });
       if (session.grant.installationLookupId !== command.currentInstallationHash.lookupId) {
         transaction.set(session.grantPath, Object.freeze({
@@ -395,7 +405,12 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
             : 'invalid' as const,
         });
       }
-      const session = await readLiveSession(transaction, command, false);
+      const session = await readLiveSession(
+        transaction,
+        command,
+        command.resourceResolutionMode,
+        false,
+      );
       if (!session) return Object.freeze({ kind: 'invalid' as const });
       transaction.create(deletionPath, Object.freeze({
         attempts: 0,
@@ -728,7 +743,7 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
 
   createLaunch(command: Readonly<CreateLaunchCommand>): Promise<'created' | 'invalid'> {
     return this.#database.runTransaction(async (transaction) => {
-      const session = await readLiveSession(transaction, command);
+      const session = await readLiveSession(transaction, command, 'legacy_cabohealth');
       if (!session || !session.view.resources.some(({ id }) => id === command.resourceId)) {
         return 'invalid';
       }
@@ -774,7 +789,7 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         await transaction.get(`${ACCESS_CODE_PREFIX}/${nonce.codeId}`),
       );
       const resources = grant
-        ? await resolveClientResources(transaction, grant.resourceIds)
+        ? await resolveClientResources(transaction, grant.resourceIds, 'legacy_cabohealth')
         : null;
       if (
         !grant
@@ -832,7 +847,7 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         await transaction.get(`${ACCESS_CODE_PREFIX}/${nonce.codeId}`),
       );
       const resources = grant
-        ? await resolveClientResources(transaction, grant.resourceIds)
+        ? await resolveClientResources(transaction, grant.resourceIds, 'legacy_cabohealth')
         : null;
       if (
         !grant
@@ -904,7 +919,7 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         await transaction.get(`${ACCESS_CODE_PREFIX}/${session.codeId}`),
       );
       const resources = grant
-        ? await resolveClientResources(transaction, grant.resourceIds)
+        ? await resolveClientResources(transaction, grant.resourceIds, 'legacy_cabohealth')
         : null;
       if (
         !grant
@@ -1021,7 +1036,11 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         return Object.freeze({ kind: 'invalid' as const });
       }
 
-      const resources = await resolveClientResources(transaction, storedCode.resourceIds);
+      const resources = await resolveClientResources(
+        transaction,
+        storedCode.resourceIds,
+        command.resourceResolutionMode,
+      );
       if (resources === null) {
         writeFailedAttempts(transaction, rateLimits, command.nowMs);
         return Object.freeze({ kind: 'invalid' as const });
@@ -1032,10 +1051,10 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
         storedCode.codeId,
         currentInstallationLookupId,
       );
-      const grant: Readonly<ClientGrantView> = Object.freeze({
+      const grant: Readonly<VersionedClientGrantView> = Object.freeze({
         expiresAtMs: storedCode.expiresAtMs,
         resources,
-        schemaVersion: 1,
+        schemaVersion: grantSchemaVersion(command.resourceResolutionMode),
         status: 'active',
       });
       const isIdempotentRetry = requestRecord !== null
@@ -1311,9 +1330,11 @@ interface StoredCatalogClientItem {
 async function resolveClientResources(
   transaction: DocumentTransaction,
   resourceIds: readonly string[],
+  mode: ClientResourceResolutionMode,
 ): Promise<readonly Readonly<ClientResourceView>[] | null> {
   const catalogValue = await transaction.get(CATALOG_PATH);
   if (catalogValue === undefined) {
+    if (resourceIds.some((resourceId) => EXTERNAL_CATALOG_ID_PATTERN.test(resourceId))) return null;
     return readSpecificClientResources(transaction, resourceIds);
   }
   const catalog = parseCatalogClientItems(catalogValue);
@@ -1341,7 +1362,15 @@ async function resolveClientResources(
     const catalogItem = activeById.get(resource.id);
     if (!catalogItem || !clientResourceMatchesCatalog(resource, catalogItem)) return null;
   }
-  return resources;
+  return mode === 'legacy_cabohealth'
+    ? Object.freeze(resources.filter((resource) => (
+      isLegacyCompatibleCatalogUrl(activeById.get(resource.id)!.url)
+    )))
+    : resources;
+}
+
+function grantSchemaVersion(mode: ClientResourceResolutionMode): 1 | 2 {
+  return mode === 'legacy_cabohealth' ? 1 : 2;
 }
 
 async function readSpecificClientResources(
@@ -1432,7 +1461,7 @@ function parseCatalogItem(value: unknown): Readonly<StoredCatalogClientItem> | n
     || !Number.isSafeInteger(value.revision)
     || (value.revision as number) < 1
     || typeof value.url !== 'string'
-    || value.url !== `https://cabohealth.org/apps/${value.id}/`
+    || !catalogIdentityMatches(value.id, value.url)
     || value.id === 'app-review'
     || value.id === 'shared'
     || (value.id === 'client-resources' && value.access !== 'clients')
@@ -1476,14 +1505,18 @@ function parseExactCatalogCopy(
 
 async function readLiveSession(
   transaction: DocumentTransaction,
-  command: Readonly<ClientSessionCommand>,
+  command: Readonly<Pick<
+    ClientSessionCommand,
+    'currentInstallationHash' | 'installationHashes' | 'nowMs' | 'subjectUid'
+  >>,
+  mode: ClientResourceResolutionMode,
   includeResources = true,
 ): Promise<Readonly<{
   code: Readonly<StoredAccessCode>;
   codePath: string;
   grant: Readonly<StoredClientGrant>;
   grantPath: string;
-  view: Readonly<ClientGrantView>;
+  view: Readonly<VersionedClientGrantView>;
 }> | null> {
   const grantPath = `${CLIENT_GRANT_PREFIX}/${command.subjectUid}`;
   const grant = parseStoredClientGrant(await transaction.get(grantPath));
@@ -1500,13 +1533,13 @@ async function readLiveSession(
   ) return null;
 
   const resources = includeResources
-    ? await resolveClientResources(transaction, grant.resourceIds)
+    ? await resolveClientResources(transaction, grant.resourceIds, mode)
     : [];
   if (resources === null) return null;
   const view = Object.freeze({
     expiresAtMs: grant.expiresAtMs,
     resources: Object.freeze(resources),
-    schemaVersion: 1 as const,
+    schemaVersion: grantSchemaVersion(mode),
     status: 'active' as const,
   });
   return Object.freeze({ code, codePath, grant, grantPath, view });
