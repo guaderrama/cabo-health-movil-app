@@ -79,6 +79,9 @@ export function getRestrictedWebViewSource(
     reduceMotion = false,
   }: Readonly<{ language?: 'en' | 'es-MX'; reduceMotion?: boolean }> = {},
 ) {
+  if (miniapp.destinationKind === 'external_https') {
+    throw new Error('External resources require the external miniapp route');
+  }
   const fragment = EMBEDDED_PRESENTATION_FRAGMENTS[`${language}:${reduceMotion ? 'reduced' : 'standard'}`];
   if (!fragment) throw new Error('Unsupported embedded miniapp presentation');
   return { uri: `${miniapp.canonicalUrl}${fragment}` };
@@ -104,6 +107,9 @@ export function getRestrictedSharePayload(
   miniapp: Readonly<CatalogPublicMiniapp>,
   title: string,
 ) {
+  if (miniapp.destinationKind === 'external_https') {
+    throw new Error('External resources require the external miniapp route');
+  }
   return {
     title,
     message: `${title}: ${miniapp.universalLink}`,

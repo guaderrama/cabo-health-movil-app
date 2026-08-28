@@ -3,12 +3,23 @@ import {
   isReservedReviewSandboxCatalogId,
 } from './catalogIdPolicy';
 
-export interface CatalogMiniapp {
-  slug: string;
-  title: { en: string };
-  summary: { en: string };
-  canonicalUrl: string;
-}
+export type CatalogMiniapp = Readonly<
+  | {
+      slug: string;
+      title: { en: string };
+      summary: { en: string };
+      destinationKind: 'cabohealth';
+      canonicalUrl: string;
+    }
+  | {
+      slug: string;
+      title: { en: string };
+      summary: { en: string };
+      destinationKind: 'external_https';
+      destinationUrl: string;
+      destinationOrigin: string;
+    }
+>;
 
 type FavoriteListener = () => void;
 
@@ -129,7 +140,10 @@ export function createPublicCatalogState(
     id: miniapp.slug,
     name: miniapp.title.en,
     description: miniapp.summary.en,
-    url: miniapp.canonicalUrl,
+    url: miniapp.destinationKind === 'cabohealth'
+      ? miniapp.canonicalUrl
+      : miniapp.destinationUrl,
+    destinationKind: miniapp.destinationKind,
     category: miniapp.slug === 'healthy-recipes' ? 'nutricion' : 'salud',
     order: index,
     isActive: true,

@@ -77,6 +77,15 @@ test('the folio action is explicit and localized', () => {
   assert.equal(MESSAGES['es-MX']['catalog.openResource'], 'Abrir recurso');
 });
 
+test('catalog copy stays truthful for a dynamic catalog and external resources', () => {
+  assert.equal(MESSAGES.en['catalog.subtitle'], 'Curated public resources, plus useful tools that work offline.');
+  assert.equal(MESSAGES['es-MX']['catalog.subtitle'], 'Recursos públicos seleccionados y herramientas útiles que funcionan sin conexión.');
+  assert.equal(MESSAGES.en['catalog.externalContent'], 'External web resource');
+  assert.equal(MESSAGES['es-MX']['catalog.externalContent'], 'Recurso web externo');
+  assert.equal(MESSAGES.en['catalog.thirdPartyNetwork'], 'Opening contacts a third-party website');
+  assert.equal(MESSAGES['es-MX']['catalog.thirdPartyNetwork'], 'Al abrirlo se contacta un sitio web de terceros');
+});
+
 test('account deletion acknowledgements are explicit and localized for App Review', () => {
   assert.equal(
     MESSAGES.en['clientAccess.deleteReviewAccount'],
@@ -155,6 +164,50 @@ test('catalog card accessibility narration includes every localized required fac
   assert.equal(label.includes('Información de salud y bienestar'), true);
   assert.equal(label.includes('registros técnicos de solicitudes'), true);
   assert.equal(label.includes('Sin permisos del dispositivo'), true);
+});
+
+test('external catalog narration and metadata identify the third-party hostname truthfully', () => {
+  const external = {
+    slug: 'external-0123456789abcdef0123456789abcdef',
+    title: { en: 'Sleep Resource', es: 'Recurso de sueño' },
+    summary: {
+      en: 'Third-party sleep information.',
+      es: 'Información de sueño de un tercero.',
+    },
+    destinationKind: 'external_https',
+    destinationUrl: 'https://www.eightsleep.com/mx/',
+    destinationOrigin: 'https://www.eightsleep.com',
+    access: 'public',
+    contentDescriptors: ['external-web-resource'],
+    appStoreAgeRating: null,
+    dataUse: ['third-party-network-request'],
+    permissions: [],
+    hasUserGeneratedContent: false,
+    hasPurchases: false,
+    editorialSource: { en: 'www.eightsleep.com', 'es-MX': 'www.eightsleep.com' },
+    reviewedOn: '2026-05-28',
+    contentVersion: '3',
+    legalUrls: PUBLIC_MINIAPPS[0].legalUrls,
+  };
+
+  assert.deepEqual(getEditorialMetadata(external), {
+    access: 'public',
+    contentDescriptor: 'external-web-resource',
+    dataUse: 'third-party-network-request',
+    permissions: [],
+    source: { en: 'www.eightsleep.com', 'es-MX': 'www.eightsleep.com' },
+    reviewedOn: '2026-05-28',
+  });
+  const label = buildCatalogCardAccessibilityLabel(
+    external,
+    'en',
+    (key) => translateMessage('en', key),
+  );
+  assert.match(label, /Source: www\.eightsleep\.com/u);
+  assert.match(label, /External web resource/u);
+  assert.match(label, /third-party website/u);
+  assert.equal(label.includes('CaboHealth editorial team'), false);
+  assert.equal(label.includes('Age rating'), false);
 });
 
 test('editorial dates and utility tab ancestry are deliberate for both locales', () => {

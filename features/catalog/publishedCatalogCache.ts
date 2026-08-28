@@ -3,7 +3,7 @@ import {
   type PublishedCatalogSnapshot,
 } from './publishedCatalog';
 
-export const PUBLISHED_CATALOG_CACHE_KEY = '@cabohealth_published_catalog_v1';
+export const PUBLISHED_CATALOG_CACHE_KEY = '@cabohealth_published_catalog_v3';
 
 export interface PublishedCatalogStorage {
   getItem(key: string): Promise<string | null>;

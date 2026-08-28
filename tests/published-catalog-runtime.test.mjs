@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -34,6 +36,7 @@ const publishedItem = (overrides = {}) => ({
     'es-MX': 'Cuidado Solar',
   },
   url: 'https://cabohealth.org/apps/sun-care/',
+  destinationKind: 'cabohealth',
   revision: 3,
   createdAtMs: 1_780_000_000_000,
   updatedAtMs: 1_780_000_100_000,
@@ -60,6 +63,19 @@ const publishedCatalog = (overrides = {}) => ({
   revision: 8,
   updatedAtMs: 1_780_000_100_000,
   items: [publishedItem()],
+  schemaVersion: 3,
+  ...overrides,
+});
+
+const externalPublishedItem = (overrides = {}) => publishedItem({
+  id: 'external-0123456789abcdef0123456789abcdef',
+  title: { en: 'Sleep Resource', 'es-MX': 'Recurso de sueño' },
+  summary: {
+    en: 'Third-party sleep information.',
+    'es-MX': 'Información de sueño de un tercero.',
+  },
+  url: 'https://www.eightsleep.com/mx/',
+  destinationKind: 'external_https',
   ...overrides,
 });
 
@@ -83,8 +99,9 @@ test('a strict published response becomes an immutable public and client-preview
   ]);
 });
 
-test('the legacy response without clientPreviews is rejected instead of cached as complete', async () => {
+test('the legacy V2 response is rejected instead of cached as V3', async () => {
   const legacyResponse = {
+    clientPreviews: [clientPreview()],
     revision: 8,
     updatedAtMs: 1_780_000_100_000,
     items: [publishedItem()],
@@ -107,6 +124,49 @@ test('the legacy response without clientPreviews is rejected instead of cached a
   });
   assert.equal(await repository.refresh(), null);
   assert.equal(values.has(`remote:${PUBLISHED_CATALOG_CACHE_KEY}`), false);
+});
+
+test('V3 accepts a safe external Public item and keeps VIP previews URL-free', () => {
+  const response = publishedCatalog({ items: [externalPublishedItem()] });
+  const parsed = parsePublishedCatalog(response);
+
+  assert.deepEqual(parsed, response);
+  assert.equal(parsed?.items[0]?.destinationKind, 'external_https');
+  assert.equal('url' in (parsed?.clientPreviews[0] ?? {}), false);
+  assert.equal('destinationKind' in (parsed?.clientPreviews[0] ?? {}), false);
+});
+
+test('V3 fails closed on unknown shapes, unsafe external URLs, malformed opaque IDs, and preview destinations', () => {
+  const external = externalPublishedItem();
+  const invalidResponses = [
+    { ...publishedCatalog(), extra: true },
+    publishedCatalog({ schemaVersion: 2 }),
+    publishedCatalog({ items: [{ ...external, unexpected: true }] }),
+    publishedCatalog({ items: [{ ...external, destinationKind: 'other' }] }),
+    publishedCatalog({ items: [{ ...external, url: 'http://example.org/' }] }),
+    publishedCatalog({ items: [{ ...external, url: 'https://example.org:443/' }] }),
+    publishedCatalog({ items: [{ ...external, id: 'external-not-hex' }] }),
+    publishedCatalog({ items: [{ ...external, id: 'sun-care' }] }),
+    publishedCatalog({ clientPreviews: [{ ...clientPreview(), destinationKind: 'external_https' }] }),
+    publishedCatalog({ clientPreviews: [{ ...clientPreview(), url: 'https://secret.example.org/' }] }),
+  ];
+
+  for (const response of invalidResponses) {
+    assert.equal(parsePublishedCatalog(response), null);
+  }
+});
+
+test('the accepted CaboHealth fixture is classified only by the exact V3 CaboHealth item branch', async () => {
+  const fixture = JSON.parse(await readFile(
+    resolve(process.cwd(), 'tests/fixtures/external-https-url-cases.json'),
+    'utf8',
+  )).accepted.find(({ kind }) => kind === 'cabohealth');
+  assert.ok(fixture);
+  const parsed = parsePublishedCatalog(publishedCatalog({
+    items: [publishedItem({ id: fixture.id, url: fixture.canonical })],
+  }));
+  assert.equal(parsed?.items[0]?.destinationKind, 'cabohealth');
+  assert.equal(parsed?.items[0]?.url, fixture.canonical);
 });
 
 test('a snapshot cannot claim to predate one of its published items', () => {
@@ -525,6 +585,30 @@ test('a validated published snapshot round-trips through the local cache', async
   assert.deepEqual(await readPublishedCatalogCache(storage), snapshot);
 });
 
+test('V3 cache never reads, migrates, or overwrites the V1 cache key', async () => {
+  const v1Key = '@cabohealth_published_catalog_v1';
+  const validV1 = {
+    revision: 8,
+    updatedAtMs: 1_780_000_100_000,
+    items: [{ ...publishedItem(), destinationKind: undefined }],
+  };
+  const v1Serialized = JSON.stringify(validV1);
+  const values = new Map([[v1Key, v1Serialized]]);
+  const storage = {
+    getItem: async (key) => values.get(key) ?? null,
+    setItem: async (key, value) => { values.set(key, value); },
+  };
+
+  assert.equal(PUBLISHED_CATALOG_CACHE_KEY, '@cabohealth_published_catalog_v3');
+  assert.equal(await readPublishedCatalogCache(storage), null);
+  const snapshot = parsePublishedCatalog(publishedCatalog());
+  assert.ok(snapshot);
+  await writePublishedCatalogCache(storage, snapshot);
+
+  assert.equal(values.get(v1Key), v1Serialized);
+  assert.deepEqual(JSON.parse(values.get(PUBLISHED_CATALOG_CACHE_KEY)), snapshot);
+});
+
 test('a valid remote catalog is returned and persisted as the latest safe snapshot', async () => {
   const values = new Map();
   const storage = {
@@ -606,6 +690,7 @@ test('published items become same-origin native miniapps with bilingual presenta
   const [miniapp] = toPublicCatalogMiniapps(snapshot);
 
   assert.equal(miniapp.slug, 'sun-care');
+  assert.equal(miniapp.destinationKind, 'cabohealth');
   assert.equal(miniapp.canonicalUrl, 'https://cabohealth.org/apps/sun-care/');
   assert.equal(miniapp.allowedPathPrefix, '/apps/sun-care/');
   assert.deepEqual(miniapp.title, { en: 'Sun Care', es: 'Cuidado Solar' });
@@ -615,6 +700,27 @@ test('published items become same-origin native miniapps with bilingual presenta
   });
   assert.equal(miniapp.iconKey, 'wellness');
   assert.equal(miniapp.reviewedOn, '2026-05-28');
+});
+
+test('external published items become truthful external native miniapps without internal launch fields', () => {
+  const snapshot = parsePublishedCatalog(publishedCatalog({ items: [externalPublishedItem()] }));
+  assert.ok(snapshot);
+
+  const [miniapp] = toPublicCatalogMiniapps(snapshot);
+
+  assert.equal(miniapp.destinationKind, 'external_https');
+  assert.equal(miniapp.destinationUrl, 'https://www.eightsleep.com/mx/');
+  assert.equal(miniapp.destinationOrigin, 'https://www.eightsleep.com');
+  assert.equal('canonicalUrl' in miniapp, false);
+  assert.equal('universalLink' in miniapp, false);
+  assert.equal('allowedPathPrefix' in miniapp, false);
+  assert.deepEqual(miniapp.editorialSource, {
+    en: 'www.eightsleep.com',
+    'es-MX': 'www.eightsleep.com',
+  });
+  assert.equal(miniapp.appStoreAgeRating, null);
+  assert.deepEqual(miniapp.contentDescriptors, ['external-web-resource']);
+  assert.deepEqual(miniapp.dataUse, ['third-party-network-request']);
 });
 
 test('the native catalog fetcher uses App Check and the exact read-only callable', async () => {
@@ -651,7 +757,7 @@ test('the native catalog fetcher uses App Check and the exact read-only callable
       androidProvider: 'playIntegrity',
       tokenAutoRefreshEnabled: true,
     }],
-    ['call', 'us-central1', 'getPublishedCatalogV2', {}],
+    ['call', 'us-central1', 'getPublishedCatalogV3', {}],
   ]);
 });
 

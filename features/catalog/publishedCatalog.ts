@@ -2,6 +2,7 @@ import {
   isPermanentlyRetiredCatalogId,
   isReservedReviewSandboxCatalogId,
 } from './catalogIdPolicy';
+import { parseSafeExternalHttpsDestination } from '../launch/externalHttpsUrlPolicy';
 
 export const PUBLISHED_CATALOG_ICONS = Object.freeze([
   'laboratory',
@@ -16,18 +17,28 @@ export const PUBLISHED_CATALOG_ICONS = Object.freeze([
 
 export type PublishedCatalogIcon = (typeof PUBLISHED_CATALOG_ICONS)[number];
 
-export interface PublishedCatalogItem {
+interface PublishedCatalogItemBase {
   readonly access: 'public';
   readonly active: true;
   readonly icon: PublishedCatalogIcon;
   readonly id: string;
   readonly summary: Readonly<{ en: string; 'es-MX': string }>;
   readonly title: Readonly<{ en: string; 'es-MX': string }>;
-  readonly url: string;
   readonly revision: number;
   readonly createdAtMs: number;
   readonly updatedAtMs: number;
 }
+
+export type PublishedCatalogItem = Readonly<
+  | (PublishedCatalogItemBase & {
+      readonly destinationKind: 'cabohealth';
+      readonly url: string;
+    })
+  | (PublishedCatalogItemBase & {
+      readonly destinationKind: 'external_https';
+      readonly url: string;
+    })
+>;
 
 export interface PublishedClientPreview {
   readonly access: 'clients';
@@ -42,13 +53,21 @@ export interface PublishedCatalogSnapshot {
   readonly revision: number;
   readonly updatedAtMs: number;
   readonly items: readonly Readonly<PublishedCatalogItem>[];
+  readonly schemaVersion: 3;
 }
 
-const SNAPSHOT_KEYS = ['clientPreviews', 'items', 'revision', 'updatedAtMs'] as const;
+const SNAPSHOT_KEYS = [
+  'clientPreviews',
+  'items',
+  'revision',
+  'schemaVersion',
+  'updatedAtMs',
+] as const;
 const ITEM_KEYS = [
   'access',
   'active',
   'createdAtMs',
+  'destinationKind',
   'icon',
   'id',
   'revision',
@@ -60,6 +79,7 @@ const ITEM_KEYS = [
 const CLIENT_PREVIEW_KEYS = ['access', 'icon', 'id', 'summary', 'title'] as const;
 const LOCALIZED_KEYS = ['en', 'es-MX'] as const;
 const ID_PATTERN = /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+const EXTERNAL_ID_PATTERN = /^external-[0-9a-f]{32}$/u;
 const CLIENT_PREVIEW_FORMAT_CONTROL_PATTERN = /\p{Cf}/u;
 const CLIENT_PREVIEW_URI_PATTERN = /\b[a-z][a-z0-9+.-]{0,31}:(?:\/\/)?[^\s]+/iu;
 const CLIENT_PREVIEW_HOST_PATTERN = /\b(?:www\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}\b/iu;
@@ -168,6 +188,7 @@ const MAX_CATALOG_TIMESTAMP_MS = 253_402_300_799_999;
 
 export function parsePublishedCatalog(value: unknown): PublishedCatalogSnapshot | null {
   if (!hasExactKeys(value, SNAPSHOT_KEYS)) return null;
+  if (value.schemaVersion !== 3) return null;
   if (!isSafeNonnegativeInteger(value.revision)) return null;
   if (!isSafeNonnegativeInteger(value.updatedAtMs)) return null;
   if (
@@ -196,6 +217,7 @@ export function parsePublishedCatalog(value: unknown): PublishedCatalogSnapshot 
   return Object.freeze({
     clientPreviews: Object.freeze(clientPreviews),
     revision: value.revision,
+    schemaVersion: 3,
     updatedAtMs: value.updatedAtMs,
     items: Object.freeze(items),
   });
@@ -232,14 +254,21 @@ function parsePublishedItem(value: unknown): Readonly<PublishedCatalogItem> | nu
   if (!hasExactKeys(value, ITEM_KEYS)) return null;
   if (value.access !== 'public' || value.active !== true) return null;
   if (!isPublishedIcon(value.icon)) return null;
-  if (
-    typeof value.id !== 'string'
-    || !ID_PATTERN.test(value.id)
-    || isPermanentlyRetiredCatalogId(value.id)
-    || isReservedReviewSandboxCatalogId(value.id)
-    || RESERVED_PUBLIC_IDS.has(value.id)
-  ) return null;
-  if (value.url !== `https://cabohealth.org/apps/${value.id}/`) return null;
+  if (typeof value.id !== 'string') return null;
+  if (value.destinationKind === 'cabohealth') {
+    if (!ID_PATTERN.test(value.id)
+      || isPermanentlyRetiredCatalogId(value.id)
+      || isReservedReviewSandboxCatalogId(value.id)
+      || RESERVED_PUBLIC_IDS.has(value.id)
+      || value.url !== `https://cabohealth.org/apps/${value.id}/`) return null;
+  } else if (value.destinationKind === 'external_https') {
+    const destination = parseSafeExternalHttpsDestination(value.url);
+    if (!EXTERNAL_ID_PATTERN.test(value.id)
+      || !destination
+      || value.url !== destination.canonicalUrl) return null;
+  } else {
+    return null;
+  }
   if (!isSafePositiveInteger(value.revision)) return null;
   if (!isSafeNonnegativeInteger(value.createdAtMs)) return null;
   if (!isSafeNonnegativeInteger(value.updatedAtMs) || value.updatedAtMs < value.createdAtMs) {
@@ -252,6 +281,7 @@ function parsePublishedItem(value: unknown): Readonly<PublishedCatalogItem> | nu
   return Object.freeze({
     access: 'public',
     active: true,
+    destinationKind: value.destinationKind,
     icon: value.icon,
     id: value.id,
     summary,

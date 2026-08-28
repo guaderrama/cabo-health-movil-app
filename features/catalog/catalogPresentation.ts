@@ -29,8 +29,12 @@ export function buildCatalogCardAccessibilityLabel(
     translate('catalog.publicBadge'),
     `${translate('catalog.source')}: ${miniapp.editorialSource[language]}`,
     `${translate('catalog.reviewed')}: ${formatEditorialDate(miniapp.reviewedOn, language)}`,
-    translate('catalog.content'),
-    translate('catalog.logs'),
+    translate(miniapp.destinationKind === 'cabohealth'
+      ? 'catalog.content'
+      : 'catalog.externalContent'),
+    translate(miniapp.destinationKind === 'cabohealth'
+      ? 'catalog.logs'
+      : 'catalog.thirdPartyNetwork'),
     translate('catalog.permissions'),
   ];
   if (miniapp.appStoreAgeRating !== null) {

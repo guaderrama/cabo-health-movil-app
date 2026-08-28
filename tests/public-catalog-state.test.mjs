@@ -18,14 +18,25 @@ const MINIAPPS = [
     title: { en: 'Healthy Recipes' },
     summary: { en: 'Practical recipes.' },
     canonicalUrl: 'https://cabohealth.org/apps/healthy-recipes/',
+    destinationKind: 'cabohealth',
   },
   {
     slug: 'clinic-guide',
     title: { en: 'CaboHealth Clinic Guide' },
     summary: { en: 'Plan a clinic visit.' },
     canonicalUrl: 'https://cabohealth.org/apps/clinic-guide/',
+    destinationKind: 'cabohealth',
   },
 ];
+
+const EXTERNAL_MINIAPP = {
+  slug: 'external-0123456789abcdef0123456789abcdef',
+  title: { en: 'Sleep Resource' },
+  summary: { en: 'Third-party sleep information.' },
+  destinationKind: 'external_https',
+  destinationUrl: 'https://www.eightsleep.com/mx/',
+  destinationOrigin: 'https://www.eightsleep.com',
+};
 
 test('favorite toggle synchronously propagates to a mounted catalog consumer', () => {
   setFavoriteSnapshot([]);
@@ -49,6 +60,33 @@ test('public catalog uses a synchronous timer-free initial connectivity state', 
   assert.equal(catalog.error, null);
   assert.equal(catalog.isOffline, false);
   assert.deepEqual(catalog.apps.map(({ id }) => id), ['healthy-recipes', 'clinic-guide']);
+});
+
+test('public catalog state preserves internal and external destination contracts', () => {
+  const catalog = createPublicCatalogState([...MINIAPPS, EXTERNAL_MINIAPP], [EXTERNAL_MINIAPP.slug]);
+
+  assert.deepEqual(catalog.apps.map(({ id, url, destinationKind }) => ({
+    id,
+    url,
+    destinationKind,
+  })), [
+    {
+      id: 'healthy-recipes',
+      url: 'https://cabohealth.org/apps/healthy-recipes/',
+      destinationKind: 'cabohealth',
+    },
+    {
+      id: 'clinic-guide',
+      url: 'https://cabohealth.org/apps/clinic-guide/',
+      destinationKind: 'cabohealth',
+    },
+    {
+      id: 'external-0123456789abcdef0123456789abcdef',
+      url: 'https://www.eightsleep.com/mx/',
+      destinationKind: 'external_https',
+    },
+  ]);
+  assert.deepEqual(catalog.favoriteApps.map(({ id }) => id), [EXTERNAL_MINIAPP.slug]);
 });
 
 test('offline web capability does not hide the synchronous local catalog', () => {

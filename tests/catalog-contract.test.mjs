@@ -13,12 +13,14 @@ const EXPECTED_MINIAPPS = [
     canonicalUrl: 'https://cabohealth.org/apps/healthy-recipes/',
     universalLink: 'https://cabohealth.org/apps/healthy-recipes/',
     allowedPathPrefix: '/apps/healthy-recipes/',
+    destinationKind: 'cabohealth',
   },
   {
     slug: 'clinic-guide',
     canonicalUrl: 'https://cabohealth.org/apps/clinic-guide/',
     universalLink: 'https://cabohealth.org/apps/clinic-guide/',
     allowedPathPrefix: '/apps/clinic-guide/',
+    destinationKind: 'cabohealth',
   },
 ];
 
@@ -26,11 +28,18 @@ test('frozen public catalog exposes only the two approved miniapps', () => {
   assert.deepEqual(PUBLIC_MINIAPP_SLUGS, ['healthy-recipes', 'clinic-guide']);
   assert.equal(PUBLIC_MINIAPPS.length, 2);
   assert.deepEqual(
-    PUBLIC_MINIAPPS.map(({ slug, canonicalUrl, universalLink, allowedPathPrefix }) => ({
+    PUBLIC_MINIAPPS.map(({
       slug,
       canonicalUrl,
       universalLink,
       allowedPathPrefix,
+      destinationKind,
+    }) => ({
+      slug,
+      canonicalUrl,
+      universalLink,
+      allowedPathPrefix,
+      destinationKind,
     })),
     EXPECTED_MINIAPPS,
   );

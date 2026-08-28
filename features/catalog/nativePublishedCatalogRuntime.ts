@@ -37,7 +37,7 @@ export async function createNativePublishedCatalogFetcher({
       tokenAutoRefreshEnabled: true,
     });
     const functions = bridge.functionsForRegion(environment.functionsRegion ?? 'us-central1');
-    return () => functions.call('getPublishedCatalogV2', {});
+    return () => functions.call('getPublishedCatalogV3', {});
   } catch {
     return null;
   }

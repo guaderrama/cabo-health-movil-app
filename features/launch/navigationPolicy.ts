@@ -114,6 +114,7 @@ export function classifyMiniappNavigation(
     ? resolveNavigationMiniapp(request.slug, request.miniapp)
     : undefined;
   if (!miniapp) return block('unknown-miniapp');
+  if (miniapp.destinationKind === 'external_https') return block('unknown-miniapp');
 
   const { url } = request;
   if (/[\u0000-\u0020\u007f\\]/u.test(url)) return block('unsafe-url-text');
