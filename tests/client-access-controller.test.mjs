@@ -41,6 +41,17 @@ const externalGrant = Object.freeze({
   })]),
 });
 
+const exactLegacyClientResources = Object.freeze({
+  access: 'client',
+  iconKey: 'sparkles-outline',
+  id: 'client-resources',
+  summary: Object.freeze({
+    en: 'Complimentary educational resources for eligible existing CaboHealth clients.',
+    es: 'Recursos educativos incluidos para clientes actuales elegibles de CaboHealth.',
+  }),
+  title: Object.freeze({ en: 'Client Resources', es: 'Recursos para clientes' }),
+});
+
 const reviewGrant = Object.freeze({
   schemaVersion: 1,
   status: 'active',
@@ -155,6 +166,106 @@ test('parsed production grant and unlocked home card state contain no destinatio
     JSON.stringify({ grant: parsed, cards }),
     /(?:https?:|custom-app:|portal\.client-example\.org|203\.0\.113\.42|\/srv\/private|CH-[A-F0-9-]{35})/u,
   );
+});
+
+test('the exact migrated client-resources projection coexists with an external resource and launches through the broker', async () => {
+  const nowMs = 1_900_000_000_000;
+  const groupGrant = Object.freeze({
+    ...externalGrant,
+    expiresAtMs: nowMs + 300_000,
+    resources: Object.freeze([exactLegacyClientResources, externalGrant.resources[0]]),
+  });
+  const parsed = parseClientGrantView(groupGrant, nowMs);
+  assert.deepEqual(parsed, groupGrant);
+  assert.equal(JSON.stringify(parsed).includes('https://'), false);
+
+  const session = createOpaqueClientSession();
+  const controller = createClientAccessController({
+    now: () => nowMs,
+    gateway: {
+      redeem: async () => ({ session, grant: groupGrant }),
+      refresh: async () => groupGrant,
+      createLaunch: async (_session, resourceId) => {
+        assert.equal(resourceId, 'client-resources');
+        return {
+          kind: 'broker',
+          expiresAtMs: nowMs + 60_000,
+          launchUrl: 'https://cabohealth.org/apps/client-resources/launch/',
+          method: 'POST',
+          nonce: 'legacy_nonce_abcdefghijklmnopqrs',
+        };
+      },
+      removeAccess: async () => {},
+      deleteAccount: async () => ({ status: 'unavailable' }),
+      signOut: async () => {},
+    },
+    sessionStore: {
+      restore: async () => null,
+      commit: async () => {},
+      clear: async () => {},
+    },
+  });
+
+  assert.equal(await controller.redeem('CH-01234567-89ABCDEF-01234567-89ABCDEF'), true);
+  assert.deepEqual(controller.getSnapshot().grant, groupGrant);
+  assert.deepEqual(await controller.createLaunch('client-resources'), {
+    kind: 'broker',
+    realm: 'production_client',
+    expiresAtMs: nowMs + 60_000,
+    source: {
+      uri: 'https://cabohealth.org/apps/client-resources/launch/',
+      method: 'POST',
+      body: 'nonce=legacy_nonce_abcdefghijklmnopqrs',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      },
+    },
+  });
+});
+
+test('legacy client-resources compatibility rejects every drift and side-channel near miss', () => {
+  const nearMisses = [
+    ['changed id', { id: 'client-resource' }],
+    ['changed native icon', { iconKey: 'leaf-outline' }],
+    ['stored pre-migration icon', { iconKey: 'featured' }],
+    ['changed English title', { title: { ...exactLegacyClientResources.title, en: 'Client Resource' } }],
+    ['changed Spanish title', { title: { ...exactLegacyClientResources.title, es: 'Recursos del cliente' } }],
+    ['changed English summary', {
+      summary: {
+        ...exactLegacyClientResources.summary,
+        en: 'Complimentary educational resources for eligible existing CaboHealth client.',
+      },
+    }],
+    ['changed Spanish summary', {
+      summary: {
+        ...exactLegacyClientResources.summary,
+        es: 'Recursos educativos incluidos para clientes elegibles de CaboHealth.',
+      },
+    }],
+    ['embedded URL', {
+      summary: { ...exactLegacyClientResources.summary, es: 'Visita https://private.example.org/vip.' },
+    }],
+    ['embedded credential', {
+      title: { ...exactLegacyClientResources.title, es: 'CH-01234567-89ABCDEF-01234567-89ABCDEF' },
+    }],
+    ['broad free copy', {
+      summary: {
+        ...exactLegacyClientResources.summary,
+        en: 'Free educational resources for eligible existing CaboHealth clients.',
+      },
+    }],
+    ['commercial copy', {
+      summary: { ...exactLegacyClientResources.summary, en: 'Membership pricing for CaboHealth clients.' },
+    }],
+  ];
+
+  for (const [label, mutation] of nearMisses) {
+    const candidate = {
+      ...externalGrant,
+      resources: [{ ...exactLegacyClientResources, ...mutation }, externalGrant.resources[0]],
+    };
+    assert.equal(parseClientGrantView(candidate, Date.now()), null, label);
+  }
 });
 
 test('CH and AR credentials canonicalize to distinct 128-bit realms', () => {

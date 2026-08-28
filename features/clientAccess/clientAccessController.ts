@@ -34,6 +34,20 @@ const CLIENT_RESOURCE_ICON_KEYS = new Set([
   'sparkles-outline',
 ]);
 const PRODUCTION_CLIENT_RESERVED_RESOURCE_IDS = new Set(['app-review', 'shared']);
+const EXACT_LEGACY_CLIENT_RESOURCES = Object.freeze({
+  access: 'client' as const,
+  iconKey: 'sparkles-outline',
+  id: 'client-resources',
+  summary: Object.freeze({
+    en: 'Complimentary educational resources for eligible existing CaboHealth clients.',
+    es: 'Recursos educativos incluidos para clientes actuales elegibles de CaboHealth.',
+  }),
+  title: Object.freeze({ en: 'Client Resources', es: 'Recursos para clientes' }),
+});
+const NEUTRAL_CLIENT_RESOURCES_SUMMARY = Object.freeze({
+  en: 'Educational resources for eligible existing CaboHealth clients.',
+  'es-MX': 'Recursos educativos para clientes actuales elegibles de CaboHealth.',
+});
 
 export class ClientAccessSessionInvalidatedError extends Error {
   constructor() {
@@ -225,8 +239,7 @@ function parseClientResource(value: unknown): Readonly<ClientResourceView> | nul
     || !CLIENT_RESOURCE_ICON_KEYS.has(record.iconKey)
     || !title
     || !summary
-    || !isSafeClientPreviewCopy({ en: title.en, 'es-MX': title.es })
-    || !isSafeClientPreviewCopy({ en: summary.en, 'es-MX': summary.es })
+    || !isSafeProductionClientResourceCopy(record, title, summary)
   ) return null;
   return Object.freeze({
     id: record.id,
@@ -235,6 +248,32 @@ function parseClientResource(value: unknown): Readonly<ClientResourceView> | nul
     iconKey: record.iconKey,
     access: 'client',
   });
+}
+
+function isSafeProductionClientResourceCopy(
+  record: Record<string, unknown>,
+  title: Readonly<{ en: string; es: string }>,
+  summary: Readonly<{ en: string; es: string }>,
+): boolean {
+  const validationSummary = isExactLegacyClientResources(record, title, summary)
+    ? NEUTRAL_CLIENT_RESOURCES_SUMMARY
+    : { en: summary.en, 'es-MX': summary.es };
+  return isSafeClientPreviewCopy({ en: title.en, 'es-MX': title.es })
+    && isSafeClientPreviewCopy(validationSummary);
+}
+
+function isExactLegacyClientResources(
+  record: Record<string, unknown>,
+  title: Readonly<{ en: string; es: string }>,
+  summary: Readonly<{ en: string; es: string }>,
+): boolean {
+  return record.access === EXACT_LEGACY_CLIENT_RESOURCES.access
+    && record.iconKey === EXACT_LEGACY_CLIENT_RESOURCES.iconKey
+    && record.id === EXACT_LEGACY_CLIENT_RESOURCES.id
+    && title.en === EXACT_LEGACY_CLIENT_RESOURCES.title.en
+    && title.es === EXACT_LEGACY_CLIENT_RESOURCES.title.es
+    && summary.en === EXACT_LEGACY_CLIENT_RESOURCES.summary.en
+    && summary.es === EXACT_LEGACY_CLIENT_RESOURCES.summary.es;
 }
 
 export function parseClientGrantView(value: unknown, nowMs: number): Readonly<ClientGrantView> | null {
