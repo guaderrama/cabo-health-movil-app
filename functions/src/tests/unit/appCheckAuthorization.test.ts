@@ -60,6 +60,7 @@ test('every callable is wired to the correct iOS or staff-web App Check surface'
     'deleteClientAccount',
     'getClientAccountDeletionStatus',
     'createClientLaunch',
+    'createClientLaunchV2',
     'redeemAppReviewCredential',
     'refreshAppReviewAccess',
     'createAppReviewLaunch',
@@ -82,5 +83,5 @@ test('every callable is wired to the correct iOS or staff-web App Check surface'
     ));
   }
   assert.equal(source.match(/assertStaffAppCheck\(request\)/gu)?.length, 16);
-  assert.equal(source.match(/assertClientAppCheck\(request\)/gu)?.length, 16);
+  assert.equal(source.match(/assertClientAppCheck\(request\)/gu)?.length, 17);
 });

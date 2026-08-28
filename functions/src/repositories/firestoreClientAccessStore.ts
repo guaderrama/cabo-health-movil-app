@@ -766,6 +766,64 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
     });
   }
 
+  createLaunchV2(command: Readonly<CreateLaunchCommand>): Promise<Readonly<
+    | { kind: 'broker'; expiresAtMs: number }
+    | { kind: 'external_https'; expiresAtMs: number; url: string }
+    | { kind: 'invalid' }
+  >> {
+    return this.#database.runTransaction(async (transaction) => {
+      const session = await readLiveSession(transaction, command, 'v2_all');
+      if (!session || !session.view.resources.some(({ id }) => id === command.resourceId)) {
+        return Object.freeze({ kind: 'invalid' as const });
+      }
+      const expiresAtMs = Math.min(
+        command.expiresAtMs,
+        session.grant.expiresAtMs,
+        session.code.expiresAtMs,
+      );
+      if (expiresAtMs <= command.nowMs) return Object.freeze({ kind: 'invalid' as const });
+
+      if (EXTERNAL_CATALOG_ID_PATTERN.test(command.resourceId)) {
+        const catalog = parseCatalogClientItems(await transaction.get(CATALOG_PATH));
+        const item = catalog?.find(({ access, active, id }) => (
+          access === 'clients' && active && id === command.resourceId
+        ));
+        const target = item ? parseSafeCatalogUrl(item.url) : null;
+        if (!item || !target || target.kind !== 'external_https' || target.url !== item.url) {
+          return Object.freeze({ kind: 'invalid' as const });
+        }
+        transaction.create(
+          `${AUDIT_EVENT_PREFIX}/external_launch_${command.nonceLookup.digest.slice(0, 20)}_${command.nowMs}`,
+          sanitizedAudit('client_external_launch_created', command.nowMs, session.code.codeId),
+        );
+        return Object.freeze({
+          kind: 'external_https' as const,
+          expiresAtMs,
+          url: target.url,
+        });
+      }
+
+      const noncePath = `${LAUNCH_NONCE_PREFIX}/${command.nonceLookup.lookupId}`;
+      if (await transaction.get(noncePath) !== undefined) {
+        return Object.freeze({ kind: 'invalid' as const });
+      }
+      transaction.create(noncePath, Object.freeze({
+        codeId: session.code.codeId,
+        consumedAtMs: null,
+        expiresAtMs,
+        hashVersion: command.nonceLookup.version,
+        resourceId: command.resourceId,
+        schemaVersion: 1,
+        subjectUid: command.subjectUid,
+      } satisfies StoredLaunchNonce));
+      transaction.create(
+        `${AUDIT_EVENT_PREFIX}/launch_${command.nonceLookup.digest.slice(0, 20)}_${command.nowMs}`,
+        sanitizedAudit('client_launch_created', command.nowMs, session.code.codeId),
+      );
+      return Object.freeze({ kind: 'broker' as const, expiresAtMs });
+    });
+  }
+
   consumeLaunch(command: Readonly<ConsumeLaunchCommand>): Promise<
     Readonly<{ kind: 'consumed'; resourceId: string } | { kind: 'invalid' }>
   > {

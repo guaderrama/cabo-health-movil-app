@@ -349,6 +349,7 @@ test('every client-resource resolution call site selects an explicit compatibili
 
   assert.match(source, /createActiveCode[\s\S]*?resolveClientResources\([\s\S]*?'v2_all'[\s\S]*?\)/u);
   assert.match(source, /createLaunch[\s\S]*?readLiveSession\([\s\S]*?'legacy_cabohealth'[\s\S]*?\)/u);
+  assert.match(source, /createLaunchV2[\s\S]*?readLiveSession\([\s\S]*?'v2_all'[\s\S]*?\)/u);
   assert.match(source, /consumeLaunch[\s\S]*?resolveClientResources\([\s\S]*?'legacy_cabohealth'[\s\S]*?\)/u);
   assert.match(source, /redeemLaunchForWeb[\s\S]*?resolveClientResources\([\s\S]*?'legacy_cabohealth'[\s\S]*?\)/u);
   assert.match(source, /introspectWebSession[\s\S]*?resolveClientResources\([\s\S]*?'legacy_cabohealth'[\s\S]*?\)/u);

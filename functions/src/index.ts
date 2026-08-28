@@ -27,7 +27,7 @@ import {
 } from './domain/clientAccountDeletion.js';
 import { dispatchBrokerCommand } from './domain/brokerApi.js';
 import { ClientSessionManager } from './domain/clientSessionManager.js';
-import { ClientLaunchService } from './domain/clientLaunchService.js';
+import { ClientLaunchService, type ClientLaunchV2 } from './domain/clientLaunchService.js';
 import { WebSessionBroker } from './domain/webSessionBroker.js';
 import {
   AppReviewAccessRedeemer,
@@ -676,6 +676,28 @@ export const createClientLaunch = onCall({
     throw mapClientAccessError(error);
   }
 });
+
+export const createClientLaunchV2 = onCall({
+  ...baseCallableOptions,
+  secrets: [INSTALLATION_PEPPER_RING, LAUNCH_NONCE_PEPPER_RING],
+}, async (request) => {
+  assertClientAppCheck(request);
+  const subjectUid = assertClientAuth(request);
+  return handleCreateClientLaunchV2(request.data, subjectUid);
+});
+
+export async function handleCreateClientLaunchV2(
+  data: unknown,
+  subjectUid: string,
+  launchService: Pick<ClientLaunchService, 'createV2'> = createLaunchService(),
+): Promise<ClientLaunchV2> {
+  const input = parseLaunchInput(data);
+  try {
+    return await launchService.createV2({ ...input, subjectUid });
+  } catch (error) {
+    throw mapClientAccessError(error);
+  }
+}
 
 /** Server-to-server API used only by the CaboHealth client-resources host. */
 export const brokerApi = onRequest({

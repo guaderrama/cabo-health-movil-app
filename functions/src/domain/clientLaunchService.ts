@@ -28,10 +28,26 @@ export interface ConsumeLaunchCommand {
 
 export interface ClientLaunchStore {
   createLaunch(command: Readonly<CreateLaunchCommand>): Promise<'created' | 'invalid'>;
+  createLaunchV2(command: Readonly<CreateLaunchCommand>): Promise<Readonly<
+    | { kind: 'broker'; expiresAtMs: number }
+    | { kind: 'external_https'; expiresAtMs: number; url: string }
+    | { kind: 'invalid' }
+  >>;
   consumeLaunch(command: Readonly<ConsumeLaunchCommand>): Promise<
     Readonly<{ kind: 'consumed'; resourceId: string } | { kind: 'invalid' }>
   >;
 }
+
+export type ClientLaunchV2 = Readonly<
+  | {
+    kind: 'broker';
+    expiresAtMs: number;
+    launchUrl: 'https://cabohealth.org/apps/client-resources/launch/';
+    method: 'POST';
+    nonce: string;
+  }
+  | { kind: 'external_https'; expiresAtMs: number; url: string }
+>;
 
 export class ClientLaunchService {
   readonly #installationHasher: VersionedHmac;
@@ -92,6 +108,44 @@ export class ClientLaunchService {
       expiresAtMs,
       launchUrl: 'https://cabohealth.org/apps/client-resources/launch/',
       method: 'POST',
+      nonce,
+    });
+  }
+
+  async createV2(input: {
+    readonly installationId: string;
+    readonly resourceId: string;
+    readonly subjectUid: string;
+  }): Promise<ClientLaunchV2> {
+    if (
+      !INSTALLATION_ID_PATTERN.test(input.installationId)
+      || input.resourceId.length > MAX_RESOURCE_ID_LENGTH
+      || !RESOURCE_ID_PATTERN.test(input.resourceId)
+      || !SUBJECT_UID_PATTERN.test(input.subjectUid)
+    ) throw new ClientAccessPublicError('invalid_access');
+    const installationHashes = this.#installationHasher.lookupCandidates(input.installationId);
+    const random = this.#randomSource
+      ? this.#randomSource(24)
+      : randomBytes(24);
+    if (random.length !== 24) throw new Error('cryptographic_random_source_failed');
+    const nonce = random.toString('base64url');
+    const nowMs = this.#nowMs();
+    const result = await this.#store.createLaunchV2(Object.freeze({
+      currentInstallationHash: installationHashes[0]!,
+      expiresAtMs: nowMs + LAUNCH_LIFETIME_MS,
+      installationHashes,
+      nonceLookup: this.#nonceHasher.currentDigest(nonce),
+      nowMs,
+      resourceId: input.resourceId,
+      subjectUid: input.subjectUid,
+    }));
+    if (result.kind === 'invalid') throw new ClientAccessPublicError('invalid_access');
+    if (result.kind === 'external_https') return result;
+    return Object.freeze({
+      kind: 'broker' as const,
+      expiresAtMs: result.expiresAtMs,
+      launchUrl: 'https://cabohealth.org/apps/client-resources/launch/' as const,
+      method: 'POST' as const,
       nonce,
     });
   }

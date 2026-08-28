@@ -63,6 +63,40 @@ test('a 60-second launch nonce reveals no target, is stored hashed, and can be c
   );
 });
 
+test('V2 broker launch keeps the same one-time hashed nonce behavior', async () => {
+  const database = new InMemoryDocumentDatabase({
+    [clientResourcePath(resourceId)]: {
+      access: 'client', iconKey: 'nutrition', id: resourceId, schemaVersion: 1, status: 'active',
+      summary: { en: 'Client guide.', es: 'Guía para clientes.' },
+      title: { en: 'Nutrition Guide', es: 'Guía de Nutrición' },
+    },
+  });
+  const store = new FirestoreClientAccessStore(database);
+  const issued = await new AccessCodeIssuer({
+    codeHasher: hasher('code'), nowMs: () => nowMs,
+    randomSource: () => Buffer.alloc(16, 7), store,
+  }).issue({ expiresAtMs: nowMs + 86_400_000, resourceIds: [resourceId] });
+  let subjectUid = '';
+  await new ClientAccessRedeemer({
+    codeHasher: hasher('code'), installationHasher: hasher('installation'),
+    nowMs: () => nowMs, rateLimitHasher: hasher('rate'), resourceResolutionMode: 'v2_all', store,
+    tokenIssuer: { async createCustomToken(uid) { subjectUid = uid; return 'test-token'; } },
+  }).redeem({
+    code: issued.oneTimeCode, installationId,
+    requestId: 'launch-request-0000000000000002', sourceAddress: '203.0.113.42',
+  });
+  const launches = new ClientLaunchService({
+    installationHasher: hasher('installation'), nonceHasher: hasher('launch-nonce'),
+    nowMs: () => nowMs, randomSource: () => Buffer.alloc(24, 11), store,
+  });
+
+  const launch = await launches.createV2({ installationId, resourceId, subjectUid });
+  assert.equal(launch.kind, 'broker');
+  assert.equal(database.serializedState().includes(launch.nonce), false);
+  assert.deepEqual(await launches.consume({ nonce: launch.nonce }), { resourceId });
+  await assert.rejects(launches.consume({ nonce: launch.nonce }), invalidAccess);
+});
+
 test('launch validation rejects noncanonical and overlong resource IDs before touching storage', async () => {
   let storageCalls = 0;
   const launches = new ClientLaunchService({
@@ -72,6 +106,7 @@ test('launch validation rejects noncanonical and overlong resource IDs before to
     randomSource: () => Buffer.alloc(24, 10),
     store: {
       createLaunch: async () => { storageCalls += 1; return 'created'; },
+      createLaunchV2: async () => ({ kind: 'invalid' }),
       consumeLaunch: async () => ({ kind: 'invalid' }),
     },
   });
@@ -94,4 +129,8 @@ function hasher(namespace: string): VersionedHmac {
   return new VersionedHmac({
     currentVersion: '2026-08', acceptedVersions: () => ['2026-08'], keyFor: () => key,
   }, `cabohealth/${namespace}/test`);
+}
+
+function invalidAccess(error: unknown): boolean {
+  return error instanceof ClientAccessPublicError && error.code === 'invalid_access';
 }
