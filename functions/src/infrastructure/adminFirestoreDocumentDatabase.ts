@@ -62,8 +62,8 @@ export function encodeFirestoreDocument(value: unknown): unknown {
   if (!isPlainRecord(value)) return value;
   return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
     key,
-    key === 'expiresAtMs' && isEpochMilliseconds(entry)
-      ? Timestamp.fromMillis(entry)
+    key === 'expiresAtMs'
+      ? encodeFirestoreExpiry(entry)
       : encodeFirestoreDocument(entry),
   ]));
 }
@@ -86,5 +86,14 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isEpochMilliseconds(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 0;
+  return Number.isSafeInteger(value)
+    && (value as number) >= 0
+    && !Object.is(value, -0)
+    && (value as number) <= 253_402_300_799_999;
+}
+
+function encodeFirestoreExpiry(value: unknown): unknown {
+  if (value === null) return null;
+  if (!isEpochMilliseconds(value)) throw new Error('invalid_firestore_expiry');
+  return Timestamp.fromMillis(value);
 }

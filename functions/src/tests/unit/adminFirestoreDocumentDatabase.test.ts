@@ -46,6 +46,34 @@ test('Firestore conversion preserves arrays, nulls, and non-TTL numeric fields',
   assert.deepEqual(decodeFirestoreDocument(encodeFirestoreDocument(value)), value);
 });
 
+for (const [label, expiresAtMs] of [
+  ['NaN', Number.NaN],
+  ['positive infinity', Number.POSITIVE_INFINITY],
+  ['negative infinity', Number.NEGATIVE_INFINITY],
+  ['negative integer', -1],
+  ['signed negative zero', -0],
+  ['fractional value', 1.5],
+  ['maximum safe integer outside Timestamp range', Number.MAX_SAFE_INTEGER],
+  ['one millisecond beyond Timestamp range', 253_402_300_800_000],
+] as const) {
+  test(`Firestore adapter rejects ${label} expiresAtMs instead of persisting a numeric TTL`, () => {
+    assert.throws(
+      () => encodeFirestoreDocument({ expiresAtMs }),
+      /invalid_firestore_expiry/u,
+    );
+  });
+}
+
+test('Firestore adapter accepts the exact maximum Timestamp millisecond', () => {
+  const expiresAtMs = 253_402_300_799_999;
+  const encoded = encodeFirestoreDocument({ expiresAtMs }) as { expiresAtMs: unknown };
+
+  assert.equal(
+    (encoded.expiresAtMs as { toMillis(): number }).toMillis(),
+    expiresAtMs,
+  );
+});
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

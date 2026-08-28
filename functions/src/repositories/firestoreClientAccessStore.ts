@@ -26,9 +26,12 @@ import {
   type ClientSessionStore,
 } from '../domain/clientSessionManager.js';
 import {
+  CLIENT_LAUNCH_AUDIT_RETENTION_MS,
+  CLIENT_LAUNCH_MAX_DURABLE_DEADLINE_MS,
   type ClientLaunchStore,
   type ConsumeLaunchCommand,
   type CreateLaunchCommand,
+  type CreateLaunchV2Command,
 } from '../domain/clientLaunchService.js';
 import {
   CATALOG_ID_PATTERN,
@@ -59,7 +62,7 @@ const CLIENT_RESOURCE_GROUP_MARKER = 'client-resources';
 
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1_000;
 const DELETION_ARTIFACT_BATCH_LIMIT = 400;
-const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
+const AUDIT_RETENTION_MS = CLIENT_LAUNCH_AUDIT_RETENTION_MS;
 const MAX_CATALOG_ITEMS = 12;
 
 const CATALOG_ICONS = new Set([
@@ -766,22 +769,29 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
     });
   }
 
-  createLaunchV2(command: Readonly<CreateLaunchCommand>): Promise<Readonly<
+  createLaunchV2(command: Readonly<CreateLaunchV2Command>): Promise<Readonly<
     | { kind: 'broker'; expiresAtMs: number }
     | { kind: 'external_https'; expiresAtMs: number; url: string }
     | { kind: 'invalid' }
   >> {
+    if (!isCanonicalCreateLaunchV2Timing(command)) {
+      return Promise.resolve(Object.freeze({ kind: 'invalid' as const }));
+    }
     return this.#database.runTransaction(async (transaction) => {
       const session = await readLiveSession(transaction, command, 'v2_all');
       if (!session || !session.view.resources.some(({ id }) => id === command.resourceId)) {
         return Object.freeze({ kind: 'invalid' as const });
       }
       const expiresAtMs = Math.min(
-        command.expiresAtMs,
+        command.maxExpiresAtMs,
         session.grant.expiresAtMs,
         session.code.expiresAtMs,
       );
-      if (expiresAtMs <= command.nowMs) return Object.freeze({ kind: 'invalid' as const });
+      if (
+        !isCanonicalDurableDeadline(expiresAtMs)
+        || expiresAtMs <= command.nowMs
+        || expiresAtMs > command.maxExpiresAtMs
+      ) return Object.freeze({ kind: 'invalid' as const });
 
       if (EXTERNAL_CATALOG_ID_PATTERN.test(command.resourceId)) {
         const catalog = parseCatalogClientItems(await transaction.get(CATALOG_PATH));
@@ -1930,4 +1940,24 @@ function recordHasExactKeys(value: Record<string, unknown>, expected: readonly s
 
 function isNonnegativeSafeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function isCanonicalCreateLaunchV2Timing(command: Readonly<CreateLaunchV2Command>): boolean {
+  if (
+    !isCanonicalDurableDeadline(command.nowMs)
+    || !isCanonicalDurableDeadline(command.maxExpiresAtMs)
+  ) return false;
+  const expectedMaxExpiresAtMs = command.nowMs + 60_000;
+  const auditExpiresAtMs = command.nowMs + AUDIT_RETENTION_MS;
+  return isCanonicalDurableDeadline(expectedMaxExpiresAtMs)
+    && isCanonicalDurableDeadline(auditExpiresAtMs)
+    && command.maxExpiresAtMs === expectedMaxExpiresAtMs
+    && command.maxExpiresAtMs > command.nowMs;
+}
+
+function isCanonicalDurableDeadline(value: unknown): value is number {
+  return Number.isSafeInteger(value)
+    && (value as number) >= 0
+    && !Object.is(value, -0)
+    && (value as number) <= CLIENT_LAUNCH_MAX_DURABLE_DEADLINE_MS;
 }

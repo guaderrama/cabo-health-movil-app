@@ -10,6 +10,11 @@ const MAX_RESOURCE_ID_LENGTH = 64;
 const RESOURCE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{32}$/u;
 const LAUNCH_LIFETIME_MS = 60_000;
+export const CLIENT_LAUNCH_AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
+export const CLIENT_LAUNCH_MAX_DURABLE_DEADLINE_MS = 253_402_300_799_999;
+const MAX_CLIENT_LAUNCH_NOW_MS = (
+  CLIENT_LAUNCH_MAX_DURABLE_DEADLINE_MS - CLIENT_LAUNCH_AUDIT_RETENTION_MS
+);
 
 export interface CreateLaunchCommand {
   readonly currentInstallationHash: Readonly<HmacDigest>;
@@ -26,9 +31,19 @@ export interface ConsumeLaunchCommand {
   readonly nowMs: number;
 }
 
+export interface CreateLaunchV2Command {
+  readonly currentInstallationHash: Readonly<HmacDigest>;
+  readonly installationHashes: readonly Readonly<HmacDigest>[];
+  readonly maxExpiresAtMs: number;
+  readonly nonceLookup: Readonly<HmacDigest>;
+  readonly nowMs: number;
+  readonly resourceId: string;
+  readonly subjectUid: string;
+}
+
 export interface ClientLaunchStore {
   createLaunch(command: Readonly<CreateLaunchCommand>): Promise<'created' | 'invalid'>;
-  createLaunchV2(command: Readonly<CreateLaunchCommand>): Promise<Readonly<
+  createLaunchV2(command: Readonly<CreateLaunchV2Command>): Promise<Readonly<
     | { kind: 'broker'; expiresAtMs: number }
     | { kind: 'external_https'; expiresAtMs: number; url: string }
     | { kind: 'invalid' }
@@ -123,17 +138,20 @@ export class ClientLaunchService {
       || !RESOURCE_ID_PATTERN.test(input.resourceId)
       || !SUBJECT_UID_PATTERN.test(input.subjectUid)
     ) throw new ClientAccessPublicError('invalid_access');
+    const nowMs = this.#nowMs();
+    if (!isCanonicalClientLaunchTime(nowMs)) {
+      throw new ClientAccessPublicError('invalid_access');
+    }
     const installationHashes = this.#installationHasher.lookupCandidates(input.installationId);
     const random = this.#randomSource
       ? this.#randomSource(24)
       : randomBytes(24);
     if (random.length !== 24) throw new Error('cryptographic_random_source_failed');
     const nonce = random.toString('base64url');
-    const nowMs = this.#nowMs();
     const result = await this.#store.createLaunchV2(Object.freeze({
       currentInstallationHash: installationHashes[0]!,
-      expiresAtMs: nowMs + LAUNCH_LIFETIME_MS,
       installationHashes,
+      maxExpiresAtMs: nowMs + LAUNCH_LIFETIME_MS,
       nonceLookup: this.#nonceHasher.currentDigest(nonce),
       nowMs,
       resourceId: input.resourceId,
@@ -159,4 +177,11 @@ export class ClientLaunchService {
     if (result.kind !== 'consumed') throw new ClientAccessPublicError('invalid_access');
     return Object.freeze({ resourceId: result.resourceId });
   }
+}
+
+function isCanonicalClientLaunchTime(value: unknown): value is number {
+  return Number.isSafeInteger(value)
+    && (value as number) >= 0
+    && !Object.is(value, -0)
+    && (value as number) <= MAX_CLIENT_LAUNCH_NOW_MS;
 }

@@ -18,6 +18,93 @@ const installationId = 'fefefefefefefefefefefefefefefefe';
 const externalId = 'external-89abcdef0123456789abcdef01234567';
 const externalUrl = 'https://www.eightsleep.com/mx/';
 const internalId = 'client-resources';
+const auditRetentionMs = 30 * 24 * 60 * 60 * 1_000;
+const maximumFirestoreEpochMs = 253_402_300_799_999;
+
+for (const [label, invalidNowMs] of [
+  ['NaN', Number.NaN],
+  ['positive infinity', Number.POSITIVE_INFINITY],
+  ['negative infinity', Number.NEGATIVE_INFINITY],
+  ['negative integer', -1],
+  ['signed negative zero', -0],
+  ['fractional time', 1.5],
+  ['maximum safe integer', Number.MAX_SAFE_INTEGER],
+  ['safe-integer audit-headroom boundary', Number.MAX_SAFE_INTEGER - auditRetentionMs],
+] as const) {
+  test(`V2 launch rejects ${label} server time before randomness or store access`, async () => {
+    let clockCalls = 0;
+    let randomCalls = 0;
+    let storeCalls = 0;
+    const launches = new ClientLaunchService({
+      installationHasher: hasher('installation'),
+      nonceHasher: hasher('launch-nonce'),
+      nowMs: () => {
+        clockCalls += 1;
+        return invalidNowMs;
+      },
+      randomSource: () => {
+        randomCalls += 1;
+        return Buffer.alloc(24, 53);
+      },
+      store: {
+        createLaunch: async () => 'invalid',
+        createLaunchV2: async () => {
+          storeCalls += 1;
+          return { kind: 'external_https', expiresAtMs: 1, url: externalUrl };
+        },
+        consumeLaunch: async () => ({ kind: 'invalid' }),
+      },
+    });
+
+    await assert.rejects(
+      launches.createV2({
+        installationId,
+        resourceId: externalId,
+        subjectUid: `client_${'s'.repeat(32)}`,
+      }),
+      invalidAccessWithoutUrl,
+    );
+    assert.equal(clockCalls, 1);
+    assert.equal(randomCalls, 0);
+    assert.equal(storeCalls, 0);
+  });
+}
+
+test('V2 launch accepts the exact representable audit-headroom boundary', async () => {
+  const boundaryNowMs = maximumFirestoreEpochMs - auditRetentionMs;
+  let command: Record<string, unknown> | undefined;
+  const launches = new ClientLaunchService({
+    installationHasher: hasher('installation'),
+    nonceHasher: hasher('launch-nonce'),
+    nowMs: () => boundaryNowMs,
+    randomSource: () => Buffer.alloc(24, 59),
+    store: {
+      createLaunch: async () => 'invalid',
+      createLaunchV2: async (value) => {
+        command = value as unknown as Record<string, unknown>;
+        return {
+          kind: 'external_https',
+          expiresAtMs: boundaryNowMs + 60_000,
+          url: externalUrl,
+        };
+      },
+      consumeLaunch: async () => ({ kind: 'invalid' }),
+    },
+  });
+
+  assert.deepEqual(await launches.createV2({
+    installationId,
+    resourceId: externalId,
+    subjectUid: `client_${'s'.repeat(32)}`,
+  }), {
+    kind: 'external_https',
+    expiresAtMs: boundaryNowMs + 60_000,
+    url: externalUrl,
+  });
+  assert.equal(command?.nowMs, boundaryNowMs);
+  assert.equal(command?.maxExpiresAtMs, boundaryNowMs + 60_000);
+  assert.equal(Object.hasOwn(command ?? {}, 'expiresAtMs'), false);
+});
 
 test('V2 external launch resolves the exact server-side URL after one live authorization transaction', async () => {
   const fixture = await launchFixture();
@@ -179,6 +266,62 @@ test('external launch persists neither its URL nor a launch nonce outside catalo
   )), true);
 });
 
+for (const [label, malformed] of [
+  ['NaN', Number.NaN],
+  ['positive infinity', Number.POSITIVE_INFINITY],
+  ['negative infinity', Number.NEGATIVE_INFINITY],
+  ['negative integer', -1],
+  ['signed negative zero', -0],
+  ['fractional value', 1.5],
+  ['maximum safe integer', Number.MAX_SAFE_INTEGER],
+] as const) {
+  test(`direct V2 store command rejects malformed ${label} time before reads, writes, or URL return`, async () => {
+    const fixture = await launchFixture();
+    const before = fixture.database.serializedState();
+    const transactionsBefore = fixture.database.transactionCount;
+
+    const result = await fixture.store.createLaunchV2(directLaunchCommand({
+      maxExpiresAtMs: nowMs + 60_000,
+      nowMs: malformed,
+    }, fixture.subjectUid) as never);
+
+    assert.deepEqual(result, { kind: 'invalid' });
+    assert.equal(fixture.database.transactionCount, transactionsBefore);
+    assert.equal(fixture.database.serializedState(), before);
+    assert.equal(JSON.stringify(result).includes(externalUrl), false);
+  });
+}
+
+for (const [label, malformed] of [
+  ['NaN', Number.NaN],
+  ['positive infinity', Number.POSITIVE_INFINITY],
+  ['negative infinity', Number.NEGATIVE_INFINITY],
+  ['negative integer', -1],
+  ['signed negative zero', -0],
+  ['fractional value', nowMs + 60_000.5],
+  ['nonfuture value', nowMs],
+  ['short lifetime', nowMs + 59_999],
+  ['long lifetime', nowMs + 60_001],
+  ['maximum safe integer', Number.MAX_SAFE_INTEGER],
+  ['beyond Firestore range', maximumFirestoreEpochMs + 1],
+] as const) {
+  test(`direct V2 store command rejects malformed ${label} max deadline before durable effects`, async () => {
+    const fixture = await launchFixture();
+    const before = fixture.database.serializedState();
+    const transactionsBefore = fixture.database.transactionCount;
+
+    const result = await fixture.store.createLaunchV2(directLaunchCommand({
+      maxExpiresAtMs: malformed,
+      nowMs,
+    }, fixture.subjectUid) as never);
+
+    assert.deepEqual(result, { kind: 'invalid' });
+    assert.equal(fixture.database.transactionCount, transactionsBefore);
+    assert.equal(fixture.database.serializedState(), before);
+    assert.equal(JSON.stringify(result).includes(externalUrl), false);
+  });
+}
+
 type CatalogItem = ReturnType<typeof internalCatalogItem>;
 
 async function launchFixture(options: { expiresAtMs?: number } = {}) {
@@ -259,6 +402,23 @@ async function launchFixture(options: { expiresAtMs?: number } = {}) {
     mutateCode: (patch: Record<string, unknown>) => mutateDocument('_private_access_codes', patch),
     mutateGrant: (patch: Record<string, unknown>) => mutateDocument('_private_client_grants', patch),
     sessions,
+    store,
+    subjectUid,
+  };
+}
+
+function directLaunchCommand(
+  overrides: { maxExpiresAtMs: number; nowMs: number },
+  subjectUid: string,
+) {
+  const installationHashes = hasher('installation').lookupCandidates(installationId);
+  return {
+    currentInstallationHash: installationHashes[0]!,
+    installationHashes,
+    maxExpiresAtMs: overrides.maxExpiresAtMs,
+    nonceLookup: hasher('launch-nonce').currentDigest('n'.repeat(32)),
+    nowMs: overrides.nowMs,
+    resourceId: externalId,
     subjectUid,
   };
 }
