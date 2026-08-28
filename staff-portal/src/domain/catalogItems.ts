@@ -2,6 +2,10 @@ import type {
   CallableTransport,
   ServerStaffSession,
 } from './staffGateway.js';
+import {
+  EXTERNAL_CATALOG_ID_PATTERN,
+  parseSafeCatalogUrl,
+} from './catalogUrlPolicy.js';
 
 export const CATALOG_ITEM_ICONS = Object.freeze([
   'laboratory',
@@ -253,7 +257,12 @@ export function createCatalogItemModel(gateway: CatalogItemGateway): CatalogItem
       return created;
     },
     update: async (id: string, revision: number, item: CatalogItemDetailsInput) => {
-      const updated = await gateway.update(id, revision, validateCatalogItemDetails(item));
+      const normalized = validateCatalogItemDetails(item);
+      const stored = snapshot.items.find((candidate) => candidate.id === id);
+      if (stored && normalized.url !== stored.url) {
+        throw new Error('catalog_item_url_immutable');
+      }
+      const updated = await gateway.update(id, revision, normalized);
       replace(updated);
       return updated;
     },
@@ -337,7 +346,12 @@ function parseCatalogItem(value: unknown): CatalogItem {
       title: value.title,
       url: value.url,
     });
-    if (catalogIdFromUrl(details.url) !== value.id) {
+    const destination = parseSafeCatalogUrl(details.url);
+    if (details.url !== value.url
+      || !destination
+      || (destination.kind === 'cabohealth'
+        ? destination.id !== value.id || EXTERNAL_CATALOG_ID_PATTERN.test(value.id as string)
+        : !EXTERNAL_CATALOG_ID_PATTERN.test(value.id as string))) {
       throw new Error('catalog_item_response_invalid');
     }
     return Object.freeze({
@@ -356,7 +370,8 @@ function parseCatalogItem(value: unknown): CatalogItem {
 export function validateCatalogItemDetails(value: unknown): CatalogItemDetailsInput {
   const details = parseCatalogItemDetails(value);
   if (details.access === 'clients') {
-    if (isRestrictedClientCatalogId(catalogIdFromUrl(details.url))) {
+    const destination = parseSafeCatalogUrl(details.url);
+    if (destination?.kind === 'cabohealth' && isRestrictedClientCatalogId(destination.id)) {
       throw new Error('catalog_item_url_invalid');
     }
     if (containsSensitiveClientTeaserCopy(details.summary.en)
@@ -398,6 +413,15 @@ export function isCatalogRevisionConflict(error: unknown): boolean {
     && /(?:catalog_item_)?(?:revision_)?conflict/iu.test(candidate.message);
 }
 
+export function isCatalogItemUrlInvalid(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  if (candidate.code === 'catalog_item_url_invalid'
+    || candidate.code === 'catalog_item_url_immutable') return true;
+  return typeof candidate.message === 'string'
+    && /catalog_item_url_(?:invalid|immutable)/u.test(candidate.message);
+}
+
 function assertCatalogMutationIdentity(id: string, revision: number): void {
   if (!isCatalogItemId(id)
     || PERMANENTLY_RETIRED_CATALOG_IDS.has(id)
@@ -409,32 +433,14 @@ function assertCatalogMutationIdentity(id: string, revision: number): void {
 }
 
 function parseCatalogUrl(value: unknown, access: CatalogItemAccess): string {
-  if (typeof value !== 'string'
-    || value.length > 2048
-    || /[\u0000-\u0020\u007f\\%?#]/u.test(value)) {
+  const parsed = parseSafeCatalogUrl(value);
+  if (!parsed
+    || (parsed.kind === 'cabohealth'
+      && parsed.id === 'client-resources'
+      && access !== 'clients')) {
     throw new Error('catalog_item_url_invalid');
   }
-  try {
-    const parsed = new URL(value);
-    const pathMatch = /^\/apps\/([a-z0-9]+(?:-[a-z0-9]+)*)\/$/u.exec(parsed.pathname);
-    if (parsed.protocol !== 'https:'
-      || parsed.hostname !== 'cabohealth.org'
-      || parsed.username !== ''
-      || parsed.password !== ''
-      || parsed.port !== ''
-      || pathMatch === null
-      || !isCatalogItemId(pathMatch[1])
-      || PERMANENTLY_RETIRED_CATALOG_IDS.has(pathMatch[1])
-      || pathMatch[1].startsWith(REVIEW_SANDBOX_CATALOG_ID_PREFIX)
-      || pathMatch[1] === 'app-review'
-      || pathMatch[1] === 'shared'
-      || (pathMatch[1] === 'client-resources' && access !== 'clients')) {
-      throw new Error('catalog_item_url_invalid');
-    }
-    return parsed.toString();
-  } catch {
-    throw new Error('catalog_item_url_invalid');
-  }
+  return parsed.url;
 }
 
 function isCatalogItemId(value: unknown): value is string {
@@ -491,10 +497,6 @@ function isClientCatalogBenignCurrencySegment(
 ): boolean {
   return ((segment === 'peso' || segment === 'pesos') && segments[index + 1] === 'libres')
     || (segment === 'real' && segments[index + 1] === 'world');
-}
-
-function catalogIdFromUrl(url: string): string {
-  return new URL(url).pathname.split('/')[2] ?? '';
 }
 
 function parseLocalizedText(

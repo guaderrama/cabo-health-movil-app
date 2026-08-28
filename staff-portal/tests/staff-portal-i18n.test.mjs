@@ -25,6 +25,18 @@ test('the staff portal has the same complete contract in English and Mexican Spa
   assert.match(STAFF_MESSAGES['es-MX']['miniapps.immediate'], /No pongas enlaces, rutas privadas, códigos de acceso, precios ni lenguaje de compra o suscripción/u);
   assert.match(STAFF_MESSAGES.en['miniapps.appleRule'], /no user-generated content, digital purchases, new native permissions or APIs/u);
   assert.match(STAFF_MESSAGES['es-MX']['miniapps.appleRule'], /sin contenido generado por usuarios, compras digitales, permisos o API nativas nuevas/u);
+  assert.equal(STAFF_MESSAGES.en['miniapps.url'], 'HTTPS link');
+  assert.equal(STAFF_MESSAGES['es-MX']['miniapps.url'], 'Enlace HTTPS');
+  assert.match(STAFF_MESSAGES.en['miniapps.externalWarning'], /does not make a public third-party site private/u);
+  assert.match(STAFF_MESSAGES['es-MX']['miniapps.externalWarning'], /no vuelve privado/u);
+  assert.match(STAFF_MESSAGES.en['miniapps.externalWarning'], /display and distribution rights/u);
+  assert.match(STAFF_MESSAGES['es-MX']['miniapps.externalWarning'], /derechos de exhibición y distribución/u);
+  assert.match(STAFF_MESSAGES.en['miniapps.createActiveHelp'], /build 7/u);
+  assert.match(STAFF_MESSAGES['es-MX']['miniapps.createActiveHelp'], /build 7/u);
+  assert.match(STAFF_MESSAGES.en['miniapps.urlInvalid'], /safe public HTTPS/u);
+  assert.match(STAFF_MESSAGES['es-MX']['miniapps.urlInvalid'], /HTTPS público seguro/u);
+  assert.doesNotMatch(STAFF_MESSAGES.en['miniapps.appleRule'], /CaboHealth-authored only/u);
+  assert.doesNotMatch(STAFF_MESSAGES['es-MX']['miniapps.appleRule'], /sólo contenido creado por CaboHealth/u);
   assert.equal(STAFF_MESSAGES.en['audit.action.miniappDeleted'], 'Miniapp deleted');
   assert.equal(STAFF_MESSAGES['es-MX']['audit.action.miniappDeleted'], 'Miniapp eliminada');
 });

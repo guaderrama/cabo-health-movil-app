@@ -47,6 +47,11 @@ test('the owner miniapp surface publishes immediately with complete guarded CRUD
   assert.match(source, /ConfirmDialog/u);
   assert.match(source, /miniapps\.deleteConfirm/u);
   assert.match(source, /miniapps\.appleRule/u);
+  assert.match(source, /miniapps\.externalWarning/u);
+  assert.match(source, /miniapps\.urlInvalid/u);
+  assert.match(source, /isCatalogItemUrlInvalid/u);
+  assert.match(source, /url-invalid/u);
+  assert.match(source, /url: editing\.url/u);
   assert.match(source, /miniapps\.conflict/u);
   assert.match(source, /disabled=\{busy\}/u);
   assert.match(source, /operationRef\.current/u);

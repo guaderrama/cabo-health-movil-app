@@ -23,7 +23,7 @@ Separate React/Vite surface for authorized CaboHealth staff at the canonical URL
 - `adminGetStaffSession` derives scope and permissions on the server. No URL, form, or browser storage can select scope.
 - Every staff callable requires `catalogAdmin: true`, an active exact `_private_admins/{uid}` document with `scope: "production"`, and the exact operation permission: `client_codes`, `client_resource_publish`, `client_resource_drafts`, or `app_review_credential`. Claims alone never authorize access. A review-sandbox staff session fails closed before any production callable can run.
 - Full client codes and the `AR-…` App Review credential are held in React/controller memory only, copied once, then explicitly cleared after a second confirmation.
-- Only production owners with `client_resource_publish` see the Miniapps workspace. Creating an active miniapp, editing an active miniapp, activating, deactivating, and permanently deleting use server-authoritative optimistic revisions and immediately change the runtime catalog. The browser accepts only exact CaboHealth URLs under `https://cabohealth.org/apps/<slug>/`; the server validates the URL again.
+- Only production owners with `client_resource_publish` see the Miniapps workspace. Creating an active miniapp, editing an active miniapp, activating, deactivating, and permanently deleting use server-authoritative optimistic revisions and immediately change the runtime catalog. The browser accepts exact CaboHealth URLs under `https://cabohealth.org/apps/<slug>/` and safe public HTTPS destinations; the server validates the URL again and generates an opaque `external-…` ID for external destinations. A destination is immutable after creation.
 - The former draft gateway remains wired for compatibility with old `client_resource_drafts` sessions, but it is hidden whenever the owner has the real publication permission. Draft code cannot activate or publish anything.
 - CSP is present in HTML, portable `_headers`, and Hostinger/Apache `.htaccess`; build source maps are disabled. Its `connect-src` allowlist includes the exchange endpoint actually used by the pinned Firebase App Check SDK (`https://content-firebaseappcheck.googleapis.com`). A regression test derives this origin from the installed SDK and requires it in the HTML, portable headers, Apache policy, and live-release verifier so endpoint drift fails closed.
 - Every callable requests a limited-use App Check token because the production Functions consume replay-protected tokens and require the exact configured staff web App ID.
@@ -91,6 +91,14 @@ retry reuses the same value. Revisions are compare-and-swap guards. A conflict
 is shown as a reload requirement, never overwritten locally. The server caps
 the catalog at 12 unique items and remains authoritative for permission, URL,
 schema, idempotency, audit, and runtime publication.
+
+The owner-only admin request and response fields remain unchanged and never
+include `destinationKind`. VIP authorization hides an external destination
+inside CaboHealth until access succeeds, but it cannot make a public
+third-party site private. Before activation, the owner must confirm display
+and distribution rights, a truthful age-rating fit, no user-generated content,
+and no digital purchases. External launches require a compatible client build
+7 or later.
 
 Connected legacy draft and read-only audit callables:
 

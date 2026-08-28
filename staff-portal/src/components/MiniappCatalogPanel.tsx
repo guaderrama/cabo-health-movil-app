@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CATALOG_ITEM_ICONS,
   createCatalogItemModel,
+  isCatalogItemUrlInvalid,
   isCatalogRevisionConflict,
   validateCatalogItemDetails,
   validateCatalogItemInput,
@@ -31,7 +32,7 @@ interface MiniappForm {
   readonly url: string;
 }
 
-type OperationError = 'conflict' | 'failed' | null;
+type OperationError = 'conflict' | 'failed' | 'url-invalid' | null;
 
 const EMPTY_FORM: MiniappForm = Object.freeze({
   access: 'public' as CatalogItemAccess,
@@ -115,7 +116,13 @@ export function MiniappCatalogPanel({ gateway, language, t }: MiniappCatalogPane
     if (!beginOperation()) return;
     setOperationError(null);
     try {
-      const details = validateCatalogItemDetails({
+      const details = validateCatalogItemDetails(editing ? {
+        access: form.access,
+        icon: form.icon,
+        summary: { en: form.summaryEn, 'es-MX': form.summaryEs },
+        title: { en: form.titleEn, 'es-MX': form.titleEs },
+        url: editing.url,
+      } : {
         access: form.access,
         icon: form.icon,
         summary: { en: form.summaryEn, 'es-MX': form.summaryEs },
@@ -132,7 +139,9 @@ export function MiniappCatalogPanel({ gateway, language, t }: MiniappCatalogPane
       setEditing(null);
       setForm(EMPTY_FORM);
     } catch (error) {
-      setOperationError(isCatalogRevisionConflict(error) ? 'conflict' : 'failed');
+      setOperationError(isCatalogRevisionConflict(error)
+        ? 'conflict'
+        : isCatalogItemUrlInvalid(error) ? 'url-invalid' : 'failed');
     } finally {
       endOperation();
     }
@@ -191,9 +200,15 @@ export function MiniappCatalogPanel({ gateway, language, t }: MiniappCatalogPane
         </div>
       </div>
 
+      <div className="notice warning" role="note">
+        <span>{t('miniapps.externalWarning')}</span>
+      </div>
+
       {operationError ? (
         <div className="notice error" role="alert">
-          <span>{t(operationError === 'conflict' ? 'miniapps.conflict' : 'miniapps.failed')}</span>
+          <span>{t(operationError === 'conflict'
+            ? 'miniapps.conflict'
+            : operationError === 'url-invalid' ? 'miniapps.urlInvalid' : 'miniapps.failed')}</span>
           {operationError === 'conflict' ? <button className="text-button" disabled={busy} type="button" onClick={reloadAfterConflict}>{t('miniapps.reload')}</button> : null}
         </div>
       ) : null}
@@ -249,8 +264,21 @@ export function MiniappCatalogPanel({ gateway, language, t }: MiniappCatalogPane
           </div>
           <div className="form-grid">
             <Field label={t('miniapps.url')} wide>
-              <input disabled={busy || editing !== null} required inputMode="url" type="url" value={form.url} onChange={(event) => setField(setForm, form, 'url', event.target.value)} />
-              <small className="field-help">{t(editing ? 'miniapps.urlLocked' : 'miniapps.urlHelp')}</small>
+              <input
+                aria-describedby={operationError === 'url-invalid' ? 'miniapp-url-error miniapp-url-help' : 'miniapp-url-help'}
+                aria-invalid={operationError === 'url-invalid'}
+                disabled={busy || editing !== null}
+                required
+                inputMode="url"
+                type="url"
+                value={form.url}
+                onChange={(event) => {
+                  setField(setForm, form, 'url', event.target.value);
+                  if (operationError === 'url-invalid') setOperationError(null);
+                }}
+              />
+              <small className="field-help" id="miniapp-url-help">{t(editing ? 'miniapps.urlLocked' : 'miniapps.urlHelp')}</small>
+              {operationError === 'url-invalid' ? <small className="field-error" id="miniapp-url-error">{t('miniapps.urlInvalid')}</small> : null}
             </Field>
             <Field label={t('miniapps.titleEn')}><input disabled={busy} required value={form.titleEn} onChange={(event) => setField(setForm, form, 'titleEn', event.target.value)} /></Field>
             <Field label={t('miniapps.titleEs')}><input disabled={busy} required value={form.titleEs} onChange={(event) => setField(setForm, form, 'titleEs', event.target.value)} /></Field>

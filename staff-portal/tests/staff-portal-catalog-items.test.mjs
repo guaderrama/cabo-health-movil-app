@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -6,6 +8,7 @@ import {
   createCatalogItemGateway,
   validateCatalogItemInput,
 } from '../.test-build/domain/catalogItems.js';
+import { parseSafeCatalogUrl } from '../.test-build/domain/catalogUrlPolicy.js';
 import {
   parseServerStaffSession,
 } from '../.test-build/domain/staffGateway.js';
@@ -24,6 +27,157 @@ const catalogItem = Object.freeze({
   title: Object.freeze({ en: 'Clinic guide', 'es-MX': 'Guía clínica' }),
   updatedAtMs: 1_800_000_000_000,
   url: 'https://cabohealth.org/apps/clinic-guide/',
+});
+
+const urlCases = JSON.parse(await readFile(
+  resolve(process.cwd(), '../tests/fixtures/external-https-url-cases.json'),
+  'utf8',
+));
+
+test('staff URL validation exactly matches the shared external HTTPS fixture', () => {
+  for (const fixture of urlCases.accepted) {
+    assert.deepEqual(parseSafeCatalogUrl(fixture.input), {
+      kind: fixture.kind,
+      ...(fixture.id ? { id: fixture.id } : {}),
+      url: fixture.canonical,
+    }, fixture.input);
+  }
+  for (const input of urlCases.rejected) {
+    assert.equal(parseSafeCatalogUrl(input), null, input);
+  }
+});
+
+test('accepts the same safe external HTTPS destination as Public and VIP', () => {
+  const base = {
+    active: true,
+    icon: 'wellness',
+    summary: { en: 'Rest and recovery guidance.', 'es-MX': 'Guía de descanso y recuperación.' },
+    title: { en: 'Recovery', 'es-MX': 'Recuperación' },
+    url: 'https://www.eightsleep.com/mx/',
+  };
+
+  for (const access of ['public', 'clients']) {
+    const parsed = validateCatalogItemInput({ ...base, access });
+    assert.equal(parsed.url, 'https://www.eightsleep.com/mx/');
+  }
+});
+
+test('canonicalizes a safe external URL for creation without changing the admin request schema', async () => {
+  const calls = [];
+  const externalItem = {
+    ...catalogItem,
+    id: 'external-0123456789abcdef0123456789abcdef',
+    url: 'https://example.org/a@b?owner=@ivan',
+  };
+  const gateway = createCatalogItemGateway({
+    session: parseServerStaffSession({
+      scope: 'production',
+      permissions: ['client_resource_publish'],
+    }),
+    transport: async (name, payload) => {
+      calls.push({ name, payload });
+      return { item: externalItem };
+    },
+  });
+
+  await gateway.create({
+    access: externalItem.access,
+    active: externalItem.active,
+    icon: externalItem.icon,
+    summary: externalItem.summary,
+    title: externalItem.title,
+    url: 'https://example.org:443/a@b?owner=@ivan',
+  });
+
+  assert.deepEqual(Object.keys(calls[0].payload).sort(), ['item', 'requestId']);
+  assert.deepEqual(Object.keys(calls[0].payload.item).sort(), [
+    'access', 'active', 'icon', 'summary', 'title', 'url',
+  ]);
+  assert.equal(calls[0].payload.item.url, externalItem.url);
+  assert.equal('destinationKind' in calls[0].payload.item, false);
+});
+
+test('parses canonical opaque external admin records but rejects URL and ID class mismatches', async () => {
+  const ownerSession = parseServerStaffSession({
+    scope: 'production',
+    permissions: ['client_resource_publish'],
+  });
+  const externalItem = {
+    ...catalogItem,
+    id: 'external-0123456789abcdef0123456789abcdef',
+    url: 'https://www.eightsleep.com/mx/',
+  };
+  const gatewayFor = (item) => createCatalogItemGateway({
+    session: ownerSession,
+    transport: async () => ({ items: [item] }),
+  });
+
+  const listed = await gatewayFor(externalItem).list();
+  assert.match(listed[0].id, /^external-[0-9a-f]{32}$/u);
+  assert.equal('destinationKind' in listed[0], false);
+
+  await assert.rejects(
+    gatewayFor({ ...externalItem, id: 'third-party-link' }).list(),
+    /catalog_item_response_invalid/u,
+  );
+  await assert.rejects(
+    gatewayFor({ ...catalogItem, id: externalItem.id }).list(),
+    /catalog_item_response_invalid/u,
+  );
+  await assert.rejects(
+    gatewayFor({
+      ...catalogItem,
+      id: externalItem.id,
+      url: `https://cabohealth.org/apps/${externalItem.id}/`,
+    }).list(),
+    /catalog_item_response_invalid/u,
+  );
+  await assert.rejects(
+    gatewayFor({ ...externalItem, url: 'https://www.eightsleep.com:443/mx/' }).list(),
+    /catalog_item_response_invalid/u,
+  );
+});
+
+test('an edit cannot replace the stored destination or transmit a mutation', async () => {
+  const transportCalls = [];
+  const gateway = {
+    async list() { return [catalogItem]; },
+    async create() { throw new Error('unexpected_create'); },
+    async update(...args) {
+      transportCalls.push(args);
+      throw new Error('unexpected_update');
+    },
+    async setActive() { throw new Error('unexpected_set_active'); },
+    async delete() { throw new Error('unexpected_delete'); },
+  };
+  const model = createCatalogItemModel(gateway);
+  await model.load();
+
+  await assert.rejects(model.update(catalogItem.id, catalogItem.revision, {
+    access: catalogItem.access,
+    icon: catalogItem.icon,
+    summary: catalogItem.summary,
+    title: catalogItem.title,
+    url: 'https://example.org/replacement/',
+  }), /catalog_item_url_immutable/u);
+  assert.equal(transportCalls.length, 0);
+});
+
+test('VIP commercial route checks are internal-only while teaser secrecy applies to external links', () => {
+  const externalVip = {
+    access: 'clients',
+    active: true,
+    icon: 'wellness',
+    summary: { en: 'Rest and recovery guidance.', 'es-MX': 'Guía de descanso y recuperación.' },
+    title: { en: 'Recovery', 'es-MX': 'Recuperación' },
+    url: 'https://example.org/pricing/',
+  };
+
+  assert.equal(validateCatalogItemInput(externalVip).url, externalVip.url);
+  assert.throws(() => validateCatalogItemInput({
+    ...externalVip,
+    summary: { ...externalVip.summary, en: 'Membership is USD 99' },
+  }), /catalog_item_text_invalid/u);
 });
 
 test('an authorized production owner lists the real catalog through the exact callable', async () => {
