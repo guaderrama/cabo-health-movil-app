@@ -24,9 +24,17 @@ const PERMANENTLY_RETIRED_CATALOG_ID_SET = new Set<string>(
   PERMANENTLY_RETIRED_CATALOG_IDS,
 );
 const REVIEW_SANDBOX_CATALOG_ID_PREFIX = 'review-sandbox-';
+const GLOBALLY_RESERVED_CATALOG_IDS = new Set<string>(['app-review', 'shared']);
 
 export function isPermanentlyRetiredCatalogId(value: unknown): boolean {
   return typeof value === 'string' && PERMANENTLY_RETIRED_CATALOG_ID_SET.has(value);
+}
+
+export function isGloballyReservedCatalogId(value: unknown): boolean {
+  return typeof value === 'string'
+    && (isPermanentlyRetiredCatalogId(value)
+      || value.startsWith(REVIEW_SANDBOX_CATALOG_ID_PREFIX)
+      || GLOBALLY_RESERVED_CATALOG_IDS.has(value));
 }
 
 export interface LocalizedCatalogText {
@@ -457,10 +465,7 @@ function normalizeCatalogUrl(value: unknown): string {
 
 function assertCatalogRoutePolicy(url: string, access: CatalogAccess): void {
   const id = catalogIdFromUrl(url);
-  if (isPermanentlyRetiredCatalogId(id)
-    || id.startsWith(REVIEW_SANDBOX_CATALOG_ID_PREFIX)
-    || id === 'app-review'
-    || id === 'shared'
+  if (isGloballyReservedCatalogId(id)
     || (id === 'client-resources' && access !== 'clients')) {
     throw new CatalogInputError();
   }

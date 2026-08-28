@@ -4,7 +4,7 @@ import { isIP } from 'node:net';
 import {
   CATALOG_ID_PATTERN,
   CatalogInputError,
-  isPermanentlyRetiredCatalogId,
+  isGloballyReservedCatalogId,
 } from './catalogAdmin.js';
 
 export type CatalogUrlClassification = Readonly<
@@ -16,6 +16,16 @@ export const EXTERNAL_CATALOG_ID_PATTERN = /^external-[0-9a-f]{32}$/u;
 
 const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const URL_MAX_LENGTH = 2_048;
+const DNS_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+const SPECIAL_USE_DNS_SUFFIXES = Object.freeze([
+  'localhost',
+  'local',
+  'home.arpa',
+  'test',
+  'invalid',
+  'example',
+  'onion',
+]);
 
 export function parseSafeCatalogUrl(value: unknown): CatalogUrlClassification | null {
   if (typeof value !== 'string'
@@ -28,7 +38,11 @@ export function parseSafeCatalogUrl(value: unknown): CatalogUrlClassification | 
   }
 
   const rawParts = splitRawHttpsUrl(value);
-  if (!rawParts || rawParts.authority.includes('@') || !isSafeRawPath(rawParts.path)) return null;
+  if (!rawParts
+    || rawParts.authority.includes('@')
+    || !hasOnlyDefaultHttpsPort(rawParts.authority)
+    || !isSafeRawPath(rawParts.path)
+    || !hasNoDecodedControls(rawParts.suffix)) return null;
 
   let parsed: URL;
   try {
@@ -75,7 +89,11 @@ export function isLegacyCompatibleCatalogUrl(url: string): boolean {
   return parseSafeCatalogUrl(url)?.kind === 'cabohealth';
 }
 
-function splitRawHttpsUrl(value: string): Readonly<{ authority: string; path: string }> | null {
+function splitRawHttpsUrl(value: string): Readonly<{
+  authority: string;
+  path: string;
+  suffix: string;
+}> | null {
   const remainder = value.slice('https://'.length);
   const boundary = remainder.search(/[/?#]/u);
   const authority = boundary === -1 ? remainder : remainder.slice(0, boundary);
@@ -85,6 +103,7 @@ function splitRawHttpsUrl(value: string): Readonly<{ authority: string; path: st
   return Object.freeze({
     authority,
     path: pathEnd === -1 ? suffix : suffix.slice(0, pathEnd),
+    suffix,
   });
 }
 
@@ -96,6 +115,11 @@ function isSafeRawPath(path: string): boolean {
     && !/[\u0000-\u001f\u007f\\]/u.test(decodedPath);
 }
 
+function hasNoDecodedControls(value: string): boolean {
+  const decoded = decodePercentEscapes(value);
+  return decoded !== null && !/[\u0000-\u001f\u007f]/u.test(decoded);
+}
+
 function decodePercentEscapes(value: string): string | null {
   try {
     return decodeURIComponent(value);
@@ -105,18 +129,33 @@ function decodePercentEscapes(value: string): string | null {
 }
 
 function containsPathTraversalOrSeparator(path: string): boolean {
-  return /(?:^|\/)\.{1,2}(?:\/|$)/u.test(path)
-    || /%(?:2e|2f|5c)/iu.test(path)
-    || path.includes('\\');
+  return /%(?:2f|5c)/iu.test(path)
+    || path.includes('\\')
+    || path.split('/').some((segment) => normalizesToTraversalSegment(segment));
+}
+
+function normalizesToTraversalSegment(segment: string): boolean {
+  const withEncodedDots = segment.replace(/%2e/giu, '.');
+  return withEncodedDots === '.' || withEncodedDots === '..';
+}
+
+function hasOnlyDefaultHttpsPort(authority: string): boolean {
+  if (authority.startsWith('[')) return /^\[[^\]]+\](?::443)?$/u.test(authority);
+  const portDelimiter = authority.indexOf(':');
+  return portDelimiter === -1 || authority.slice(portDelimiter) === ':443';
 }
 
 function isPublicDnsHostname(hostname: string): boolean {
   const normalized = hostname.replace(/^\[/u, '').replace(/\]$/u, '');
   return normalized !== ''
-    && normalized !== 'localhost'
-    && !normalized.endsWith('.local')
-    && normalized.includes('.')
-    && isIP(normalized) === 0;
+    && !normalized.endsWith('.')
+    && normalized.length <= 253
+    && isIP(normalized) === 0
+    && normalized.split('.').length >= 2
+    && normalized.split('.').every((label) => DNS_LABEL_PATTERN.test(label))
+    && !SPECIAL_USE_DNS_SUFFIXES.some((suffix) => (
+      normalized === suffix || normalized.endsWith(`.${suffix}`)
+    ));
 }
 
 function parseCaboHealthCatalogUrl(
@@ -126,15 +165,12 @@ function parseCaboHealthCatalogUrl(
 ): CatalogUrlClassification | null {
   const match = /^\/apps\/([a-z0-9]+(?:-[a-z0-9]+)*)\/$/u.exec(parsed.pathname);
   const id = match?.[1];
-  if (raw !== canonical
-    || parsed.search !== ''
-    || parsed.hash !== ''
+  const expected = id ? `https://cabohealth.org/apps/${id}/` : '';
+  if (raw !== expected
+    || canonical !== expected
     || !id
     || !CATALOG_ID_PATTERN.test(id)
-    || isPermanentlyRetiredCatalogId(id)
-    || id.startsWith('review-sandbox-')
-    || id === 'app-review'
-    || id === 'shared') {
+    || isGloballyReservedCatalogId(id)) {
     return null;
   }
   return Object.freeze({ kind: 'cabohealth' as const, id, url: canonical });
