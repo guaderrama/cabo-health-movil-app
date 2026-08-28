@@ -27,3 +27,15 @@ test('the public route resolves only against currently active runtime miniapps',
   assert.match(route, /if \(!miniapp\) return <NotFoundScreen/u);
   assert.doesNotMatch(route, /client-resources|ClientAccess/u);
 });
+
+test('external Public items use an ID-only route that re-resolves the live catalog item', () => {
+  const home = read('app/(main)/index.tsx');
+  const saved = read('app/(main)/saved.tsx');
+  const route = read('app/external-miniapp/[resourceId].tsx');
+
+  assert.match(home, /buildPublicMiniappRoute\(miniapp\)/u);
+  assert.match(saved, /buildPublicMiniappRoute\(miniapp\)/u);
+  assert.match(route, /resolveExternalMiniappRouteState\(\{[\s\S]*resourceId,[\s\S]*catalog: miniapps,[\s\S]*isInitialLoading,/u);
+  assert.match(route, /state\.kind !== 'ready'/u);
+  assert.doesNotMatch(`${home}\n${saved}\n${route}`, /params:\s*\{[^}]*destinationUrl/u);
+});

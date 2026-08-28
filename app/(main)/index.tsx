@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandedBackground, PremiumMiniappTile } from '../../components';
 import type { CatalogPublicMiniapp } from '../../constants/publicMiniapps';
 import { resolveCatalogCardColumns } from '../../features/catalog/catalogPresentation';
+import { buildPublicMiniappRoute } from '../../features/catalog/publicMiniappRoute';
 import type { PremiumHomeTool } from '../../features/home/premiumHomePresentation';
 import { ClientAccessFolio } from '../../features/clientAccess/ClientAccessFolio';
 import { ClientAccessModal } from '../../features/clientAccess/ClientAccessModal';
@@ -65,7 +66,7 @@ export default function HomeScreen() {
   const manageAccessColor = isDark ? colors.accentLight : colors.accentDark;
 
   const openMiniapp = useCallback((miniapp: Readonly<CatalogPublicMiniapp>) => {
-    router.push({ pathname: '/apps/[slug]', params: { slug: miniapp.slug } });
+    router.push(buildPublicMiniappRoute(miniapp));
   }, [router]);
 
   const openTool = useCallback((tool: PremiumHomeTool) => {

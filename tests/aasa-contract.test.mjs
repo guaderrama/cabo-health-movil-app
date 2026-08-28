@@ -56,6 +56,11 @@ test('verifier accepts only canonical bytes and exact Expo domain arrays', () =>
   assert.equal(result.status, 0, result.stderr);
 });
 
+test('AASA never claims the native-only external-miniapp route', () => {
+  assert.equal(expectedBytes.includes('/external-miniapp/'), false);
+  assert.equal(expectedBytes.includes('external-miniapp'), false);
+});
+
 test('verifier rejects duplicate keys, BOM, trailing content, extras, unsafe wildcard drift, and a wrong App ID', () => {
   const duplicate = expectedBytes.replace(
     '"applinks": {',

@@ -22,6 +22,7 @@ const syntheticContacts = [
 ];
 const dynamicMiniapp = {
   slug: 'sun-care',
+  destinationKind: 'cabohealth',
   canonicalUrl: 'https://cabohealth.org/apps/sun-care/',
   universalLink: 'https://cabohealth.org/apps/sun-care/',
   allowedPathPrefix: '/apps/sun-care/',
@@ -413,6 +414,16 @@ test('resolves only a single exact approved route slug', () => {
   assert.equal(resolvePublicMiniappRouteSlug(['healthy-recipes']), undefined);
   assert.equal(resolvePublicMiniappRouteSlug('unknown'), undefined);
   assert.equal(resolvePublicMiniappRouteSlug(' healthy-recipes'), undefined);
+});
+
+test('/apps/[slug] never resolves an external item', () => {
+  const external = {
+    slug: 'external-0123456789abcdef0123456789abcdef',
+    destinationKind: 'external_https',
+    destinationUrl: 'https://www.eightsleep.com/mx/',
+    destinationOrigin: 'https://www.eightsleep.com',
+  };
+  assert.equal(resolvePublicMiniappRouteSlug(external.slug, [external]), undefined);
 });
 
 test('a canonical public route waits for the initial live withdrawal check', () => {

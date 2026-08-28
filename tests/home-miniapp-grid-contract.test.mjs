@@ -45,6 +45,15 @@ test('Home refreshes both public previews and secure client grants', () => {
   assert.match(home, /refreshing=\{isRefreshing/u);
 });
 
+test('Home and Saved delegate Public navigation to the destination-discriminated route builder', () => {
+  const home = read('app/(main)/index.tsx');
+  const saved = read('app/(main)/saved.tsx');
+
+  assert.match(home, /router\.push\(buildPublicMiniappRoute\(miniapp\)\)/u);
+  assert.match(saved, /router\.push\(buildPublicMiniappRoute\(miniapp\)\)/u);
+  assert.doesNotMatch(`${home}\n${saved}`, /params:\s*\{[^}]*destinationUrl/u);
+});
+
 test('the Manage access action uses readable bronze in light and dark mode', () => {
   const home = read('app/(main)/index.tsx');
 

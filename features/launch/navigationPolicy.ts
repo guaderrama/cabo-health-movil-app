@@ -83,14 +83,16 @@ export interface MiniappNavigationRequest {
 
 export function resolvePublicMiniappRouteSlug(
   value: string | string[] | undefined,
-  catalog: readonly Readonly<Pick<CatalogPublicMiniapp, 'slug'>>[] = PUBLIC_MINIAPPS,
+  catalog: readonly Readonly<Pick<CatalogPublicMiniapp, 'destinationKind' | 'slug'>>[] = PUBLIC_MINIAPPS,
 ): string | undefined {
   if (
     typeof value !== 'string'
     || isPermanentlyRetiredCatalogId(value)
     || isReservedReviewSandboxCatalogId(value)
   ) return undefined;
-  return catalog.find((miniapp) => miniapp.slug === value)?.slug;
+  return catalog.find((miniapp) => (
+    miniapp.slug === value && miniapp.destinationKind === 'cabohealth'
+  ))?.slug;
 }
 
 export function shouldWaitForPublicCatalogRoute(
@@ -200,6 +202,7 @@ function hasExactCatalogBoundary(value: unknown): value is Readonly<CatalogPubli
   const miniapp = value as Record<string, unknown>;
   if (
     typeof miniapp.slug !== 'string'
+    || miniapp.destinationKind !== 'cabohealth'
     || !PUBLIC_ROUTE_ID_PATTERN.test(miniapp.slug)
     || isPermanentlyRetiredCatalogId(miniapp.slug)
     || isReservedReviewSandboxCatalogId(miniapp.slug)

@@ -22,6 +22,7 @@ interface PublicCatalogContextValue {
   readonly miniapps: readonly Readonly<CatalogPublicMiniapp>[];
   readonly clientPreviews: PublishedCatalogSnapshot['clientPreviews'];
   readonly isLoading: boolean;
+  readonly isInitialLoading: boolean;
   readonly error: 'catalog-refresh-unavailable' | null;
   getMiniapp(slug: string): Readonly<CatalogPublicMiniapp> | undefined;
   refresh(): Promise<void>;
@@ -33,6 +34,7 @@ const EMPTY_CLIENT_PREVIEWS: PublishedCatalogSnapshot['clientPreviews'] = Object
 export function PublicCatalogProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<PublishedCatalogSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [error, setError] = useState<PublicCatalogContextValue['error']>(null);
   const repositoryRef = useRef<PublishedCatalogRepository | null>(null);
   const repositoryLoadRef = useRef<Promise<PublishedCatalogRepository | null> | null>(null);
@@ -97,6 +99,7 @@ export function PublicCatalogProvider({ children }: { children: ReactNode }) {
       if (!mountedRef.current) return;
       setError(refreshed ? null : 'catalog-refresh-unavailable');
       setIsLoading(false);
+      setIsInitialLoading(false);
     })();
     return () => { mountedRef.current = false; };
   }, [applySnapshot, ensureRepository, refreshCatalog]);
@@ -117,10 +120,11 @@ export function PublicCatalogProvider({ children }: { children: ReactNode }) {
     miniapps,
     clientPreviews,
     isLoading,
+    isInitialLoading,
     error,
     getMiniapp: (slug: string) => miniapps.find((miniapp) => miniapp.slug === slug),
     refresh,
-  }), [clientPreviews, error, isLoading, miniapps, refresh]);
+  }), [clientPreviews, error, isInitialLoading, isLoading, miniapps, refresh]);
 
   return (
     <PublicCatalogContext.Provider value={value}>

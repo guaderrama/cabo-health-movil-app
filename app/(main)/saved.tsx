@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { BrandedBackground, PremiumResourceRow } from '../../components';
 import type { CatalogPublicMiniapp } from '../../constants/publicMiniapps';
+import { buildPublicMiniappRoute } from '../../features/catalog/publicMiniappRoute';
 import { useFavorites, useTheme, useTranslations, useWebApps } from '../../hooks';
 
 export default function SavedScreen() {
@@ -15,7 +16,7 @@ export default function SavedScreen() {
   const { catalogMiniapps } = useWebApps();
   const saved = catalogMiniapps.filter((miniapp) => favorites.includes(miniapp.slug));
   const openMiniapp = (miniapp: Readonly<CatalogPublicMiniapp>) => {
-    router.push({ pathname: '/apps/[slug]', params: { slug: miniapp.slug } });
+    router.push(buildPublicMiniappRoute(miniapp));
   };
 
   return (
