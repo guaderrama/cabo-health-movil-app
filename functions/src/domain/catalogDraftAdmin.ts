@@ -120,10 +120,7 @@ export class CatalogDraftAdminService {
 
   create(input: CatalogDraftInput): Promise<CatalogDraftView> {
     const normalized = validateCatalogDraftInput(input);
-    const occurredAtMs = this.#nowMs();
-    if (!Number.isSafeInteger(occurredAtMs) || occurredAtMs < 0) {
-      throw new Error('invalid_server_time');
-    }
+    const occurredAtMs = validNow(this.#nowMs());
     return this.#store.create(Object.freeze({
       ...normalized,
       auditEventId: opaqueId('evt', this.#randomBytes),
@@ -212,7 +209,9 @@ function opaqueId(prefix: 'dr' | 'evt', randomBytes: (size: number) => Uint8Arra
 }
 
 function validNow(value: number): number {
-  if (!Number.isSafeInteger(value) || value < 0) throw new Error('invalid_server_time');
+  if (!Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
+    throw new Error('invalid_server_time');
+  }
   return value;
 }
 

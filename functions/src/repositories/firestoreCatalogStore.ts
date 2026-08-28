@@ -596,7 +596,9 @@ function parseReceiptItem(value: unknown): StoredCatalogReceiptItem | null {
     || (value.revision as number) < 1
     || !Number.isSafeInteger(value.createdAtMs)
     || (value.createdAtMs as number) < 0
+    || Object.is(value.createdAtMs, -0)
     || !Number.isSafeInteger(value.updatedAtMs)
+    || Object.is(value.updatedAtMs, -0)
     || (value.updatedAtMs as number) < (value.createdAtMs as number)) return null;
   try {
     const input = validateCatalogItemInput({
@@ -660,6 +662,7 @@ function parseCatalog(value: unknown): StoredCatalog | null {
     || (value.revision as number) < 0
     || !Number.isSafeInteger(value.updatedAtMs)
     || (value.updatedAtMs as number) < 0
+    || Object.is(value.updatedAtMs, -0)
     || !Array.isArray(value.items)
     || value.items.length > MAX_ITEMS) return null;
   const ids = new Set<string>();
@@ -690,7 +693,9 @@ function parseItem(value: unknown): CatalogItemView | null {
     || (value.revision as number) < 1
     || !Number.isSafeInteger(value.createdAtMs)
     || (value.createdAtMs as number) < 0
+    || Object.is(value.createdAtMs, -0)
     || !Number.isSafeInteger(value.updatedAtMs)
+    || Object.is(value.updatedAtMs, -0)
     || (value.updatedAtMs as number) < (value.createdAtMs as number)) return null;
   try {
     const persistedInput = {

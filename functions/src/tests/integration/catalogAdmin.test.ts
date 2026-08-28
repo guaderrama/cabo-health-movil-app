@@ -361,6 +361,33 @@ test('every canonical URL-free receipt item field is integrity-bound for every i
   }
 });
 
+test('schema-v2 receipt item timestamps reject zero-to-signed-zero substitution', async () => {
+  for (const [field, context] of [
+    ['createdAtMs', mutation(747)],
+    ['updatedAtMs', mutation(748)],
+  ] as const) {
+    const database = new InMemoryDocumentDatabase();
+    const service = new CatalogAdminService({
+      nowMs: () => 0,
+      store: new FirestoreCatalogStore(database),
+    });
+    const created = await service.create(externalPublicMiniapp, context);
+
+    assert.equal(Object.is(created[field], 0), true, `${field} epoch zero`);
+    assert.deepEqual(await service.create(externalPublicMiniapp, context), created);
+    await substituteCatalogReceiptItem(database, context.requestId, (item) => ({
+      ...item,
+      [field]: -0,
+    }));
+
+    await assert.rejects(
+      service.create(externalPublicMiniapp, context),
+      /invalid_catalog_request_record/u,
+      field,
+    );
+  }
+});
+
 test('schema-v2 delete replay remains exact without item authority', async () => {
   const database = new InMemoryDocumentDatabase();
   const service = new CatalogAdminService({
@@ -568,6 +595,87 @@ test('stored live catalog parser rejects noncanonical URLs and normalization-cha
 
     await assert.rejects(service.list(), /invalid_catalog_record/u, label);
   }
+});
+
+test('stored live catalog items accept epoch zero but reject signed-zero timestamps', async () => {
+  const base = Object.freeze({
+    ...externalPublicMiniapp,
+    createdAtMs: 0,
+    id: 'external-00000000000000000000000000000000',
+    revision: 1,
+    updatedAtMs: 0,
+  });
+  const validService = new CatalogAdminService({
+    store: new FirestoreCatalogStore(new InMemoryDocumentDatabase({
+      '_private_catalog/current': {
+        items: [base],
+        revision: 1,
+        schemaVersion: 1,
+        updatedAtMs: 0,
+      },
+    })),
+  });
+  assert.deepEqual(await validService.list(), [base]);
+
+  for (const field of ['createdAtMs', 'updatedAtMs'] as const) {
+    const service = new CatalogAdminService({
+      store: new FirestoreCatalogStore(new InMemoryDocumentDatabase({
+        '_private_catalog/current': {
+          items: [{ ...base, [field]: -0 }],
+          revision: 1,
+          schemaVersion: 1,
+          updatedAtMs: 0,
+        },
+      })),
+    });
+
+    await assert.rejects(service.list(), /invalid_catalog_record/u, field);
+  }
+});
+
+test('stored catalog snapshots accept epoch zero but reject signed-zero updatedAtMs', async () => {
+  const validService = new CatalogAdminService({
+    store: new FirestoreCatalogStore(new InMemoryDocumentDatabase({
+      '_private_catalog/current': {
+        items: [],
+        revision: 0,
+        schemaVersion: 1,
+        updatedAtMs: 0,
+      },
+    })),
+  });
+  assert.deepEqual(await validService.list(), []);
+
+  const invalidService = new CatalogAdminService({
+    store: new FirestoreCatalogStore(new InMemoryDocumentDatabase({
+      '_private_catalog/current': {
+        items: [],
+        revision: 0,
+        schemaVersion: 1,
+        updatedAtMs: -0,
+      },
+    })),
+  });
+  await assert.rejects(invalidService.list(), /invalid_catalog_record/u);
+});
+
+test('catalog creation accepts epoch zero but rejects signed-zero server time', async () => {
+  const validService = new CatalogAdminService({
+    nowMs: () => 0,
+    store: new FirestoreCatalogStore(new InMemoryDocumentDatabase()),
+  });
+  const created = await validService.create(activePublicMiniapp, mutation(749));
+  assert.equal(Object.is(created.createdAtMs, 0), true);
+  assert.equal(Object.is(created.updatedAtMs, 0), true);
+
+  const invalidService = new CatalogAdminService({
+    nowMs: () => -0,
+    store: new FirestoreCatalogStore(new InMemoryDocumentDatabase()),
+  });
+  await assert.rejects(
+    invalidService.create(activePublicMiniapp, mutation(750)),
+    /invalid_server_time/u,
+  );
 });
 
 test('schema-v2 receipt parser rejects normalization-changing localized copy', async () => {

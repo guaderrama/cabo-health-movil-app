@@ -200,7 +200,9 @@ function parseStoredCatalogDraft(value: unknown): StoredCatalogDraft | null {
     || !Number.isSafeInteger(value.revision)
     || (value.revision as number) < 1
     || !Number.isSafeInteger(value.createdAtMs)
+    || Object.is(value.createdAtMs, -0)
     || !Number.isSafeInteger(value.updatedAtMs)
+    || Object.is(value.updatedAtMs, -0)
   ) return null;
   try {
     const parsedUrl = parseSafeCatalogUrl(value.url);

@@ -673,7 +673,9 @@ function publishedClientPreview(item: CatalogItemView): PublishedClientPreview {
 }
 
 function validNow(value: number): number {
-  if (!Number.isSafeInteger(value) || value < 0) throw new Error('invalid_server_time');
+  if (!Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
+    throw new Error('invalid_server_time');
+  }
   return value;
 }
 

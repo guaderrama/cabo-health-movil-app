@@ -157,6 +157,62 @@ test('stored draft parser rejects noncanonical URLs and normalization-changing c
   }
 });
 
+test('stored drafts accept epoch zero but reject signed-zero timestamps', async () => {
+  const draftId = 'dr_00000000000000000000000000000000';
+  const base = Object.freeze({
+    ...draftInput,
+    createdAtMs: 0,
+    draftId,
+    revision: 1,
+    schemaVersion: 1,
+    status: 'draft',
+    updatedAtMs: 0,
+  });
+  const validService = new CatalogDraftAdminService({
+    store: new FirestoreCatalogDraftStore(new InMemoryDocumentDatabase({
+      [`_private_catalog_drafts/${draftId}`]: base,
+    })),
+  });
+  assert.deepEqual(await validService.list(), [{
+    access: base.access,
+    draftId,
+    icon: base.icon,
+    revision: 1,
+    status: 'draft',
+    summary: base.summary,
+    title: base.title,
+    updatedAtMs: 0,
+    url: base.url,
+  }]);
+
+  for (const field of ['createdAtMs', 'updatedAtMs'] as const) {
+    const service = new CatalogDraftAdminService({
+      store: new FirestoreCatalogDraftStore(new InMemoryDocumentDatabase({
+        [`_private_catalog_drafts/${draftId}`]: { ...base, [field]: -0 },
+      })),
+    });
+
+    await assert.rejects(service.list(), /invalid_catalog_draft_record/u, field);
+  }
+});
+
+test('draft creation accepts epoch zero but rejects signed-zero server time', async () => {
+  const validService = new CatalogDraftAdminService({
+    nowMs: () => 0,
+    randomBytes: () => Buffer.alloc(24, 9),
+    store: new FirestoreCatalogDraftStore(new InMemoryDocumentDatabase()),
+  });
+  const created = await validService.create(draftInput);
+  assert.equal(Object.is(created.updatedAtMs, 0), true);
+
+  const invalidService = new CatalogDraftAdminService({
+    nowMs: () => -0,
+    randomBytes: () => Buffer.alloc(24, 10),
+    store: new FirestoreCatalogDraftStore(new InMemoryDocumentDatabase()),
+  });
+  assert.throws(() => invalidService.create(draftInput), /invalid_server_time/u);
+});
+
 test('rejects non-exact drafts and ambiguous or unsafe HTTPS URLs', () => {
   const invalidInputs: unknown[] = [
     { ...draftInput, extra: true },
