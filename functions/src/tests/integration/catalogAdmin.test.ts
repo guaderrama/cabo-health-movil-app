@@ -6,6 +6,7 @@ import {
   CatalogConflictError,
   CatalogInputError,
   type CatalogItemInput,
+  type CatalogItemView,
 } from '../../domain/catalogAdmin.js';
 import { CatalogDraftAdminService } from '../../domain/catalogDraftAdmin.js';
 import { FirestoreCatalogDraftStore } from '../../repositories/firestoreCatalogDraftStore.js';
@@ -158,7 +159,7 @@ test('stores exact URL-free v2 item receipts and reconstructs replay only from p
     action: 'miniapp.created',
     actorUid: context.actorUid,
     expiresAtMs: 1_802_592_000_000,
-    fingerprint: 'iWUtNYx_X-JO39yn5NtE1lfQiEzP0yB-A_znx5hQzdw',
+    fingerprint: 'KzJZ1dNJ3EwVQZnIGUJqKIbCPYHJBWtSR5K2tde91xk',
     requestId: context.requestId,
     response: {
       item: {
@@ -303,6 +304,63 @@ test('URL-free deactivation replay conflicts if the protected catalog URL was su
   );
 });
 
+test('every canonical URL-free receipt item field is integrity-bound for every item mutation', async () => {
+  const substitutions = [
+    ['access', (item: UrlFreeReceiptTestItem) => ({
+      ...item,
+      access: item.access === 'public' ? 'clients' as const : 'public' as const,
+    })],
+    ['active', (item: UrlFreeReceiptTestItem) => ({ ...item, active: !item.active })],
+    ['icon', (item: UrlFreeReceiptTestItem) => ({
+      ...item,
+      icon: item.icon === 'guide' ? 'recipes' as const : 'guide' as const,
+    })],
+    ['title.en', (item: UrlFreeReceiptTestItem) => ({
+      ...item,
+      title: { ...item.title, en: 'Substituted English title' },
+    })],
+    ['title.es-MX', (item: UrlFreeReceiptTestItem) => ({
+      ...item,
+      title: { ...item.title, 'es-MX': 'Título sustituido en español' },
+    })],
+    ['summary.en', (item: UrlFreeReceiptTestItem) => ({
+      ...item,
+      summary: { ...item.summary, en: 'Substituted English summary.' },
+    })],
+    ['summary.es-MX', (item: UrlFreeReceiptTestItem) => ({
+      ...item,
+      summary: { ...item.summary, 'es-MX': 'Resumen sustituido en español.' },
+    })],
+    ['revision', (item: UrlFreeReceiptTestItem) => ({ ...item, revision: item.revision + 1 })],
+    ['createdAtMs', (item: UrlFreeReceiptTestItem) => ({
+      ...item,
+      createdAtMs: item.createdAtMs - 1,
+    })],
+    ['updatedAtMs', (item: UrlFreeReceiptTestItem) => ({
+      ...item,
+      updatedAtMs: item.updatedAtMs + 1,
+    })],
+  ] as const;
+
+  for (const action of ['create', 'update', 'activate', 'deactivate'] as const) {
+    for (const [field, substitute] of substitutions) {
+      const fixture = await itemReceiptReplayFixture(action);
+
+      await assert.doesNotReject(fixture.replay, `${action} untouched`);
+      await substituteCatalogReceiptItem(
+        fixture.database,
+        fixture.requestId,
+        substitute,
+      );
+      await assert.rejects(
+        fixture.replay(),
+        CatalogConflictError,
+        `${action} ${field}`,
+      );
+    }
+  }
+});
+
 test('schema-v2 delete replay remains exact without item authority', async () => {
   const database = new InMemoryDocumentDatabase();
   const service = new CatalogAdminService({
@@ -356,13 +414,13 @@ test('legacy schema-v1 receipt replay succeeds only before its expiry boundary',
       store: new FirestoreCatalogStore(database),
     });
     const context = mutation(730);
-    const created = await service.create(externalPublicMiniapp, context);
+    const created = await service.create(activePublicMiniapp, context);
     const receiptPath = `_private_catalog_requests/${context.requestId}`;
     const receipt = (await database.listCollection('_private_catalog_requests'))[0]?.value as Record<string, unknown>;
     await database.runTransaction(async (transaction) => {
       transaction.set(receiptPath, {
         ...receipt,
-        fingerprint: '2m2TSKW9hHyMY4pLO4DeSziNGW9Fb5lBV60D_B09_6w',
+        fingerprint: '4cRUKB9oCyZC7gsY0pdso30p-LizUyHqwnJW33t3qZs',
         response: { item: created, kind: 'item' },
         schemaVersion: 1,
       });
@@ -370,11 +428,36 @@ test('legacy schema-v1 receipt replay succeeds only before its expiry boundary',
     nowMs = retryAtMs;
 
     if (succeeds) {
-      assert.deepEqual(await service.create(externalPublicMiniapp, context), created, label);
+      assert.deepEqual(await service.create(activePublicMiniapp, context), created, label);
     } else {
-      await assert.rejects(service.create(externalPublicMiniapp, context), CatalogConflictError, label);
+      await assert.rejects(service.create(activePublicMiniapp, context), CatalogConflictError, label);
     }
   }
+});
+
+test('legacy schema-v1 item receipts reject an external schema-v2 downgrade', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+  const context = mutation(734);
+  const created = await service.create(externalPublicMiniapp, context);
+  const receiptPath = `_private_catalog_requests/${context.requestId}`;
+  const receipt = (await database.listCollection('_private_catalog_requests'))[0]?.value as Record<string, unknown>;
+  await database.runTransaction(async (transaction) => {
+    transaction.set(receiptPath, {
+      ...receipt,
+      fingerprint: 'RASfcJ0lUBZEEuncfiBtjRYNIocBRb3x5Qcr1mdL4Ck',
+      response: { item: created, kind: 'item' },
+      schemaVersion: 1,
+    });
+  });
+
+  await assert.rejects(
+    service.create(externalPublicMiniapp, context),
+    /invalid_catalog_request_record/u,
+  );
 });
 
 test('schema-v2 receipt replay succeeds only before its expiry boundary', async () => {
@@ -415,21 +498,22 @@ test('catalog request parsers reject negative and invalid expiries for legacy V1
         store: new FirestoreCatalogStore(database),
       });
       const context = mutation(732);
-      const created = await service.create(externalPublicMiniapp, context);
+      const itemInput = schemaVersion === 1 ? activePublicMiniapp : externalPublicMiniapp;
+      const created = await service.create(itemInput, context);
       const receiptPath = `_private_catalog_requests/${context.requestId}`;
       const receipt = (await database.listCollection('_private_catalog_requests'))[0]?.value as Record<string, unknown>;
       await database.runTransaction(async (transaction) => {
         transaction.set(receiptPath, schemaVersion === 1 ? {
           ...receipt,
           expiresAtMs,
-          fingerprint: 'PgAJi3j3mfncuJ7XpIZh_wtDKnNsAHCpAuItpZMwk-o',
+          fingerprint: '4cRUKB9oCyZC7gsY0pdso30p-LizUyHqwnJW33t3qZs',
           response: { item: created, kind: 'item' },
           schemaVersion,
         } : { ...receipt, expiresAtMs });
       });
 
       await assert.rejects(
-        service.create(externalPublicMiniapp, context),
+        service.create(itemInput, context),
         /invalid_catalog_request_record/u,
         `schema v${schemaVersion}, ${label}`,
       );
@@ -1784,6 +1868,81 @@ async function substituteCatalogUrl(
       items: value.items.map((candidate) => (
         candidate.id === item.id ? { ...candidate, url } : candidate
       )),
+    });
+  });
+}
+
+type UrlFreeReceiptTestItem = Readonly<Omit<CatalogItemView, 'url'>>;
+
+async function itemReceiptReplayFixture(
+  action: 'create' | 'update' | 'activate' | 'deactivate',
+): Promise<Readonly<{
+  database: InMemoryDocumentDatabase;
+  replay: () => Promise<CatalogItemView>;
+  requestId: string;
+}>> {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+
+  if (action === 'create') {
+    const context = mutation(740);
+    await service.create(externalPublicMiniapp, context);
+    return Object.freeze({
+      database,
+      replay: () => service.create(externalPublicMiniapp, context),
+      requestId: context.requestId,
+    });
+  }
+
+  const created = await service.create(
+    action === 'activate' ? { ...externalPublicMiniapp, active: false } : externalPublicMiniapp,
+    mutation(action === 'update' ? 741 : action === 'activate' ? 743 : 745),
+  );
+  const context = mutation(action === 'update' ? 742 : action === 'activate' ? 744 : 746);
+  if (action === 'update') {
+    const details = Object.freeze({
+      access: created.access,
+      icon: created.icon,
+      summary: created.summary,
+      title: Object.freeze({ en: 'Updated external app', 'es-MX': 'App externa actualizada' }),
+      url: created.url,
+    });
+    await service.update(created.id, created.revision, details, context);
+    return Object.freeze({
+      database,
+      replay: () => service.update(created.id, created.revision, details, context),
+      requestId: context.requestId,
+    });
+  }
+
+  const active = action === 'activate';
+  await service.setActive(created.id, created.revision, active, context);
+  return Object.freeze({
+    database,
+    replay: () => service.setActive(created.id, created.revision, active, context),
+    requestId: context.requestId,
+  });
+}
+
+async function substituteCatalogReceiptItem(
+  database: InMemoryDocumentDatabase,
+  requestId: string,
+  substitute: (item: UrlFreeReceiptTestItem) => UrlFreeReceiptTestItem,
+): Promise<void> {
+  const receiptPath = `_private_catalog_requests/${requestId}`;
+  await database.runTransaction(async (transaction) => {
+    const receipt = await transaction.get(receiptPath) as Readonly<{
+      response: Readonly<{ item: UrlFreeReceiptTestItem; kind: 'item' }>;
+    }> & Readonly<Record<string, unknown>>;
+    transaction.set(receiptPath, {
+      ...receipt,
+      response: {
+        item: substitute(receipt.response.item),
+        kind: 'item',
+      },
     });
   });
 }

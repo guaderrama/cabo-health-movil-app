@@ -12,7 +12,10 @@ import {
   CATALOG_ID_PATTERN,
   validateCatalogItemInput,
 } from '../domain/catalogAdmin.js';
-import { catalogIdentityMatches } from '../domain/catalogUrlPolicy.js';
+import {
+  catalogIdentityMatches,
+  isLegacyCompatibleCatalogUrl,
+} from '../domain/catalogUrlPolicy.js';
 import {
   clientResourcePath,
   type DocumentDatabase,
@@ -351,7 +354,7 @@ async function readCatalogReplay(
   if (!authority
     || authority.createdAtMs !== receiptItem.createdAtMs
     || !catalogIdentityMatches(receiptItem.id, authority.url)
-    || catalogItemReceiptFingerprint(mutation.fingerprint, authority.url)
+    || catalogItemReceiptFingerprint(mutation.fingerprint, authority.url, receiptItem)
       !== stored.fingerprint) return 'mismatch';
   return Object.freeze({ ...receiptItem, url: authority.url });
 }
@@ -359,13 +362,32 @@ async function readCatalogReplay(
 function catalogItemReceiptFingerprint(
   mutationFingerprint: string,
   url: string,
+  item: StoredCatalogReceiptItem,
 ): string {
   return createHash('sha256')
-    .update('cabohealth/catalog-item-receipt-binding/v1\0', 'utf8')
+    .update('cabohealth/catalog-item-receipt-binding/v2\0', 'utf8')
     .update(mutationFingerprint, 'utf8')
     .update(Buffer.from([0]))
     .update(url, 'utf8')
+    .update(Buffer.from([0]))
+    .update(canonicalReceiptItem(item), 'utf8')
     .digest('base64url');
+}
+
+function canonicalReceiptItem(item: StoredCatalogReceiptItem): string {
+  return JSON.stringify([
+    ['access', item.access],
+    ['active', item.active],
+    ['createdAtMs', item.createdAtMs],
+    ['icon', item.icon],
+    ['id', item.id],
+    ['revision', item.revision],
+    ['summary.en', item.summary.en],
+    ['summary.es-MX', item.summary['es-MX']],
+    ['title.en', item.title.en],
+    ['title.es-MX', item.title['es-MX']],
+    ['updatedAtMs', item.updatedAtMs],
+  ]);
 }
 
 function writeCatalogMutation(
@@ -378,7 +400,11 @@ function writeCatalogMutation(
     : Object.freeze({ item: urlFreeReceiptItem(response.item), kind: 'item' });
   const fingerprint = response.kind === 'deleted'
     ? mutation.fingerprint
-    : catalogItemReceiptFingerprint(mutation.fingerprint, response.item.url);
+    : catalogItemReceiptFingerprint(
+      mutation.fingerprint,
+      response.item.url,
+      urlFreeReceiptItem(response.item),
+    );
   transaction.create(`${CATALOG_REQUEST_PREFIX}/${mutation.requestId}`, Object.freeze({
     action: mutation.action,
     actorUid: mutation.actorUid,
@@ -512,7 +538,9 @@ function parseLegacyCatalogRequest(
     response = Object.freeze({ kind: 'deleted' });
   } else if (hasExactKeys(value.response, ['item', 'kind']) && value.response.kind === 'item') {
     const item = parseItem(value.response.item);
-    if (!item || item.id !== value.targetId) return null;
+    if (!item
+      || item.id !== value.targetId
+      || !isLegacyCompatibleCatalogUrl(item.url)) return null;
     response = Object.freeze({ item, kind: 'item' });
   } else {
     return null;
