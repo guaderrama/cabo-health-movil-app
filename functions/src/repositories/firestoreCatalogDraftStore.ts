@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+
 import type {
   CatalogDraftCreateRecord,
   CatalogDraftInput,
@@ -201,14 +203,16 @@ function parseStoredCatalogDraft(value: unknown): StoredCatalogDraft | null {
     || !Number.isSafeInteger(value.updatedAtMs)
   ) return null;
   try {
-    if (!parseSafeCatalogUrl(value.url)) return null;
-    validateCatalogDraftInput({
+    const parsedUrl = parseSafeCatalogUrl(value.url);
+    if (!parsedUrl || parsedUrl.url !== value.url) return null;
+    const persistedInput = {
       access: value.access,
       icon: value.icon,
       summary: value.summary,
       title: value.title,
       url: value.url,
-    });
+    };
+    if (!isDeepStrictEqual(validateCatalogDraftInput(persistedInput), persistedInput)) return null;
   } catch {
     return null;
   }

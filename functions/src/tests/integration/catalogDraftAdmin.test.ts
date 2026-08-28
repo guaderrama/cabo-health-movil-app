@@ -132,6 +132,31 @@ test('draft validation accepts the shared safe external URL for Public and VIP a
   }
 });
 
+test('stored draft parser rejects noncanonical URLs and normalization-changing copy', async () => {
+  const draftId = 'dr_00000000000000000000000000000000';
+  const base = Object.freeze({
+    ...draftInput,
+    createdAtMs: 1_800_000_000_000,
+    draftId,
+    revision: 1,
+    schemaVersion: 1,
+    status: 'draft',
+    updatedAtMs: 1_800_000_000_000,
+  });
+  for (const [label, stored] of [
+    ['explicit default port', { ...base, url: 'https://resources.example.org:443/nutrition' }],
+    ['trimmed summary', { ...base, summary: { ...base.summary, en: `${base.summary.en} ` } }],
+  ] as const) {
+    const service = new CatalogDraftAdminService({
+      store: new FirestoreCatalogDraftStore(new InMemoryDocumentDatabase({
+        [`_private_catalog_drafts/${draftId}`]: stored,
+      })),
+    });
+
+    await assert.rejects(service.list(), /invalid_catalog_draft_record/u, label);
+  }
+});
+
 test('rejects non-exact drafts and ambiguous or unsafe HTTPS URLs', () => {
   const invalidInputs: unknown[] = [
     { ...draftInput, extra: true },

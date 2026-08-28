@@ -158,7 +158,7 @@ test('stores exact URL-free v2 item receipts and reconstructs replay only from p
     action: 'miniapp.created',
     actorUid: context.actorUid,
     expiresAtMs: 1_802_592_000_000,
-    fingerprint: 'UAK88oprwhYiWWPzdZ3nLPqIzFVwEsRjOlRyg6hqCIQ',
+    fingerprint: 'iWUtNYx_X-JO39yn5NtE1lfQiEzP0yB-A_znx5hQzdw',
     requestId: context.requestId,
     response: {
       item: {
@@ -245,6 +245,81 @@ test('URL-free item replay conflicts if the protected catalog URL was substitute
   await assert.rejects(service.create(externalPublicMiniapp, context), CatalogConflictError);
 });
 
+test('URL-free update replay conflicts if the protected catalog URL was substituted in place', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+  const created = await service.create(externalPublicMiniapp, mutation(714));
+  const context = mutation(715);
+  const details = Object.freeze({
+    access: created.access,
+    icon: created.icon,
+    summary: created.summary,
+    title: Object.freeze({ en: 'Updated external app', 'es-MX': 'App externa actualizada' }),
+    url: created.url,
+  });
+  const updated = await service.update(created.id, created.revision, details, context);
+  await substituteCatalogUrl(database, updated, 'https://example.org/substituted/');
+
+  await assert.rejects(
+    service.update(created.id, created.revision, details, context),
+    CatalogConflictError,
+  );
+});
+
+test('URL-free activation replay conflicts if the protected catalog URL was substituted in place', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+  const created = await service.create({ ...externalPublicMiniapp, active: false }, mutation(716));
+  const context = mutation(717);
+  const activated = await service.setActive(created.id, created.revision, true, context);
+  await substituteCatalogUrl(database, activated, 'https://example.org/substituted/');
+
+  await assert.rejects(
+    service.setActive(created.id, created.revision, true, context),
+    CatalogConflictError,
+  );
+});
+
+test('URL-free deactivation replay conflicts if the protected catalog URL was substituted in place', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+  const created = await service.create(externalPublicMiniapp, mutation(718));
+  const context = mutation(719);
+  const deactivated = await service.setActive(created.id, created.revision, false, context);
+  await substituteCatalogUrl(database, deactivated, 'https://example.org/substituted/');
+
+  await assert.rejects(
+    service.setActive(created.id, created.revision, false, context),
+    CatalogConflictError,
+  );
+});
+
+test('schema-v2 delete replay remains exact without item authority', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+  const created = await service.create(externalPublicMiniapp, mutation(720));
+  const context = mutation(721);
+
+  await service.delete(created.id, created.revision, context);
+  await assert.doesNotReject(service.delete(created.id, created.revision, context));
+  assert.deepEqual(await service.list(), []);
+  const receipt = (await database.listCollection('_private_catalog_requests'))
+    .find(({ id }) => id === context.requestId)?.value;
+  assert.equal(JSON.stringify(receipt).includes('https://'), false);
+});
+
 test('continues reading an exact legacy schema-v1 item receipt', async () => {
   const database = new InMemoryDocumentDatabase();
   const service = new CatalogAdminService({
@@ -258,12 +333,108 @@ test('continues reading an exact legacy schema-v1 item receipt', async () => {
   await database.runTransaction(async (transaction) => {
     transaction.set(receiptPath, {
       ...receipt,
+      fingerprint: '4cRUKB9oCyZC7gsY0pdso30p-LizUyHqwnJW33t3qZs',
       response: { item: created, kind: 'item' },
       schemaVersion: 1,
     });
   });
 
   assert.deepEqual(await service.create(activePublicMiniapp, context), created);
+});
+
+test('legacy schema-v1 receipt replay succeeds only before its expiry boundary', async () => {
+  const boundary = 1_802_592_000_000;
+  for (const [label, retryAtMs, succeeds] of [
+    ['before', boundary - 1, true],
+    ['exactly-at', boundary, false],
+    ['after', boundary + 1, false],
+  ] as const) {
+    let nowMs = 1_800_000_000_000;
+    const database = new InMemoryDocumentDatabase();
+    const service = new CatalogAdminService({
+      nowMs: () => nowMs,
+      store: new FirestoreCatalogStore(database),
+    });
+    const context = mutation(730);
+    const created = await service.create(externalPublicMiniapp, context);
+    const receiptPath = `_private_catalog_requests/${context.requestId}`;
+    const receipt = (await database.listCollection('_private_catalog_requests'))[0]?.value as Record<string, unknown>;
+    await database.runTransaction(async (transaction) => {
+      transaction.set(receiptPath, {
+        ...receipt,
+        fingerprint: '2m2TSKW9hHyMY4pLO4DeSziNGW9Fb5lBV60D_B09_6w',
+        response: { item: created, kind: 'item' },
+        schemaVersion: 1,
+      });
+    });
+    nowMs = retryAtMs;
+
+    if (succeeds) {
+      assert.deepEqual(await service.create(externalPublicMiniapp, context), created, label);
+    } else {
+      await assert.rejects(service.create(externalPublicMiniapp, context), CatalogConflictError, label);
+    }
+  }
+});
+
+test('schema-v2 receipt replay succeeds only before its expiry boundary', async () => {
+  const boundary = 1_802_592_000_000;
+  for (const [label, retryAtMs, succeeds] of [
+    ['before', boundary - 1, true],
+    ['exactly-at', boundary, false],
+    ['after', boundary + 1, false],
+  ] as const) {
+    let nowMs = 1_800_000_000_000;
+    const database = new InMemoryDocumentDatabase();
+    const service = new CatalogAdminService({
+      nowMs: () => nowMs,
+      store: new FirestoreCatalogStore(database),
+    });
+    const context = mutation(731);
+    const created = await service.create(externalPublicMiniapp, context);
+    nowMs = retryAtMs;
+
+    if (succeeds) {
+      assert.deepEqual(await service.create(externalPublicMiniapp, context), created, label);
+    } else {
+      await assert.rejects(service.create(externalPublicMiniapp, context), CatalogConflictError, label);
+    }
+  }
+});
+
+test('catalog request parsers reject negative and invalid expiries for legacy V1 and V2', async () => {
+  for (const schemaVersion of [1, 2] as const) {
+    for (const [label, expiresAtMs] of [
+      ['negative', -1],
+      ['negative zero', -0],
+      ['fractional', 1.5],
+    ] as const) {
+      const database = new InMemoryDocumentDatabase();
+      const service = new CatalogAdminService({
+        nowMs: () => 1_800_000_000_000,
+        store: new FirestoreCatalogStore(database),
+      });
+      const context = mutation(732);
+      const created = await service.create(externalPublicMiniapp, context);
+      const receiptPath = `_private_catalog_requests/${context.requestId}`;
+      const receipt = (await database.listCollection('_private_catalog_requests'))[0]?.value as Record<string, unknown>;
+      await database.runTransaction(async (transaction) => {
+        transaction.set(receiptPath, schemaVersion === 1 ? {
+          ...receipt,
+          expiresAtMs,
+          fingerprint: 'PgAJi3j3mfncuJ7XpIZh_wtDKnNsAHCpAuItpZMwk-o',
+          response: { item: created, kind: 'item' },
+          schemaVersion,
+        } : { ...receipt, expiresAtMs });
+      });
+
+      await assert.rejects(
+        service.create(externalPublicMiniapp, context),
+        /invalid_catalog_request_record/u,
+        `schema v${schemaVersion}, ${label}`,
+      );
+    }
+  }
 });
 
 test('stored catalog parsing rejects an external URL paired with a CaboHealth slug identity', async () => {
@@ -286,6 +457,64 @@ test('stored catalog parsing rejects an external URL paired with a CaboHealth sl
   });
 
   await assert.rejects(service.list(), /invalid_catalog_record/u);
+});
+
+test('stored live catalog parser rejects noncanonical URLs and normalization-changing copy', async () => {
+  const base = Object.freeze({
+    ...externalPublicMiniapp,
+    createdAtMs: 1_800_000_000_000,
+    id: 'external-00000000000000000000000000000000',
+    revision: 1,
+    updatedAtMs: 1_800_000_000_000,
+  });
+  for (const [label, item] of [
+    ['explicit default port', { ...base, url: 'https://www.eightsleep.com:443/mx/' }],
+    ['trimmed title', { ...base, title: { ...base.title, en: ` ${base.title.en}` } }],
+  ] as const) {
+    const service = new CatalogAdminService({
+      store: new FirestoreCatalogStore(new InMemoryDocumentDatabase({
+        '_private_catalog/current': {
+          items: [item],
+          revision: 1,
+          schemaVersion: 1,
+          updatedAtMs: 1_800_000_000_000,
+        },
+      })),
+    });
+
+    await assert.rejects(service.list(), /invalid_catalog_record/u, label);
+  }
+});
+
+test('schema-v2 receipt parser rejects normalization-changing localized copy', async () => {
+  const database = new InMemoryDocumentDatabase();
+  const service = new CatalogAdminService({
+    nowMs: () => 1_800_000_000_000,
+    store: new FirestoreCatalogStore(database),
+  });
+  const context = mutation(733);
+  await service.create(externalPublicMiniapp, context);
+  const receiptPath = `_private_catalog_requests/${context.requestId}`;
+  const receipt = (await database.listCollection('_private_catalog_requests'))[0]?.value as Readonly<{
+    response: Readonly<{ item: Readonly<Record<string, unknown>>; kind: 'item' }>;
+  }>;
+  await database.runTransaction(async (transaction) => {
+    transaction.set(receiptPath, {
+      ...receipt,
+      response: {
+        ...receipt.response,
+        item: {
+          ...receipt.response.item,
+          title: { ...externalPublicMiniapp.title, en: ` ${externalPublicMiniapp.title.en}` },
+        },
+      },
+    });
+  });
+
+  await assert.rejects(
+    service.create(externalPublicMiniapp, context),
+    /invalid_catalog_request_record/u,
+  );
 });
 
 test('owner creates an active miniapp and it is immediately present in the runtime catalog', async () => {
@@ -1535,5 +1764,26 @@ function clientProjection(input: CatalogItemInput): Readonly<Record<string, unkn
     status: 'active',
     summary: Object.freeze({ en: input.summary.en, es: input.summary['es-MX'] }),
     title: Object.freeze({ en: input.title.en, es: input.title['es-MX'] }),
+  });
+}
+
+async function substituteCatalogUrl(
+  database: InMemoryDocumentDatabase,
+  item: Readonly<{ id: string; url: string }>,
+  url: string,
+): Promise<void> {
+  await database.runTransaction(async (transaction) => {
+    const value = await transaction.get('_private_catalog/current') as Readonly<{
+      items: readonly Readonly<Record<string, unknown>>[];
+      revision: number;
+      schemaVersion: 1;
+      updatedAtMs: number;
+    }>;
+    transaction.set('_private_catalog/current', {
+      ...value,
+      items: value.items.map((candidate) => (
+        candidate.id === item.id ? { ...candidate, url } : candidate
+      )),
+    });
   });
 }

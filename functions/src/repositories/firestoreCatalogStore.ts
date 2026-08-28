@@ -329,13 +329,17 @@ async function readCatalogReplay(
   if (value === undefined) return null;
   const stored = parseCatalogRequest(value);
   if (!stored) throw new Error('invalid_catalog_request_record');
-  if (stored.action !== mutation.action
+  if (stored.expiresAtMs <= mutation.occurredAtMs
+    || stored.action !== mutation.action
     || stored.actorUid !== mutation.actorUid
-    || stored.fingerprint !== mutation.fingerprint
     || stored.requestId !== mutation.requestId
     || stored.targetId !== mutation.targetId) return 'mismatch';
-  if (stored.response.kind === 'deleted') return 'deleted';
-  if (stored.schemaVersion === 1) return stored.response.item;
+  if (stored.response.kind === 'deleted') {
+    return stored.fingerprint === mutation.fingerprint ? 'deleted' : 'mismatch';
+  }
+  if (stored.schemaVersion === 1) {
+    return stored.fingerprint === mutation.fingerprint ? stored.response.item : 'mismatch';
+  }
   if (!('item' in stored.response)) return 'mismatch';
   const receiptItem = stored.response.item;
 
@@ -347,45 +351,20 @@ async function readCatalogReplay(
   if (!authority
     || authority.createdAtMs !== receiptItem.createdAtMs
     || !catalogIdentityMatches(receiptItem.id, authority.url)
-    || catalogReceiptFingerprint(stored.action, receiptItem, authority.url, stored.targetId)
+    || catalogItemReceiptFingerprint(mutation.fingerprint, authority.url)
       !== stored.fingerprint) return 'mismatch';
   return Object.freeze({ ...receiptItem, url: authority.url });
 }
 
-function catalogReceiptFingerprint(
-  action: CatalogAuditAction,
-  item: StoredCatalogReceiptItem,
+function catalogItemReceiptFingerprint(
+  mutationFingerprint: string,
   url: string,
-  targetId: string,
 ): string {
-  if (action === 'miniapp.deleted') return '';
-  let payload: unknown;
-  if (action === 'miniapp.created') {
-    payload = {
-      access: item.access,
-      active: item.active,
-      icon: item.icon,
-      summary: item.summary,
-      title: item.title,
-      url,
-    };
-  } else if (action === 'miniapp.updated') {
-    payload = {
-      details: {
-        access: item.access,
-        icon: item.icon,
-        summary: item.summary,
-        title: item.title,
-        url,
-      },
-      revision: item.revision - 1,
-    };
-  } else {
-    payload = { active: item.active, revision: item.revision - 1 };
-  }
   return createHash('sha256')
-    .update('cabohealth/catalog-mutation/v1\0', 'utf8')
-    .update(JSON.stringify({ action, payload, targetId }), 'utf8')
+    .update('cabohealth/catalog-item-receipt-binding/v1\0', 'utf8')
+    .update(mutationFingerprint, 'utf8')
+    .update(Buffer.from([0]))
+    .update(url, 'utf8')
     .digest('base64url');
 }
 
@@ -397,11 +376,14 @@ function writeCatalogMutation(
   const storedResponse: NewCatalogResponse = response.kind === 'deleted'
     ? Object.freeze({ kind: 'deleted' })
     : Object.freeze({ item: urlFreeReceiptItem(response.item), kind: 'item' });
+  const fingerprint = response.kind === 'deleted'
+    ? mutation.fingerprint
+    : catalogItemReceiptFingerprint(mutation.fingerprint, response.item.url);
   transaction.create(`${CATALOG_REQUEST_PREFIX}/${mutation.requestId}`, Object.freeze({
     action: mutation.action,
     actorUid: mutation.actorUid,
     expiresAtMs: mutation.expiresAtMs,
-    fingerprint: mutation.fingerprint,
+    fingerprint,
     requestId: mutation.requestId,
     response: storedResponse,
     schemaVersion: 2,
@@ -507,6 +489,8 @@ function parseCatalogRequest(value: unknown): StoredCatalogRequest | null {
     || typeof value.actorUid !== 'string'
     || !/^[A-Za-z0-9:_-]{1,128}$/u.test(value.actorUid)
     || !Number.isSafeInteger(value.expiresAtMs)
+    || (value.expiresAtMs as number) < 0
+    || Object.is(value.expiresAtMs, -0)
     || typeof value.fingerprint !== 'string'
     || !/^[A-Za-z0-9_-]{43}$/u.test(value.fingerprint)
     || typeof value.requestId !== 'string'
@@ -595,6 +579,18 @@ function parseReceiptItem(value: unknown): StoredCatalogReceiptItem | null {
       title: value.title,
       url: 'https://receipt.cabohealth.com/',
     });
+    const normalizedReceiptItem = {
+      access: input.access,
+      active: input.active,
+      createdAtMs: value.createdAtMs,
+      icon: input.icon,
+      id: value.id,
+      revision: value.revision,
+      summary: input.summary,
+      title: input.title,
+      updatedAtMs: value.updatedAtMs,
+    };
+    if (!isDeepStrictEqual(normalizedReceiptItem, value)) return null;
     return Object.freeze({
       access: input.access,
       active: input.active,
@@ -669,15 +665,17 @@ function parseItem(value: unknown): CatalogItemView | null {
     || !Number.isSafeInteger(value.updatedAtMs)
     || (value.updatedAtMs as number) < (value.createdAtMs as number)) return null;
   try {
-    const input = validateCatalogItemInput({
+    const persistedInput = {
       access: value.access,
       active: value.active,
       icon: value.icon,
       summary: value.summary,
       title: value.title,
       url: value.url,
-    });
-    if (!catalogIdentityMatches(value.id, input.url)) return null;
+    };
+    const input = validateCatalogItemInput(persistedInput);
+    if (!isDeepStrictEqual(input, persistedInput)
+      || !catalogIdentityMatches(value.id, input.url)) return null;
     return Object.freeze({
       ...input,
       createdAtMs: value.createdAtMs as number,
