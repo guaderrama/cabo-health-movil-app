@@ -66,6 +66,29 @@ export type ClientResourceRouteAuthorizationTransition = Readonly<{
   activeLaunch: Readonly<ClientResourceLaunch> | null;
 }>;
 
+export function beginClientResourceRouteExternalRetry({
+  activeLaunch,
+  attempt,
+  operationGeneration,
+}: Readonly<{
+  activeLaunch: Readonly<ClientResourceLaunch>;
+  attempt: number;
+  operationGeneration: number;
+}>): Readonly<{
+  activeLaunch: null;
+  attempt: number;
+  operationGeneration: number;
+}> {
+  if (activeLaunch.kind !== 'external_https') {
+    throw new TypeError('external_launch_required');
+  }
+  return Object.freeze({
+    activeLaunch: null,
+    attempt: attempt + 1,
+    operationGeneration: operationGeneration + 1,
+  });
+}
+
 export function resolveClientResourceRouteAuthorizationTransition({
   activeLaunch,
   deletionTrackingKind,

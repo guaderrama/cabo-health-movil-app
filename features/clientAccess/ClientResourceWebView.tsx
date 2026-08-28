@@ -32,10 +32,12 @@ export function ClientResourceWebView({
   launch,
   title,
   onClose,
+  onRetry,
 }: {
   launch: Readonly<ClientResourceLaunch>;
   title: string;
   onClose: () => void;
+  onRetry: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -160,16 +162,38 @@ export function ClientResourceWebView({
               <Ionicons name="shield-outline" size={54} color={colors.error} />
               <Text style={[styles.errorTitle, { color: colors.text }]}>{t('common.error')}</Text>
               <Text style={[styles.errorBody, { color: colors.textSecondary }]}>{errorMessage}</Text>
+              {launch.kind === 'external_https' && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={onRetry}
+                  style={({ pressed }) => [
+                    styles.retryButton,
+                    { backgroundColor: colors.primary },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons name="refresh" size={20} color={colors.white} />
+                  <Text style={[styles.retryLabel, { color: colors.white }]}>
+                    {t('common.retry')}
+                  </Text>
+                </Pressable>
+              )}
               <Pressable
                 accessibilityRole="button"
                 onPress={onClose}
                 style={({ pressed }) => [
                   styles.returnButton,
-                  { backgroundColor: colors.primary },
+                  launch.kind === 'external_https' && styles.externalReturnButton,
+                  launch.kind === 'external_https'
+                    ? { borderColor: colors.border }
+                    : { backgroundColor: colors.primary },
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={[styles.returnLabel, { color: colors.white }]}>
+                <Text style={[
+                  styles.returnLabel,
+                  { color: launch.kind === 'external_https' ? colors.primary : colors.white },
+                ]}>
                   {t('clientAccess.backToResources')}
                 </Text>
               </Pressable>
@@ -195,7 +219,10 @@ const styles = StyleSheet.create({
   errorContent: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
   errorTitle: { marginTop: 14, textAlign: 'center', fontFamily: 'Georgia', fontSize: 22, lineHeight: 28, fontWeight: '600' },
   errorBody: { maxWidth: 330, marginTop: 8, textAlign: 'center', fontSize: 14, lineHeight: 21 },
+  retryButton: { minHeight: 48, marginTop: 22, borderRadius: 999, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  retryLabel: { fontSize: 14, lineHeight: 19, fontWeight: '800' },
   returnButton: { minHeight: 48, marginTop: 22, borderRadius: 999, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22 },
+  externalReturnButton: { marginTop: 12, borderWidth: 1 },
   returnLabel: { fontSize: 14, lineHeight: 19, fontWeight: '800' },
   pressed: { opacity: 0.76 },
 });

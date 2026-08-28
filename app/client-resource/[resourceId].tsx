@@ -14,6 +14,7 @@ import { useClientAccess } from '../../context/ClientAccessContext';
 import { useTheme, useTranslations } from '../../hooks';
 import type { ClientResourceLaunch } from '../../features/clientAccess/clientAccessController';
 import {
+  beginClientResourceRouteExternalRetry,
   getClientResourceRouteExpiryDelay,
   normalizeClientResourceRouteParam,
   requestClientResourceRouteLaunch,
@@ -188,6 +189,23 @@ export default function ClientResourceRoute() {
     setAttempt((value) => value + 1);
   }, []);
 
+  const retryExternalLaunch = useCallback(() => {
+    if (activeLaunch?.kind !== 'external_https' || launchAttemptPending.current) return;
+    const retry = beginClientResourceRouteExternalRetry({
+      activeLaunch,
+      attempt,
+      operationGeneration: operationGeneration.current,
+    });
+    operationGeneration.current = retry.operationGeneration;
+    resumeAfterRevalidation.current = false;
+    routeFlowStarted.current = true;
+    launchAttemptPending.current = true;
+    automaticRetryUsed.current = false;
+    setActiveLaunch(retry.activeLaunch);
+    setPhase('loading');
+    setAttempt(retry.attempt);
+  }, [activeLaunch, attempt]);
+
   const title = useMemo(() => (
     resource?.title[language === 'es-MX' ? 'es' : 'en']
       ?? t('clientAccess.modalTitle')
@@ -199,6 +217,7 @@ export default function ClientResourceRoute() {
         launch={activeLaunch}
         title={title}
         onClose={closeToResources}
+        onRetry={retryExternalLaunch}
       />
     );
   }

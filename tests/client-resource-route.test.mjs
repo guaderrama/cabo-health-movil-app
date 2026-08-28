@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  beginClientResourceRouteExternalRetry,
   buildClientResourceRoute,
   getClientResourceRouteExpiryDelay,
   normalizeClientResourceRouteParam,
@@ -199,6 +200,58 @@ test('a late external launch is discarded after the route generation changes', a
   finishLaunch(externalLaunch);
 
   assert.equal(await pending, null);
+});
+
+test('external retry clears the descriptor, invalidates its generation, and refreshes before a fresh launch', async () => {
+  let operationGeneration = 7;
+  let finishStaleLaunch;
+  const stalePending = requestClientResourceRouteLaunch({
+    resourceId: 'external-0123456789abcdef0123456789abcdef',
+    refresh: async () => {},
+    createLaunch: async () => new Promise((resolve) => { finishStaleLaunch = resolve; }),
+    isCurrent: () => operationGeneration === 7,
+  });
+  await Promise.resolve();
+
+  const retry = beginClientResourceRouteExternalRetry({
+    activeLaunch: externalLaunch,
+    attempt: 2,
+    operationGeneration,
+  });
+  operationGeneration = retry.operationGeneration;
+
+  assert.deepEqual(retry, {
+    activeLaunch: null,
+    attempt: 3,
+    operationGeneration: 8,
+  });
+  assert.equal(JSON.stringify(retry).includes('https://www.eightsleep.com/mx/'), false);
+
+  finishStaleLaunch(externalLaunch);
+  assert.equal(await stalePending, null);
+
+  const freshOperation = ++operationGeneration;
+  const effects = [];
+  const freshLaunch = Object.freeze({
+    ...externalLaunch,
+    expiresAtMs: externalLaunch.expiresAtMs + 60_000,
+    source: Object.freeze({ uri: 'https://portal.client-example.org/current/' }),
+    origin: 'https://portal.client-example.org',
+  });
+  const result = await requestClientResourceRouteLaunch({
+    resourceId: 'external-0123456789abcdef0123456789abcdef',
+    refresh: async () => { effects.push('refresh'); },
+    createLaunch: async () => {
+      effects.push('launch');
+      return freshLaunch;
+    },
+    isCurrent: () => operationGeneration === freshOperation,
+  });
+
+  assert.equal(freshOperation, 9);
+  assert.deepEqual(effects, ['refresh', 'launch']);
+  assert.equal(result, freshLaunch);
+  assert.notEqual(result?.source.uri, externalLaunch.source.uri);
 });
 
 test('VIP destination never enters the URL-free route or grant state', () => {

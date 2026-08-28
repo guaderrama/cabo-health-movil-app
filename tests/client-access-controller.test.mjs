@@ -9,6 +9,9 @@ import {
   normalizeClientAccessCode,
   parseClientGrantView,
 } from '../.test-build/features/clientAccess/clientAccessController.js';
+import {
+  buildClientHomeCards,
+} from '../.test-build/features/clientAccess/clientHomePresentation.js';
 
 const future = Date.now() + 60_000;
 const grant = Object.freeze({
@@ -96,6 +99,62 @@ test('production accepts only URL-free schema V2 grants while App Review remains
       url: 'https://www.eightsleep.com/mx/',
     }],
   }, Date.now()), null);
+});
+
+test('production grant copy rejects operational destinations in every localized field', () => {
+  const unsafeCopy = [
+    ['URI', 'custom-app://vip-resource'],
+    ['hostname', 'portal.client-example.org'],
+    ['IP host', '203.0.113.42/private'],
+    ['private path', '/srv/private/vip-resource.json'],
+    ['credential', 'CH-01234567-89ABCDEF-01234567-89ABCDEF'],
+  ];
+  const localizedFields = [
+    ['title', 'en'],
+    ['title', 'es'],
+    ['summary', 'en'],
+    ['summary', 'es'],
+  ];
+
+  for (const [field, locale] of localizedFields) {
+    for (const [form, value] of unsafeCopy) {
+      const resource = externalGrant.resources[0];
+      const candidate = {
+        ...externalGrant,
+        resources: [{
+          ...resource,
+          [field]: { ...resource[field], [locale]: value },
+        }],
+      };
+      assert.equal(
+        parseClientGrantView(candidate, Date.now()),
+        null,
+        `${field}.${locale} accepted ${form}`,
+      );
+    }
+  }
+});
+
+test('parsed production grant and unlocked home card state contain no destination', () => {
+  const parsed = parseClientGrantView(externalGrant, Date.now());
+  assert.notEqual(parsed, null);
+  const cards = buildClientHomeCards([], { status: 'unlocked', grant: parsed });
+
+  assert.deepEqual(cards, [{
+    access: 'client',
+    iconKey: 'leaf-outline',
+    id: 'external-0123456789abcdef0123456789abcdef',
+    locked: false,
+    summary: {
+      en: 'Evidence-based guidance for CaboHealth clients.',
+      es: 'Orientación basada en evidencia para clientes de CaboHealth.',
+    },
+    title: { en: 'Sleep Resource', es: 'Recurso de sueño' },
+  }]);
+  assert.doesNotMatch(
+    JSON.stringify({ grant: parsed, cards }),
+    /(?:https?:|custom-app:|portal\.client-example\.org|203\.0\.113\.42|\/srv\/private|CH-[A-F0-9-]{35})/u,
+  );
 });
 
 test('CH and AR credentials canonicalize to distinct 128-bit realms', () => {

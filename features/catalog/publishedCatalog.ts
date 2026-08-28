@@ -353,7 +353,9 @@ function containsClientPreviewFreeAccess(text: string): boolean {
   return CLIENT_PREVIEW_FREE_ACCESS_PATTERN.test(copyWithoutFreeWeightPhrase);
 }
 
-function isSafeClientPreviewCopy(copy: Readonly<{ en: string; 'es-MX': string }>): boolean {
+export function isSafeClientPreviewCopy(
+  copy: Readonly<{ en: string; 'es-MX': string }>,
+): boolean {
   return [copy.en, copy['es-MX']].every((text) => (
     !CLIENT_PREVIEW_FORMAT_CONTROL_PATTERN.test(text)
     && !CLIENT_PREVIEW_URI_PATTERN.test(text)

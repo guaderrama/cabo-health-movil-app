@@ -2,6 +2,7 @@ import {
   isPermanentlyRetiredCatalogId,
   isReservedReviewSandboxCatalogId,
 } from '../catalog/catalogIdPolicy';
+import { isSafeClientPreviewCopy } from '../catalog/publishedCatalog';
 import { parseSafeExternalHttpsDestination } from '../launch/externalHttpsUrlPolicy';
 
 const OPAQUE_SESSION = Symbol('cabohealth.clientAccess.session');
@@ -224,6 +225,8 @@ function parseClientResource(value: unknown): Readonly<ClientResourceView> | nul
     || !CLIENT_RESOURCE_ICON_KEYS.has(record.iconKey)
     || !title
     || !summary
+    || !isSafeClientPreviewCopy({ en: title.en, 'es-MX': title.es })
+    || !isSafeClientPreviewCopy({ en: summary.en, 'es-MX': summary.es })
   ) return null;
   return Object.freeze({
     id: record.id,
