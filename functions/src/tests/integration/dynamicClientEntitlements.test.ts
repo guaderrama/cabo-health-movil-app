@@ -157,6 +157,183 @@ test('legacy filtering validates mismatched external identities before omitting 
   );
 });
 
+test('direct code creation validates every unrelated active client projection before selecting entitlements', async () => {
+  const internal = catalogItem('vip-internal', 'nutrition', 'Internal VIP', 'VIP Interno');
+  const external = catalogItem(
+    externalId,
+    'wellness',
+    'External VIP',
+    'VIP Externo',
+    'https://wellness.example.org/private/',
+  );
+  const wrongExternalId = 'external-ffffffffffffffffffffffffffffffff';
+  const projectionCases: readonly Readonly<{ label: string; value: unknown | undefined }>[] = [
+    { label: 'missing', value: undefined },
+    { label: 'malformed', value: { schemaVersion: 1 } },
+    {
+      label: 'catalog mismatch',
+      value: { ...clientResource(external), title: { en: 'Stale', es: external.title['es-MX'] } },
+    },
+    { label: 'wrong id', value: { ...clientResource(external), id: wrongExternalId } },
+    { label: 'non-exact', value: { ...clientResource(external), unexpected: true } },
+  ];
+
+  for (const projectionCase of projectionCases) {
+    const seed: Record<string, unknown> = {
+      '_private_catalog/current': catalogSnapshot([internal, external]),
+      [clientResourcePath(internal.id)]: clientResource(internal),
+    };
+    if (projectionCase.value !== undefined) {
+      seed[clientResourcePath(external.id)] = projectionCase.value;
+    }
+    const store = new FirestoreClientAccessStore(new InMemoryDocumentDatabase(seed));
+    await assert.rejects(
+      issuer(store).issue({
+        expiresAtMs: nowMs + 86_400_000,
+        resourceIds: [internal.id],
+      }),
+      (error: unknown) => error instanceof AccessCodeInputError,
+      projectionCase.label,
+    );
+  }
+});
+
+test('V1 and V2 direct redemption validate missing or malformed unrelated active projections', async () => {
+  for (const mode of ['legacy_cabohealth', 'v2_all'] as const) {
+    for (const defect of ['missing', 'malformed'] as const) {
+      const fixture = await issuedDirectInternalFixture();
+      await fixture.database.runTransaction(async (transaction) => {
+        if (defect === 'missing') {
+          transaction.delete(clientResourcePath(fixture.external.id));
+        } else {
+          transaction.set(clientResourcePath(fixture.external.id), {
+            ...clientResource(fixture.external),
+            unexpected: true,
+          });
+        }
+      });
+      const redeemer = new ClientAccessRedeemer({
+        codeHasher: hasher('code'),
+        installationHasher: hasher('installation'),
+        nowMs: () => nowMs,
+        rateLimitHasher: hasher('rate-limit'),
+        resourceResolutionMode: mode,
+        store: fixture.store,
+        tokenIssuer: { createCustomToken: async () => 'unreachable' },
+      });
+
+      await assert.rejects(
+        redeemer.redeem(redemptionInput(fixture.issued.oneTimeCode)),
+        invalidAccess,
+        `${mode}:${defect}`,
+      );
+    }
+  }
+});
+
+test('V1 and V2 direct refresh validate missing or malformed unrelated active projections', async () => {
+  for (const mode of ['legacy_cabohealth', 'v2_all'] as const) {
+    for (const defect of ['missing', 'malformed'] as const) {
+      const fixture = await redeemedDirectInternalFixture();
+      await fixture.database.runTransaction(async (transaction) => {
+        if (defect === 'missing') {
+          transaction.delete(clientResourcePath(fixture.external.id));
+        } else {
+          transaction.set(clientResourcePath(fixture.external.id), {
+            ...clientResource(fixture.external),
+            unexpected: true,
+          });
+        }
+      });
+      const sessions = new ClientSessionManager({
+        installationHasher: hasher('installation'),
+        nowMs: () => nowMs + 1,
+        resourceResolutionMode: mode,
+        store: fixture.store,
+      });
+
+      await assert.rejects(
+        sessions.refresh({ installationId, subjectUid: fixture.subjectUid }),
+        invalidAccess,
+        `${mode}:${defect}`,
+      );
+    }
+  }
+});
+
+test('code creation rejects normalization-changing external authority strings', async () => {
+  for (const url of [
+    'https://Wellness.Example.org/private/',
+    'https://wellness.example.org:443/private/',
+  ]) {
+    const internal = catalogItem(groupMarker, 'guide', 'Client Resources', 'Recursos para Clientes');
+    const external = catalogItem(externalId, 'wellness', 'External VIP', 'VIP Externo', url);
+    const database = new InMemoryDocumentDatabase({
+      '_private_catalog/current': catalogSnapshot([internal, external]),
+      [clientResourcePath(internal.id)]: clientResource(internal),
+      [clientResourcePath(external.id)]: clientResource(external),
+    });
+
+    await assert.rejects(
+      issuer(new FirestoreClientAccessStore(database)).issue({
+        expiresAtMs: nowMs + 86_400_000,
+        resourceIds: [groupMarker],
+      }),
+      (error: unknown) => error instanceof AccessCodeInputError,
+      url,
+    );
+  }
+});
+
+test('V1 and V2 reject normalization-changing external authority before legacy filtering', async () => {
+  for (const mode of ['legacy_cabohealth', 'v2_all'] as const) {
+    for (const url of [
+      'https://Wellness.Example.org/private/',
+      'https://wellness.example.org:443/private/',
+    ]) {
+      const internal = catalogItem(groupMarker, 'guide', 'Client Resources', 'Recursos para Clientes');
+      const external = catalogItem(
+        externalId,
+        'wellness',
+        'External VIP',
+        'VIP Externo',
+        'https://wellness.example.org/private/',
+      );
+      const database = new InMemoryDocumentDatabase({
+        '_private_catalog/current': catalogSnapshot([internal, external]),
+        [clientResourcePath(internal.id)]: clientResource(internal),
+        [clientResourcePath(external.id)]: clientResource(external),
+      });
+      const store = new FirestoreClientAccessStore(database);
+      const issued = await issuer(store).issue({
+        expiresAtMs: nowMs + 86_400_000,
+        resourceIds: [groupMarker],
+      });
+      await database.runTransaction(async (transaction) => {
+        transaction.set('_private_catalog/current', catalogSnapshot([
+          internal,
+          { ...external, revision: 2, updatedAtMs: nowMs + 1, url },
+        ], 2, nowMs + 1));
+      });
+      const redeemer = new ClientAccessRedeemer({
+        codeHasher: hasher('code'),
+        installationHasher: hasher('installation'),
+        nowMs: () => nowMs + 2,
+        rateLimitHasher: hasher('rate-limit'),
+        resourceResolutionMode: mode,
+        store,
+        tokenIssuer: { createCustomToken: async () => 'unreachable' },
+      });
+
+      await assert.rejects(
+        redeemer.redeem(redemptionInput(issued.oneTimeCode)),
+        invalidAccess,
+        `${mode}:${url}`,
+      );
+    }
+  }
+});
+
 test('every client-resource resolution call site selects an explicit compatibility mode', async () => {
   const source = await readFile('src/repositories/firestoreClientAccessStore.ts', 'utf8');
   const calls = [...source.matchAll(/(?:resolveClientResources|readLiveSession)\([\s\S]*?\)/gu)]
@@ -181,6 +358,15 @@ test('every client-resource resolution call site selects an explicit compatibili
   assert.match(indexSource, /redeemClientAccessCodeV2 =[\s\S]*?redeemProductionClientAccess\(request, 'v2_all'\)/u);
   assert.match(indexSource, /refreshClientAccess =[\s\S]*?refreshProductionClientAccess\(request, 'legacy_cabohealth'\)/u);
   assert.match(indexSource, /refreshClientAccessV2 =[\s\S]*?refreshProductionClientAccess\(request, 'v2_all'\)/u);
+
+  for (const path of [
+    'src/domain/clientAccessRedeemer.ts',
+    'src/domain/clientSessionManager.ts',
+  ]) {
+    const domainSource = await readFile(path, 'utf8');
+    assert.doesNotMatch(domainSource, /resourceResolutionMode\?:/u, path);
+    assert.doesNotMatch(domainSource, /resourceResolutionMode\s*\?\?/u, path);
+  }
 });
 
 test('a group-marker code cannot grant a persisted permanently retired client catalog item', async () => {
@@ -233,6 +419,7 @@ test('redemption revalidates an existing group-marker code against persisted ret
       installationHasher: hasher('installation'),
       nowMs: () => nowMs,
       rateLimitHasher: hasher('rate-limit'),
+      resourceResolutionMode: 'legacy_cabohealth',
       store,
       tokenIssuer: { createCustomToken: async () => 'unreachable' },
     });
@@ -289,6 +476,7 @@ test('a malformed catalog snapshot fails closed even when the legacy marker reso
     installationHasher: hasher('installation'),
     nowMs: () => nowMs,
     rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth',
     store,
     tokenIssuer: { createCustomToken: async () => 'unreachable' },
   });
@@ -318,6 +506,7 @@ test('a catalog-to-client-resource mismatch fails closed', async () => {
     installationHasher: hasher('installation'),
     nowMs: () => nowMs,
     rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth',
     store,
     tokenIssuer: { createCustomToken: async () => 'unreachable' },
   });
@@ -347,6 +536,7 @@ test('a client-resource projection with an unexpected field fails closed', async
     installationHasher: hasher('installation'),
     nowMs: () => nowMs,
     rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth',
     store,
     tokenIssuer: { createCustomToken: async () => 'unreachable' },
   });
@@ -380,6 +570,7 @@ test('client authorization rejects control text and reserved infrastructure cata
       installationHasher: hasher('installation'),
       nowMs: () => nowMs,
       rateLimitHasher: hasher('rate-limit'),
+      resourceResolutionMode: 'legacy_cabohealth',
       store,
       tokenIssuer: { createCustomToken: async () => 'unreachable' },
     });
@@ -471,6 +662,7 @@ async function redeemedFixture(
     installationHasher: hasher('installation'),
     nowMs: () => nowMs,
     rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth',
     store,
     tokenIssuer: {
       async createCustomToken(uid) {
@@ -492,10 +684,53 @@ async function redeemedFixture(
     sessions: new ClientSessionManager({
       installationHasher: hasher('installation'),
       nowMs: () => nowMs + 2,
+      resourceResolutionMode: 'legacy_cabohealth',
       store,
     }),
     subjectUid,
   };
+}
+
+async function issuedDirectInternalFixture() {
+  const internal = catalogItem('vip-internal', 'nutrition', 'Internal VIP', 'VIP Interno');
+  const external = catalogItem(
+    externalId,
+    'wellness',
+    'External VIP',
+    'VIP Externo',
+    'https://wellness.example.org/private/',
+  );
+  const database = new InMemoryDocumentDatabase({
+    '_private_catalog/current': catalogSnapshot([internal, external]),
+    [clientResourcePath(internal.id)]: clientResource(internal),
+    [clientResourcePath(external.id)]: clientResource(external),
+  });
+  const store = new FirestoreClientAccessStore(database);
+  const issued = await issuer(store).issue({
+    expiresAtMs: nowMs + 86_400_000,
+    resourceIds: [internal.id],
+  });
+  return { database, external, issued, store };
+}
+
+async function redeemedDirectInternalFixture() {
+  const fixture = await issuedDirectInternalFixture();
+  let subjectUid = '';
+  await new ClientAccessRedeemer({
+    codeHasher: hasher('code'),
+    installationHasher: hasher('installation'),
+    nowMs: () => nowMs,
+    rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'v2_all',
+    store: fixture.store,
+    tokenIssuer: {
+      async createCustomToken(uid) {
+        subjectUid = uid;
+        return 'test-token';
+      },
+    },
+  }).redeem(redemptionInput(fixture.issued.oneTimeCode));
+  return { ...fixture, subjectUid };
 }
 
 function issuer(store: FirestoreClientAccessStore): AccessCodeIssuer {

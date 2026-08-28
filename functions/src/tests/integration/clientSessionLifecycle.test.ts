@@ -191,6 +191,7 @@ async function createRedeemedHarness(seed: 1 | 2 | 3 | 4, installationId: string
     installationHasher: hasher('installation'),
     nowMs: () => nowMs,
     rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth',
     store,
     tokenIssuer: {
       async createCustomToken(uid) {
@@ -210,6 +211,7 @@ async function createRedeemedHarness(seed: 1 | 2 | 3 | 4, installationId: string
     sessions: new ClientSessionManager({
       installationHasher: hasher('installation'),
       nowMs: () => nowMs,
+      resourceResolutionMode: 'legacy_cabohealth',
       store,
     }),
     subjectUid,

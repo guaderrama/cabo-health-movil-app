@@ -34,6 +34,7 @@ test('broker exchanges one launch nonce for a hashed one-hour web session with l
   await new ClientAccessRedeemer({
     codeHasher: hasher('code'), installationHasher: hasher('installation'),
     nowMs: () => nowMs, rateLimitHasher: hasher('rate'), store,
+    resourceResolutionMode: 'legacy_cabohealth',
     tokenIssuer: { async createCustomToken(uid) { subjectUid = uid; return 'test-token'; } },
   }).redeem({
     code: issued.oneTimeCode, installationId,
@@ -117,6 +118,7 @@ test('a live web session fails closed as soon as its production code is revoked'
   await new ClientAccessRedeemer({
     codeHasher: hasher('code'), installationHasher: hasher('installation'),
     nowMs: () => nowMs, rateLimitHasher: hasher('rate'), store,
+    resourceResolutionMode: 'legacy_cabohealth',
     tokenIssuer: { async createCustomToken(uid) { subjectUid = uid; return 'test-token'; } },
   }).redeem({
     code: issued.oneTimeCode, installationId,

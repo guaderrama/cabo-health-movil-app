@@ -34,12 +34,12 @@ export class ClientSessionManager {
   constructor(dependencies: {
     readonly installationHasher: VersionedHmac;
     readonly nowMs?: () => number;
-    readonly resourceResolutionMode?: ClientResourceResolutionMode;
+    readonly resourceResolutionMode: ClientResourceResolutionMode;
     readonly store: ClientSessionStore;
   }) {
     this.#installationHasher = dependencies.installationHasher;
     this.#nowMs = dependencies.nowMs ?? Date.now;
-    this.#resourceResolutionMode = dependencies.resourceResolutionMode ?? 'legacy_cabohealth';
+    this.#resourceResolutionMode = dependencies.resourceResolutionMode;
     this.#store = dependencies.store;
   }
 

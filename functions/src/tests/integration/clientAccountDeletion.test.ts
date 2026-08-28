@@ -435,6 +435,7 @@ test('remove durably enqueues deletion and the worker completes after an Auth ou
     sessions: new ClientSessionManager({
       installationHasher: hasher('installation'),
       nowMs: () => nowMs,
+      resourceResolutionMode: 'legacy_cabohealth',
       store: harness.store,
     }),
   });
@@ -631,6 +632,7 @@ test('scheduled maintenance completes an existing deletion before reporting malf
     installationHasher: hasher('installation'),
     nowMs: () => nowMs,
     rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth',
     store: harness.store,
     tokenIssuer: {
       async createCustomToken(subjectUid) {
@@ -702,6 +704,7 @@ async function createRedeemedHarness(expiresAtMs: number) {
     installationHasher: hasher('installation'),
     nowMs: () => nowMs,
     rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth',
     store,
     tokenIssuer: {
       async createCustomToken(uid) {

@@ -45,6 +45,7 @@ test('the first successful redemption binds a code to one installation and misma
     installationHasher: hasher('installation'),
     nowMs: () => nowMs,
     rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth',
     store,
     tokenIssuer: { createCustomToken: async () => 'test-custom-token' },
   });
@@ -122,6 +123,7 @@ test('five malformed attempts lock only their hashed source-and-installation buc
     installationHasher: hasher('installation'),
     nowMs: () => nowMs,
     rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth',
     store,
     tokenIssuer: { createCustomToken: async () => 'test-custom-token' },
   });
@@ -281,6 +283,7 @@ test('an IP-only bucket stops callers that rotate installation identifiers', asy
     installationHasher: hasher('installation'),
     nowMs: () => nowMs,
     rateLimitHasher: hasher('rate-limit'),
+    resourceResolutionMode: 'legacy_cabohealth',
     store,
     tokenIssuer: { createCustomToken: async () => 'unreachable' },
   });
@@ -394,6 +397,7 @@ test('retrying the same request id reuses one subject without repeating redempti
   const redeemer = new ClientAccessRedeemer({
     codeHasher: hasher('code'), installationHasher: hasher('installation'),
     nowMs: () => clock, rateLimitHasher: hasher('rate-limit'), store,
+    resourceResolutionMode: 'legacy_cabohealth',
     tokenIssuer: { async createCustomToken(uid) { subjects.push(uid); return `token-${subjects.length}`; } },
   });
   const input = {

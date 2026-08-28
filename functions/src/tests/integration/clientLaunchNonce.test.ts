@@ -33,6 +33,7 @@ test('a 60-second launch nonce reveals no target, is stored hashed, and can be c
   const redeemer = new ClientAccessRedeemer({
     codeHasher: hasher('code'), installationHasher: hasher('installation'),
     nowMs: () => nowMs, rateLimitHasher: hasher('rate'), store,
+    resourceResolutionMode: 'legacy_cabohealth',
     tokenIssuer: { async createCustomToken(uid) { subjectUid = uid; return 'test-token'; } },
   });
   await redeemer.redeem({

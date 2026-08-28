@@ -86,7 +86,7 @@ export class ClientAccessRedeemer {
     readonly installationHasher: VersionedHmac;
     readonly nowMs?: () => number;
     readonly rateLimitHasher: VersionedHmac;
-    readonly resourceResolutionMode?: ClientResourceResolutionMode;
+    readonly resourceResolutionMode: ClientResourceResolutionMode;
     readonly store: RedemptionStore;
     readonly tokenIssuer: CustomTokenIssuer;
   }) {
@@ -94,7 +94,7 @@ export class ClientAccessRedeemer {
     this.#installationHasher = dependencies.installationHasher;
     this.#nowMs = dependencies.nowMs ?? Date.now;
     this.#rateLimitHasher = dependencies.rateLimitHasher;
-    this.#resourceResolutionMode = dependencies.resourceResolutionMode ?? 'legacy_cabohealth';
+    this.#resourceResolutionMode = dependencies.resourceResolutionMode;
     this.#store = dependencies.store;
     this.#tokenIssuer = dependencies.tokenIssuer;
   }

@@ -35,9 +35,9 @@ import {
   isPermanentlyRetiredCatalogId,
 } from '../domain/catalogAdmin.js';
 import {
-  catalogIdentityMatches,
   EXTERNAL_CATALOG_ID_PATTERN,
   isLegacyCompatibleCatalogUrl,
+  parseSafeCatalogUrl,
 } from '../domain/catalogUrlPolicy.js';
 import { type WebSessionStore } from '../domain/webSessionBroker.js';
 import type { HmacDigest } from '../security/versionedHmac.js';
@@ -1342,6 +1342,15 @@ async function resolveClientResources(
 
   const activeClients = catalog.filter(({ access, active }) => access === 'clients' && active);
   const activeById = new Map(activeClients.map((item) => [item.id, item]));
+  const activeResources = await readSpecificClientResources(
+    transaction,
+    activeClients.map(({ id }) => id),
+  );
+  if (activeResources === null || activeResources.some((resource) => (
+    !clientResourceMatchesCatalog(resource, activeById.get(resource.id)!)
+  ))) return null;
+  const activeResourceById = new Map(activeResources.map((resource) => [resource.id, resource]));
+
   const expandedIds: string[] = [];
   const seen = new Set<string>();
   for (const resourceId of resourceIds) {
@@ -1356,17 +1365,14 @@ async function resolveClientResources(
     }
   }
 
-  const resources = await readSpecificClientResources(transaction, expandedIds);
-  if (resources === null) return null;
-  for (const resource of resources) {
-    const catalogItem = activeById.get(resource.id);
-    if (!catalogItem || !clientResourceMatchesCatalog(resource, catalogItem)) return null;
-  }
+  const resources = expandedIds.map((resourceId) => activeResourceById.get(resourceId));
+  if (resources.some((resource) => resource === undefined)) return null;
+  const selected = Object.freeze(resources as Readonly<ClientResourceView>[]);
   return mode === 'legacy_cabohealth'
-    ? Object.freeze(resources.filter((resource) => (
+    ? Object.freeze(selected.filter((resource) => (
       isLegacyCompatibleCatalogUrl(activeById.get(resource.id)!.url)
     )))
-    : resources;
+    : selected;
 }
 
 function grantSchemaVersion(mode: ClientResourceResolutionMode): 1 | 2 {
@@ -1434,6 +1440,7 @@ function parseCatalogClientItems(value: unknown): readonly Readonly<StoredCatalo
 }
 
 function parseCatalogItem(value: unknown): Readonly<StoredCatalogClientItem> | null {
+  const parsedUrl = isRecord(value) ? parseSafeCatalogUrl(value.url) : null;
   if (
     !isRecord(value)
     || !recordHasExactKeys(value, [
@@ -1461,7 +1468,11 @@ function parseCatalogItem(value: unknown): Readonly<StoredCatalogClientItem> | n
     || !Number.isSafeInteger(value.revision)
     || (value.revision as number) < 1
     || typeof value.url !== 'string'
-    || !catalogIdentityMatches(value.id, value.url)
+    || parsedUrl === null
+    || value.url !== parsedUrl.url
+    || (parsedUrl.kind === 'cabohealth'
+      ? value.id !== parsedUrl.id
+      : !EXTERNAL_CATALOG_ID_PATTERN.test(value.id))
     || value.id === 'app-review'
     || value.id === 'shared'
     || (value.id === 'client-resources' && value.access !== 'clients')

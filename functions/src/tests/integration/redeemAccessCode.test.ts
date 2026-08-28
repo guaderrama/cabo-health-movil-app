@@ -4,9 +4,14 @@ import { test } from 'node:test';
 
 import {
   ClientAccessRedeemer,
+  type CustomTokenIssuer,
   type RedeemCommand,
   type RedemptionStore,
 } from '../../domain/clientAccessRedeemer.js';
+import {
+  ClientSessionManager,
+  type ClientSessionStore,
+} from '../../domain/clientSessionManager.js';
 import { VersionedHmac } from '../../security/versionedHmac.js';
 
 const grant = Object.freeze({
@@ -25,6 +30,30 @@ const grant = Object.freeze({
 const testHasherKey = createSecretKey(
   Buffer.from('test-only-pepper-key-with-at-least-32-bytes', 'utf8'),
 );
+
+function compileTimeExplicitModeContract(
+  redemptionStore: RedemptionStore,
+  sessionStore: ClientSessionStore,
+  tokenIssuer: CustomTokenIssuer,
+): void {
+  const redeemerDependenciesWithoutMode = {
+    codeHasher: testHasher('code'),
+    installationHasher: testHasher('installation'),
+    rateLimitHasher: testHasher('rate-limit'),
+    store: redemptionStore,
+    tokenIssuer,
+  };
+  // @ts-expect-error resourceResolutionMode must be selected explicitly.
+  new ClientAccessRedeemer(redeemerDependenciesWithoutMode);
+
+  const sessionDependenciesWithoutMode = {
+    installationHasher: testHasher('installation'),
+    store: sessionStore,
+  };
+  // @ts-expect-error resourceResolutionMode must be selected explicitly.
+  new ClientSessionManager(sessionDependenciesWithoutMode);
+}
+void compileTimeExplicitModeContract;
 
 test('redeeming sends only digests to persistence and returns a token plus sanitized grant', async () => {
   let capturedCommand: RedeemCommand | undefined;
