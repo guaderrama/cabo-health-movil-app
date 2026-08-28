@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-27
 
-**Status:** Draft for owner review
+**Status:** Approved by owner on 2026-08-28
 **Scope:** Staff Portal, Firebase Functions, dynamic catalog, public miniapps, VIP client resources, iOS WebView, release operations, and Apple metadata
 
 ## Objective
@@ -38,14 +38,16 @@ An accepted external destination must:
 
 - use exactly the `https:` scheme;
 - have a non-empty public DNS hostname;
-- contain no username, password, or `@` authority ambiguity;
-- use the default HTTPS port only;
+- contain no username, password, or `@` authority ambiguity; a literal `@` in a safe path or query remains valid;
+- use the default HTTPS port only; explicit `:443` is canonicalized away and every non-default port is rejected;
 - contain no control characters, spaces, backslashes, or malformed percent encoding;
 - not syntactically target `localhost`, a `.local` name, an IP literal, loopback, link-local, or private-network address;
 - preserve a normal path, query, and fragment after canonicalization with `URL.toString()`;
 - reject encoded path traversal and encoded slash/backslash ambiguity.
 
 The policy rejects `http:`, `javascript:`, `data:`, `file:`, `blob:`, `intent:`, `mailto:`, `tel:`, protocol-relative URLs, custom ports, userinfo, and explicit local/private network destinations. This is a URL-boundary control, not a guarantee about the future DNS configuration of a third-party hostname.
+
+The exact hostname `cabohealth.org` is never treated as an external destination. Only its existing canonical `/apps/${slug}/` catalog form may pass as `cabohealth`; root, Staff, shared, launch/API, App Review, reserved, retired, nested, and other CaboHealth paths fail closed. This prevents an opaque external ID from bypassing existing route and reserved-ID controls.
 
 ## Catalog identity
 
@@ -127,7 +129,9 @@ VIP previews continue to omit the URL.
 7. If authorization is still valid, Functions returns a short-lived external launch descriptor containing the normalized URL. Internal protected resources instead return the existing broker descriptor.
 8. The app parses this as a discriminated launch union and opens the external destination in the same full-screen CaboHealth route using the external WebView policy.
 
-The external target is not placed in public previews, AsyncStorage, favorites, application logs, analytics, audit copy, or error messages. It exists in the catalog's protected administrative record and in the authorized launch response needed to load the page.
+The external target is not placed in public previews, AsyncStorage, favorites, application logs, analytics, idempotency receipts, audit copy, or error messages. It exists in the catalog's protected administrative record and in the authorized launch response needed to load the page. A URL-free idempotency receipt may reconstruct the owner response only by reading that catalog authority in the same transaction.
+
+An external launch expires at the earliest of 60 seconds after authorization, the current grant expiry, or the current access-code expiry.
 
 Revocation, code replacement, expiration, item deactivation, account deletion, foreground revalidation, and route teardown keep their current fail-closed behavior. A failed or stale launch returns home or shows the existing unavailable state.
 
