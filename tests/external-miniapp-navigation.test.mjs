@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import test from 'node:test';
+import ts from 'typescript';
 
 import {
   applyExternalHttpsNavigationDecision,
@@ -17,6 +19,57 @@ const destination = Object.freeze({
   canonicalUrl: 'https://www.eightsleep.com/mx/?locale=es#sleep',
   origin: 'https://www.eightsleep.com',
 });
+const require = createRequire(import.meta.url);
+
+function loadPinnedSharedWrapper(platform) {
+  const source = readFileSync(
+    'node_modules/react-native-webview/src/WebViewShared.tsx',
+    'utf8',
+  );
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      esModuleInterop: true,
+      jsx: ts.JsxEmit.ReactJSX,
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  const linkingEffects = [];
+  const runtimeModule = { exports: {} };
+  const runtimeRequire = (specifier) => {
+    if (specifier === 'react-native') return {
+      ActivityIndicator: 'ActivityIndicator',
+      Linking: {
+        canOpenURL: async (url) => {
+          linkingEffects.push(['canOpenURL', url]);
+          return true;
+        },
+        openURL: async (url) => {
+          linkingEffects.push(['openURL', url]);
+        },
+      },
+      Platform: { OS: platform },
+      Text: 'Text',
+      View: 'View',
+    };
+    if (specifier === './WebView.styles') return {
+      __esModule: true,
+      default: {
+        errorText: {},
+        errorTextTitle: {},
+        loadingOrErrorView: {},
+      },
+    };
+    return require(specifier);
+  };
+  const execute = new Function('require', 'module', 'exports', compiled);
+  execute(runtimeRequire, runtimeModule, runtimeModule.exports);
+  return {
+    createOnShouldStartLoadWithRequest:
+      runtimeModule.exports.createOnShouldStartLoadWithRequest,
+    linkingEffects,
+  };
+}
 
 test('external WebView loads the exact URL and allows only safe same-origin top-frame navigation', () => {
   assert.deepEqual(getExternalHttpsWebViewSource(destination), {
@@ -108,13 +161,60 @@ test('blocked navigation stays in place and shows only the generic unavailable s
   assert.equal(errorCalls, 1);
 });
 
+test('patched shared wrapper forces rejected origins to false after one application callback on iOS and Android', async () => {
+  for (const platform of ['ios', 'android']) {
+    const runtime = loadPinnedSharedWrapper(platform);
+    const applicationRequests = [];
+    const nativeDecisions = [];
+    const rejectedUrl = 'https://accounts.eightsleep.com/login';
+    const handler = runtime.createOnShouldStartLoadWithRequest(
+      (shouldStart, url, lockIdentifier) => {
+        nativeDecisions.push([shouldStart, url, lockIdentifier]);
+      },
+      [destination.origin],
+      (request) => {
+        applicationRequests.push(request.url);
+        return true;
+      },
+    );
+
+    handler({ nativeEvent: { url: rejectedUrl, lockIdentifier: 41 } });
+    await Promise.resolve();
+
+    assert.deepEqual(applicationRequests, [rejectedUrl], platform);
+    assert.deepEqual(nativeDecisions, [[false, rejectedUrl, 41]], platform);
+    assert.deepEqual(runtime.linkingEffects, [], platform);
+  }
+});
+
+test('patched shared wrapper keeps a whitelist-prefix lookalike blocked by the exact-origin callback', () => {
+  for (const platform of ['ios', 'android']) {
+    const runtime = loadPinnedSharedWrapper(platform);
+    const applicationRequests = [];
+    const nativeDecisions = [];
+    const lookalikeUrl = 'https://www.eightsleep.com.attacker.org/';
+    const handler = runtime.createOnShouldStartLoadWithRequest(
+      (shouldStart, url, lockIdentifier) => {
+        nativeDecisions.push([shouldStart, url, lockIdentifier]);
+      },
+      [destination.origin],
+      (request) => {
+        applicationRequests.push(request.url);
+        return false;
+      },
+    );
+
+    handler({ nativeEvent: { url: lookalikeUrl, lockIdentifier: 42 } });
+
+    assert.deepEqual(applicationRequests, [lookalikeUrl], platform);
+    assert.deepEqual(nativeDecisions, [[false, lookalikeUrl, 42]], platform);
+    assert.deepEqual(runtime.linkingEffects, [], platform);
+  }
+});
+
 test('external WebView source denies privileged surfaces and has no browser, share, or bridge escape', () => {
   const component = readFileSync('features/launch/ExternalHttpsWebView.tsx', 'utf8');
   const policy = readFileSync('features/launch/externalHttpsNavigationPolicy.ts', 'utf8');
-  const pinnedWebViewShared = readFileSync(
-    'node_modules/react-native-webview/src/WebViewShared.tsx',
-    'utf8',
-  );
 
   for (const required of [
     /mediaCapturePermissionGrantType:\s*'deny'/u,
@@ -130,10 +230,5 @@ test('external WebView source denies privileged surfaces and has no browser, sha
   assert.doesNotMatch(
     component,
     /\bLinking\b|\bShare\b|openURL|onMessage|injectedJavaScript|nativeConfig|onFileDownload/iu,
-  );
-  assert.doesNotMatch(
-    pinnedWebViewShared,
-    /Linking\.(?:canOpenURL|openURL)/u,
-    'originWhitelist rejection must not escape to the operating-system browser',
   );
 });

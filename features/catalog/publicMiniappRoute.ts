@@ -26,6 +26,16 @@ export interface ExternalMiniappExpectedDestination {
   readonly destinationOrigin: string;
 }
 
+export interface ExternalMiniappRouteInput {
+  readonly resourceId: string | string[] | undefined;
+  readonly catalog: readonly Readonly<CatalogPublicMiniapp>[];
+  readonly isInitialLoading: boolean;
+}
+
+export interface ExternalMiniappRouteStateMachine {
+  resolve(input: Readonly<ExternalMiniappRouteInput>): ExternalMiniappRouteState;
+}
+
 export function buildPublicMiniappRoute(
   miniapp: Readonly<CatalogPublicMiniapp>,
 ): PublicMiniappRoute {
@@ -40,10 +50,7 @@ export function buildPublicMiniappRoute(
       });
 }
 
-export function resolveExternalMiniappRouteState(input: Readonly<{
-  resourceId: string | string[] | undefined;
-  catalog: readonly Readonly<CatalogPublicMiniapp>[];
-  isInitialLoading: boolean;
+export function resolveExternalMiniappRouteState(input: Readonly<ExternalMiniappRouteInput & {
   expectedDestination?: Readonly<ExternalMiniappExpectedDestination>;
 }>): ExternalMiniappRouteState {
   if (typeof input.resourceId !== 'string') return Object.freeze({ kind: 'unavailable' });
@@ -62,4 +69,34 @@ export function resolveExternalMiniappRouteState(input: Readonly<{
   return input.isInitialLoading
     ? Object.freeze({ kind: 'loading' })
     : Object.freeze({ kind: 'unavailable' });
+}
+
+export function createExternalMiniappRouteStateMachine(): Readonly<ExternalMiniappRouteStateMachine> {
+  let expectedDestination: Readonly<ExternalMiniappExpectedDestination> | null = null;
+  let isUnavailable = false;
+
+  return Object.freeze({
+    resolve(input: Readonly<ExternalMiniappRouteInput>): ExternalMiniappRouteState {
+      if (isUnavailable) return Object.freeze({ kind: 'unavailable' });
+      const state = resolveExternalMiniappRouteState({
+        ...input,
+        ...(expectedDestination ? { expectedDestination } : {}),
+      });
+      if (state.kind === 'ready') {
+        if (expectedDestination === null) {
+          expectedDestination = Object.freeze({
+            resourceId: state.miniapp.slug,
+            destinationUrl: state.miniapp.destinationUrl,
+            destinationOrigin: state.miniapp.destinationOrigin,
+          });
+        }
+        return state;
+      }
+      if (state.kind === 'unavailable' || expectedDestination !== null) {
+        isUnavailable = true;
+        return Object.freeze({ kind: 'unavailable' });
+      }
+      return state;
+    },
+  });
 }

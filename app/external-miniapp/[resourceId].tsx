@@ -4,31 +4,23 @@ import NotFoundScreen from '../+not-found';
 import { LoadingIndicator } from '../../components';
 import { usePublicCatalog } from '../../context/PublicCatalogContext';
 import {
-  type ExternalMiniappExpectedDestination,
-  resolveExternalMiniappRouteState,
+  createExternalMiniappRouteStateMachine,
+  type ExternalMiniappRouteStateMachine,
 } from '../../features/catalog/publicMiniappRoute';
 import { ExternalHttpsWebView } from '../../features/launch/ExternalHttpsWebView';
 
 export default function ExternalPublicMiniappRoute() {
   const { resourceId } = useLocalSearchParams<{ resourceId?: string | string[] }>();
   const { miniapps, isInitialLoading } = usePublicCatalog();
-  const expectedDestinationRef = useRef<ExternalMiniappExpectedDestination | null>(null);
-  const state = resolveExternalMiniappRouteState({
+  const routeStateMachineRef = useRef<ExternalMiniappRouteStateMachine | null>(null);
+  if (routeStateMachineRef.current === null) {
+    routeStateMachineRef.current = createExternalMiniappRouteStateMachine();
+  }
+  const state = routeStateMachineRef.current.resolve({
     resourceId,
     catalog: miniapps,
     isInitialLoading,
-    ...(expectedDestinationRef.current
-      ? { expectedDestination: expectedDestinationRef.current }
-      : {}),
   });
-
-  if (state.kind === 'ready' && expectedDestinationRef.current === null) {
-    expectedDestinationRef.current = {
-      resourceId: state.miniapp.slug,
-      destinationUrl: state.miniapp.destinationUrl,
-      destinationOrigin: state.miniapp.destinationOrigin,
-    };
-  }
 
   if (state.kind === 'loading') return <LoadingIndicator />;
   if (state.kind !== 'ready') return <NotFoundScreen />;

@@ -35,7 +35,8 @@ test('external Public items use an ID-only route that re-resolves the live catal
 
   assert.match(home, /buildPublicMiniappRoute\(miniapp\)/u);
   assert.match(saved, /buildPublicMiniappRoute\(miniapp\)/u);
-  assert.match(route, /resolveExternalMiniappRouteState\(\{[\s\S]*resourceId,[\s\S]*catalog: miniapps,[\s\S]*isInitialLoading,/u);
   assert.match(route, /state\.kind !== 'ready'/u);
+  assert.match(route, /createExternalMiniappRouteStateMachine\(\)/u);
+  assert.match(route, /routeStateMachineRef\.current\.resolve\(\{[\s\S]*resourceId,[\s\S]*catalog: miniapps,[\s\S]*isInitialLoading,/u);
   assert.doesNotMatch(`${home}\n${saved}\n${route}`, /params:\s*\{[^}]*destinationUrl/u);
 });

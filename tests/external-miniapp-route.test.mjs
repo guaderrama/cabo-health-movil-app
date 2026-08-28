@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildPublicMiniappRoute,
+  createExternalMiniappRouteStateMachine,
   resolveExternalMiniappRouteState,
 } from '../.test-build/features/catalog/publicMiniappRoute.js';
 
@@ -87,5 +88,29 @@ test('external route fails closed if an immutable live destination changes while
     }],
     isInitialLoading: false,
     expectedDestination,
+  }), { kind: 'unavailable' });
+});
+
+test('mounted external route latch tears down URL A before the same opaque ID can load URL B', () => {
+  const route = createExternalMiniappRouteStateMachine();
+  assert.deepEqual(route.resolve({
+    resourceId: external.slug,
+    catalog: [external],
+    isInitialLoading: false,
+  }), { kind: 'ready', miniapp: external });
+
+  const replacement = Object.freeze({
+    ...external,
+    destinationUrl: 'https://www.eightsleep.com/replaced/',
+  });
+  assert.deepEqual(route.resolve({
+    resourceId: external.slug,
+    catalog: [replacement],
+    isInitialLoading: false,
+  }), { kind: 'unavailable' });
+  assert.deepEqual(route.resolve({
+    resourceId: external.slug,
+    catalog: [external],
+    isInitialLoading: false,
   }), { kind: 'unavailable' });
 });
