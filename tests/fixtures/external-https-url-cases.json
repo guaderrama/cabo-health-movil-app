@@ -27,6 +27,7 @@
     "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example.org/",
     "https://cabohealth.org/apps/healthy-recipes/?", "https://cabohealth.org/apps/healthy-recipes/#",
     "https://cabohealth.org/apps/healthy-recipes/?#", "https://example.org:/", "https://example.org:0443/",
-    "https://example.org/%09", "https://example.org/a?line=%0A", "https://example.org/a#line%0D"
+    "https://example.org/%09", "https://example.org/a?line=%0A", "https://example.org/a#line%0D",
+    "https://printer.internal/", "https://resolver.alt/", "https://service.arpa/", "https://resolver.arpa/"
   ]
 }

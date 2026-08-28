@@ -20,7 +20,9 @@ const DNS_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const SPECIAL_USE_DNS_SUFFIXES = Object.freeze([
   'localhost',
   'local',
-  'home.arpa',
+  'internal',
+  'alt',
+  'arpa',
   'test',
   'invalid',
   'example',
