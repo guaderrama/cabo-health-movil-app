@@ -387,6 +387,145 @@ test('activation rejects every uncorrelated valid response without changing the 
   assert.deepEqual(correlated.getSnapshot().items, [expected]);
 });
 
+test('list rejects signed-zero item and top-level timestamps while accepting epoch zero', async () => {
+  const session = parseServerStaffSession({
+    scope: 'production',
+    permissions: ['client_resource_publish'],
+  });
+  const epochItem = {
+    ...catalogItem,
+    createdAtMs: 0,
+    updatedAtMs: 0,
+  };
+  const gatewayFor = (response) => createCatalogItemGateway({
+    session,
+    transport: async () => response,
+  });
+
+  for (const field of ['createdAtMs', 'updatedAtMs']) {
+    await assert.rejects(
+      gatewayFor({ items: [{ ...epochItem, [field]: -0 }] }).list(),
+      /catalog_item_response_invalid/u,
+      field,
+    );
+  }
+  await assert.rejects(
+    gatewayFor({ items: [epochItem], updatedAtMs: -0 }).list(),
+    /catalog_item_response_invalid/u,
+    'top-level updatedAtMs',
+  );
+  assert.deepEqual(await gatewayFor({ items: [epochItem] }).list(), [epochItem]);
+});
+
+test('create rejects each signed-zero item timestamp without changing state and accepts epoch zero', async () => {
+  const input = {
+    access: 'public',
+    active: true,
+    icon: 'guide',
+    summary: { en: 'Epoch recovery guidance.', 'es-MX': 'Guía de recuperación de época.' },
+    title: { en: 'Epoch recovery', 'es-MX': 'Recuperación de época' },
+    url: 'https://example.org/epoch-create',
+  };
+  const epochResponse = {
+    ...input,
+    createdAtMs: 0,
+    id: 'external-33333333333333333333333333333333',
+    revision: 1,
+    updatedAtMs: 0,
+  };
+
+  for (const field of ['createdAtMs', 'updatedAtMs']) {
+    const model = await createMutationResponseModel(
+      catalogItem,
+      'adminCreateCatalogItem',
+      { ...epochResponse, [field]: -0 },
+    );
+    await assert.rejects(model.create(input), /catalog_item_response_invalid/u, field);
+    assert.deepEqual(model.getSnapshot().items, [catalogItem], field);
+  }
+
+  const correlated = await createMutationResponseModel(
+    catalogItem,
+    'adminCreateCatalogItem',
+    epochResponse,
+  );
+  assert.deepEqual(await correlated.create(input), epochResponse);
+  assert.deepEqual(correlated.getSnapshot().items, [catalogItem, epochResponse]);
+});
+
+test('update rejects each signed-zero item timestamp without changing state and accepts epoch zero', async () => {
+  const stored = {
+    ...externalCatalogItem,
+    createdAtMs: 0,
+    updatedAtMs: 0,
+  };
+  const details = {
+    access: stored.access,
+    icon: 'wellness',
+    summary: { en: 'Updated epoch guidance.', 'es-MX': 'Guía de época actualizada.' },
+    title: { en: 'Updated epoch', 'es-MX': 'Época actualizada' },
+    url: stored.url,
+  };
+  const epochResponse = {
+    ...stored,
+    ...details,
+    revision: 2,
+  };
+
+  for (const field of ['createdAtMs', 'updatedAtMs']) {
+    const model = await createMutationResponseModel(
+      stored,
+      'adminUpdateCatalogItem',
+      { ...epochResponse, [field]: -0 },
+    );
+    await assert.rejects(
+      model.update(stored.id, stored.revision, details),
+      /catalog_item_response_invalid/u,
+      field,
+    );
+    assert.deepEqual(model.getSnapshot().items, [stored], field);
+  }
+
+  const correlated = await createMutationResponseModel(stored, 'adminUpdateCatalogItem', epochResponse);
+  assert.deepEqual(await correlated.update(stored.id, stored.revision, details), epochResponse);
+  assert.deepEqual(correlated.getSnapshot().items, [epochResponse]);
+});
+
+test('activation rejects each signed-zero item timestamp without changing state and accepts epoch zero', async () => {
+  const stored = {
+    ...externalCatalogItem,
+    createdAtMs: 0,
+    updatedAtMs: 0,
+  };
+  const epochResponse = {
+    ...stored,
+    active: false,
+    revision: 2,
+  };
+
+  for (const field of ['createdAtMs', 'updatedAtMs']) {
+    const model = await createMutationResponseModel(
+      stored,
+      'adminSetCatalogItemActive',
+      { ...epochResponse, [field]: -0 },
+    );
+    await assert.rejects(
+      model.setActive(stored.id, stored.revision, false),
+      /catalog_item_response_invalid/u,
+      field,
+    );
+    assert.deepEqual(model.getSnapshot().items, [stored], field);
+  }
+
+  const correlated = await createMutationResponseModel(
+    stored,
+    'adminSetCatalogItemActive',
+    epochResponse,
+  );
+  assert.deepEqual(await correlated.setActive(stored.id, stored.revision, false), epochResponse);
+  assert.deepEqual(correlated.getSnapshot().items, [epochResponse]);
+});
+
 test('VIP commercial route checks are internal-only while teaser secrecy applies to external links', () => {
   const externalVip = {
     access: 'clients',

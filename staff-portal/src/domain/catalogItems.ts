@@ -470,8 +470,10 @@ function parseCatalogItem(value: unknown): CatalogItem {
     || !Number.isSafeInteger(value.revision)
     || (value.revision as number) < 1
     || !Number.isSafeInteger(value.createdAtMs)
+    || Object.is(value.createdAtMs, -0)
     || (value.createdAtMs as number) < 0
     || !Number.isSafeInteger(value.updatedAtMs)
+    || Object.is(value.updatedAtMs, -0)
     || (value.updatedAtMs as number) < (value.createdAtMs as number)) {
     throw new Error('catalog_item_response_invalid');
   }
