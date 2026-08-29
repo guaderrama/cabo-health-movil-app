@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, readdirSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -63,6 +63,43 @@ function sha256(bytes) {
 
 function canonicalJson(value) {
   return `${JSON.stringify(value)}\n`;
+}
+
+function spawnSyncWithPrivateStdin(command, args, options, input, temporaryParent = fixtureTmp) {
+  const privateRoot = mkdtempSync(join(temporaryParent, 'cabohealth-private-stdin-'));
+  const inputPath = join(privateRoot, 'stdin');
+  let inputFd;
+  let cleanupError;
+  try {
+    chmodSync(privateRoot, 0o700);
+    writeFileSync(inputPath, input, { flag: 'wx', mode: 0o600 });
+    chmodSync(inputPath, 0o600);
+    inputFd = openSync(inputPath, 'r');
+    unlinkSync(inputPath);
+    return spawnSync(command, args, {
+      ...options,
+      stdio: [inputFd, 'pipe', 'pipe'],
+    });
+  } finally {
+    if (inputFd !== undefined) {
+      try {
+        closeSync(inputFd);
+      } catch (error) {
+        cleanupError = error;
+      }
+    }
+    try {
+      if (existsSync(inputPath)) unlinkSync(inputPath);
+    } catch (error) {
+      cleanupError ??= error;
+    }
+    try {
+      rmdirSync(privateRoot);
+    } catch (error) {
+      cleanupError ??= error;
+    }
+    if (cleanupError) throw cleanupError;
+  }
 }
 
 function pendingBuild8AgeRating() {
@@ -216,6 +253,40 @@ function hostingOverlayFixture() {
     },
   };
 }
+
+test('private Python stdin is an unlinked mode-0600 regular file with exact large payload bytes', () => {
+  const contractParent = mkdtempSync(join(fixtureTmp, 'cabohealth-private-stdin-contract-'));
+  chmodSync(contractParent, 0o700);
+  const payload = Buffer.alloc(815_959);
+  for (let index = 0; index < payload.byteLength; index += 1) payload[index] = index % 251;
+  const childScript = [
+    'import json, os, stat, sys',
+    'info = os.fstat(0)',
+    'payload = sys.stdin.buffer.read()',
+    'os.write(1, payload)',
+    "sys.stderr.write(json.dumps({'regular': stat.S_ISREG(info.st_mode), 'mode': format(stat.S_IMODE(info.st_mode), '04o'), 'nlink': info.st_nlink}))",
+  ].join('\n');
+
+  try {
+    const result = spawnSyncWithPrivateStdin(
+      'python3',
+      ['-c', childScript],
+      { cwd: projectRoot, encoding: null, maxBuffer: 2 * 1024 * 1024 },
+      payload,
+      contractParent,
+    );
+    assert.equal(result.status, 0, result.stderr?.toString('utf8') || result.stdout?.toString('utf8'));
+    assert.deepEqual(result.stdout, payload);
+    assert.deepEqual(JSON.parse(result.stderr.toString('utf8')), {
+      regular: true,
+      mode: '0600',
+      nlink: 0,
+    });
+    assert.deepEqual(readdirSync(contractParent), []);
+  } finally {
+    rmSync(contractParent, { recursive: true });
+  }
+});
 
 test('hosting header overlays publish exact recoverable policies without replacing public files', () => {
   const { root, env } = hostingOverlayFixture();
@@ -682,11 +753,12 @@ test('materialize-release rejects pending and coordinated compliance/legal/AASA/
     }));
     return { transport, manifest };
   };
-  const publish = (candidate) => spawnSync('python3', [helperPath, 'materialize-release', root], {
-    cwd: projectRoot,
-    encoding: 'utf8',
-    input: canonicalJson(candidate),
-  });
+  const publish = (candidate) => spawnSyncWithPrivateStdin(
+    'python3',
+    [helperPath, 'materialize-release', root],
+    { cwd: projectRoot, encoding: 'utf8' },
+    canonicalJson(candidate),
+  );
 
   const pending = publish(envelope());
   assert.equal(pending.status, 1, pending.stderr || pending.stdout);
@@ -767,11 +839,12 @@ test('materialize-release rejects pending and coordinated compliance/legal/AASA/
   assert.equal(existsSync(join(root, 'release/web-bundles')), false);
   assert.equal(existsSync(join(root, 'release/web-artifacts.json')), false);
 
-  const bypass = spawnSync('python3', [helperPath, 'materialize-local', root], {
-    cwd: projectRoot,
-    encoding: 'utf8',
-    input: canonicalJson(envelope().transport),
-  });
+  const bypass = spawnSyncWithPrivateStdin(
+    'python3',
+    [helperPath, 'materialize-local', root],
+    { cwd: projectRoot, encoding: 'utf8' },
+    canonicalJson(envelope().transport),
+  );
   assert.equal(bypass.status, 1, bypass.stderr || bypass.stdout);
   assert.equal(existsSync(join(root, 'release/web-bundles')), false);
 });
@@ -852,11 +925,12 @@ test('post-pin materialization independently reaches legal, canonical AASA, and 
       }));
       return { transport, manifest };
     };
-    const publish = () => spawnSync('python3', [patchedHelperPath, 'materialize-release', root], {
-      cwd: projectRoot,
-      encoding: 'utf8',
-      input: canonicalJson(envelope()),
-    });
+    const publish = () => spawnSyncWithPrivateStdin(
+      'python3',
+      [patchedHelperPath, 'materialize-release', root],
+      { cwd: projectRoot, encoding: 'utf8' },
+      canonicalJson(envelope()),
+    );
     return { root, publish, legalPins, patchedHelperPath };
   };
 
