@@ -353,7 +353,7 @@ test('release tooling pins EAS CLI and both plist parsers exactly', () => {
   assert.deepEqual(packageJson.overrides['eas-cli'], {
     ajv: '8.20.0',
     joi: '17.13.6',
-    'minimatch@5.1.2': '5.1.8',
+    'minimatch@5.1.2': 'npm:minimatch@5.1.8',
     nanoid: '3.3.18',
     tar: '7.5.22',
     yaml: '2.9.0',
