@@ -936,6 +936,152 @@ test('submission authorization is documented as an operational challenge, not id
   assert.match(gates, /submit adapter.*independently reviewed and recursively pinned/iu);
 });
 
+test('phase authority history permits one exact attestation and one exact pin per reviewed phase', async (t) => {
+  const { verifyPhaseAuthorityCommitHistory } = await import(guardPath);
+  const makeFixture = () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'cabohealth-phase-authority-')));
+    write(root, 'scripts/release-command-guard.mjs', [
+      'const BUILD_INPUT_ATTESTATION_SHA256 = null;',
+      'const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;',
+      'const RC_ATTESTATION_SHA256 = null;',
+      'const PINNED_EAS_CLI = null;',
+      'const PINNED_APP_STORE_SUBMIT_ADAPTER = null;',
+      "export const guardedBehavior = 'reviewed';",
+      '',
+    ].join('\n'));
+    write(root, 'app.json', '{}\n');
+    git(root, 'init', '-q');
+    git(root, 'add', '.');
+    git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+      'commit', '-qm', 'frozen application source');
+    return { root, sourceCommit: git(root, 'rev-parse', 'HEAD') };
+  };
+  const setPin = (root, name, previous, next) => {
+    const path = join(root, 'scripts/release-command-guard.mjs');
+    const source = readFileSync(path, 'utf8');
+    writeFileSync(path, source.replace(
+      `const ${name} = ${previous};`,
+      `const ${name} = '${next}';`,
+    ));
+  };
+  const commit = (root, message, ...paths) => {
+    git(root, 'add', ...paths);
+    git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+      'commit', '-qm', message);
+  };
+
+  await t.test('accepts exact ordered input, artifact, screenshot, RC, and submit-tool authority', () => {
+    const { root, sourceCommit } = makeFixture();
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const inputBytes = Buffer.from('{"phase":"input"}\n');
+    const inputSha256 = hash(inputBytes);
+    write(root, 'release/app-store/3.0/build-input-attestation.json', inputBytes);
+    setPin(root, 'BUILD_INPUT_ATTESTATION_SHA256', 'null', inputSha256);
+    commit(root, 'review input authority',
+      'release/app-store/3.0/build-input-attestation.json',
+      'scripts/release-command-guard.mjs');
+
+    const artifactBytes = Buffer.from('{"phase":"artifact"}\n');
+    const artifactSha256 = hash(artifactBytes);
+    write(root, 'release/app-store/3.0/build-artifact-attestation.json', artifactBytes);
+    setPin(root, 'BUILD_ARTIFACT_ATTESTATION_SHA256', 'null', artifactSha256);
+    commit(root, 'review artifact authority',
+      'release/app-store/3.0/build-artifact-attestation.json',
+      'scripts/release-command-guard.mjs');
+
+    write(root, 'release/app-store/3.0/screenshots-manifest.json', '{"captures":[]}\n');
+    commit(root, 'record screenshot evidence',
+      'release/app-store/3.0/screenshots-manifest.json');
+
+    const rcBytes = Buffer.from('{"phase":"rc"}\n');
+    const rcSha256 = hash(rcBytes);
+    write(root, 'release/app-store/3.0/rc-attestation.json', rcBytes);
+    setPin(root, 'RC_ATTESTATION_SHA256', 'null', rcSha256);
+    commit(root, 'review RC authority',
+      'release/app-store/3.0/rc-attestation.json',
+      'scripts/release-command-guard.mjs');
+
+    const submitAdapterPin = Buffer.from('reviewed submit adapter').toString('base64');
+    setPin(root, 'PINNED_APP_STORE_SUBMIT_ADAPTER', 'null', submitAdapterPin);
+    commit(root, 'review submit-tool authority', 'scripts/release-command-guard.mjs');
+
+    assert.doesNotThrow(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'submit-tool', {
+      buildInputSha256: inputSha256,
+      buildArtifactSha256: artifactSha256,
+      rcSha256,
+      submitAdapterPin,
+    }));
+  });
+
+  await t.test('rejects one phase commit that advances two pins', () => {
+    const { root, sourceCommit } = makeFixture();
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const inputBytes = Buffer.from('{"phase":"input"}\n');
+    const inputSha256 = hash(inputBytes);
+    write(root, 'release/app-store/3.0/build-input-attestation.json', inputBytes);
+    setPin(root, 'BUILD_INPUT_ATTESTATION_SHA256', 'null', inputSha256);
+    setPin(root, 'BUILD_ARTIFACT_ATTESTATION_SHA256', 'null', 'a'.repeat(64));
+    commit(root, 'advance two pins',
+      'release/app-store/3.0/build-input-attestation.json',
+      'scripts/release-command-guard.mjs');
+
+    assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'input', {
+      buildInputSha256: inputSha256,
+    }), /EXACT_BUILD_INPUT_ATTESTATION_INVALID/u);
+  });
+
+  await t.test('rejects a phase commit that changes non-pin guard lines', () => {
+    const { root, sourceCommit } = makeFixture();
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const inputBytes = Buffer.from('{"phase":"input"}\n');
+    const inputSha256 = hash(inputBytes);
+    write(root, 'release/app-store/3.0/build-input-attestation.json', inputBytes);
+    setPin(root, 'BUILD_INPUT_ATTESTATION_SHA256', 'null', inputSha256);
+    const guard = join(root, 'scripts/release-command-guard.mjs');
+    writeFileSync(guard, readFileSync(guard, 'utf8').replace(
+      "export const guardedBehavior = 'reviewed';",
+      "export const guardedBehavior = 'changed-with-pin';",
+    ));
+    commit(root, 'change behavior with pin',
+      'release/app-store/3.0/build-input-attestation.json',
+      'scripts/release-command-guard.mjs');
+
+    assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'input', {
+      buildInputSha256: inputSha256,
+    }), /EXACT_BUILD_INPUT_ATTESTATION_INVALID/u);
+  });
+
+  await t.test('rejects replacement of earlier attestation and pin in artifact phase', () => {
+    const { root, sourceCommit } = makeFixture();
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const inputBytes = Buffer.from('{"phase":"input"}\n');
+    const inputSha256 = hash(inputBytes);
+    write(root, 'release/app-store/3.0/build-input-attestation.json', inputBytes);
+    setPin(root, 'BUILD_INPUT_ATTESTATION_SHA256', 'null', inputSha256);
+    commit(root, 'review input authority',
+      'release/app-store/3.0/build-input-attestation.json',
+      'scripts/release-command-guard.mjs');
+
+    const replacementInput = Buffer.from('{"phase":"replaced-input"}\n');
+    const replacementInputSha256 = hash(replacementInput);
+    const artifactBytes = Buffer.from('{"phase":"artifact"}\n');
+    const artifactSha256 = hash(artifactBytes);
+    write(root, 'release/app-store/3.0/build-input-attestation.json', replacementInput);
+    write(root, 'release/app-store/3.0/build-artifact-attestation.json', artifactBytes);
+    setPin(root, 'BUILD_INPUT_ATTESTATION_SHA256', `'${inputSha256}'`, replacementInputSha256);
+    setPin(root, 'BUILD_ARTIFACT_ATTESTATION_SHA256', 'null', artifactSha256);
+    commit(root, 'replace earlier authority while advancing artifact',
+      'release/app-store/3.0/build-input-attestation.json',
+      'release/app-store/3.0/build-artifact-attestation.json',
+      'scripts/release-command-guard.mjs');
+
+    assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'artifact', {
+      buildInputSha256: replacementInputSha256,
+      buildArtifactSha256: artifactSha256,
+    }), /EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID/u);
+  });
+});
+
 test('phase attestations recompute tracked source and exact IPA bytes', async (t) => {
   const {
     computeResolvedProductionExpoConfigSha256,
@@ -986,9 +1132,6 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
       "export const guardedBehavior = 'reviewed';",
       '',
     ].join('\n'),
-    'release/app-store/3.0/build-input-attestation.json': '{}\n',
-    'release/app-store/3.0/build-artifact-attestation.json': '{}\n',
-    'release/app-store/3.0/rc-attestation.json': '{}\n',
     'release/app-store/3.0/screenshots-manifest.json': '{"captures":[]}\n',
     'tool-runtime/eas-cli/package.json': '{"name":"eas-cli","version":"22.2.0"}\n',
     'tool-runtime/eas-cli/bin/run': '#!/usr/bin/env node\n',
@@ -1061,11 +1204,21 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     reviewedAt: '2026-08-22T08:00:00.000Z',
   };
   const buildInputBytes = Buffer.from(`${JSON.stringify(buildInput)}\n`);
+  const buildInputSha256 = hash(buildInputBytes);
   write(root, 'release/app-store/3.0/build-input-attestation.json', buildInputBytes);
-  git(root, 'add', 'release/app-store/3.0/build-input-attestation.json');
+  write(
+    root,
+    'scripts/release-command-guard.mjs',
+    readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8').replace(
+      'const BUILD_INPUT_ATTESTATION_SHA256 = null;',
+      `const BUILD_INPUT_ATTESTATION_SHA256 = '${buildInputSha256}';`,
+    ),
+  );
+  git(root, 'add',
+    'release/app-store/3.0/build-input-attestation.json',
+    'scripts/release-command-guard.mjs');
   git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
     'commit', '-qm', 'pin build input');
-  const buildInputSha256 = hash(buildInputBytes);
   assert.deepEqual(
     verifyBuildInputAttestation(root, buildInputSha256),
     buildInput,
@@ -1137,11 +1290,21 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     reviewedAt: '2026-08-22T09:00:00.000Z',
   };
   const buildArtifactBytes = Buffer.from(`${JSON.stringify(buildArtifact)}\n`);
+  const buildArtifactSha256 = hash(buildArtifactBytes);
   write(root, 'release/app-store/3.0/build-artifact-attestation.json', buildArtifactBytes);
-  git(root, 'add', 'release/app-store/3.0/build-artifact-attestation.json');
+  write(
+    root,
+    'scripts/release-command-guard.mjs',
+    readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8').replace(
+      'const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;',
+      `const BUILD_ARTIFACT_ATTESTATION_SHA256 = '${buildArtifactSha256}';`,
+    ),
+  );
+  git(root, 'add',
+    'release/app-store/3.0/build-artifact-attestation.json',
+    'scripts/release-command-guard.mjs');
   git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
     'commit', '-qm', 'pin build artifact');
-  const buildArtifactSha256 = hash(buildArtifactBytes);
   assert.deepEqual(verifyBuildArtifactAttestation(root, {
     buildInputSha256,
     buildArtifactSha256,
@@ -1168,6 +1331,9 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
   );
   chmodSync(join(root, 'release/private/rc-build-8/physical-iphone-qa.json'), 0o600);
   chmodSync(join(root, 'release/private/rc-build-8/app-store-connect-evidence.json'), 0o600);
+  git(root, 'add', 'release/app-store/3.0/screenshots-manifest.json');
+  git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+    'commit', '-qm', 'record screenshot evidence');
   const rcAttestation = {
     schemaVersion: 1,
     artifactKind: 'cabohealth-ios-exact-rc-attestation',
@@ -1188,16 +1354,24 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     reviewedAt: '2026-08-22T11:00:00.000Z',
   };
   const rcBytes = Buffer.from(`${JSON.stringify(rcAttestation)}\n`);
+  const rcSha256 = hash(rcBytes);
   write(root, 'release/app-store/3.0/rc-attestation.json', rcBytes);
+  write(
+    root,
+    'scripts/release-command-guard.mjs',
+    readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8').replace(
+      'const RC_ATTESTATION_SHA256 = null;',
+      `const RC_ATTESTATION_SHA256 = '${rcSha256}';`,
+    ),
+  );
   git(
     root,
     'add',
     'release/app-store/3.0/rc-attestation.json',
-    'release/app-store/3.0/screenshots-manifest.json',
+    'scripts/release-command-guard.mjs',
   );
   git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
     'commit', '-qm', 'pin exact RC');
-  const rcSha256 = hash(rcBytes);
   assert.deepEqual(verifyRcAttestation(root, {
     buildInputSha256,
     buildArtifactSha256,
@@ -1218,7 +1392,7 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
   assert.throws(() => verifyBuildArtifactAttestation(root, {
     buildInputSha256,
     buildArtifactSha256,
-  }, { phase: 'rc' }), /EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID/u);
+  }, { phase: 'rc', phasePins: { rcSha256 } }), /EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID/u);
 
   write(root, 'app.json', '{"expo":{"version":"9.9"}}\n');
   assert.throws(

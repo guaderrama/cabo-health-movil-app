@@ -292,6 +292,20 @@ test('metadata verifier binds the exact content-rights inventory to every listed
     },
   ));
 
+  await t.test('inventory exact RC regressed to build 6', () => withReleaseFixture(
+    (root) => {
+      const path = join(root, releasePath, 'content-rights-inventory.md');
+      writeFileSync(path, readFileSync(path, 'utf8').replace(
+        'exact 3.0 (8) RC',
+        'exact 3.0 (6) RC',
+      ));
+    },
+    (result) => {
+      assert.equal(result.status, 1, 'stale exact build-6 RC bypassed verifier');
+      assert.match(result.stderr, /exact RC must be build 8/iu);
+    },
+  ));
+
   await t.test('declared-identical asset drift', () => withReleaseFixture(
     (root) => writeFileSync(join(root, 'miniapps/shared/logo.png'), 'drift'),
     (result) => {
@@ -1373,6 +1387,14 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured pre
       app.expo.version = '2.0.0';
       app.expo.ios.buildNumber = '3';
     }), /manifest says appJsonUpdated=true.*3\.0\/build 8/i],
+    ['premature release-ready saved age authority', (root) => mutateJson(
+      root,
+      'release/compliance-facts.json',
+      (facts) => {
+        facts.releaseReady = true;
+        facts.slice = 'task-7f-age-rating-saved';
+      },
+    ), /pending build-8 age-review root\/legal facts/i],
     ['third actual catalog slug', (root) => {
       const file = join(root, 'constants/publicMiniapps.ts');
       const source = readFileSync(file, 'utf8');
@@ -1391,6 +1413,56 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured pre
         assert.match(result.stderr, expected);
       },
     ));
+  }
+});
+
+test('current release instructions name build 8 and retain builds 6/7 only as history', () => {
+  const dataInventory = readFileSync(join(projectRoot, 'release/data-inventory.md'), 'utf8');
+  assert.match(dataInventory, /exact signed 3\.0\/build 8 RC must independently confirm/iu);
+  assert.match(dataInventory, /exact 3\.0\/build 8 signed RC.*still pending/iu);
+  assert.doesNotMatch(dataInventory, /exact signed 3\.0\/build [67] RC must/iu);
+  assert.doesNotMatch(dataInventory, /exact 3\.0\/build [67] signed RC.*still pending/iu);
+
+  const activation = readFileSync(
+    join(projectRoot, 'docs/operations/dynamic-miniapp-production-activation-2026-08-25.md'),
+    'utf8',
+  );
+  assert.match(activation, /CaboHealth 3\.0 build 8 is the sole unbuilt next\s+candidate/iu);
+  assert.doesNotMatch(activation, /build [67] is the next candidate/iu);
+
+  for (const relativePath of [
+    'docs/operations/dynamic-miniapp-catalog.md',
+    'docs/operations/protected-overlay-dynamic-activation-2026-08-26.md',
+    'docs/operations/vip-showcase-production-activation-2026-08-26.md',
+  ]) {
+    const source = readFileSync(join(projectRoot, relativePath), 'utf8');
+    assert.match(source, /3\.0(?:\/build | build )8/iu, relativePath);
+    assert.doesNotMatch(source, /exact signed 3\.0\/build [67]|source for CaboHealth 3\.0 build [67]/iu, relativePath);
+  }
+});
+
+test('metadata verifier rejects build 6 or 7 as the next exact RC authority', async (t) => {
+  const mutations = [
+    ['build 7 in primary Firebase mapping gate', (root) => {
+      const path = join(root, 'release/data-inventory.md');
+      writeFileSync(path, readFileSync(path, 'utf8').replace(
+        'exact signed 3.0/build 8 RC must independently confirm',
+        'exact signed 3.0/build 7 RC must independently confirm',
+      ));
+    }],
+    ['build 6 in reconciliation gate', (root) => {
+      const path = join(root, 'release/data-inventory.md');
+      writeFileSync(path, readFileSync(path, 'utf8').replace(
+        'exact 3.0/build 8 signed RC',
+        'exact 3.0/build 6 signed RC',
+      ));
+    }],
+  ];
+  for (const [name, mutate] of mutations) {
+    await t.test(name, () => withReleaseFixture(mutate, (result) => {
+      assert.equal(result.status, 1, `${name} bypassed exact-RC validation`);
+      assert.match(result.stderr, /must name build 8, never build 6 or 7, as the next exact RC/iu);
+    }));
   }
 });
 

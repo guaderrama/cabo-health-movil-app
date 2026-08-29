@@ -127,7 +127,7 @@ const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmeti
 const EXACT_REVIEWED_PROSE_SHA256 = Object.freeze({
   'age-rating.md': '997faffa448b38a800d114876dfcfab6e7f4f945d0a40ef6ff4f8d325e71c6de',
   'app-privacy.md': '11b42558a365a0eee8c5b3d132f397c758d6624b4db9033a97a58d1ee72f2b6f',
-  'content-rights-inventory.md': 'e0a73ee9c80e753a9cb67b1e56a5312bab2f05700b510dd8ce9b57399338b041',
+  'content-rights-inventory.md': '1c803e5ce142b10a809d98aa66801ae8a60be820e5eec417206c28ea158a9c75',
 });
 
 const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
@@ -351,6 +351,11 @@ function verifyContentRightsInventory() {
     inventory,
     /Release scope: Apple ID `6758285327`; bundle ID `com\.cabohealth\.app`; marketing version `3\.0`; build `8`; initial territories Mexico and United States\./u,
     'Content-rights inventory must target Apple ID 6758285327, bundle com.cabohealth.app, version 3.0, and build 8',
+  );
+  requireText(
+    inventory,
+    /Must be reconciled to the exact 3\.0 \(8\) RC and saved ASC record/u,
+    'Content-rights inventory exact RC must be build 8',
   );
 
   for (const group of CONTENT_RIGHTS_SOURCE_GROUPS) {
@@ -961,8 +966,8 @@ function verifyAuthoritativeProjectState() {
     if (
       compliance.schemaVersion !== 1
       || compliance.brand !== 'Cabo Health'
-      || compliance.releaseReady !== true
-      || compliance.slice !== 'task-7f-age-rating-saved'
+      || compliance.releaseReady !== false
+      || compliance.slice !== 'build-8-age-rating-review-pending'
       || compliance.legalEntity?.name !== 'Ivan Guaderrama'
       || compliance.legalEntity?.nameStatus !== 'owner-confirmed'
       || compliance.legalEntity?.sellerType !== 'individual'
@@ -970,7 +975,7 @@ function verifyAuthoritativeProjectState() {
       || compliance.legalEntity?.dunsApplicable !== false
       || compliance.legalEntity?.dunsNumber !== null
     ) {
-      errors.push('Authoritative owner-confirmation and saved-age root/legal facts do not match this draft');
+      errors.push('Authoritative owner-confirmation and pending build-8 age-review root/legal facts do not match this draft');
     }
     if (
       compliance.appStore?.seller?.status !== 'verified'
@@ -1007,6 +1012,12 @@ function verifyAuthoritativeProjectState() {
     }
   }
   const inventory = readProject('release/data-inventory.md');
+  if (!/exact signed 3\.0\/build 8 RC must independently confirm/iu.test(inventory)
+    || !/exact 3\.0\/build 8 signed RC[\s\S]{0,160}still pending/iu.test(inventory)
+    || /exact signed 3\.0\/build [67] RC must/iu.test(inventory)
+    || /exact 3\.0\/build [67] signed RC[\s\S]{0,160}still pending/iu.test(inventory)) {
+    errors.push('Authoritative data inventory must name build 8, never build 6 or 7, as the next exact RC');
+  }
   if (!/fixed `actorLabel: Staff`/u.test(inventory)
     || !/no actor UID, codes, client names, or resource URLs/iu.test(inventory)) {
     errors.push('Authoritative data inventory must describe the sanitized fixed Staff actor label without an actor UID');

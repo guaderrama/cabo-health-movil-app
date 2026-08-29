@@ -84,7 +84,7 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 | Hosted Terms copy | `web-hosting/cabohealth.org/app/terms/index.html` | `b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22` | Pending final owner reconfirmation |
 | Hosted Support copy | `web-hosting/cabohealth.org/app/support/index.html` | `06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa` | Pending final owner reconfirmation |
 | Hosted Report Content copy | `web-hosting/cabohealth.org/app/report-content/index.html` | `f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c` | Pending final owner reconfirmation |
-| App Store metadata and Review Notes | `release/app-store/3.0/` | Must be reconciled to the exact 3.0 (6) RC and saved ASC record | Pending |
+| App Store metadata and Review Notes | `release/app-store/3.0/` | Must be reconciled to the exact 3.0 (8) RC and saved ASC record | Pending |
 | App Store screenshots | Exact RC captures | Not captured | Pending |
 
 `Firebase`, `Google Cloud`, `Hostinger`, `Apple`, `App Store`, `App Attest`, and `DeviceCheck` appear only to identify actual providers, platform features, review processes, or contractual disclosures. No ownership or endorsement is claimed.

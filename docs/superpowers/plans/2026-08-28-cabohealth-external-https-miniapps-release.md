@@ -131,7 +131,7 @@ Expected: every command exits 0 and status is clean. Independently inspect the p
 
 - [ ] **Step 2: Freeze the source commit**
 
-Record `git rev-parse HEAD` as the frozen application-source commit and record the canonical source-tree digest produced by the release guard. Later authority commits may change only the phase's excluded attestation file and its one normalized pin in `scripts/release-command-guard.mjs`; the guard must prove the remaining diff is exactly allowlisted and the source-tree digest remains exactly equal. Any other change invalidates the candidate and restarts the gate.
+Record `git rev-parse HEAD` as the frozen application-source commit and record the canonical source-tree digest produced by the release guard. Every later authority commit is single-purpose and ordered. The input commit may add only `build-input-attestation.json` and change only `BUILD_INPUT_ATTESTATION_SHA256`; the artifact commit may add only `build-artifact-attestation.json` and change only `BUILD_ARTIFACT_ATTESTATION_SHA256`; the RC commit may add only `rc-attestation.json` and change only `RC_ATTESTATION_SHA256`. Earlier attestations and pins are immutable in later phases, every future or unrelated pin remains null, and `PINNED_EAS_CLI` remains null because exact Node/EAS runtime authority lives in the input attestation. Exact-RC screenshot evidence may use a separate screenshot-manifest-only commit after artifact review and before RC review. A future submit-adapter pin requires its own post-RC reviewed commit that changes only `PINNED_APP_STORE_SUBMIT_ADAPTER`; it may not ride along with input, artifact, or RC authority. The guard must verify exact name-status, exact normalized guard-line changes, ordered commit history, and identical canonical source digest. Any other change invalidates the candidate and restarts the gate.
 
 ---
 
@@ -258,7 +258,7 @@ Use the existing release guard workflow with the exact external mode-`0600` prod
 
 - [ ] **Step 2: Independently review and pin only the build-8 input hash**
 
-Verify candidate identity, frozen source commit/digest, app/config/lock/manifests/verifiers, Firebase project, sanitized Expo config, Node runtime, EAS CLI closure, reviewed variable-name/source-role inventory, and plist hash. Update only the intended input pin in `scripts/release-command-guard.mjs`, prove the source digest remains exact under the phase allowlist, rerun its tests, and commit only the new input attestation plus its normalized pin. Tool pins remain null. If any input changes afterward, clear the pin and restart Task 6.
+Verify candidate identity, frozen source commit/digest, app/config/lock/manifests/verifiers, Firebase project, sanitized Expo config, Node runtime, EAS CLI closure, reviewed variable-name/source-role inventory, and plist hash. Update only the intended input pin in `scripts/release-command-guard.mjs`, prove the source digest remains exact under the phase allowlist, rerun its tests, and commit exactly one added input attestation plus the one changed input-pin line. Artifact, RC, legacy EAS, and submit-adapter pins remain null. If any input changes afterward, clear the pin and restart Task 6.
 
 - [ ] **Step 3: Launch the guarded EAS production build**
 
@@ -302,7 +302,7 @@ Expected: signed identifiers/entitlements/privacy pass; no Staff URL, dormant de
 
 - [ ] **Step 3: Create, independently review, and pin the build-artifact attestation**
 
-Bind the exact IPA, EAS build ID, input attestation, source digest, signed entitlements, certificate, provisioning profile, embedded Firebase plist, and privacy report. The EAS build-ID↔artifact association must be independently reviewed procedural evidence or sanitized hash-bound EAS metadata; EAS `FINISHED` alone is not guard proof of that association. Pin only its newly reviewed SHA-256, prove the exact source digest under the artifact-phase allowlist, rerun focused guard tests, and commit only the artifact attestation plus its normalized pin.
+Bind the exact IPA, EAS build ID, input attestation, source digest, signed entitlements, certificate, provisioning profile, embedded Firebase plist, and privacy report. The EAS build-ID↔artifact association must be independently reviewed procedural evidence or sanitized hash-bound EAS metadata; EAS `FINISHED` alone is not guard proof of that association. Pin only its newly reviewed SHA-256, prove the exact source digest under the artifact-phase allowlist, rerun focused guard tests, and commit exactly one added artifact attestation plus the one changed artifact-pin line. The earlier input attestation and pin are byte-for-byte immutable; RC, legacy EAS, and submit-adapter pins remain null.
 
 ---
 
@@ -347,8 +347,8 @@ a validated external Public item until a valid newer snapshot replaces it.
 
 - [ ] **Step 4: Produce final evidence, not planned evidence**
 
-Only after real observations exist, canonicalize physical-iPhone QA, exact build-8 screenshots, and App Store Connect evidence with `scripts/apple-post-build-evidence.mjs`. Bind them to the processed build-8 ID and frozen source digest. Create and independently review the final RC attestation; never copy build-7 evidence.
+Only after real observations exist, canonicalize physical-iPhone QA, exact build-8 screenshots, and App Store Connect evidence with `scripts/apple-post-build-evidence.mjs`. Bind them to the processed build-8 ID and frozen source digest. Record the tracked screenshot manifest in its own screenshot-manifest-only evidence commit after artifact review. Then create and independently review the final RC attestation and commit exactly one added RC attestation plus the one changed RC-pin line. Input/artifact authorities remain byte-for-byte immutable and the legacy EAS/submit-adapter pins remain null; never copy build-7 evidence.
 
 - [ ] **Step 5: Stop at ready-for-owner-review**
 
-Provide Ivan the exact build-8 TestFlight result, remaining truthful metadata/rights decisions, QA failures if any, and rollback status. Do not run `npm run submit` and do not click **Submit for Review**. A separate immediate confirmation is required for that final action.
+Provide Ivan the exact build-8 TestFlight result, remaining truthful metadata/rights decisions, QA failures if any, and rollback status. Do not run `npm run submit` and do not click **Submit for Review**. A future submit action requires independent review of the adapter closure followed by a separate commit changing only `PINNED_APP_STORE_SUBMIT_ADAPTER`; the guard must reject any attempt to introduce that pin during input, artifact, or RC phases. A separate immediate confirmation is required for the final action.

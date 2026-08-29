@@ -953,27 +953,177 @@ function easToolAuthorityFromBuildInput(attestation, code) {
   return pin;
 }
 
-function verifyFrozenSourceCommit(root, sourceCommit, phase, code) {
-  if (!COMMIT_PATTERN.test(sourceCommit ?? '')) reject(code);
-  runGit(root, ['cat-file', '-e', `${sourceCommit}^{commit}`], code);
-  const allowed = new Set([
-    ATTESTATION_PATHS.buildInput,
-    'scripts/release-command-guard.mjs',
-  ]);
-  if (phase === 'artifact' || phase === 'rc') allowed.add(ATTESTATION_PATHS.buildArtifact);
-  if (phase === 'rc') {
-    allowed.add(ATTESTATION_PATHS.rc);
-    allowed.add('release/app-store/3.0/screenshots-manifest.json');
-  }
-  const changed = runGit(
-    root,
-    ['diff', '--name-only', `${sourceCommit}..HEAD`],
-    code,
-  ).split('\n').filter(Boolean);
-  if (changed.some((relativePath) => !allowed.has(relativePath))) reject(code);
+const AUTHORITY_GUARD_PATH = 'scripts/release-command-guard.mjs';
+const SCREENSHOTS_MANIFEST_PATH = 'release/app-store/3.0/screenshots-manifest.json';
+const PHASE_AUTHORITY_RULES = Object.freeze([
+  Object.freeze({
+    phase: 'input',
+    pinName: 'BUILD_INPUT_ATTESTATION_SHA256',
+    expectedKey: 'buildInputSha256',
+    attestationPath: ATTESTATION_PATHS.buildInput,
+  }),
+  Object.freeze({
+    phase: 'artifact',
+    pinName: 'BUILD_ARTIFACT_ATTESTATION_SHA256',
+    expectedKey: 'buildArtifactSha256',
+    attestationPath: ATTESTATION_PATHS.buildArtifact,
+  }),
+  Object.freeze({
+    phase: 'rc',
+    pinName: 'RC_ATTESTATION_SHA256',
+    expectedKey: 'rcSha256',
+    attestationPath: ATTESTATION_PATHS.rc,
+  }),
+  Object.freeze({
+    phase: 'submit-tool',
+    pinName: 'PINNED_APP_STORE_SUBMIT_ADAPTER',
+    expectedKey: 'submitAdapterPin',
+    attestationPath: null,
+  }),
+]);
+
+function authorityCodeForPhase(phase) {
+  if (phase === 'input') return 'EXACT_BUILD_INPUT_ATTESTATION_INVALID';
+  if (phase === 'artifact') return 'EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID';
+  if (phase === 'rc') return 'EXACT_RC_ATTESTATION_INVALID';
+  if (phase === 'submit-tool') return 'APP_STORE_SUBMIT_ADAPTER_PIN_INVALID';
+  return 'BUILD_SOURCE_PHASE_INVALID';
 }
 
-export function verifyBuildInputAttestation(root, expectedSha256, { phase = 'input' } = {}) {
+function parseAuthorityPins(bytes, code) {
+  const source = bytes.toString('utf8');
+  if (!Buffer.from(source, 'utf8').equals(bytes)) reject(code);
+  const pins = {};
+  for (const [name, allowedValue] of NORMALIZED_PIN_RULES) {
+    const declaration = new RegExp(`^const ${name} = ([^\\r\\n]*);$`, 'gmu');
+    const matches = [...source.matchAll(declaration)];
+    if (matches.length !== 1 || !allowedValue.test(matches[0][1])) reject(code);
+    const literal = matches[0][1];
+    pins[name] = literal === 'null' ? null : literal.slice(1, -1);
+  }
+  return pins;
+}
+
+function guardBytesAtCommit(root, commit, code) {
+  return Buffer.from(runGit(root, ['show', `${commit}:${AUTHORITY_GUARD_PATH}`], code), 'utf8');
+}
+
+function changedEntriesForCommit(root, parent, commit, code) {
+  const fields = runGit(root, [
+    'diff-tree', '--no-commit-id', '--name-status', '-r', '-z', parent, commit,
+  ], code).split('\0').filter(Boolean);
+  const entries = [];
+  for (let index = 0; index < fields.length;) {
+    const status = fields[index];
+    if (!/^[AM]$/u.test(status) || index + 1 >= fields.length) reject(code);
+    entries.push({ status, relativePath: fields[index + 1] });
+    index += 2;
+  }
+  return entries;
+}
+
+export function verifyPhaseAuthorityCommitHistory(root, sourceCommit, phase, expectedPins) {
+  const code = authorityCodeForPhase(phase);
+  const requestedIndex = PHASE_AUTHORITY_RULES.findIndex((rule) => rule.phase === phase);
+  if (requestedIndex < 0 || !COMMIT_PATTERN.test(sourceCommit ?? '')) reject(code);
+  runGit(root, ['cat-file', '-e', `${sourceCommit}^{commit}`], code);
+  const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', sourceCommit, 'HEAD'], {
+    cwd: root,
+    stdio: 'ignore',
+  });
+  if (ancestor.status !== 0) reject(code);
+
+  const baseGuardBytes = guardBytesAtCommit(root, sourceCommit, code);
+  const basePins = parseAuthorityPins(baseGuardBytes, code);
+  if (Object.values(basePins).some((value) => value !== null)) reject(code);
+
+  const commits = runGit(
+    root,
+    ['rev-list', '--reverse', '--ancestry-path', `${sourceCommit}..HEAD`],
+    code,
+  ).split('\n').filter(Boolean);
+  let completedPhases = 0;
+  let previousGuardBytes = baseGuardBytes;
+  let previousCommit = sourceCommit;
+  for (const commit of commits) {
+    const parents = runGit(root, ['rev-list', '--parents', '-n', '1', commit], code)
+      .trim().split(/\s+/u);
+    if (parents.length !== 2 || parents[1] !== previousCommit) reject(code);
+    const entries = changedEntriesForCommit(root, previousCommit, commit, code);
+    const guardEntry = entries.find((entry) => entry.relativePath === AUTHORITY_GUARD_PATH);
+
+    if (!guardEntry) {
+      const screenshotOnly = entries.length === 1
+        && entries[0].relativePath === SCREENSHOTS_MANIFEST_PATH
+        && completedPhases >= 2
+        && requestedIndex >= 2;
+      if (!screenshotOnly) reject(code);
+      previousCommit = commit;
+      continue;
+    }
+
+    if (guardEntry.status !== 'M' || completedPhases > requestedIndex) reject(code);
+    const rule = PHASE_AUTHORITY_RULES[completedPhases];
+    const expectedEntries = rule.attestationPath === null
+      ? [{ status: 'M', relativePath: AUTHORITY_GUARD_PATH }]
+      : [
+        { status: 'A', relativePath: rule.attestationPath },
+        { status: 'M', relativePath: AUTHORITY_GUARD_PATH },
+      ];
+    if (!isDeepStrictEqual(
+      [...entries].sort((a, b) => a.relativePath.localeCompare(b.relativePath)),
+      expectedEntries.sort((a, b) => a.relativePath.localeCompare(b.relativePath)),
+    )) reject(code);
+
+    const currentGuardBytes = guardBytesAtCommit(root, commit, code);
+    const previousPins = parseAuthorityPins(previousGuardBytes, code);
+    const currentPins = parseAuthorityPins(currentGuardBytes, code);
+    const changedPins = Object.keys(currentPins)
+      .filter((name) => currentPins[name] !== previousPins[name]);
+    const expectedValue = expectedPins?.[rule.expectedKey];
+    if (changedPins.length !== 1
+      || changedPins[0] !== rule.pinName
+      || previousPins[rule.pinName] !== null
+      || currentPins[rule.pinName] !== expectedValue
+      || typeof expectedValue !== 'string') {
+      reject(code);
+    }
+    try {
+      if (!normalizeReleaseGuardAuthority(previousGuardBytes)
+        .equals(normalizeReleaseGuardAuthority(currentGuardBytes))) reject(code);
+    } catch {
+      reject(code);
+    }
+    if (rule.attestationPath !== null) {
+      const attestationBytes = Buffer.from(
+        runGit(root, ['show', `${commit}:${rule.attestationPath}`], code),
+        'utf8',
+      );
+      if (sha256(attestationBytes) !== expectedValue) reject(code);
+    }
+    completedPhases += 1;
+    previousGuardBytes = currentGuardBytes;
+    previousCommit = commit;
+  }
+
+  if (completedPhases !== requestedIndex + 1) reject(code);
+  const finalPins = parseAuthorityPins(guardBytesAtCommit(root, 'HEAD', code), code);
+  for (let index = 0; index < PHASE_AUTHORITY_RULES.length; index += 1) {
+    const rule = PHASE_AUTHORITY_RULES[index];
+    const expectedValue = index <= requestedIndex ? expectedPins?.[rule.expectedKey] : null;
+    if (finalPins[rule.pinName] !== expectedValue) reject(code);
+  }
+  if (finalPins.PINNED_EAS_CLI !== null) reject(code);
+}
+
+function verifyFrozenSourceCommit(root, sourceCommit, phase, expectedPins) {
+  verifyPhaseAuthorityCommitHistory(root, sourceCommit, phase, expectedPins);
+}
+
+export function verifyBuildInputAttestation(root, expectedSha256, {
+  phase = 'input',
+  phasePins = {},
+} = {}) {
   const code = 'EXACT_BUILD_INPUT_ATTESTATION_INVALID';
   const attestation = readPinnedAttestation(root, {
     relativePath: ATTESTATION_PATHS.buildInput,
@@ -988,7 +1138,10 @@ export function verifyBuildInputAttestation(root, expectedSha256, { phase = 'inp
   }
   assertCandidate(attestation.candidate, code);
   assertReviewedAt(attestation.reviewedAt, code);
-  verifyFrozenSourceCommit(root, attestation.sourceCommit, phase, code);
+  verifyFrozenSourceCommit(root, attestation.sourceCommit, phase, {
+    buildInputSha256: expectedSha256,
+    ...phasePins,
+  });
   for (const key of BUILD_INPUT_KEYS.filter((key) => key.endsWith('Sha256'))) {
     assertSha256(attestation[key], code);
   }
@@ -1034,12 +1187,15 @@ export function verifyBuildInputAttestation(root, expectedSha256, { phase = 'inp
 export function verifyBuildArtifactAttestation(root, {
   buildInputSha256,
   buildArtifactSha256,
-}, { phase = 'artifact' } = {}) {
+}, { phase = 'artifact', phasePins = {} } = {}) {
   const code = 'EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID';
   if (!SHA256_PATTERN.test(buildArtifactSha256 ?? '')) {
     reject('EXACT_BUILD_ARTIFACT_ATTESTATION_MISSING');
   }
-  const buildInput = verifyBuildInputAttestation(root, buildInputSha256, { phase });
+  const buildInput = verifyBuildInputAttestation(root, buildInputSha256, {
+    phase,
+    phasePins: { buildArtifactSha256, ...phasePins },
+  });
   const attestation = readPinnedAttestation(root, {
     relativePath: ATTESTATION_PATHS.buildArtifact,
     expectedSha256: buildArtifactSha256,
@@ -1140,13 +1296,13 @@ export function verifyRcAttestation(root, {
   buildInputSha256,
   buildArtifactSha256,
   rcSha256,
-}) {
+}, { phase = 'rc', phasePins = {} } = {}) {
   const code = 'EXACT_RC_ATTESTATION_INVALID';
   if (!SHA256_PATTERN.test(rcSha256 ?? '')) reject('EXACT_RC_ATTESTATION_MISSING');
   const buildArtifact = verifyBuildArtifactAttestation(root, {
     buildInputSha256,
     buildArtifactSha256,
-  }, { phase: 'rc' });
+  }, { phase, phasePins: { rcSha256, ...phasePins } });
   const attestation = readPinnedAttestation(root, {
     relativePath: ATTESTATION_PATHS.rc,
     expectedSha256: rcSha256,
@@ -1567,7 +1723,10 @@ function main() {
     const buildInput = verifyBuildInputAttestation(
       projectRoot,
       BUILD_INPUT_ATTESTATION_SHA256,
-      { phase: 'artifact' },
+      {
+        phase: 'artifact',
+        phasePins: { buildArtifactSha256: BUILD_ARTIFACT_ATTESTATION_SHA256 },
+      },
     );
     runVerifier(projectRoot, 'scripts/verify-release-v3.mjs');
     runVerifier(projectRoot, 'scripts/verify-app-store-metadata.mjs');
@@ -1607,6 +1766,17 @@ function main() {
     buildInputSha256: BUILD_INPUT_ATTESTATION_SHA256,
     buildArtifactSha256: BUILD_ARTIFACT_ATTESTATION_SHA256,
     rcSha256: RC_ATTESTATION_SHA256,
+  }, {
+    phase: 'submit-tool',
+    phasePins: { submitAdapterPin: PINNED_APP_STORE_SUBMIT_ADAPTER },
+  });
+  verifyBuildInputAttestation(projectRoot, BUILD_INPUT_ATTESTATION_SHA256, {
+    phase: 'submit-tool',
+    phasePins: {
+      buildArtifactSha256: BUILD_ARTIFACT_ATTESTATION_SHA256,
+      rcSha256: RC_ATTESTATION_SHA256,
+      submitAdapterPin: PINNED_APP_STORE_SUBMIT_ADAPTER,
+    },
   });
   runVerifier(projectRoot, 'scripts/verify-release-v3.mjs');
   runVerifier(projectRoot, 'scripts/verify-app-store-metadata.mjs');
