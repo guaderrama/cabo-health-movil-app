@@ -123,6 +123,7 @@ npm run typecheck
 npm run lint
 npm run test:scope:rc-v3
 cabo_build8_plist="${CABOHEALTH_GOOGLE_SERVICES_PLIST:?set the approved private production plist path}"
+set -o pipefail
 APP_ENV=production \
 CABOHEALTH_FIREBASE_PROJECT_ID=cabohealth-owner-prod \
 CABOHEALTH_GOOGLE_SERVICES_PLIST="$cabo_build8_plist" \
