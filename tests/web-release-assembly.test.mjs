@@ -65,6 +65,46 @@ function canonicalJson(value) {
   return `${JSON.stringify(value)}\n`;
 }
 
+function pendingBuild8AgeRating() {
+  return {
+    host: {
+      value: 16,
+      legacyOperatingSystemsValue: 17,
+      unrestrictedWebAccess: true,
+      previousSavedValue: 9,
+      status: 'projected-pending-app-store-recalculation',
+    },
+    miniapps: {
+      'healthy-recipes': { value: 9, status: 'verified' },
+      'clinic-guide': { value: 9, status: 'verified' },
+    },
+    externalCatalogItems: {
+      fixedAgeRating: null,
+      suitabilityReviewRequiredBeforeActivation: true,
+    },
+  };
+}
+
+function verifiedBuild8AgeRating() {
+  return {
+    host: {
+      value: 16,
+      legacyOperatingSystemsValue: 17,
+      unrestrictedWebAccess: true,
+      previousSavedValue: 9,
+      status: 'verified',
+    },
+    miniapps: {
+      'healthy-recipes': { value: 9, status: 'verified' },
+      'clinic-guide': { value: 9, status: 'verified' },
+    },
+    externalCatalogItems: {
+      fixedAgeRating: null,
+      suitabilityReviewRequiredBeforeActivation: true,
+    },
+  };
+}
+
 function fixtureTransport() {
   const files = payloadPaths.map((path) => {
     const bytes = Buffer.from(`fixture:${path}\n`, 'utf8');
@@ -596,7 +636,7 @@ test('atomic local promotion and rollback change only the ten leaves and restore
   assert.equal(transitions.some((record) => record.includes(root)), false);
 });
 
-test('materialize-release rejects pending and coordinated compliance/legal/AASA/header authority before its first inode creation', async () => {
+test('materialize-release rejects pending and coordinated compliance/legal/AASA/header authority before its first inode creation', async (context) => {
   const { createWebReleaseTransport } = await import('../scripts/assemble-web-release.mjs');
   const root = mkdtempSync(join(fixtureTmp, 'cabohealth-authoritative-release-fixture-'));
   mkdirSync(join(root, 'release'));
@@ -604,9 +644,7 @@ test('materialize-release rejects pending and coordinated compliance/legal/AASA/
   const pendingFactsPath = join(root, 'release/compliance-facts.json');
   const pendingFacts = JSON.parse(readFileSync(pendingFactsPath, 'utf8'));
   pendingFacts.releaseReady = false;
-  pendingFacts.ageRating.host = { value: null, status: 'pending' };
-  pendingFacts.ageRating.miniapps['healthy-recipes'] = { value: null, status: 'pending' };
-  pendingFacts.ageRating.miniapps['clinic-guide'] = { value: null, status: 'pending' };
+  pendingFacts.ageRating = pendingBuild8AgeRating();
   writeFileSync(pendingFactsPath, canonicalJson(pendingFacts));
   const inputPaths = [
     'web-hosting/cabohealth.org/app/index.html',
@@ -667,10 +705,50 @@ test('materialize-release rejects pending and coordinated compliance/legal/AASA/
   facts.contentRights = { value: { approved: true, scope: 'reviewed scope' }, status: 'verified' };
   facts.exportCompliance = { value: { approved: true, determination: 'reviewed determination' }, status: 'verified' };
   facts.medicalDevice = { value: { basis: 'reviewed basis', isMedicalDevice: false }, status: 'verified' };
-  facts.ageRating.host = { value: 4, status: 'verified' };
-  facts.ageRating.miniapps['healthy-recipes'] = { value: 4, status: 'verified' };
-  facts.ageRating.miniapps['clinic-guide'] = { value: 4, status: 'verified' };
+  facts.ageRating = verifiedBuild8AgeRating();
   writeFileSync(factsPath, canonicalJson(facts));
+
+  const verifiedFacts = structuredClone(facts);
+  const invalidAgeAuthorities = [
+    {
+      name: 'a missing previous saved age key is rejected before any release output',
+      mutate(ageRating) { delete ageRating.host.previousSavedValue; },
+      error: /COMPLIANCE_HOST_AGE_RATING_SCHEMA_INVALID/u,
+    },
+    {
+      name: 'an extra age authority key is rejected before any release output',
+      mutate(ageRating) { ageRating.unreviewed = true; },
+      error: /COMPLIANCE_AGE_RATING_SCHEMA_INVALID/u,
+    },
+    {
+      name: 'disabled unrestricted web access is rejected before any release output',
+      mutate(ageRating) { ageRating.host.unrestrictedWebAccess = false; },
+      error: /COMPLIANCE_FACTS_INCOMPLETE/u,
+    },
+    {
+      name: 'a fixed external catalog age is rejected before any release output',
+      mutate(ageRating) { ageRating.externalCatalogItems.fixedAgeRating = 16; },
+      error: /COMPLIANCE_FACTS_INCOMPLETE/u,
+    },
+    {
+      name: 'a release-ready host without verified status is rejected before any release output',
+      mutate(ageRating) { ageRating.host.status = 'projected-pending-app-store-recalculation'; },
+      error: /COMPLIANCE_FACTS_INCOMPLETE/u,
+    },
+  ];
+  for (const { name, mutate, error } of invalidAgeAuthorities) {
+    await context.test(name, () => {
+      const invalidFacts = structuredClone(verifiedFacts);
+      mutate(invalidFacts.ageRating);
+      writeFileSync(factsPath, canonicalJson(invalidFacts));
+      const invalid = publish(envelope());
+      assert.equal(invalid.status, 1, invalid.stderr || invalid.stdout);
+      assert.match(invalid.stderr, error);
+      assert.equal(existsSync(join(root, 'release/web-bundles')), false);
+      assert.equal(existsSync(join(root, 'release/web-artifacts.json')), false);
+    });
+  }
+  writeFileSync(factsPath, canonicalJson(verifiedFacts));
   for (const slug of ['privacy', 'terms', 'support', 'report-content']) {
     const legalPath = join(root, `web-hosting/cabohealth.org/app/${slug}/index.html`);
     writeFileSync(legalPath, `${readFileSync(legalPath, 'utf8')}<!-- coordinated unreviewed legal mutation -->\n`);
@@ -724,9 +802,7 @@ test('post-pin materialization independently reaches legal, canonical AASA, and 
     facts.contentRights = { value: { approved: true, scope: 'reviewed scope' }, status: 'verified' };
     facts.exportCompliance = { value: { approved: true, determination: 'reviewed determination' }, status: 'verified' };
     facts.medicalDevice = { value: { basis: 'reviewed basis', isMedicalDevice: false }, status: 'verified' };
-    facts.ageRating.host = { value: 4, status: 'verified' };
-    facts.ageRating.miniapps['healthy-recipes'] = { value: 4, status: 'verified' };
-    facts.ageRating.miniapps['clinic-guide'] = { value: 4, status: 'verified' };
+    facts.ageRating = verifiedBuild8AgeRating();
     writeFileSync(join(root, 'release/compliance-facts.json'), canonicalJson(facts));
     for (const source of inputPaths) {
       const original = readFileSync(join(projectRoot, source));

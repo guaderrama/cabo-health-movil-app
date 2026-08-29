@@ -4213,14 +4213,47 @@ def validate_compliance_facts_bound(root_fd: int) -> None:
         fail("COMPLIANCE_FACTS_INCOMPLETE")
 
     age = facts["ageRating"]
-    exact_key_set(age, ("host", "miniapps"), "COMPLIANCE_AGE_RATING")
+    exact_key_set(
+        age,
+        ("host", "miniapps", "externalCatalogItems"),
+        "COMPLIANCE_AGE_RATING",
+    )
+    host_rating = age["host"]
+    exact_key_set(
+        host_rating,
+        (
+            "value",
+            "legacyOperatingSystemsValue",
+            "unrestrictedWebAccess",
+            "previousSavedValue",
+            "status",
+        ),
+        "COMPLIANCE_HOST_AGE_RATING",
+    )
     exact_key_set(age["miniapps"], ENTRY_SLUGS, "COMPLIANCE_MINIAPP_AGE_RATING")
-    host_rating = verified_gate(age["host"], "COMPLIANCE_HOST_AGE_RATING")
     ratings = [
         verified_gate(age["miniapps"][slug], f"COMPLIANCE_{slug.upper()}_AGE_RATING")
         for slug in ENTRY_SLUGS
     ]
-    if host_rating not in (4, 9, 13, 16, 18) or any(rating not in (4, 9, 13, 16, 18) or rating > host_rating for rating in ratings):
+    external_catalog_items = age["externalCatalogItems"]
+    exact_key_set(
+        external_catalog_items,
+        ("fixedAgeRating", "suitabilityReviewRequiredBeforeActivation"),
+        "COMPLIANCE_EXTERNAL_CATALOG_AGE_RATING",
+    )
+    if (
+        type(host_rating["value"]) is not int
+        or host_rating["value"] != 16
+        or type(host_rating["legacyOperatingSystemsValue"]) is not int
+        or host_rating["legacyOperatingSystemsValue"] != 17
+        or host_rating["unrestrictedWebAccess"] is not True
+        or type(host_rating["previousSavedValue"]) is not int
+        or host_rating["previousSavedValue"] != 9
+        or host_rating["status"] != "verified"
+        or any(type(rating) is not int or rating != 9 for rating in ratings)
+        or external_catalog_items["fixedAgeRating"] is not None
+        or external_catalog_items["suitabilityReviewRequiredBeforeActivation"] is not True
+    ):
         fail("COMPLIANCE_FACTS_INCOMPLETE")
     phi = verified_gate(facts["phiRemediation"], "COMPLIANCE_PHI_REMEDIATION")
     if (
