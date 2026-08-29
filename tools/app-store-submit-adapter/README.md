@@ -6,7 +6,7 @@ single reviewed candidate below:
 - Apple app resource ID: `6758285327`
 - bundle ID: `com.cabohealth.app`
 - marketing version: `3.0`
-- build number: `7`
+- build number: `8`
 
 The production entry point is `bin/submit.mjs`. It accepts only the exact
 argument sequence produced by `scripts/release-command-guard.mjs`; no key,
@@ -35,7 +35,7 @@ It then requires all of the following cross-bindings:
    ID (currently UUID-shaped); the live selected build must equal that ID.
    These two IDs are intentionally not conflated.
 4. The live App Store Connect app has the exact bundle ID. Exactly one iOS 3.0
-   version exists, its selected build is build 7, processing is `VALID`, the
+   version exists, its selected build is build 8, processing is `VALID`, the
    build is not expired, and the build belongs to the same app.
 5. Before the adapter first mutates Apple state, the live App Store version
    equals the reviewed `PREPARE_FOR_SUBMISSION` or `READY_FOR_REVIEW` state.
@@ -58,11 +58,11 @@ Schema version 1 and artifact kind `cabohealth-physical-iphone-qa` require:
   `clean` installation and one `upgrade` installation;
 - for each device: model, iOS version, exact locales `en-US` and `es-MX`,
   `result: "passed"`, and an evidence SHA-256;
-- these exact twelve boolean checks, all `true`, corresponding in order to the
-  twelve rows in `release/app-store/3.0/testflight-what-to-test.md`:
+- these exact thirteen boolean checks, all `true`, corresponding in order to the
+  thirteen rows in `release/app-store/3.0/testflight-what-to-test.md`:
   `firstLaunch`, `homeCatalogAndSaved`, `nativeToolsClinicalSafety`,
   `publicHosting`, `productionClientAccess`, `appReviewAccess`,
-  `protectedWebView`, `ownerPortalExclusion`, `universalLinks`,
+  `protectedWebView`, `externalWebView`, `ownerPortalExclusion`, `universalLinks`,
   `localizationAppearanceAccessibility`, `platformSecurityAndPrivacy`, and
   `scopeAudit`.
 
@@ -127,7 +127,7 @@ API](https://developer.apple.com/documentation/appstoreconnectapi/creating-api-k
 The adapter uses Apple's current review-submission resources, not the
 deprecated App Store version submission endpoint:
 
-1. Resolve the fixed app, unique iOS 3.0 version, selected build 7, and build's
+1. Resolve the fixed app, unique iOS 3.0 version, selected build 8, and build's
    app relationship.
 2. List active iOS review submissions. Multiple active submissions, a foreign
    item, unresolved issues, cancellation, or completion in progress all stop

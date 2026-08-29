@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "status": "pending-final-linkage-category-review-and-save",
   "architectureStatus": "core-infrastructure-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e",
   "recommendedAppPrivacyAnswer": "Yes, we collect data from this app",
@@ -51,7 +51,21 @@
     "codesStoredPlaintext": false,
     "codeDigests": "versioned HMAC digest",
     "clientNamesStored": false,
-    "resourceUrlsReturnedToNative": false
+    "resourceUrlsReturnedToNative": true
+  },
+  "resourceUrlHandling": {
+    "publicV3CatalogRecordsContainExternalUrl": true,
+    "authorizedVipV2LaunchMayReturnExternalUrlTransiently": true,
+    "vipPreviewsContainExternalUrl": false,
+    "vipGrantsContainExternalUrl": false,
+    "nativeStorageContainsExternalUrl": false,
+    "applicationAuditContainsExternalUrl": false
+  },
+  "thirdPartyNetworkRequests": {
+    "behavior": "third-party-network-request",
+    "destinationHostReceivesNormalNetworkData": true,
+    "destinationOperatesIndependently": true,
+    "finalAppleMappingStatus": "pending-final-destination-provider-and-category-review"
   },
   "cloudFunctionRequestSecurity": {
     "rawSourceIpProcessedTransiently": true,

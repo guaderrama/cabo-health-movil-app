@@ -79,10 +79,20 @@
     "status": "verified"
   },
   "ageRating": {
-    "host": { "value": 9, "status": "verified" },
+    "host": {
+      "value": 16,
+      "legacyOperatingSystemsValue": 17,
+      "unrestrictedWebAccess": true,
+      "previousSavedValue": 9,
+      "status": "projected-pending-app-store-recalculation"
+    },
     "miniapps": {
       "healthy-recipes": { "value": 9, "status": "verified" },
       "clinic-guide": { "value": 9, "status": "verified" }
+    },
+    "externalCatalogItems": {
+      "fixedAgeRating": null,
+      "suitabilityReviewRequiredBeforeActivation": true
     }
   },
   "phiRemediation": {

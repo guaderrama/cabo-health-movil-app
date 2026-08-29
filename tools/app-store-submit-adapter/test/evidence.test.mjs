@@ -8,6 +8,7 @@ import {
   validatePhysicalIphoneQa,
   validateScreenshotsManifest,
 } from '../src/index.mjs';
+import { QA_CHECK_IDS } from '../src/constants.mjs';
 import { sha256 } from '../src/files.mjs';
 import {
   createEvidenceFixture,
@@ -93,10 +94,12 @@ test('rejects evidence byte drift, noncanonical JSON, unsafe mode, and a stale R
   }
 });
 
-test('physical-iPhone QA requires two distinct clean/upgrade devices and every one of 12 checks', () => {
+test('physical-iPhone QA requires two distinct clean/upgrade devices and every one of 13 checks including external WebView QA', () => {
+  assert.equal(QA_CHECK_IDS.length, 13);
+  assert.ok(QA_CHECK_IDS.includes('externalWebView'));
   assert.doesNotThrow(() => validatePhysicalIphoneQa(validPhysicalQa(), bindings, { now: NOW }));
   const missing = structuredClone(validPhysicalQa());
-  delete missing.checks.scopeAudit;
+  delete missing.checks.externalWebView;
   assert.throws(
     () => validatePhysicalIphoneQa(missing, bindings, { now: NOW }),
     /PHYSICAL_IPHONE_QA_INVALID/u,

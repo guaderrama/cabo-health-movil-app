@@ -26,6 +26,7 @@ Apple previously questioned the individual developer account’s relationship to
 - [ ] WHO, FoodSafety.gov, USDA FSIS, Gobierno de México 9-1-1, Apple Maps, and WhatsApp were included in the earlier scope only as attributed citations or nominative references. The revised exact uses await reconfirmation; no endorsement or ownership is claimed.
 - **RECORDED RECOMMENDATION:** Retain **Yes — uses third-party material** as the App Store Content Rights recommendation. The revised itemized inventory now awaits owner reconfirmation as well as genuine per-family rights basis, signed declaration, and private evidence. Do not reuse the legacy “No third-party content” answer.
 - [ ] Record approver, material/version, basis, scope, date, territory/attribution limits, and a sanitized private-evidence reference in the final rights record.
+- [ ] Before activating any external Public or VIP destination, record its operator, exact URL, suitability decision, genuine third-party rights basis, reviewer, date, territories, and attribution limits; never assign it a CaboHealth editorial source or imply VIP entry makes it private.
 
 ## Attachment hygiene
 

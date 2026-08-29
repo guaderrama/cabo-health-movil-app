@@ -1,6 +1,6 @@
 # Localización de App Store — es-MX
 
-Estado: Borrador para CaboHealth 3.0 (build 7). No pegar en App Store Connect hasta resolver cada gate de `release-manifest.json` contra el RC exacto.
+Estado: Borrador para CaboHealth 3.0 (build 8). No pegar en App Store Connect hasta resolver cada gate de `release-manifest.json` contra el RC exacto.
 
 ## Name
 CaboHealth
@@ -24,13 +24,13 @@ RECURSOS PARA CLIENTES
 Los clientes existentes elegibles de los servicios presenciales de CaboHealth pueden verificar un código proporcionado por la clínica para abrir recursos incluidos sin costo adicional. No se venden dentro de la app y no hay precio, pago, suscripción ni compra dentro de la aplicación.
 
 CATÁLOGO CABOHEALTH
-CaboHealth puede publicar, actualizar, desactivar o eliminar sus propios recursos de bienestar alojados. La app muestra el catálogo activo con detalles localizados y abre únicamente Universal Links canónicos y validados de CaboHealth. No es un navegador web general ni un mercado de terceros.
+CaboHealth puede publicar, actualizar, desactivar o eliminar recursos de bienestar alojados, incluidos recursos HTTPS de terceros seleccionados después de revisar su idoneidad y derechos. La app muestra el catálogo activo con detalles localizados y abre destinos validados dentro de la app. El acceso VIP controla únicamente la entrada desde la app; los sitios de destino operan de forma independiente.
 
 MÁS VALOR EN LA APP
 • Las herramientas de recetas y visita funcionan aun cuando los recursos alojados no están disponibles.
 • Guarda los recursos públicos activos para volver rápidamente.
 • Elige idioma, apariencia y efectos visuales reducidos.
-• La navegación restringida abre sólo recursos revisados de CaboHealth.
+• La navegación restringida mantiene cada recurso alojado en el origen de destino configurado.
 
 El contenido es información educativa general; no es un servicio de emergencias ni sustituye la orientación de un profesional calificado.
 

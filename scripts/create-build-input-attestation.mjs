@@ -6,6 +6,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  computeRuntimeTreeSha256,
   computeResolvedProductionExpoConfigSha256,
   computeTrackedSourceSha256,
   readProductionGoogleServicesPlist,
@@ -15,11 +16,17 @@ export const BUILD_INPUT_CANDIDATE = Object.freeze({
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '7',
+  buildNumber: '8',
 });
 
 const PRODUCTION_FIREBASE_PROJECT_ID = 'cabohealth-owner-prod';
 const HASH_PATTERN = /^[a-f0-9]{64}$/u;
+const COMMIT_PATTERN = /^[a-f0-9]{40}$/u;
+const EXPECTED_NODE_VERSION = 'v22.22.3';
+const EAS_RUNTIME_ROOT_RELATIVE_PATH = 'node_modules';
+const EAS_PACKAGE_JSON_RELATIVE_PATH = 'eas-cli/package.json';
+const EAS_ENTRY_RELATIVE_PATH = 'eas-cli/bin/run';
+const EAS_PACKAGE_VERSION = '22.2.0';
 const REVIEWED_PATHS = Object.freeze({
   appJsonSha256: 'app.json',
   configSha256: 'constants/config.ts',
@@ -50,15 +57,38 @@ function readReviewedFile(root, relativePath) {
 export function assembleBuildInputAttestation({
   candidate = BUILD_INPUT_CANDIDATE,
   reviewedAt,
+  sourceCommit,
   sourceTreeSha256,
   reviewedFileSha256,
   googleServicesPlistSha256,
   resolvedProductionExpoConfigSha256,
+  nodeRuntime,
+  easCli,
+  easEnvironment,
 }) {
+  const expectedEasEnvironment = {
+    environmentName: 'production',
+    variables: [
+      { name: 'APP_ENV', source: 'eas-profile', kind: 'plain' },
+      {
+        name: 'CABOHEALTH_FIREBASE_PROJECT_ID',
+        source: 'eas-project-environment',
+        kind: 'sensitive',
+      },
+      {
+        name: 'CABOHEALTH_GOOGLE_SERVICES_PLIST',
+        source: 'eas-project-environment',
+        kind: 'secret-file',
+      },
+    ],
+    valuesIncluded: false,
+    reviewStatus: 'independently-reviewed',
+  };
   if (
     JSON.stringify(candidate) !== JSON.stringify(BUILD_INPUT_CANDIDATE)
     || typeof reviewedAt !== 'string'
     || Number.isNaN(Date.parse(reviewedAt))
+    || !COMMIT_PATTERN.test(sourceCommit ?? '')
     || !HASH_PATTERN.test(sourceTreeSha256 ?? '')
     || !HASH_PATTERN.test(googleServicesPlistSha256 ?? '')
     || !HASH_PATTERN.test(resolvedProductionExpoConfigSha256 ?? '')
@@ -68,17 +98,35 @@ export function assembleBuildInputAttestation({
     || JSON.stringify(Object.keys(reviewedFileSha256))
       !== JSON.stringify(Object.keys(REVIEWED_PATHS))
     || Object.values(reviewedFileSha256).some((value) => !HASH_PATTERN.test(value ?? ''))
+    || JSON.stringify(nodeRuntime) !== JSON.stringify({
+      version: EXPECTED_NODE_VERSION,
+      executableSha256: nodeRuntime?.executableSha256,
+    })
+    || !HASH_PATTERN.test(nodeRuntime?.executableSha256 ?? '')
+    || JSON.stringify(easCli) !== JSON.stringify({
+      packageVersion: EAS_PACKAGE_VERSION,
+      packageJsonRelativePath: EAS_PACKAGE_JSON_RELATIVE_PATH,
+      entryRelativePath: EAS_ENTRY_RELATIVE_PATH,
+      runtimeRootRelativePath: EAS_RUNTIME_ROOT_RELATIVE_PATH,
+      runtimeTreeSha256: easCli?.runtimeTreeSha256,
+    })
+    || !HASH_PATTERN.test(easCli?.runtimeTreeSha256 ?? '')
+    || JSON.stringify(easEnvironment) !== JSON.stringify(expectedEasEnvironment)
   ) throw new Error('BUILD_INPUT_PRODUCER_ARGUMENT_INVALID');
 
   return Object.freeze({
     schemaVersion: 1,
     artifactKind: 'cabohealth-ios-build-input-attestation',
     candidate: BUILD_INPUT_CANDIDATE,
+    sourceCommit,
     sourceTreeSha256,
     ...reviewedFileSha256,
     firebaseProjectId: PRODUCTION_FIREBASE_PROJECT_ID,
     googleServicesPlistSha256,
     resolvedProductionExpoConfigSha256,
+    nodeRuntime,
+    easCli,
+    easEnvironment,
     reviewedAt,
   });
 }
@@ -86,6 +134,7 @@ export function assembleBuildInputAttestation({
 export function createBuildInputAttestation({
   root,
   reviewedAt,
+  sourceCommit,
   environment = process.env,
 }) {
   if (typeof root !== 'string' || !isAbsolute(root)) {
@@ -95,6 +144,40 @@ export function createBuildInputAttestation({
   if (canonicalRoot !== root) throw new Error('BUILD_INPUT_PRODUCER_ARGUMENT_INVALID');
 
   const googleServicesPlist = readProductionGoogleServicesPlist(environment);
+  const nodeRuntime = {
+    version: process.version,
+    executableSha256: sha256(readFileSync(realpathSync(process.execPath))),
+  };
+  const easRuntimeRoot = join(canonicalRoot, EAS_RUNTIME_ROOT_RELATIVE_PATH);
+  const easPackage = JSON.parse(readFileSync(
+    join(easRuntimeRoot, EAS_PACKAGE_JSON_RELATIVE_PATH),
+    'utf8',
+  ));
+  const easCli = {
+    packageVersion: easPackage.version,
+    packageJsonRelativePath: EAS_PACKAGE_JSON_RELATIVE_PATH,
+    entryRelativePath: EAS_ENTRY_RELATIVE_PATH,
+    runtimeRootRelativePath: EAS_RUNTIME_ROOT_RELATIVE_PATH,
+    runtimeTreeSha256: computeRuntimeTreeSha256(easRuntimeRoot),
+  };
+  const easEnvironment = {
+    environmentName: 'production',
+    variables: [
+      { name: 'APP_ENV', source: 'eas-profile', kind: 'plain' },
+      {
+        name: 'CABOHEALTH_FIREBASE_PROJECT_ID',
+        source: 'eas-project-environment',
+        kind: 'sensitive',
+      },
+      {
+        name: 'CABOHEALTH_GOOGLE_SERVICES_PLIST',
+        source: 'eas-project-environment',
+        kind: 'secret-file',
+      },
+    ],
+    valuesIncluded: false,
+    reviewStatus: 'independently-reviewed',
+  };
   const reviewedFileSha256 = Object.fromEntries(
     Object.entries(REVIEWED_PATHS).map(([key, relativePath]) => [
       key,
@@ -103,6 +186,7 @@ export function createBuildInputAttestation({
   );
   return assembleBuildInputAttestation({
     reviewedAt,
+    sourceCommit,
     sourceTreeSha256: computeTrackedSourceSha256(canonicalRoot),
     reviewedFileSha256,
     googleServicesPlistSha256: googleServicesPlist.sha256,
@@ -110,20 +194,26 @@ export function createBuildInputAttestation({
       canonicalRoot,
       googleServicesPlist.bytes,
     ),
+    nodeRuntime,
+    easCli,
+    easEnvironment,
   });
 }
 
 function parseArguments(values) {
-  if (values.length !== 2 || values[0] !== '--reviewed-at') {
+  if (values.length !== 4
+    || values[0] !== '--reviewed-at'
+    || values[2] !== '--source-commit'
+    || !COMMIT_PATTERN.test(values[3] ?? '')) {
     throw new Error('BUILD_INPUT_PRODUCER_ARGUMENT_INVALID');
   }
-  return { reviewedAt: values[1] };
+  return { reviewedAt: values[1], sourceCommit: values[3] };
 }
 
 function main() {
-  const { reviewedAt } = parseArguments(process.argv.slice(2));
+  const { reviewedAt, sourceCommit } = parseArguments(process.argv.slice(2));
   const root = realpathSync(resolve(fileURLToPath(new URL('..', import.meta.url))));
-  const attestation = createBuildInputAttestation({ root, reviewedAt });
+  const attestation = createBuildInputAttestation({ root, reviewedAt, sourceCommit });
   process.stdout.write(`${JSON.stringify(attestation)}\n`);
 }
 

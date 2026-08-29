@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Pinned fail-closed App Store Connect review submission adapter for CaboHealth 3.0 build 7.",
+  "description": "Pinned fail-closed App Store Connect review submission adapter for CaboHealth 3.0 build 8.",
   "engines": {
     "node": "22.22.3"
   },

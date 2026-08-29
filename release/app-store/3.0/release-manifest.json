@@ -5,7 +5,7 @@
     "appleId": "6758285327",
     "bundleIdentifier": "com.cabohealth.app",
     "marketingVersion": "3.0",
-    "buildNumber": "7",
+    "buildNumber": "8",
     "status": "pre-build-configured",
     "appJsonUpdated": true,
     "configUpdated": true,
@@ -54,7 +54,7 @@
     ],
     "highestTestFlightBuild": "6",
     "highestTestFlightBuildStatus": "ready-to-test-obsolete-source",
-    "nextCandidateBuild": "7",
+    "nextCandidateBuild": "8",
     "nextCandidateBuildAvailable": true,
     "latestReviewDate": "2026-02-24",
     "latestReviewGuidelines": [
@@ -64,6 +64,34 @@
     ],
     "informationRequested": true
   },
+  "historicalCandidateEvidence": [
+    {
+      "marketingVersion": "3.0",
+      "buildNumber": "4",
+      "status": "testflight-ready-to-submit-obsolete-source",
+      "appStoreObserved": true
+    },
+    {
+      "marketingVersion": "3.0",
+      "buildNumber": "5",
+      "status": "testflight-ready-to-submit-obsolete-source",
+      "appStoreObserved": true
+    },
+    {
+      "marketingVersion": "3.0",
+      "buildNumber": "6",
+      "status": "testflight-ready-to-test-obsolete-source",
+      "appStoreObserved": true
+    },
+    {
+      "marketingVersion": "3.0",
+      "buildNumber": "7",
+      "status": "eas-finished-and-attested-not-observed-in-app-store-connect-obsolete-source",
+      "appStoreObserved": false,
+      "trackedHistoryRoot": "release/app-store/3.0/history/build-7",
+      "privateHistoryRoot": "release/private/rc-build-7"
+    }
+  ],
   "ownerSeller": {
     "sellerType": "individual",
     "legalSeller": "Ivan Guaderrama",
@@ -136,6 +164,20 @@
       "draftOnlyCatalogChanges": false,
       "directPublishing": true,
       "arbitraryRuntimeCatalog": true
+    },
+    "externalHttpsMiniapps": {
+      "ownerManaged": true,
+      "accessModes": [
+        "public",
+        "vip"
+      ],
+      "opensInsideApp": true,
+      "sameOriginNavigationOnly": true,
+      "vipControlsInAppEntryOnly": true,
+      "thirdPartyContentAuthoredByCaboHealth": false,
+      "thirdPartyContentMadePrivateByCaboHealth": false,
+      "rightsVerificationRequiredBeforeActivation": true,
+      "permanentCatalogItemsListedInReleaseMetadata": false
     },
     "access": "mixed-public-and-existing-client-eligibility",
     "accountRequired": {
@@ -240,7 +282,7 @@
       "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
       "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
       "clientAccessModel": "pending-apple-review-determination",
-      "exactReleaseCandidate": "build-7-pending-build-input-attestation-eas-build-and-qa",
+      "exactReleaseCandidate": "build-8-pending-build-input-attestation-eas-build-and-qa",
       "screenshots": "pending-exact-rc-capture",
       "appStoreConnectSave": "pending-final-save"
     }
@@ -267,8 +309,8 @@
     "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
     "privacyMapping": "pending-final-linkage-category-review-and-save",
     "brandAndContentRights": "pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis",
-    "exactReleaseCandidate": "build-7-pending-build-input-attestation-eas-build-and-qa",
-    "testFlight": "build-6-processed-internal-obsolete-source-build-7-pending-build-upload-selection-and-physical-iphone-qa",
+    "exactReleaseCandidate": "build-8-pending-build-input-attestation-eas-build-and-qa",
+    "testFlight": "builds-4-through-7-obsolete-source-build-8-pending-build-upload-selection-and-physical-iphone-qa",
     "screenshots": "pending-exact-rc-capture",
     "accessibilityLabels": "pending-exact-rc-evidence",
     "appStoreConnect": "pending-final-save",
@@ -276,7 +318,7 @@
   },
   "reviewRisk": {
     "level": "high",
-    "basis": "general-wellness/editorial content plus complimentary eligibility-gated resources for existing in-person clients",
+    "basis": "general-wellness/editorial content plus owner-managed third-party HTTPS resources and complimentary eligibility-gated resources for existing in-person clients",
     "appleApprovalGuaranteed": false,
     "fallback": "Obtain written Apple direction before submission; if Apple treats the app as a healthcare-service or digital-unlock product, revise the model or later migrate to an eligible registered organization.",
     "healthcareSellerEntityRisk": "requires-honest-review-note-and-apple-determination",

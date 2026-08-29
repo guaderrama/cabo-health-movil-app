@@ -101,7 +101,7 @@ function pendingScreenshots() {
     schemaVersion: 2,
     status: 'pending-exact-rc-capture',
     marketingVersion: '3.0',
-    buildNumber: '7',
+    buildNumber: '8',
     deviceClass: 'iPhone 6.9-inch',
     locales: [...SCREENSHOT_LOCALES],
     sceneIds: [...SCREENSHOT_SCENE_IDS],
@@ -154,7 +154,7 @@ function finalScreenshots(root) {
     schemaVersion: 2,
     status: 'exact-rc-captured-and-approved',
     marketingVersion: '3.0',
-    buildNumber: '7',
+    buildNumber: '8',
     deviceClass: 'iPhone 6.9-inch',
     locales: [...SCREENSHOT_LOCALES],
     sceneIds: [...SCREENSHOT_SCENE_IDS],
@@ -221,7 +221,7 @@ function privacyReport() {
     candidate: {
       bundleIdentifier: 'com.cabohealth.app',
       marketingVersion: '3.0',
-      buildNumber: '7',
+      buildNumber: '8',
       teamIdentifier: 'DQ8PH2DZ3R',
       appAttestEnvironment: 'production',
       associatedDomains: ['applinks:cabohealth.org'],
@@ -319,7 +319,9 @@ function expectEvidenceError(callback, code) {
   ));
 }
 
-test('physical iPhone evidence requires two distinct devices and all twelve rows', () => {
+test('physical iPhone evidence requires two distinct devices and all thirteen rows including external WebView QA', () => {
+  assert.equal(PHYSICAL_IPHONE_QA_CHECK_IDS.length, 13);
+  assert.ok(PHYSICAL_IPHONE_QA_CHECK_IDS.includes('externalWebView'));
   const evidence = physicalQa();
   assert.equal(validatePhysicalIphoneQaEvidence(evidence, {
     testFlightBuildId: TESTFLIGHT_BUILD_ID,
@@ -328,7 +330,7 @@ test('physical iPhone evidence requires two distinct devices and all twelve rows
   }, { now: NOW }), evidence);
 
   const missingCheck = structuredClone(evidence);
-  delete missingCheck.checks.scopeAudit;
+  delete missingCheck.checks.externalWebView;
   expectEvidenceError(
     () => validatePhysicalIphoneQaEvidence(missingCheck, {}, { now: NOW }),
     'PHYSICAL_IPHONE_QA_INVALID',

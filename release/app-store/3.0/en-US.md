@@ -1,6 +1,6 @@
 # App Store localization — en-US
 
-Status: Draft for CaboHealth 3.0 (build 7). Do not paste into App Store Connect until every gate in `release-manifest.json` is resolved against the exact RC.
+Status: Draft for CaboHealth 3.0 (build 8). Do not paste into App Store Connect until every gate in `release-manifest.json` is resolved against the exact RC.
 
 ## Name
 CaboHealth
@@ -24,13 +24,13 @@ CLIENT RESOURCES
 Eligible existing in-person CaboHealth clients may verify a clinic-provided code to access complimentary resources included with their services. These resources are not sold in the app. No price, checkout, subscription, or in-app purchase is offered.
 
 CABOHEALTH CATALOG
-CaboHealth may publish, update, deactivate, or remove its own hosted wellness resources. The app lists the active catalog with localized details and opens only validated canonical CaboHealth Universal Links. It does not browse arbitrary websites or list third-party resources.
+CaboHealth may publish, update, deactivate, or remove hosted wellness resources, including selected third-party HTTPS resources after suitability and rights review. The app lists the active catalog with localized details and opens validated destinations inside the app. VIP access controls only the in-app entry point; destination websites remain independently operated.
 
 MORE VALUE IN THE APP
 • Built-in recipe and visit tools remain useful when hosted resources are unavailable.
 • Save active public resources for quick return.
 • Choose English or Spanish (Mexico), appearance, and reduced visual effects.
-• Restricted navigation opens only reviewed CaboHealth resources.
+• Restricted navigation keeps each hosted resource on its configured destination origin.
 
 The content is general educational information, not an emergency service or a substitute for guidance from a qualified professional.
 

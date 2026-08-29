@@ -2,7 +2,7 @@
 
 Status: Draft — not release-approved
 
-This inventory describes the planned 3.0/build 7 candidate: an owner-managed catalog seeded with two public resources, the current protected Client Resources surface for eligible existing in-person clients, and the isolated App Review sample. The public dynamic control plane and dynamic protected broker are active. The separately hosted owner-only Staff Access portal remains an operational system outside the consumer binary and is reachable only by direct web URL. The preserved exact build-input and build-artifact attestations bind build 6, which processed and became active for the internal TestFlight group but is obsolete for the full-screen VIP navigation source; build 6 was not rejected. This inventory is not an App Privacy submission, physical-device valid-flow evidence, or a completed exact-RC attestation. Items marked **PENDING** block release.
+This inventory describes the planned 3.0/build 8 candidate: an owner-managed catalog seeded with two CaboHealth-authored public resources, protected Client Resources, the isolated App Review sample, and a reviewed external-HTTPS capability. Builds 4–7 are obsolete-source history; build 7 reached EAS FINISHED but has no claimed App Store Connect processing evidence. Current build-8 input/artifact/RC authority is absent. The separately hosted owner-only Staff Access portal remains outside the consumer binary. This inventory is not an App Privacy submission, physical-device valid-flow evidence, or a completed exact-RC attestation. Items marked **PENDING** block release.
 
 ## Native and hosted public-resource state
 
@@ -10,6 +10,7 @@ This inventory describes the planned 3.0/build 7 candidate: an owner-managed cat
 | --- | --- | --- | --- | --- |
 | Native favorites and order | Selected public-resource slugs and local order | On device | Present Saved choices | Remains local |
 | Published public catalog | Monotonic revision plus active entry ID, bilingual title/summary, icon, canonical CaboHealth URL, access label, and update time | Cloud Functions / private Firestore authority; last valid snapshot cached on device | Present and withdraw the owner-published software index | Production callable and three-entry seed are active; only active public entries are returned. No client record, owner identity, code, or private content is included. A malformed or stale response fails closed and cannot replace a valid cache. |
+| External HTTPS destination | Validated external URL in a Public v3 record or returned transiently after an authorized VIP v2 launch | Cloud Functions, native memory, destination host | Open an owner-reviewed resource inside the app | VIP previews/grants/native storage/application audit remain URL-free. The independently operated destination receives normal network data. Final Apple mapping and per-destination rights/suitability review are pending. |
 | Native preferences | Language, appearance/effects, and haptics | On device | Present the chosen interface | Remains local |
 | Healthy Recipes favorites | Recipe favorite keys | Browser/WebKit local storage | Present local Saved recipes | Remains local |
 | Clinic Guide checklist | Checklist completion state | Browser/WebKit local storage | Present local visit preparation state | Remains local; no free text |

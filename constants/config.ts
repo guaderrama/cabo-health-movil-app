@@ -6,7 +6,7 @@ export const config = {
   app: {
     name: 'CaboHealth',
     version: '3.0',
-    buildNumber: '7',
+    buildNumber: '8',
   },
 
   // Storage keys

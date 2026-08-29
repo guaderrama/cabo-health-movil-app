@@ -14,7 +14,7 @@
 
 - Build 7 stays safe because all V1/V2 catalog and V1 production access endpoints omit external entries. Deploy the additive Functions contracts before Staff or build 8.
 - Do not change AASA or `WKAppBoundDomains`; no third-party hostname is added to either authority.
-- Never reuse build-7 input, artifact, RC hashes, IPA, evidence files, source digest, or reviewed pins for build 8.
+- Never reuse build-7 input, artifact, RC hashes, IPA, evidence files, source digest, or tool pins for build 8. The five current phase/tool pins remain null until their own review task.
 - Build and evidence material containing production configuration stays in a current-user-owned mode-`0700` directory with mode-`0600` files and outside Dropbox whenever the existing guard requires it.
 - Do not publish a rights claim, age rating, privacy answer, or medical/content claim that has not been truthfully reviewed for the dynamic third-party-content scope.
 - Do not call `npm run submit`, click **Submit for Review**, select a build for review, or create a submission authorization. Those actions require a separate immediate confirmation after final evidence exists.
@@ -54,8 +54,16 @@
 - Modify: `scripts/create-build-input-attestation.mjs`
 - Modify: `scripts/release-command-guard.mjs`
 - Modify: `tools/app-store-submit-adapter/src/constants.mjs`
+- Modify: `tools/app-store-submit-adapter/README.md`
 - Modify: `tools/app-store-submit-adapter/package.json`
-- Modify corresponding release tests under `tests/`.
+- Modify: `tools/app-store-submit-adapter/test/dry-run.test.mjs`
+- Modify: `tools/app-store-submit-adapter/test/evidence.test.mjs`
+- Move tracked build-7 attestations to: `release/app-store/3.0/history/build-7/`
+- Add: `release/app-store/3.0/history/build-7/manifest.json`
+- Move ignored private build-7 evidence to: `release/private/rc-build-7/`
+- Keep absent until later tasks: current build-8 input/artifact/RC attestations
+- Modify: `docs/superpowers/plans/2026-08-28-cabohealth-external-https-miniapps-release.md`
+- Modify directly affected release, legal, regression, and EAS upload-context tests under `tests/`.
 
 - [ ] **Step 1: Write failing build-8 release tests first**
 
@@ -72,7 +80,7 @@ Expected: FAIL because source and release authority still target build 7.
 
 - [ ] **Step 2: Rebaseline the candidate and keep historical evidence historical**
 
-Set `app.json` and `constants/config.ts` to build `8`. Advance every exact candidate validator together. Clear current candidate authority to truthful pre-build state: no build-8 source hash, build input, artifact, RC, TestFlight ID, screenshots, or App Store Connect evidence is claimed yet. Retain old build-7 files only as explicitly obsolete history; do not copy their hashes into new authority.
+Set `app.json` and `constants/config.ts` to build `8`. Advance every exact candidate validator together. Move the tracked build-7 input/artifact attestations byte-for-byte to `release/app-store/3.0/history/build-7/`, record their hashes and independently reviewed EAS-build/artifact association in the historical manifest, and move ignored private evidence byte-for-byte to `release/private/rc-build-7/`. Clear current candidate authority to truthful pre-build state: all current build-8 phase files are absent and all five pins are null. Do not copy old hashes into new authority.
 
 - [ ] **Step 3: Make metadata truthful for dynamic third-party resources**
 
@@ -95,7 +103,7 @@ Expected: all pass in truthful pre-build-8 state.
 - [ ] **Step 5: Commit the build-8 rebaseline**
 
 ```bash
-git add app.json constants/config.ts release scripts tools/app-store-submit-adapter/src tests
+git add -- app.json constants/config.ts release docs/operations/apple-post-build-evidence.md docs/operations/exact-ios-ipa-audit.md docs/operations/prior-apple-review-resolution.md docs/superpowers/plans/2026-08-28-cabohealth-external-https-miniapps-release.md scripts tools/app-store-submit-adapter tests
 git commit -m "chore(release): rebaseline CaboHealth build 8"
 ```
 
@@ -123,7 +131,7 @@ Expected: every command exits 0 and status is clean. Independently inspect the p
 
 - [ ] **Step 2: Freeze the source commit**
 
-Record `git rev-parse HEAD` and the canonical source-tree digest produced by the release guard. No source file may change after build-input attestation unless the candidate is invalidated and the gate is restarted.
+Record `git rev-parse HEAD` as the frozen application-source commit and record the canonical source-tree digest produced by the release guard. Later authority commits may change only the phase's excluded attestation file and its one normalized pin in `scripts/release-command-guard.mjs`; the guard must prove the remaining diff is exactly allowlisted and the source-tree digest remains exactly equal. Any other change invalidates the candidate and restarts the gate.
 
 ---
 
@@ -246,11 +254,11 @@ rollback block.
 
 - [ ] **Step 1: Create a fresh private snapshot and input evidence**
 
-Use the existing release guard workflow with the exact external mode-`0600` production `GoogleService-Info.plist`, reviewed production EAS variables, clean recursive runtime, and frozen source commit. Generate a new build-8 input attestation with `scripts/create-build-input-attestation.mjs`; do not overwrite the build-7 authority.
+Use the existing release guard workflow with the exact external mode-`0600` production plist supplied only by `CABOHEALTH_GOOGLE_SERVICES_PLIST`, clean recursive runtime, and frozen application-source commit. The attestation hash-binds Node v22.22.3 version/executable, EAS CLI 22.2.0 package/entry/runtime tree, and a sanitized independently reviewed inventory containing only `APP_ENV` from the production profile plus `CABOHEALTH_FIREBASE_PROJECT_ID` and `CABOHEALTH_GOOGLE_SERVICES_PLIST` from the EAS project environment, with source roles and no values/IDs. Generate a new build-8 input attestation at the previously absent current path; do not overwrite build-7 history.
 
 - [ ] **Step 2: Independently review and pin only the build-8 input hash**
 
-Verify candidate identity, source digest, app/config/lock/manifests/verifiers, Firebase project, sanitized Expo config, Node runtime, EAS CLI closure, and plist hash. Update only the intended input pin in `scripts/release-command-guard.mjs`, rerun its tests, and commit the pin. If any input changes afterward, clear the pin and restart Task 6.
+Verify candidate identity, frozen source commit/digest, app/config/lock/manifests/verifiers, Firebase project, sanitized Expo config, Node runtime, EAS CLI closure, reviewed variable-name/source-role inventory, and plist hash. Update only the intended input pin in `scripts/release-command-guard.mjs`, prove the source digest remains exact under the phase allowlist, rerun its tests, and commit only the new input attestation plus its normalized pin. Tool pins remain null. If any input changes afterward, clear the pin and restart Task 6.
 
 - [ ] **Step 3: Launch the guarded EAS production build**
 
@@ -274,7 +282,7 @@ Set a task-specific canonical timestamp without exposing credentials:
 
 ```bash
 cabo_build8_generated_at="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
-cabo_build8_plist="${CABOHEALTH_PRODUCTION_GOOGLE_SERVICES_PLIST:?set the approved private production plist path}"
+cabo_build8_plist="${CABOHEALTH_GOOGLE_SERVICES_PLIST:?set the approved private production plist path}"
 node scripts/audit-ios-ipa.mjs \
   --ipa "$(pwd)/release/private/rc-build-8/CaboHealth-3.0-build-8.ipa" \
   --google-services-plist "$cabo_build8_plist" \
@@ -294,7 +302,7 @@ Expected: signed identifiers/entitlements/privacy pass; no Staff URL, dormant de
 
 - [ ] **Step 3: Create, independently review, and pin the build-artifact attestation**
 
-Bind the exact IPA, EAS build ID, input attestation, source digest, signed entitlements, certificate, provisioning profile, embedded Firebase plist, and privacy report. Pin only its newly reviewed SHA-256, rerun focused guard tests, and commit the artifact authority.
+Bind the exact IPA, EAS build ID, input attestation, source digest, signed entitlements, certificate, provisioning profile, embedded Firebase plist, and privacy report. The EAS build-ID↔artifact association must be independently reviewed procedural evidence or sanitized hash-bound EAS metadata; EAS `FINISHED` alone is not guard proof of that association. Pin only its newly reviewed SHA-256, prove the exact source digest under the artifact-phase allowlist, rerun focused guard tests, and commit only the artifact attestation plus its normalized pin.
 
 ---
 
@@ -307,6 +315,8 @@ npm run upload:testflight
 ```
 
 The guard must copy only the attested IPA to a unique private operation directory outside Dropbox, rehash immediately before launch, upload build 8, and remove the temporary operation afterward. It must not submit for review.
+
+Use only `CABOHEALTH_GOOGLE_SERVICES_PLIST` for the private plist input; Tasks 6–8 must not introduce another spelling.
 
 - [ ] **Step 2: Verify App Store Connect read-only**
 

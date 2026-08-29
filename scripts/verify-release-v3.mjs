@@ -27,15 +27,28 @@ const EXACT_ASC_TESTFLIGHT_BUILDS = [
   { marketingVersion: '3.0', buildNumber: '5', status: 'ready-to-submit-obsolete-source' },
   { marketingVersion: '3.0', buildNumber: '6', status: 'ready-to-test-obsolete-source' },
 ];
+const EXACT_HISTORICAL_CANDIDATE_EVIDENCE = [
+  { marketingVersion: '3.0', buildNumber: '4', status: 'testflight-ready-to-submit-obsolete-source', appStoreObserved: true },
+  { marketingVersion: '3.0', buildNumber: '5', status: 'testflight-ready-to-submit-obsolete-source', appStoreObserved: true },
+  { marketingVersion: '3.0', buildNumber: '6', status: 'testflight-ready-to-test-obsolete-source', appStoreObserved: true },
+  {
+    marketingVersion: '3.0',
+    buildNumber: '7',
+    status: 'eas-finished-and-attested-not-observed-in-app-store-connect-obsolete-source',
+    appStoreObserved: false,
+    trackedHistoryRoot: 'release/app-store/3.0/history/build-7',
+    privateHistoryRoot: 'release/private/rc-build-7',
+  },
+];
 const EXACT_ASC_REVIEW_GUIDELINES = ['1.4.1', '2.1', '4.1'];
 const EXACT_AUTHORITY_SHA256 = Object.freeze({
-  'app.json': '41c801ad98f891fc103e2cfc3acd730c2feb3375382a8f9d596682c0ebd27530',
+  'app.json': '081a4cb30df145503b828544375a265750a40f8737b793dd3d3a4737ae059826',
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
-  'constants/config.ts': 'a70123950afa81a7948847e397fb0b9a5695ceb5948483bf46b4440d71954515',
+  'constants/config.ts': '5426b212e853ee4d11bc253d794cc9dc8f402340e4a416ec9d757e514b93402c',
   'constants/publicMiniapps.ts': '7306d82fd7de694b16de85401a8aab431c5408037f5038ce95fc5f79edef9dda',
-  'release/app-store/3.0/release-manifest.json': '9a0738dfd49f2e8a0f022d8bfd46109eb3e08575836a85a68785c812a5121c33',
-  'release/app-store/3.0/age-rating.json': 'b2bd2fdd9a5109a600923dee82eb0186df99a446128f3b05a37d54e2428e19bb',
-  'release/app-store/3.0/app-privacy.json': '9e02d9906fb19bbaac82268c45022d071b216ea65c6e4e12cb9de72b72632b10',
+  'release/app-store/3.0/release-manifest.json': '9446366c3724e55daba42d2ee3d3cebcec16aca2819982451763f21e161c7ce5',
+  'release/app-store/3.0/age-rating.json': '2b8de835b2e1ef794c28310a1699e101a7d604652b14945538c70e26df6e1259',
+  'release/app-store/3.0/app-privacy.json': 'ea62eeb774718f7378cfb4edbc18dfb8fa8f90afadb3c61d2ef6b214a1da4349',
 });
 
 function parseJson(files, path, errors) {
@@ -118,9 +131,9 @@ export function verifyCapturedReleaseV3(files) {
 
   if (appJson && (
     appJson.expo?.version !== '3.0'
-    || appJson.expo?.ios?.buildNumber !== '7'
+    || appJson.expo?.ios?.buildNumber !== '8'
   )) {
-    errors.push('app.json must remain 3.0/build 7 after the build-7 rebaseline');
+    errors.push('app.json must remain 3.0/build 8 after the build-8 rebaseline');
   }
   const productionProfile = easJson?.build?.production;
   if (!hasExactKeys(productionProfile, ['environment', 'node', 'env', 'ios'])
@@ -133,8 +146,8 @@ export function verifyCapturedReleaseV3(files) {
     errors.push('eas.json production must pin environment production, Node 22.22.3, APP_ENV production, and m-medium');
   }
   if (!/version:\s*['"]3\.0['"]/u.test(config)
-    || !/buildNumber:\s*['"]7['"]/u.test(config)) {
-    errors.push('constants/config.ts must remain 3.0/build 7 after the build-7 rebaseline');
+    || !/buildNumber:\s*['"]8['"]/u.test(config)) {
+    errors.push('constants/config.ts must remain 3.0/build 8 after the build-8 rebaseline');
   }
 
   const sourceSlugs = extractPublicSlugs(publicSource);
@@ -148,6 +161,7 @@ export function verifyCapturedReleaseV3(files) {
       'artifactKind',
       'candidate',
       'ascEvidence',
+      'historicalCandidateEvidence',
       'ownerSeller',
       'scope',
       'reviewCredential',
@@ -189,6 +203,13 @@ export function verifyCapturedReleaseV3(files) {
       && Array.isArray(manifest.ascEvidence.testFlightBuilds)
       && manifest.ascEvidence.testFlightBuilds
         .every((build) => hasExactKeys(build, ['marketingVersion', 'buildNumber', 'status']))
+      && Array.isArray(manifest.historicalCandidateEvidence)
+      && manifest.historicalCandidateEvidence.every((build, index) => hasExactKeys(
+        build,
+        index === 3
+          ? ['marketingVersion', 'buildNumber', 'status', 'appStoreObserved', 'trackedHistoryRoot', 'privateHistoryRoot']
+          : ['marketingVersion', 'buildNumber', 'status', 'appStoreObserved'],
+      ))
       && hasExactKeys(manifest.ownerSeller, [
         'sellerType',
         'legalSeller',
@@ -206,6 +227,7 @@ export function verifyCapturedReleaseV3(files) {
         'protectedResources',
         'commercialModel',
         'staffAdministration',
+        'externalHttpsMiniapps',
         'access',
         'accountRequired',
         'demoCredentialRequired',
@@ -233,6 +255,17 @@ export function verifyCapturedReleaseV3(files) {
         'draftOnlyCatalogChanges',
         'directPublishing',
         'arbitraryRuntimeCatalog',
+      ])
+      && hasExactKeys(manifest.scope?.externalHttpsMiniapps, [
+        'ownerManaged',
+        'accessModes',
+        'opensInsideApp',
+        'sameOriginNavigationOnly',
+        'vipControlsInAppEntryOnly',
+        'thirdPartyContentAuthoredByCaboHealth',
+        'thirdPartyContentMadePrivateByCaboHealth',
+        'rightsVerificationRequiredBeforeActivation',
+        'permanentCatalogItemsListedInReleaseMetadata',
       ])
       && hasExactKeys(manifest.reviewCredential, [
         'namespace',
@@ -355,6 +388,19 @@ export function verifyCapturedReleaseV3(files) {
       || staff?.arbitraryRuntimeCatalog !== true) {
       errors.push('owner Staff Portal must remain direct-URL-only, consumer-unreachable, and authorized for the deployed runtime catalog');
     }
+    if (!sameJson(manifest.scope?.externalHttpsMiniapps, {
+      ownerManaged: true,
+      accessModes: ['public', 'vip'],
+      opensInsideApp: true,
+      sameOriginNavigationOnly: true,
+      vipControlsInAppEntryOnly: true,
+      thirdPartyContentAuthoredByCaboHealth: false,
+      thirdPartyContentMadePrivateByCaboHealth: false,
+      rightsVerificationRequiredBeforeActivation: true,
+      permanentCatalogItemsListedInReleaseMetadata: false,
+    })) {
+      errors.push('external HTTPS scope must retain owner control, in-app same-origin navigation, VIP entry-only gating, third-party authorship/privacy limits, and pre-activation rights review');
+    }
 
     const review = manifest.reviewCredential;
     if (!hasExactKeys(review, [
@@ -405,8 +451,8 @@ export function verifyCapturedReleaseV3(files) {
       ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
       privacyMapping: 'pending-final-linkage-category-review-and-save',
       brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-      exactReleaseCandidate: 'build-7-pending-build-input-attestation-eas-build-and-qa',
-      testFlight: 'build-6-processed-internal-obsolete-source-build-7-pending-build-upload-selection-and-physical-iphone-qa',
+      exactReleaseCandidate: 'build-8-pending-build-input-attestation-eas-build-and-qa',
+      testFlight: 'builds-4-through-7-obsolete-source-build-8-pending-build-upload-selection-and-physical-iphone-qa',
       screenshots: 'pending-exact-rc-capture',
       accessibilityLabels: 'pending-exact-rc-evidence',
       appStoreConnect: 'pending-final-save',
@@ -424,13 +470,13 @@ export function verifyCapturedReleaseV3(files) {
     }
 
     if (manifest.candidate?.marketingVersion !== '3.0'
-      || manifest.candidate?.buildNumber !== '7'
+      || manifest.candidate?.buildNumber !== '8'
       || manifest.candidate?.status !== 'pre-build-configured'
       || manifest.candidate?.appJsonUpdated !== true
       || manifest.candidate?.configUpdated !== true
       || manifest.candidate?.rcSourceSha !== null
       || manifest.candidate?.testFlightBuildId !== null) {
-      errors.push('candidate must remain truthful pre-build-configured 3.0/build 7 without premature RC evidence');
+      errors.push('candidate must remain truthful pre-build-configured 3.0/build 8 without premature RC evidence');
     }
     const asc = manifest.ascEvidence;
     if (asc?.observedAt !== '2026-08-27T20:35:04.000Z'
@@ -443,12 +489,15 @@ export function verifyCapturedReleaseV3(files) {
       || !sameJson(asc?.testFlightBuilds, EXACT_ASC_TESTFLIGHT_BUILDS)
       || asc?.highestTestFlightBuild !== '6'
       || asc?.highestTestFlightBuildStatus !== 'ready-to-test-obsolete-source'
-      || asc?.nextCandidateBuild !== '7'
+      || asc?.nextCandidateBuild !== '8'
       || asc?.nextCandidateBuildAvailable !== true
       || asc?.latestReviewDate !== '2026-02-24'
       || !sameArray(asc?.latestReviewGuidelines, EXACT_ASC_REVIEW_GUIDELINES)
       || asc?.informationRequested !== true) {
-      errors.push('ASC read-only evidence must record active internal build 6 as obsolete-source evidence and reserve build 7');
+      errors.push('ASC read-only evidence must retain builds 1 through 6 exactly and reserve build 8 without inventing build-7 Apple state');
+    }
+    if (!sameJson(manifest.historicalCandidateEvidence, EXACT_HISTORICAL_CANDIDATE_EVIDENCE)) {
+      errors.push('release history must identify builds 4 through 7 as exact obsolete-source evidence and build 8 as the sole new candidate');
     }
     if (manifest.reviewRisk?.appleApprovalGuaranteed !== false) {
       errors.push('Apple approval must never be represented as guaranteed');
@@ -462,6 +511,7 @@ export function verifyCapturedReleaseV3(files) {
       'previousSavedRating',
       'calculatedRating',
       'projectedRating',
+      'legacyOperatingSystemsRating',
       'basis',
       'questionnaireReference',
       'conditions',
@@ -473,6 +523,7 @@ export function verifyCapturedReleaseV3(files) {
       && hasExactKeys(age.questionnaireReference, [
         'provider',
         'url',
+        'definitionUrl',
         'verifiedDate',
         'frequencyScale',
       ])
@@ -542,14 +593,16 @@ export function verifyCapturedReleaseV3(files) {
       || age.status !== 'reconfirmation-required'
       || age.previousSavedRating !== '9+'
       || age.calculatedRating !== null
-      || age.projectedRating !== '9+'
+      || age.projectedRating !== '16+'
+      || age.legacyOperatingSystemsRating !== '17+'
       || age.ownerConfirmationRequired !== true
       || age.appStoreCalculationRequired !== true
       || age.questionnaireReference?.provider !== 'Apple'
       || age.questionnaireReference?.url !== 'https://developer.apple.com/help/app-store-connect/manage-app-information/set-an-app-age-rating/'
-      || age.questionnaireReference?.verifiedDate !== '2026-08-22'
+      || age.questionnaireReference?.definitionUrl !== 'https://developer.apple.com/help/app-store-connect/reference/app-information/age-ratings-values-and-definitions/'
+      || age.questionnaireReference?.verifiedDate !== '2026-08-28'
       || !sameArray(age.questionnaireReference?.frequencyScale, ['NONE', 'INFREQUENT', 'FREQUENT'])
-      || age.conditions?.unrestrictedWebAccess?.requiredAnswer !== false
+      || age.conditions?.unrestrictedWebAccess?.requiredAnswer !== true
       || age.conditions?.medicalOrTreatmentInformation?.requiredAnswer !== 'NONE'
       || age.conditions?.healthOrWellnessTopics?.requiredAnswer !== true
       || age.ageCategoryAndOverride?.kidsAgeBand !== null
@@ -558,7 +611,7 @@ export function verifyCapturedReleaseV3(files) {
       || age.ageCategoryAndOverride?.developerAgeRatingInfoUrl !== null
       || age.ageCategoryAndOverride?.status !== 'pending-app-store-confirmation'
     ) {
-      errors.push('Age rating must remain 9+ reconfirmation-required until ASC recalculates the changed scope');
+      errors.push('Age rating must remain projected 16+ with legacy 17+, owner reconfirmation, and App Store recalculation required');
     }
   }
 
@@ -573,6 +626,8 @@ export function verifyCapturedReleaseV3(files) {
       'installation',
       'appCheck',
       'backend',
+      'resourceUrlHandling',
+      'thirdPartyNetworkRequests',
       'cloudFunctionRequestSecurity',
       'cloudRunRequestLogs',
       'accessArtifacts',
@@ -608,6 +663,20 @@ export function verifyCapturedReleaseV3(files) {
         'codeDigests',
         'clientNamesStored',
         'resourceUrlsReturnedToNative',
+      ])
+      && hasExactKeys(privacy.resourceUrlHandling, [
+        'publicV3CatalogRecordsContainExternalUrl',
+        'authorizedVipV2LaunchMayReturnExternalUrlTransiently',
+        'vipPreviewsContainExternalUrl',
+        'vipGrantsContainExternalUrl',
+        'nativeStorageContainsExternalUrl',
+        'applicationAuditContainsExternalUrl',
+      ])
+      && hasExactKeys(privacy.thirdPartyNetworkRequests, [
+        'behavior',
+        'destinationHostReceivesNormalNetworkData',
+        'destinationOperatesIndependently',
+        'finalAppleMappingStatus',
       ])
       && hasExactKeys(privacy.cloudFunctionRequestSecurity, [
         'rawSourceIpProcessedTransiently',
@@ -740,7 +809,7 @@ export function verifyCapturedReleaseV3(files) {
       ]);
     if (!privacySchemaIsExact) errors.push('privacy must retain the exact authority schema');
     if (
-      privacy.schemaVersion !== 5
+      privacy.schemaVersion !== 6
       || privacy.status !== 'pending-final-linkage-category-review-and-save'
       || privacy.architectureStatus !== 'core-infrastructure-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e'
       || privacy.recommendedAppPrivacyAnswer !== 'Yes, we collect data from this app'
@@ -748,6 +817,21 @@ export function verifyCapturedReleaseV3(files) {
       || privacy.installation?.storage !== 'SecureStore'
       || privacy.installation?.deviceBound !== true
       || privacy.appCheck?.required !== true
+      || privacy.backend?.resourceUrlsReturnedToNative !== true
+      || !sameJson(privacy.resourceUrlHandling, {
+        publicV3CatalogRecordsContainExternalUrl: true,
+        authorizedVipV2LaunchMayReturnExternalUrlTransiently: true,
+        vipPreviewsContainExternalUrl: false,
+        vipGrantsContainExternalUrl: false,
+        nativeStorageContainsExternalUrl: false,
+        applicationAuditContainsExternalUrl: false,
+      })
+      || !sameJson(privacy.thirdPartyNetworkRequests, {
+        behavior: 'third-party-network-request',
+        destinationHostReceivesNormalNetworkData: true,
+        destinationOperatesIndependently: true,
+        finalAppleMappingStatus: 'pending-final-destination-provider-and-category-review',
+      })
       || !sameArray(privacy.backend?.providers, [
         'Firebase Authentication',
         'Cloud Functions',
@@ -920,7 +1004,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  process.stdout.write('Release 3.0/build 7 verified: pre-build-configured.\n');
+  process.stdout.write('Release 3.0/build 8 verified: pre-build-configured.\n');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

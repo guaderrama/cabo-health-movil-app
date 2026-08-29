@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "candidate": {
+    "marketingVersion": "3.0",
+    "buildNumber": "7"
+  },
+  "status": "obsolete-source-history",
+  "buildInputAttestation": {
+    "relativePath": "build-input-attestation.json",
+    "sha256": "898a11d99a83c70a9b895f5eeb4610991b79639ff96a41ff78e0078c33b4ebf4"
+  },
+  "buildArtifactAttestation": {
+    "relativePath": "build-artifact-attestation.json",
+    "sha256": "ee1f3de8eb7a8fdc96be2ef4d8120c26e81b54c8654bf9f356a4c9a565eae2be"
+  },
+  "easArtifactAssociation": {
+    "evidenceType": "independently-reviewed-procedural",
+    "buildId": "4623b574-ff8f-4239-ab24-18a0ed7a7260",
+    "buildStatus": "FINISHED",
+    "ipaSha256": "f40457402917366b788db848bca11021fc68a4b691127d3b6feac4d11cc806a5",
+    "appStoreConnectStatusInferred": false,
+    "evidenceRef": ".superpowers/sdd/2026-08-28-cabohealth-external-https-miniapps-release/eas-build-history-sanitized.md"
+  },
+  "rcAttestation": {
+    "relativePath": null,
+    "sha256": null,
+    "status": "never-created"
+  }
+}

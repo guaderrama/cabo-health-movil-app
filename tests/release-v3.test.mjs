@@ -60,10 +60,10 @@ function withFixture(mutate, assertion) {
   }
 }
 
-test('release v3 verifier accepts the truthful pre-build-configured 3.0/build 7 package', () => {
+test('release v3 verifier accepts the truthful pre-build-configured 3.0/build 8 package', () => {
   const result = runVerifier();
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /Release 3\.0\/build 7 verified: pre-build-configured\./u);
+  assert.match(result.stdout, /Release 3\.0\/build 8 verified: pre-build-configured\./u);
 });
 
 test('release v3 verifier rejects a non-array ASC build list without throwing', () => {
@@ -110,8 +110,37 @@ test('release v3 authorities record the complete age, sanitized audit, and App R
   const privacy = JSON.parse(readFileSync(join(projectRoot, 'release/app-store/3.0/app-privacy.json'), 'utf8'));
   const manifest = JSON.parse(readFileSync(join(projectRoot, 'release/app-store/3.0/release-manifest.json'), 'utf8'));
 
-  assert.equal(privacy.schemaVersion, 5);
+  assert.equal(privacy.schemaVersion, 6);
   assert.equal(privacy.recommendedAppPrivacyAnswer, 'Yes, we collect data from this app');
+  assert.equal(age.conditions.unrestrictedWebAccess.requiredAnswer, true);
+  assert.equal(age.projectedRating, '16+');
+  assert.equal(age.legacyOperatingSystemsRating, '17+');
+  assert.equal(privacy.backend.resourceUrlsReturnedToNative, true);
+  assert.deepEqual(privacy.resourceUrlHandling, {
+    publicV3CatalogRecordsContainExternalUrl: true,
+    authorizedVipV2LaunchMayReturnExternalUrlTransiently: true,
+    vipPreviewsContainExternalUrl: false,
+    vipGrantsContainExternalUrl: false,
+    nativeStorageContainsExternalUrl: false,
+    applicationAuditContainsExternalUrl: false,
+  });
+  assert.deepEqual(privacy.thirdPartyNetworkRequests, {
+    behavior: 'third-party-network-request',
+    destinationHostReceivesNormalNetworkData: true,
+    destinationOperatesIndependently: true,
+    finalAppleMappingStatus: 'pending-final-destination-provider-and-category-review',
+  });
+  assert.deepEqual(manifest.scope.externalHttpsMiniapps, {
+    ownerManaged: true,
+    accessModes: ['public', 'vip'],
+    opensInsideApp: true,
+    sameOriginNavigationOnly: true,
+    vipControlsInAppEntryOnly: true,
+    thirdPartyContentAuthoredByCaboHealth: false,
+    thirdPartyContentMadePrivateByCaboHealth: false,
+    rightsVerificationRequiredBeforeActivation: true,
+    permanentCatalogItemsListedInReleaseMetadata: false,
+  });
   assert.deepEqual(age.otherSupportedAnswers, {
     parentalControls: false,
     ageAssurance: false,
@@ -319,7 +348,7 @@ test('release v3 verifier rejects rollback from the ASC-confirmed native version
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /app\.json must remain 3\.0\/build 7/iu);
+      assert.match(result.stderr, /app\.json must remain 3\.0\/build 8/iu);
     },
   );
 });
@@ -358,10 +387,10 @@ test('release v3 verifier rejects executable config drift hidden behind stale co
       const path = join(root, 'constants/config.ts');
       const source = readFileSync(path, 'utf8')
         .replace("version: '3.0',", "version: '3.0.0',")
-        .replace("buildNumber: '7',", "buildNumber: '8',");
+        .replace("buildNumber: '8',", "buildNumber: '9',");
       writeFileSync(
         path,
-        `${source}\n// Stale reviewed values: version: '3.0'; buildNumber: '7'\n`,
+        `${source}\n// Stale reviewed values: version: '3.0'; buildNumber: '8'\n`,
       );
     },
     (result) => {
@@ -497,7 +526,7 @@ test('release v3 verifier requires isolated pending multi-device App Review acce
   }
 });
 
-test('release v3 verifier requires a 9+ reconfirmation rather than reusing the saved result', () => {
+test('release v3 verifier requires 16+/legacy 17+ reconfirmation rather than reusing the historical saved result', () => {
   withFixture(
     (root) => mutateJson(root, 'release/app-store/3.0/age-rating.json', (age) => {
       age.status = 'saved-app-store-calculated';
@@ -507,7 +536,7 @@ test('release v3 verifier requires a 9+ reconfirmation rather than reusing the s
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /Age rating must remain 9\+ reconfirmation-required/iu);
+      assert.match(result.stderr, /Age rating must remain projected 16\+ with legacy 17\+, owner reconfirmation, and App Store recalculation required/iu);
     },
   );
 });
@@ -864,7 +893,27 @@ test('captured release verifier rejects semantic drift across every release auth
     ['organization seller', 'release/app-store/3.0/release-manifest.json', (value) => { value.ownerSeller.registeredOrganization = true; }],
     ['Apple ID', 'release/app-store/3.0/release-manifest.json', (value) => { value.candidate.appleId = '1'; }],
     ['premature App Store save', 'release/app-store/3.0/release-manifest.json', (value) => { value.appStoreDraft.status = 'saved'; }],
-    ['native resource URL', 'release/app-store/3.0/app-privacy.json', (value) => { value.backend.resourceUrlsReturnedToNative = true; }],
+    ['native resource URL omitted', 'release/app-store/3.0/app-privacy.json', (value) => { value.backend.resourceUrlsReturnedToNative = false; }],
+    ['VIP preview URL exposed', 'release/app-store/3.0/app-privacy.json', (value) => {
+      value.resourceUrlHandling ??= {
+        publicV3CatalogRecordsContainExternalUrl: true,
+        authorizedVipV2LaunchMayReturnExternalUrlTransiently: true,
+        vipPreviewsContainExternalUrl: false,
+        vipGrantsContainExternalUrl: false,
+        nativeStorageContainsExternalUrl: false,
+        applicationAuditContainsExternalUrl: false,
+      };
+      value.resourceUrlHandling.vipPreviewsContainExternalUrl = true;
+    }],
+    ['third-party destination network data denied', 'release/app-store/3.0/app-privacy.json', (value) => {
+      value.thirdPartyNetworkRequests ??= {
+        behavior: 'third-party-network-request',
+        destinationHostReceivesNormalNetworkData: true,
+        destinationOperatesIndependently: true,
+        finalAppleMappingStatus: 'pending-final-destination-provider-and-category-review',
+      };
+      value.thirdPartyNetworkRequests.destinationHostReceivesNormalNetworkData = false;
+    }],
     ['debug App Check', 'release/app-store/3.0/app-privacy.json', (value) => { value.appCheck.providers = ['debug']; }],
     ['best-effort deletion', 'release/app-store/3.0/app-privacy.json', (value) => { value.deletion.mechanism = 'best effort'; }],
     ['saved privacy linkage', 'release/app-store/3.0/app-privacy.json', (value) => { value.clientAccount.status = 'saved'; }],

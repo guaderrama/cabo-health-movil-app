@@ -904,14 +904,24 @@ test('compliance facts preserve every owner-confirmed fact and the saved Apple a
     status: 'verified',
   });
 
+  assert.deepEqual(facts.ageRating.host, {
+    value: 16,
+    legacyOperatingSystemsValue: 17,
+    unrestrictedWebAccess: true,
+    previousSavedValue: 9,
+    status: 'projected-pending-app-store-recalculation',
+  });
+  assert.deepEqual(facts.ageRating.externalCatalogItems, {
+    fixedAgeRating: null,
+    suitabilityReviewRequiredBeforeActivation: true,
+  });
   const verifiedAgePaths = [
-    ['ageRating', 'host'],
     ['ageRating', 'miniapps', 'healthy-recipes'],
     ['ageRating', 'miniapps', 'clinic-guide'],
   ];
   for (const path of verifiedAgePaths) {
     const gate = path.reduce((value, key) => value?.[key], facts);
-    assert.deepEqual(gate, { value: 9, status: 'verified' }, `${path.join('.')} must retain Apple 9+`);
+    assert.deepEqual(gate, { value: 9, status: 'verified' }, `${path.join('.')} must retain the fixed CaboHealth editorial 9+ content rating`);
   }
 });
 

@@ -7,10 +7,41 @@ import {
 } from '../scripts/create-build-input-attestation.mjs';
 
 const hash = (character) => character.repeat(64);
+const sourceCommit = 'a'.repeat(40);
+const nodeRuntime = {
+  version: 'v22.22.3',
+  executableSha256: hash('3'),
+};
+const easCli = {
+  packageVersion: '22.2.0',
+  packageJsonRelativePath: 'eas-cli/package.json',
+  entryRelativePath: 'eas-cli/bin/run',
+  runtimeRootRelativePath: 'node_modules',
+  runtimeTreeSha256: hash('4'),
+};
+const easEnvironment = {
+  environmentName: 'production',
+  variables: [
+    { name: 'APP_ENV', source: 'eas-profile', kind: 'plain' },
+    {
+      name: 'CABOHEALTH_FIREBASE_PROJECT_ID',
+      source: 'eas-project-environment',
+      kind: 'sensitive',
+    },
+    {
+      name: 'CABOHEALTH_GOOGLE_SERVICES_PLIST',
+      source: 'eas-project-environment',
+      kind: 'secret-file',
+    },
+  ],
+  valuesIncluded: false,
+  reviewStatus: 'independently-reviewed',
+};
 
-test('build-input producer assembles the exact canonical build 7 authority', () => {
+test('build-input producer assembles the exact canonical build 8 authority', () => {
   const value = assembleBuildInputAttestation({
     reviewedAt: '2026-08-26T07:00:00.000Z',
+    sourceCommit,
     sourceTreeSha256: hash('a'),
     reviewedFileSha256: {
       appJsonSha256: hash('b'),
@@ -22,16 +53,20 @@ test('build-input producer assembles the exact canonical build 7 authority', () 
     },
     googleServicesPlistSha256: hash('1'),
     resolvedProductionExpoConfigSha256: hash('2'),
+    nodeRuntime,
+    easCli,
+    easEnvironment,
   });
 
   assert.deepEqual(value.candidate, BUILD_INPUT_CANDIDATE);
-  assert.equal(value.candidate.buildNumber, '7');
+  assert.equal(value.candidate.buildNumber, '8');
   assert.equal(value.firebaseProjectId, 'cabohealth-owner-prod');
   assert.equal(`${JSON.stringify(value)}\n`.endsWith('\n'), true);
   assert.deepEqual(Object.keys(value), [
     'schemaVersion',
     'artifactKind',
     'candidate',
+    'sourceCommit',
     'sourceTreeSha256',
     'appJsonSha256',
     'configSha256',
@@ -42,6 +77,9 @@ test('build-input producer assembles the exact canonical build 7 authority', () 
     'firebaseProjectId',
     'googleServicesPlistSha256',
     'resolvedProductionExpoConfigSha256',
+    'nodeRuntime',
+    'easCli',
+    'easEnvironment',
     'reviewedAt',
   ]);
 });
@@ -49,6 +87,7 @@ test('build-input producer assembles the exact canonical build 7 authority', () 
 test('build-input producer rejects a stale candidate, malformed hash, or ambiguous file set', () => {
   const base = {
     reviewedAt: '2026-08-26T07:00:00.000Z',
+    sourceCommit,
     sourceTreeSha256: hash('a'),
     reviewedFileSha256: {
       appJsonSha256: hash('b'),
@@ -60,15 +99,31 @@ test('build-input producer rejects a stale candidate, malformed hash, or ambiguo
     },
     googleServicesPlistSha256: hash('1'),
     resolvedProductionExpoConfigSha256: hash('2'),
+    nodeRuntime,
+    easCli,
+    easEnvironment,
   };
 
   assert.throws(() => assembleBuildInputAttestation({
     ...base,
-    candidate: { ...BUILD_INPUT_CANDIDATE, buildNumber: '6' },
+    candidate: { ...BUILD_INPUT_CANDIDATE, buildNumber: '7' },
   }), /BUILD_INPUT_PRODUCER_ARGUMENT_INVALID/u);
   assert.throws(() => assembleBuildInputAttestation({
     ...base,
     sourceTreeSha256: 'not-a-hash',
+  }), /BUILD_INPUT_PRODUCER_ARGUMENT_INVALID/u);
+  assert.throws(() => assembleBuildInputAttestation({
+    ...base,
+    nodeRuntime: { ...nodeRuntime, version: 'v20.0.0' },
+  }), /BUILD_INPUT_PRODUCER_ARGUMENT_INVALID/u);
+  assert.throws(() => assembleBuildInputAttestation({
+    ...base,
+    easEnvironment: {
+      ...easEnvironment,
+      variables: easEnvironment.variables.filter(
+        (variable) => variable.name !== 'CABOHEALTH_GOOGLE_SERVICES_PLIST',
+      ),
+    },
   }), /BUILD_INPUT_PRODUCER_ARGUMENT_INVALID/u);
   assert.throws(() => assembleBuildInputAttestation({
     ...base,

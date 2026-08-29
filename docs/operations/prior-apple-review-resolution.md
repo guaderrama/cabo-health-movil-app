@@ -36,15 +36,18 @@ highest observed TestFlight build. Build 5 was not rejected; obsolete-source is
 the local release label for the superseded source.
 CaboHealth 3.0 build 6 was subsequently built, exactly attested, processed, and
 activated for the internal TestFlight group, but is obsolete for the full-screen
-VIP navigation source. CaboHealth 3.0 build 7 is the next candidate; no build 7
-input attestation, IPA, or TestFlight upload is claimed by this document.
+VIP navigation source. Build 7 later produced two FINISHED EAS builds; one is
+exactly attested, but neither has claimed App Store Connect processing evidence
+and both are obsolete for the external-HTTPS source. CaboHealth 3.0 build 8 is
+the sole unbuilt candidate; no current build-8 input attestation, IPA, or
+TestFlight upload is claimed by this document.
 
 ## Resolution mapping for the new candidate
 
-| Prior issue | New 3.0/build 7 candidate response | Remaining proof before resubmission |
+| Prior issue | New 3.0/build 8 candidate response | Remaining proof before resubmission |
 | --- | --- | --- |
 | Brand relationship / Guideline 4.1 | Truthfully identifies Ivan Guaderrama as the Individual seller and Cabo Health as his owner-operated trade brand. | Ivan signs the scoped ownership declaration and attaches current domain/content-rights evidence. |
-| Advisory resource failed to open | The legacy advisory resource is excluded from the release binary. The initial catalog contains Healthy Recipes, CaboHealth Clinic Guide, and protected Client Resources; the validated owner-managed catalog can publish or withdraw CaboHealth-owned canonical entries under the documented Guideline 4.7 policy. | Clean-install and update-path physical-device QA; verify every active reviewed canonical URL from Mexico and the United States. |
+| Advisory resource failed to open | The legacy advisory resource is excluded from the release binary. The initial catalog contains Healthy Recipes, CaboHealth Clinic Guide, and protected Client Resources; the validated owner-managed catalog may also publish independently reviewed third-party HTTPS entries under the documented Guideline 4.7 policy. | Clean-install and update-path physical-device QA; verify every active reviewed destination from Mexico and the United States. |
 | Camera-based cosmetic resource crashed | The legacy camera/AI resource is excluded. The candidate requests no camera, photo-library, health, microphone, or location permission. | Inspect the exact signed IPA entitlements/privacy report and test supported iPhone layouts plus, if Apple can install it, the iPhone-compatibility presentation on iPad. |
 | Questions about third-party AI and transmitted user data | The candidate contains no third-party AI feature and sends no user data to an AI provider. | Reconcile the exact RC network/SDK inventory and state this plainly in final Review Notes. |
 | Medical/health information lacked citations | The candidate is general-wellness/editorial, contains no personalized medical recommendation, and uses the reviewed citations/limitations in the two public resources. | Verify every citation is visible and reachable in the exact hosted release; retain the itemized rights/citation inventory. |

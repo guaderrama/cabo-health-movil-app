@@ -2,7 +2,9 @@
 
 Status: **REVISED ITEMIZED DRAFT — OWNER RECONFIRMATION, PER-FAMILY BASIS, SIGNED DECLARATION, AND PRIVATE EVIDENCE PENDING.** On 2026-08-22 Ivan Guaderrama confirmed the earlier itemized scope for app, website, App Store metadata, screenshots, distribution, and updates in Mexico and the United States. The 2026-08-24 revision removes unsupported original-authorship wording, updates editorial citations, and adds previously omitted exact source families. Ivan has not yet reconfirmed these revised bytes. This inventory is not a signed declaration, trademark registration, licence, assignment, or proof that a third party granted rights.
 
-Release scope: Apple ID `6758285327`; bundle ID `com.cabohealth.app`; marketing version `3.0`; build `7`; initial territories Mexico and United States.
+Release scope: Apple ID `6758285327`; bundle ID `com.cabohealth.app`; marketing version `3.0`; build `8`; initial territories Mexico and United States.
+
+External catalog entries are not CaboHealth-authored by default and receive no CaboHealth editorial-source attribution or fixed per-item age rating. Before activation, each destination requires a private record of the exact URL, operator, suitability review, content-rights basis, territory, reviewer, date, and any attribution limits. VIP gating controls only the in-app entry point and does not make third-party content private.
 
 ## Cabo Health brand and local visual assets
 

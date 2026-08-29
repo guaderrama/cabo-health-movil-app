@@ -3,18 +3,20 @@
   "status": "reconfirmation-required",
   "previousSavedRating": "9+",
   "calculatedRating": null,
-  "projectedRating": "9+",
-  "basis": "The previously saved 9+ result must be recalculated with Apple's current questionnaire after adding protected Client Resources and an eligibility-code flow.",
+  "projectedRating": "16+",
+  "legacyOperatingSystemsRating": "17+",
+  "basis": "The dynamic owner-managed third-party HTTPS capability uses an embedded in-app WebView. Under Apple's current definition, this is declared as Unrestricted Web Access; Apple lists that capability at 16+ on current rating bands and 17+ on operating systems earlier than version 26.",
   "questionnaireReference": {
     "provider": "Apple",
     "url": "https://developer.apple.com/help/app-store-connect/manage-app-information/set-an-app-age-rating/",
-    "verifiedDate": "2026-08-22",
+    "definitionUrl": "https://developer.apple.com/help/app-store-connect/reference/app-information/age-ratings-values-and-definitions/",
+    "verifiedDate": "2026-08-28",
     "frequencyScale": ["NONE", "INFREQUENT", "FREQUENT"]
   },
   "conditions": {
     "unrestrictedWebAccess": {
-      "requiredAnswer": false,
-      "basis": "Every public and protected resource remains restricted to reviewed CaboHealth paths; arbitrary browsing is prohibited."
+      "requiredAnswer": true,
+      "basis": "Owner-managed Public or VIP entries may load third-party HTTPS websites in an embedded WebView. Same-origin and safety controls constrain navigation but do not change the truthful presence of the dynamic embedded-web capability."
     },
     "medicalOrTreatmentInformation": {
       "requiredAnswer": "NONE",

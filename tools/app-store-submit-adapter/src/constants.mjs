@@ -2,7 +2,7 @@ export const CANDIDATE = Object.freeze({
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '7',
+  buildNumber: '8',
 });
 
 export const ARGUMENT_NAMES = Object.freeze([
@@ -33,6 +33,7 @@ export const QA_CHECK_IDS = Object.freeze([
   'productionClientAccess',
   'appReviewAccess',
   'protectedWebView',
+  'externalWebView',
   'ownerPortalExclusion',
   'universalLinks',
   'localizationAppearanceAccessibility',

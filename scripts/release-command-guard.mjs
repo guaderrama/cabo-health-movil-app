@@ -51,14 +51,14 @@ const ATTESTATION_PATHS = Object.freeze({
   rc: 'release/app-store/3.0/rc-attestation.json',
 });
 const PRIVATE_EVIDENCE_PATHS = Object.freeze({
-  ipa: 'release/private/rc/CaboHealth-3.0-build-7.ipa',
-  signedEntitlements: 'release/private/rc/signed-entitlements.plist',
-  privacyReport: 'release/private/rc/privacy-report.json',
-  embeddedGoogleServicesPlist: 'release/private/rc/embedded-GoogleService-Info.plist',
-  signingCertificate: 'release/private/rc/signing-certificate.der',
-  embeddedProvisioningProfile: 'release/private/rc/embedded.mobileprovision',
-  physicalIphoneQa: 'release/private/rc/physical-iphone-qa.json',
-  appStoreConnectEvidence: 'release/private/rc/app-store-connect-evidence.json',
+  ipa: 'release/private/rc-build-8/CaboHealth-3.0-build-8.ipa',
+  signedEntitlements: 'release/private/rc-build-8/signed-entitlements.plist',
+  privacyReport: 'release/private/rc-build-8/privacy-report.json',
+  embeddedGoogleServicesPlist: 'release/private/rc-build-8/embedded-GoogleService-Info.plist',
+  signingCertificate: 'release/private/rc-build-8/signing-certificate.der',
+  embeddedProvisioningProfile: 'release/private/rc-build-8/embedded.mobileprovision',
+  physicalIphoneQa: 'release/private/rc-build-8/physical-iphone-qa.json',
+  appStoreConnectEvidence: 'release/private/rc-build-8/app-store-connect-evidence.json',
 });
 
 // Each phase pin starts null and becomes authoritative only after that phase
@@ -67,11 +67,11 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
 // values, so advancing a reviewed pin is not circular while every executable
 // guard behavior remains part of the reviewed source. An unpinned checked-in
 // attestation is historical evidence only and cannot satisfy a current phase.
-const BUILD_INPUT_ATTESTATION_SHA256 = '898a11d99a83c70a9b895f5eeb4610991b79639ff96a41ff78e0078c33b4ebf4';
-const BUILD_ARTIFACT_ATTESTATION_SHA256 = 'ee1f3de8eb7a8fdc96be2ef4d8120c26e81b54c8654bf9f356a4c9a565eae2be';
+const BUILD_INPUT_ATTESTATION_SHA256 = null;
+const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;
 const RC_ATTESTATION_SHA256 = null;
-const PINNED_EAS_CLI = 'eyJlbnRyeVJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvYmluL3J1biIsIm5vZGVFeGVjdXRhYmxlU2hhMjU2IjoiNWQ5ZDM4NzI5MTFlMjM0MGE0M2I3MDc5NjJlNjgxNDNkZThhNGU4ZDU0NjI4ODQ1YzBjNGYyZGUxZmI3Y2Q1YyIsIm5vZGVWZXJzaW9uIjoidjIyLjIyLjMiLCJwYWNrYWdlSnNvblJlbGF0aXZlUGF0aCI6ImVhcy1jbGkvcGFja2FnZS5qc29uIiwicGFja2FnZVZlcnNpb24iOiIyMi4yLjAiLCJydW50aW1lUm9vdFJlbGF0aXZlUGF0aCI6Im5vZGVfbW9kdWxlcyIsInJ1bnRpbWVUcmVlU2hhMjU2IjoiZDlkZDNjZmM1ZTk2NzY1ZmZlZjhjYzZiZDc0ZDNjZjE0ODc0MDVlMjUxNjkzNWMyOGY3NTNhMTU5ZTE5MWNhMiJ9';
-const PINNED_APP_STORE_SUBMIT_ADAPTER = 'eyJlbnRyeVJlbGF0aXZlUGF0aCI6ImJpbi9zdWJtaXQubWpzIiwibm9kZUV4ZWN1dGFibGVTaGEyNTYiOiI1ZDlkMzg3MjkxMWUyMzQwYTQzYjcwNzk2MmU2ODE0M2RlOGE0ZThkNTQ2Mjg4NDVjMGM0ZjJkZTFmYjdjZDVjIiwibm9kZVZlcnNpb24iOiJ2MjIuMjIuMyIsInBhY2thZ2VKc29uUmVsYXRpdmVQYXRoIjoicGFja2FnZS5qc29uIiwicGFja2FnZVZlcnNpb24iOiIxLjAuMCIsInJ1bnRpbWVSb290UmVsYXRpdmVQYXRoIjoidG9vbHMvYXBwLXN0b3JlLXN1Ym1pdC1hZGFwdGVyIiwicnVudGltZVRyZWVTaGEyNTYiOiIyMTdmYzg5ZWUwYmRiZDg0Y2MzZTZhMGRiMjEzYzIxY2E2N2FiN2NiNzA4NWVhZDBjM2UyMTZmNGNhMWVmMTE5In0=';
+const PINNED_EAS_CLI = null;
+const PINNED_APP_STORE_SUBMIT_ADAPTER = null;
 
 const SOURCE_DIGEST_EXCLUSIONS = new Set([
   ...Object.values(ATTESTATION_PATHS),
@@ -91,7 +91,7 @@ const CANDIDATE = Object.freeze({
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '7',
+  buildNumber: '8',
 });
 const PRODUCTION_FIREBASE_PROJECT_ID = 'cabohealth-owner-prod';
 const PRIVATE_GOOGLE_SERVICES_PLIST_MARKER = '<PRIVATE_GOOGLE_SERVICES_PLIST>';
@@ -100,6 +100,7 @@ const BUILD_INPUT_KEYS = [
   'schemaVersion',
   'artifactKind',
   'candidate',
+  'sourceCommit',
   'sourceTreeSha256',
   'appJsonSha256',
   'configSha256',
@@ -110,6 +111,9 @@ const BUILD_INPUT_KEYS = [
   'firebaseProjectId',
   'googleServicesPlistSha256',
   'resolvedProductionExpoConfigSha256',
+  'nodeRuntime',
+  'easCli',
+  'easEnvironment',
   'reviewedAt',
 ];
 const BUILD_ARTIFACT_KEYS = [
@@ -119,6 +123,7 @@ const BUILD_ARTIFACT_KEYS = [
   'buildInputAttestationSha256',
   'sourceTreeSha256',
   'easBuildId',
+  'easArtifactAssociation',
   'ipaSha256',
   'signedEntitlementsSha256',
   'privacyReportSha256',
@@ -152,6 +157,7 @@ const AUTHORIZATION_KEYS = [
   'confirmationChallenge',
 ];
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+const COMMIT_PATTERN = /^[a-f0-9]{40}$/u;
 const UUID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
 const NONCE_128_PATTERN = /^[A-F0-9]{32}$/u;
 const PINNED_NODE_TOOL_KEYS = [
@@ -163,6 +169,24 @@ const PINNED_NODE_TOOL_KEYS = [
   'runtimeRootRelativePath',
   'runtimeTreeSha256',
 ];
+const EXPECTED_EAS_ENVIRONMENT = Object.freeze({
+  environmentName: 'production',
+  variables: Object.freeze([
+    Object.freeze({ name: 'APP_ENV', source: 'eas-profile', kind: 'plain' }),
+    Object.freeze({
+      name: 'CABOHEALTH_FIREBASE_PROJECT_ID',
+      source: 'eas-project-environment',
+      kind: 'sensitive',
+    }),
+    Object.freeze({
+      name: 'CABOHEALTH_GOOGLE_SERVICES_PLIST',
+      source: 'eas-project-environment',
+      kind: 'secret-file',
+    }),
+  ]),
+  valuesIncluded: false,
+  reviewStatus: 'independently-reviewed',
+});
 const PRIVATE_OPERATION_PREFIX = 'cabohealth-release-';
 const PRIVATE_OPERATION_MARKER = '.cabohealth-private-operation';
 
@@ -915,7 +939,41 @@ function readPinnedAttestation(root, {
   return parseExactJson(bytes, invalidCode);
 }
 
-export function verifyBuildInputAttestation(root, expectedSha256) {
+function easToolAuthorityFromBuildInput(attestation, code) {
+  const pin = {
+    entryRelativePath: attestation.easCli?.entryRelativePath,
+    nodeExecutableSha256: attestation.nodeRuntime?.executableSha256,
+    nodeVersion: attestation.nodeRuntime?.version,
+    packageJsonRelativePath: attestation.easCli?.packageJsonRelativePath,
+    packageVersion: attestation.easCli?.packageVersion,
+    runtimeRootRelativePath: attestation.easCli?.runtimeRootRelativePath,
+    runtimeTreeSha256: attestation.easCli?.runtimeTreeSha256,
+  };
+  if (!hasExactKeys(pin, PINNED_NODE_TOOL_KEYS)) reject(code);
+  return pin;
+}
+
+function verifyFrozenSourceCommit(root, sourceCommit, phase, code) {
+  if (!COMMIT_PATTERN.test(sourceCommit ?? '')) reject(code);
+  runGit(root, ['cat-file', '-e', `${sourceCommit}^{commit}`], code);
+  const allowed = new Set([
+    ATTESTATION_PATHS.buildInput,
+    'scripts/release-command-guard.mjs',
+  ]);
+  if (phase === 'artifact' || phase === 'rc') allowed.add(ATTESTATION_PATHS.buildArtifact);
+  if (phase === 'rc') {
+    allowed.add(ATTESTATION_PATHS.rc);
+    allowed.add('release/app-store/3.0/screenshots-manifest.json');
+  }
+  const changed = runGit(
+    root,
+    ['diff', '--name-only', `${sourceCommit}..HEAD`],
+    code,
+  ).split('\n').filter(Boolean);
+  if (changed.some((relativePath) => !allowed.has(relativePath))) reject(code);
+}
+
+export function verifyBuildInputAttestation(root, expectedSha256, { phase = 'input' } = {}) {
   const code = 'EXACT_BUILD_INPUT_ATTESTATION_INVALID';
   const attestation = readPinnedAttestation(root, {
     relativePath: ATTESTATION_PATHS.buildInput,
@@ -930,9 +988,16 @@ export function verifyBuildInputAttestation(root, expectedSha256) {
   }
   assertCandidate(attestation.candidate, code);
   assertReviewedAt(attestation.reviewedAt, code);
+  verifyFrozenSourceCommit(root, attestation.sourceCommit, phase, code);
   for (const key of BUILD_INPUT_KEYS.filter((key) => key.endsWith('Sha256'))) {
     assertSha256(attestation[key], code);
   }
+  const easPin = easToolAuthorityFromBuildInput(attestation, code);
+  const resolvedEasCli = resolvePinnedNodeTool(root, easPin, code, code);
+  const nodeExecutableSha256 = sha256(readBoundRegularFile(resolvedEasCli.nodeExecutable, {
+    missingCode: code,
+    invalidCode: code,
+  }));
   const googleServicesPlist = readProductionGoogleServicesPlist();
   if (attestation.sourceTreeSha256 !== computeTrackedSourceSha256(root)
     || attestation.appJsonSha256 !== hashProjectFile(root, 'app.json', code)
@@ -954,6 +1019,10 @@ export function verifyBuildInputAttestation(root, expectedSha256) {
       code,
     )
     || attestation.firebaseProjectId !== PRODUCTION_FIREBASE_PROJECT_ID
+    || attestation.nodeRuntime?.version !== process.version
+    || attestation.nodeRuntime?.version !== 'v22.22.3'
+    || attestation.nodeRuntime?.executableSha256 !== nodeExecutableSha256
+    || !isDeepStrictEqual(attestation.easEnvironment, EXPECTED_EAS_ENVIRONMENT)
     || attestation.googleServicesPlistSha256 !== googleServicesPlist.sha256
     || attestation.resolvedProductionExpoConfigSha256
       !== computeResolvedProductionExpoConfigSha256(root, googleServicesPlist.bytes)) {
@@ -965,12 +1034,12 @@ export function verifyBuildInputAttestation(root, expectedSha256) {
 export function verifyBuildArtifactAttestation(root, {
   buildInputSha256,
   buildArtifactSha256,
-}) {
+}, { phase = 'artifact' } = {}) {
   const code = 'EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID';
   if (!SHA256_PATTERN.test(buildArtifactSha256 ?? '')) {
     reject('EXACT_BUILD_ARTIFACT_ATTESTATION_MISSING');
   }
-  const buildInput = verifyBuildInputAttestation(root, buildInputSha256);
+  const buildInput = verifyBuildInputAttestation(root, buildInputSha256, { phase });
   const attestation = readPinnedAttestation(root, {
     relativePath: ATTESTATION_PATHS.buildArtifact,
     expectedSha256: buildArtifactSha256,
@@ -984,6 +1053,15 @@ export function verifyBuildArtifactAttestation(root, {
   }
   assertCandidate(attestation.candidate, code);
   assertReviewedAt(attestation.reviewedAt, code);
+  if (!hasExactKeys(attestation.easArtifactAssociation, [
+    'evidenceType',
+    'buildId',
+    'buildStatus',
+    'downloadedIpaSha256',
+    'associationGuardProven',
+    'reviewedAt',
+  ])) reject(code);
+  assertReviewedAt(attestation.easArtifactAssociation.reviewedAt, code);
   for (const key of BUILD_ARTIFACT_KEYS.filter((key) => key.endsWith('Sha256'))) {
     assertSha256(attestation[key], code);
   }
@@ -1009,6 +1087,12 @@ export function verifyBuildArtifactAttestation(root, {
   if (attestation.buildInputAttestationSha256 !== buildInputSha256
     || attestation.sourceTreeSha256 !== buildInput.sourceTreeSha256
     || !UUID_PATTERN.test(attestation.easBuildId)
+    || attestation.easArtifactAssociation.evidenceType
+      !== 'independently-reviewed-procedural'
+    || attestation.easArtifactAssociation.buildId !== attestation.easBuildId
+    || attestation.easArtifactAssociation.buildStatus !== 'FINISHED'
+    || attestation.easArtifactAssociation.downloadedIpaSha256 !== attestation.ipaSha256
+    || attestation.easArtifactAssociation.associationGuardProven !== false
     || attestation.ipaSha256 !== hashPrivateEvidenceFile(
       root,
       PRIVATE_EVIDENCE_PATHS.ipa,
@@ -1062,7 +1146,7 @@ export function verifyRcAttestation(root, {
   const buildArtifact = verifyBuildArtifactAttestation(root, {
     buildInputSha256,
     buildArtifactSha256,
-  });
+  }, { phase: 'rc' });
   const attestation = readPinnedAttestation(root, {
     relativePath: ATTESTATION_PATHS.rc,
     expectedSha256: rcSha256,
@@ -1129,7 +1213,7 @@ export function verifyRcAttestation(root, {
     validateScreenshotsManifest(parseExactJson(screenshotsManifestBytes, code), {
       phase: 'final',
       ...bindings,
-      evidenceRoot: join(root, 'release/private/rc'),
+      evidenceRoot: join(root, 'release/private/rc-build-8'),
       requireFiles: true,
     });
   } catch {
@@ -1440,11 +1524,7 @@ function main() {
   if (action === 'build') {
     if (authorizationArgument !== undefined) reject('RELEASE_COMMAND_INVALID');
     const buildInput = verifyBuildInputAttestation(projectRoot, BUILD_INPUT_ATTESTATION_SHA256);
-    const easPin = decodePinnedNodeToolAuthority(
-      PINNED_EAS_CLI,
-      'EAS_CLI_NOT_PINNED',
-      'EAS_CLI_PIN_INVALID',
-    );
+    const easPin = easToolAuthorityFromBuildInput(buildInput, 'EAS_CLI_PIN_INVALID');
     const easCli = resolvePinnedNodeTool(
       projectRoot,
       easPin,
@@ -1484,13 +1564,14 @@ function main() {
       buildInputSha256: BUILD_INPUT_ATTESTATION_SHA256,
       buildArtifactSha256: BUILD_ARTIFACT_ATTESTATION_SHA256,
     });
+    const buildInput = verifyBuildInputAttestation(
+      projectRoot,
+      BUILD_INPUT_ATTESTATION_SHA256,
+      { phase: 'artifact' },
+    );
     runVerifier(projectRoot, 'scripts/verify-release-v3.mjs');
     runVerifier(projectRoot, 'scripts/verify-app-store-metadata.mjs');
-    const easPin = decodePinnedNodeToolAuthority(
-      PINNED_EAS_CLI,
-      'EAS_CLI_NOT_PINNED',
-      'EAS_CLI_PIN_INVALID',
-    );
+    const easPin = easToolAuthorityFromBuildInput(buildInput, 'EAS_CLI_PIN_INVALID');
     const easCli = resolvePinnedNodeTool(
       projectRoot,
       easPin,

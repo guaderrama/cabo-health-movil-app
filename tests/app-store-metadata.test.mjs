@@ -91,7 +91,7 @@ function writeFinalScreenshotAuthority(root) {
   for (const locale of screenshotLocales) {
     for (const sceneId of screenshotSceneIds) {
       const relativePath = `screenshots/${locale}/iphone-6.9/${sceneId}.png`;
-      const absolutePath = join(root, 'release/private/rc', relativePath);
+      const absolutePath = join(root, 'release/private/rc-build-8', relativePath);
       mkdirSync(dirname(absolutePath), { recursive: true, mode: 0o700 });
       const bytes = screenshotPng(1320, 2868, `${locale}:${sceneId}`);
       writeFileSync(absolutePath, bytes, { mode: 0o600 });
@@ -113,7 +113,7 @@ function writeFinalScreenshotAuthority(root) {
     schemaVersion: 2,
     status: 'exact-rc-captured-and-approved',
     marketingVersion: '3.0',
-    buildNumber: '7',
+    buildNumber: '8',
     deviceClass: 'iPhone 6.9-inch',
     locales: [...screenshotLocales],
     sceneIds: [...screenshotSceneIds],
@@ -135,7 +135,7 @@ function writeFinalScreenshotAuthority(root) {
       appleId: '6758285327',
       bundleIdentifier: 'com.cabohealth.app',
       marketingVersion: '3.0',
-      buildNumber: '7',
+      buildNumber: '8',
     },
     buildArtifactAttestationSha256: 'b'.repeat(64),
     sourceTreeSha256,
@@ -187,7 +187,7 @@ function withReleaseFixture(mutate, assertion) {
   }
 }
 
-test('versioned App Store metadata is a valid pre-build-configured 3.0 build 7 candidate', () => {
+test('versioned App Store metadata is a valid pre-build-configured 3.0 build 8 candidate', () => {
   const result = verify(projectRoot);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /pre-build metadata verified; submission remains blocked/i);
@@ -202,10 +202,12 @@ test('metadata verifier rejects stale or contradictory live ASC evidence', async
     ['wrong selected binary version', (manifest) => { manifest.ascEvidence.selectedRejectedBinaryVersion = '2.0.0'; }],
     ['historical build not expired', (manifest) => { manifest.ascEvidence.testFlightBuilds[1].status = 'ready-to-test'; }],
     ['wrong selected build', (manifest) => { manifest.ascEvidence.selectedRejectedBuild = '4'; }],
-    ['processed build 6 status drift', (manifest) => { manifest.ascEvidence.testFlightBuilds[5].status = 'expired'; }],
+    ['processed build 7 status drift', (manifest) => {
+      manifest.ascEvidence.testFlightBuilds.at(-1).status = 'expired';
+    }],
     ['wrong highest build', (manifest) => { manifest.ascEvidence.highestTestFlightBuild = '5'; }],
     ['wrong next build', (manifest) => { manifest.ascEvidence.nextCandidateBuild = '6'; }],
-    ['build 7 unavailable', (manifest) => { manifest.ascEvidence.nextCandidateBuildAvailable = false; }],
+    ['build 8 unavailable', (manifest) => { manifest.ascEvidence.nextCandidateBuildAvailable = false; }],
     ['wrong rejection date', (manifest) => { manifest.ascEvidence.latestReviewDate = '2026-02-23'; }],
     ['missing rejection guideline', (manifest) => { manifest.ascEvidence.latestReviewGuidelines = ['2.1', '4.1']; }],
     ['information request omitted', (manifest) => { manifest.ascEvidence.informationRequested = false; }],
@@ -217,7 +219,7 @@ test('metadata verifier rejects stale or contradictory live ASC evidence', async
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed ASC evidence validation`);
         assert.doesNotMatch(result.stderr, /TypeError|RELEASE_METADATA_INTERNAL_ERROR/u);
-        assert.match(result.stderr, /ASC read-only evidence must (?:retain the exact sanitized authority schema|record active internal build 6 as obsolete-source evidence and reserve build 7)/i);
+        assert.match(result.stderr, /ASC read-only evidence must (?:retain the exact sanitized authority schema|retain builds 1 through 6 exactly and reserve build 8 without inventing build-7 Apple state)/i);
       },
     ));
   }
@@ -237,7 +239,7 @@ test('metadata verifier keeps the candidate configured but unbuilt', async (t) =
       (root) => mutateJson(root, `${releasePath}/release-manifest.json`, (manifest) => mutate(manifest.candidate)),
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed candidate phase validation`);
-        assert.match(result.stderr, /unbuilt pre-build-configured 3\.0 build 7 authority/i);
+        assert.match(result.stderr, /unbuilt pre-build-configured 3\.0 build 8 authority/i);
       },
     ));
   }
@@ -267,13 +269,13 @@ test('metadata verifier binds the exact content-rights inventory to every listed
     (root) => writeFileSync(
       join(root, releasePath, 'content-rights-inventory.md'),
       readFileSync(join(root, releasePath, 'content-rights-inventory.md'), 'utf8')
-        .replace('build `7`', 'build `6`'),
+        .replace('build `8`', 'build `7`'),
     ),
     (result) => {
       assert.equal(result.status, 1, 'stale content-rights candidate build bypassed verifier');
       assert.match(
         result.stderr,
-        /Content-rights inventory must target Apple ID 6758285327, bundle com\.cabohealth\.app, version 3\.0, and build 7/iu,
+        /Content-rights inventory must target Apple ID 6758285327, bundle com\.cabohealth\.app, version 3\.0, and build 8/iu,
       );
     },
   ));
@@ -395,6 +397,13 @@ test('Review Notes retain the prior-review resolution, current privacy facts, an
   assert.match(notes, /Cloud Functions writes no raw IP to Firestore; only keyed-HMAC rate-limit buckets with a 30-minute deadline/i);
   assert.match(notes, /Google Cloud Logging retains automatic Cloud Run request logs—source IP, method\/URL, user-agent, status, latency, sizes, protocol—for 30 days in `_Default`; no exclusion/i);
   assert.match(notes, /No health information or sensitive device permission is requested/i);
+  assert.match(notes, /Owner-added Public or VIP resources may display third-party HTTPS websites inside CaboHealth/i);
+  assert.match(notes, /same-origin navigation is constrained/i);
+  assert.match(notes, /VIP access controls only the in-app entry point/i);
+  assert.match(notes, /third-party content is not made private or authored by CaboHealth/i);
+  assert.match(notes, /rights verification is required before activation/i);
+  assert.match(notes, /destination host independently receives normal network data/i);
+  assert.doesNotMatch(notes, /eightsleep\.com/i);
 });
 
 test('metadata verifier rejects Review Notes regressions in hosting facts or entry behavior', async (t) => {
@@ -582,6 +591,23 @@ test('App Privacy preserves observed logs separately from the owner-authorized d
   const privacy = JSON.parse(readFileSync(join(projectRoot, releasePath, 'app-privacy.json'), 'utf8'));
   const compliance = JSON.parse(readFileSync(join(projectRoot, 'release/compliance-facts.json'), 'utf8'));
 
+  assert.equal(privacy.schemaVersion, 6);
+  assert.equal(privacy.backend.resourceUrlsReturnedToNative, true);
+  assert.deepEqual(privacy.resourceUrlHandling, {
+    publicV3CatalogRecordsContainExternalUrl: true,
+    authorizedVipV2LaunchMayReturnExternalUrlTransiently: true,
+    vipPreviewsContainExternalUrl: false,
+    vipGrantsContainExternalUrl: false,
+    nativeStorageContainsExternalUrl: false,
+    applicationAuditContainsExternalUrl: false,
+  });
+  assert.deepEqual(privacy.thirdPartyNetworkRequests, {
+    behavior: 'third-party-network-request',
+    destinationHostReceivesNormalNetworkData: true,
+    destinationOperatesIndependently: true,
+    finalAppleMappingStatus: 'pending-final-destination-provider-and-category-review',
+  });
+
   assert.deepEqual(
     privacy.hostedTechnicalRequestLogs.ownerAuthorizedFields,
     compliance.hosting.logTypes.value,
@@ -602,7 +628,7 @@ test('App Privacy preserves observed logs separately from the owner-authorized d
     'recipe favorite keys',
     'visit-checklist completion state',
   ]);
-  assert.equal(privacy.schemaVersion, 5);
+  assert.equal(privacy.schemaVersion, 6);
   assert.deepEqual(privacy.deletion, {
     durable: true,
     mechanism: 'transactional deletion tombstone plus idempotent retry worker',
@@ -756,8 +782,8 @@ test('metadata verifier keeps the live-reconciled pre-build configuration gate c
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 7 after preserving the exact build-6 attestations as obsolete historical evidence; no build 7 input attestation, IPA, or TestFlight upload exists yet.',
-        '- [ ] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 7 after preserving the exact build-6 attestations as obsolete historical evidence; no build 7 input attestation, IPA, or TestFlight upload exists yet.',
+        '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 8 after archiving the exact build-7 input/artifact attestations and private evidence as immutable obsolete history; no current build-8 input attestation, IPA, or TestFlight upload exists yet.',
+        '- [ ] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 8 after archiving the exact build-7 input/artifact attestations and private evidence as immutable obsolete history; no current build-8 input attestation, IPA, or TestFlight upload exists yet.',
       ));
     },
     (result) => {
@@ -801,19 +827,19 @@ test('metadata verifier keeps the build-6 build-input attestation gate completed
   );
 });
 
-test('metadata verifier keeps the build-7 build-input attestation gate pending', () => {
+test('metadata verifier keeps the build-7 evidence historical and the build-8 build-input attestation gate pending', () => {
   withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [ ] Generate, independently review, and pin the build-7 canonical build-input attestation against the rebaselined 3.0/build 7 source and exact external mode-0600 production plist before any EAS build; do not reuse either obsolete build-6 attestation.',
-        '- [x] Generate, independently review, and pin the build-7 canonical build-input attestation against the rebaselined 3.0/build 7 source and exact external mode-0600 production plist before any EAS build; do not reuse either obsolete build-6 attestation.',
+        '- [ ] Generate, independently review, and pin the build-8 canonical build-input attestation against the frozen 3.0/build 8 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-7 authority.',
+        '- [x] Generate, independently review, and pin the build-8 canonical build-input attestation against the frozen 3.0/build 8 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-7 authority.',
       ));
     },
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /must retain the exact pending build-7 build-input attestation checkbox/i);
+      assert.match(result.stderr, /must retain the exact pending build-8 build-input attestation checkbox/i);
     },
   );
 });
@@ -1346,7 +1372,7 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured pre
     ['configured app rolled back', (root) => mutateJson(root, 'app.json', (app) => {
       app.expo.version = '2.0.0';
       app.expo.ios.buildNumber = '3';
-    }), /manifest says appJsonUpdated=true.*3\.0\/build 7/i],
+    }), /manifest says appJsonUpdated=true.*3\.0\/build 8/i],
     ['third actual catalog slug', (root) => {
       const file = join(root, 'constants/publicMiniapps.ts');
       const source = readFileSync(file, 'utf8');
@@ -1477,8 +1503,28 @@ test('metadata verifier rejects unapproved App Privacy purposes and schema keys'
     ['group label instead of selectable data type', (privacy) => {
       privacy.conditionalRecommendation.provisionalCategoryMapping[0] = 'Identifiers';
     }],
-    ['native resource URL', (privacy) => {
-      privacy.backend.resourceUrlsReturnedToNative = true;
+    ['native resource URL omitted', (privacy) => {
+      privacy.backend.resourceUrlsReturnedToNative = false;
+    }],
+    ['VIP preview URL exposed', (privacy) => {
+      privacy.resourceUrlHandling ??= {
+        publicV3CatalogRecordsContainExternalUrl: true,
+        authorizedVipV2LaunchMayReturnExternalUrlTransiently: true,
+        vipPreviewsContainExternalUrl: false,
+        vipGrantsContainExternalUrl: false,
+        nativeStorageContainsExternalUrl: false,
+        applicationAuditContainsExternalUrl: false,
+      };
+      privacy.resourceUrlHandling.vipPreviewsContainExternalUrl = true;
+    }],
+    ['destination network data denied', (privacy) => {
+      privacy.thirdPartyNetworkRequests ??= {
+        behavior: 'third-party-network-request',
+        destinationHostReceivesNormalNetworkData: true,
+        destinationOperatesIndependently: true,
+        finalAppleMappingStatus: 'pending-final-destination-provider-and-category-review',
+      };
+      privacy.thirdPartyNetworkRequests.destinationHostReceivesNormalNetworkData = false;
     }],
     ['debug App Check provider', (privacy) => {
       privacy.appCheck.providers = ['debug'];
@@ -1649,14 +1695,14 @@ test('metadata verifier rejects unapproved App Privacy purposes and schema keys'
   }
 });
 
-test('metadata verifier rejects a projected 9+ rating without all three recorded questionnaire answers', () => {
+test('metadata verifier requires unrestricted web access for the dynamic external WebView capability', () => {
   withReleaseFixture(
     (root) => mutateJson(root, `${releasePath}/age-rating.json`, (age) => {
-      age.conditions.unrestrictedWebAccess.requiredAnswer = true;
+      age.conditions.unrestrictedWebAccess.requiredAnswer = false;
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /projected 9\+ rating requires unrestrictedWebAccess=false/i);
+      assert.match(result.stderr, /Dynamic embedded third-party web access requires unrestrictedWebAccess=true/i);
     },
   );
 });
@@ -1676,10 +1722,12 @@ test('metadata verifier rejects age-rating prose that drifts from its JSON autho
   );
 });
 
-test('metadata verifier requires the exact projected rating and pending recalculation state', async (t) => {
+test('metadata verifier requires the exact projected 16+ and legacy 17+ ratings with pending recalculation state', async (t) => {
   const mutations = [
     ['previous saved rating removed', (age) => { age.previousSavedRating = null; }],
-    ['calculated rating filled before ASC save', (age) => { age.calculatedRating = '9+'; }],
+    ['calculated rating filled before ASC save', (age) => { age.calculatedRating = '16+'; }],
+    ['current projected rating lowered', (age) => { age.projectedRating = '9+'; }],
+    ['legacy rating lowered', (age) => { age.legacyOperatingSystemsRating = '12+'; }],
     ['draft status restored', (age) => { age.status = 'draft-conditional'; }],
     ['owner confirmation falsely closed', (age) => { age.ownerConfirmationRequired = false; }],
     ['App Store calculation falsely closed', (age) => { age.appStoreCalculationRequired = false; }],
@@ -1689,7 +1737,7 @@ test('metadata verifier requires the exact projected rating and pending recalcul
       (root) => mutateJson(root, `${releasePath}/age-rating.json`, mutate),
       (result) => {
         assert.equal(result.status, 1, result.stdout || result.stderr);
-        assert.match(result.stderr, /Age rating must remain projected 9\+ with owner reconfirmation and App Store recalculation required/i);
+        assert.match(result.stderr, /Age rating must remain projected 16\+ with legacy 17\+, owner reconfirmation, and App Store recalculation required/i);
       },
     ));
   }
@@ -1726,7 +1774,7 @@ test('metadata verifier binds screenshot planning to the exact candidate build',
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /screenshot manifest must target 3\.0 build 7/i);
+      assert.match(result.stderr, /screenshot manifest must target 3\.0 build 8/i);
     },
   );
 });
@@ -1758,7 +1806,7 @@ test('metadata verifier accepts the exact file-backed screenshot RC phase and re
     (root) => {
       const captures = writeFinalScreenshotAuthority(root);
       writeFileSync(
-        join(root, 'release/private/rc', captures[0].relativePath),
+        join(root, 'release/private/rc-build-8', captures[0].relativePath),
         screenshotPng(1320, 2868, 'drifted'),
         { mode: 0o600 },
       );
