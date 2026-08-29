@@ -26,11 +26,18 @@ evidence, not the current source inventory.
 The protected administrative catalog remains `_private_catalog/current`
 schema version 1. Access codes, stored grants, and
 `_private_client_resources/<id>` projections also retain their existing schema
-version 1 and contain no destination URL. An external URL exists durably only
-in protected catalog authority. New catalog mutation receipts use exact schema
-version 2 and omit the URL; their replay re-reads and validates catalog
-authority in the same transaction. Sanitized audits contain action, opaque
-target identity, time, and retention data, never the destination URL.
+version 1 and contain no destination URL. For VIP entries, an external URL
+exists durably only in protected catalog authority. New catalog mutation
+receipts use exact schema version 2 and omit the URL; their replay re-reads and
+validates catalog authority in the same transaction. Sanitized audits contain
+action, opaque target identity, time, and retention data, never the destination
+URL. Public external items are intentionally different: the V3 response
+contains their canonical URL, and native persists the complete validated Public
+snapshot under `@cabohealth_published_catalog_v3` in AsyncStorage. That cache is
+owned by the published-catalog repository and is overwritten only by a valid
+newer-revision snapshot. Failures and invalid/equal/older snapshots retain it;
+a later valid snapshot without the Public item removes its URL when written,
+and platform app-data removal also clears it.
 
 Internal CaboHealth IDs retain their canonical URL slug. External entries use
 exactly `external-[0-9a-f]{32}`, derived by Functions from the lowercase
@@ -645,11 +652,24 @@ Do not call this Apple-ready or production-ready until all are complete:
 
 For external-HTTPS rollback, first deactivate external catalog entries through
 new monotonic owner mutations and verify the legacy catalog/redeem/refresh/
-launch contracts. Stop compatible-binary distribution and restore the prior
-Staff/native artifacts as applicable. If the Functions addition itself must be
-reverted, deploy the retained previous schema-compatible release; do not
-restore an older catalog snapshot or roll back Firestore schema, rules, broker,
-or App Review authority. This source runbook supplies no deployment evidence.
+launch contracts. Deactivation stops exposure but leaves active-or-inactive
+external records in `_private_catalog/current`; pre-feature Functions and Staff
+parsers validate every record and reject the complete catalog when any such
+record remains. Stop compatible-binary distribution and return to the prior
+native candidate as applicable, but keep the external-aware Functions and
+Staff artifacts while any external record remains.
+
+Restoring a pre-feature Functions or Staff artifact is prohibited unless a
+separately designed and verified monotonic migration permanently purges every
+external catalog record, reconciles matching projections and every other
+authoritative reference, handles outstanding catalog idempotency receipts
+without unsafe replay, and proves the proposed older parsers accept the entire
+retained state and exact legacy responses. This runbook authorizes no current
+cleanup command. If that migration or its compatibility evidence is absent,
+the backend/Staff rollback is blocked. An unchanged Firestore schema version is
+not parser-compatibility evidence. Never restore an older catalog snapshot or
+roll back Firestore schema, rules, broker, or App Review authority. This source
+runbook supplies no deployment evidence.
 
 Firestore rules/indexes/TTL, the independent Secret Manager rings, runtime IAM,
 and the final strict 26-Function backend have been provisioned in the exact

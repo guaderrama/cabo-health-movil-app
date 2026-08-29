@@ -58,6 +58,15 @@ app-bound WebView. External launches are allowed only in the
 VIP previews, grants, route parameters, AsyncStorage-facing session state,
 favorites, messages, logs, receipts, and audits remain URL-free.
 
+Public catalog state is the explicit exception. A V3 external Public item
+contains its canonical URL, and the published-catalog repository persists the
+complete validated snapshot in AsyncStorage under
+`@cabohealth_published_catalog_v3`. The repository has no standalone cache-clear
+operation: only a valid newer-revision snapshot overwrites the cache. Network
+failure, parse failure, and equal or lower revisions preserve it. A later valid
+snapshot from which the Public item is absent overwrites the cache without that
+URL; uninstalling or clearing app data removes it at the platform boundary.
+
 The dedicated external WebView loads the exact canonical URL without an
 `#embedded-*` fragment. `originWhitelist` is the selected origin; application
 policy allows only safe same-origin HTTPS navigation and blocks cross-origin
@@ -242,10 +251,21 @@ Before a release:
 
 External-HTTPS rollback starts by deactivating external entries with new
 monotonic catalog mutations, then verifying legacy build-7 responses. Stop
-build-8 distribution and return to the prior native candidate if needed. Never
-restore an old catalog snapshot, add a third-party AASA/app-bound domain, or
-weaken the WebView policy as a rollback. Backend/Staff rollback must use the
-retained schema-compatible artifacts described in their runbooks.
+build-8 distribution and return to the prior native candidate if needed, but
+retain external-aware Functions and Staff while any active or inactive external
+record remains. Deactivation stops exposure; it does not make those records
+parseable by pre-feature artifacts, whose stored-catalog parsers validate every
+record.
+
+Pre-feature Functions/Staff restoration is blocked unless a separately designed
+and verified monotonic migration permanently purges every external record,
+reconciles projections and all other authoritative references, handles every
+outstanding catalog idempotency receipt without unsafe replay, and proves the
+older parsers accept the complete retained state and exact legacy responses.
+No current cleanup command is authorized here; without that migration and
+evidence, rollback must stop. Never infer parser compatibility from the schema
+number, restore an old catalog snapshot, add a third-party AASA/app-bound
+domain, or weaken the WebView policy as a rollback.
 
 The exact privacy-report, two-device QA, App Store Connect, and final screenshot
 contracts are documented in

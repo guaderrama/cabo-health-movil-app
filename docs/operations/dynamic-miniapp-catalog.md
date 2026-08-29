@@ -80,8 +80,16 @@ receipt, and sanitized audit. New item receipts are exact schema version 2 and
 omit `url`; replay re-reads `_private_catalog/current` in the same transaction,
 validates immutable authority, and reconstructs the response. Legacy
 schema-version-1 CaboHealth receipts remain bounded compatibility input only.
-VIP previews, grants, projections, receipts, sanitized audits, logs, errors,
-route parameters, and durable native state do not contain an external URL.
+For VIP entries, previews, grants, projections, receipts, sanitized audits,
+logs, errors, route parameters, and durable native session state do not contain
+an external URL. Public external items are the intentional exception: their V3
+records include the canonical URL, and the native catalog repository persists
+the complete validated snapshot at `@cabohealth_published_catalog_v3` in
+AsyncStorage. Only a valid newer-revision snapshot overwrites that cache; an
+invalid, failed, equal-revision, or older refresh does not clear it. A later
+valid snapshot with the Public item removed clears that URL from the cache when
+written, while uninstalling or clearing app data removes the cache at the
+platform boundary.
 
 ## Versioned publication and build 7 compatibility
 
@@ -257,11 +265,24 @@ Rollback is monotonic and compatibility-first:
 1. deactivate external entries with new owner mutations; never restore an old
    `_private_catalog/current` snapshot or decrement its revision;
 2. verify V1/V2 catalogs and V1 production access so build 7 remains usable;
-3. stop build 8 distribution and restore the prior native/Staff artifacts when
-   applicable; and
-4. if the additive backend must be rolled back, deploy the retained previous
-   schema-compatible Functions release. Do not roll back Firestore rules,
-   schemas, AASA, broker, or App Review to an incompatible state.
+3. stop build 8 distribution and return to the prior native candidate when
+   applicable, but retain the external-aware Functions and Staff artifacts
+   while even one active or inactive external catalog record remains; and
+4. treat restoration of any pre-feature Functions or Staff artifact as blocked
+   unless a separately designed and verified monotonic migration has permanently
+   purged every external record, reconciled every matching projection and other
+   authoritative reference, handled all outstanding catalog idempotency
+   receipts without replay ambiguity, and proved that the proposed older
+   parsers accept the complete retained state and exact legacy responses.
+
+Deactivation disables exposure but does not make retained external records
+compatible with pre-feature parsers: those parsers validate every stored item,
+including inactive ones, and one external record rejects the whole catalog.
+There is no cleanup command authorized by this runbook. If the verified purge
+migration and its compatibility evidence do not exist, Functions/Staff rollback
+is a hard block. Do not infer compatibility from the unchanged Firestore schema
+number, restore an older catalog snapshot, or roll back Firestore rules,
+schemas, AASA, broker, or App Review to an incompatible state.
 
 No deployment, EAS build, TestFlight upload, physical-device observation, or
 Apple submission is evidenced by this source-contract section.
