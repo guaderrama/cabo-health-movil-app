@@ -122,12 +122,29 @@ npm test
 npm run typecheck
 npm run lint
 npm run test:scope:rc-v3
-npm run expo:config > /tmp/cabohealth-build-8-expo-config.json
+cabo_build8_plist="${CABOHEALTH_GOOGLE_SERVICES_PLIST:?set the approved private production plist path}"
+APP_ENV=production \
+CABOHEALTH_FIREBASE_PROJECT_ID=cabohealth-owner-prod \
+CABOHEALTH_GOOGLE_SERVICES_PLIST="$cabo_build8_plist" \
+npm run --silent expo:config \
+  | node -e 'const fs = require("node:fs"); const config = JSON.parse(fs.readFileSync(0, "utf8")); const checks = { bundleIdentifier: config.ios?.bundleIdentifier === "com.cabohealth.app", version: config.version === "3.0", build: config.ios?.buildNumber === "8", associatedDomains: JSON.stringify(config.ios?.associatedDomains) === JSON.stringify(["applinks:cabohealth.org"]), appBoundDomains: JSON.stringify(config.ios?.infoPlist?.WKAppBoundDomains) === JSON.stringify(["cabohealth.org"]), appAttest: config.ios?.entitlements?.["com.apple.developer.devicecheck.appattest-environment"] === "production", nativeClientRuntime: config.extra?.clientAccessRuntime?.appEnvironment === "production" && config.extra?.clientAccessRuntime?.enabled === true }; console.log(JSON.stringify(checks)); if (!Object.values(checks).every(Boolean)) process.exitCode = 1;'
 git diff --check
 git status --short
 ```
 
-Expected: every command exits 0 and status is clean. Independently inspect the public Expo output for bundle `com.cabohealth.app`, version `3.0`, build `8`, `applinks:cabohealth.org`, production App Attest, and exact `WKAppBoundDomains: ["cabohealth.org"]`.
+Before the Expo inspection, resolve the already-approved plist without printing
+its path and require exactly one current-user-owned, non-symlink, mode-`0600`
+candidate outside Dropbox matching Firebase project `cabohealth-owner-prod` and
+bundle `com.cabohealth.app`. The command must pipe the raw public Expo config
+directly into the sanitized parser above; if raw config must instead be retained
+for diagnosis, write it only to an approved private mode-`0600` location outside
+Dropbox. Never write raw config to `/tmp`.
+
+Expected: every command exits 0 and status is clean. The sanitized Expo parser
+must emit only `true` for bundle `com.cabohealth.app`, version `3.0`, build `8`,
+exact associated domains `["applinks:cabohealth.org"]`, exact
+`WKAppBoundDomains: ["cabohealth.org"]`, production App Attest, and the enabled
+production native-client runtime.
 
 - [ ] **Step 2: Freeze the source commit**
 
