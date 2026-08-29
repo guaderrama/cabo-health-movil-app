@@ -64,9 +64,9 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 
 | Material | Exact source | SHA-256 / boundary | Final basis/evidence |
 | --- | --- | --- | --- |
-| Native bilingual interface copy | `i18n/messages.ts` | `c78f8b9c2a7f4fc287df77ae4ee5ac04d2309c82f74ae0e79b2d8852edcb3176` | Pending |
+| Native bilingual interface copy | `i18n/messages.ts` | `1670784ca0f2725cbd26e9b16d62f88617513155eeb7da5126b8bcac596a8bfb` | Pending |
 | Native introduction copy | `features/onboarding/IntroScreen.tsx` | `fb60620a37efac4e4deb265ddc3a4e89642ecded2643a5cb25006da3dd14e720` | Pending |
-| Native public catalog/editorial labels and dynamic-catalog type boundary | `constants/publicMiniapps.ts` | `893555428a9ac632f4964912cf98e7ba79f56c125ca6ba745bbdaf95910946aa` | Pending |
+| Native public catalog/editorial labels and internal/external destination type boundary | `constants/publicMiniapps.ts` | `7306d82fd7de694b16de85401a8aab431c5408037f5038ce95fc5f79edef9dda` | Pending |
 | Native reviewed-citation presentation and exact-link boundary | `features/resources/CitationList.tsx` | `12cf2bef93d1155370b1d8030f8dd1099e7d2d73e96ec7669e8b40ee0249b8bf` | Pending |
 | Native Healthy Recipes presentation | `features/resources/RecipeBrowser.tsx` | `41fa1892b6003cb7f9caeb151525f221c4fe74b216890f5fa621b21a269ffddc` | Pending |
 | Native Clinic Guide checklist presentation | `features/resources/VisitChecklist.tsx` | `7e34daa9574bc4b5b4290297d0ed713afb924e09d554b172b2294e809a294b2f` | Pending |
@@ -76,7 +76,7 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 | Client Resources, English | `client-resources-private/content/en.json` | `e3ebb6e0d7e94ffa04f123c2f2fe8cd746bf0dba80f3824746fdd7d9492f6593` | Pending |
 | Client Resources, es-MX | `client-resources-private/content/es-MX.json` | `e29960ae5490c90ffb3e869a040d3c2bf970465215065cb4debc4f97b1363555` | Pending |
 | Fixed non-client App Review sample | `app-review-private/content/sample.json` | `03b558d9c0afc6a405f6fddf1d06fd67915170444baa596b713a150e9e8d0911` | Pending |
-| Staff Access interface copy, including owner catalog controls and audit labels | `staff-portal/src/i18n/messages.ts` | `4d8d4f76da44c689b1fb6d168514a8cd462fe2bdd16e2ee4da43f3dad0400959` | Pending |
+| Staff Access interface copy, including external-link rights/privacy guidance, owner catalog controls, and audit labels | `staff-portal/src/i18n/messages.ts` | `1999940156e2def03b1ce970fd948b253da2d26968bc0413bd86f60f7bde0eeb` | Pending |
 | Public Marketing URL copy | `web-hosting/cabohealth.org/app/index.html` | `8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147` | Pending |
 | Hosted Privacy copy | `web-hosting/cabohealth.org/app/privacy/index.html` | `560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125` | Verified unchanged in live dynamic-AASA release `web-v1-40869f4a540a56c420b198aea0fdf58a21053646d280d89ad64d105fd1808948` |
 | Hosted Terms copy | `web-hosting/cabohealth.org/app/terms/index.html` | `b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22` | Pending final owner reconfirmation |

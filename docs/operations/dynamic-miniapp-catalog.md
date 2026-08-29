@@ -1,7 +1,9 @@
 # Dynamic miniapp catalog
 
-Status: public and protected dynamic control planes active; physical valid-flow
-App Attest and exact-RC evidence pending. The
+Status: the pre-existing public and protected dynamic control planes are active.
+External-HTTPS source support is implemented and locally verified, but its
+additive Functions/Staff deployment, build 8, physical-device QA, and release
+evidence remain pending. This document does not claim those later steps. The
 sanitized production boundary and exact active pins are recorded in
 `dynamic-miniapp-production-activation-2026-08-25.md`.
 
@@ -26,150 +28,152 @@ Every successful mutation is effective in the server catalog immediately.
 This uses one Firebase production project, `cabohealth-owner-prod`. The isolated
 App Review database is not a second owner project.
 
-## Exact catalog contract
+## Exact catalog and identity contract
 
 The authoritative document is `_private_catalog/current`, schema version 1.
-It contains at most 12 unique entries and a monotonically increasing catalog
-revision. An entry has an immutable ID derived from its canonical URL, an
-optimistic item revision, EN and es-MX copy, an icon, `public|clients` access,
-and an active flag.
+Tasks 1–8 did not add fields to that protected Firestore schema. It contains at
+most 12 unique entries and a monotonically increasing catalog revision. Each
+entry has immutable identity and URL, an optimistic item revision, EN and
+es-MX copy, an icon, `public|clients` access, and an active flag.
 
-An active client entry owns exactly one matching
-`_private_client_resources/<id>` projection. An inactive client entry owns no
-projection. Creation fails if an inactive entry would adopt a pre-existing
-projection; a mutation of legacy state removes only an exact matching orphan,
-and any projection drift aborts the whole transaction.
+- Exact `https://cabohealth.org/apps/<lowercase-kebab-id>/` entries keep the
+  lowercase kebab ID derived from the URL.
+- External IDs match `external-[0-9a-f]{32}`. Functions derives the digest from
+  the exact lowercase UUID-v4 create request ID: SHA-256 over the UTF-8 bytes
+  `cabohealth/catalog-external-id/v1`, one NUL byte, and the request ID, taking
+  the first 32 lowercase hexadecimal characters. Staff validates the returned
+  ID but never invents it.
+- IDs are not URL hashes. Two distinct idempotent requests may create separate
+  Public and VIP entries for the same destination.
+- URL updates compare against transaction-current canonical authority and are
+  rejected byte-for-byte. A changed destination requires a new catalog item.
 
-Accepted URLs have exactly this form:
+An active client entry owns exactly one matching, URL-free
+`_private_client_resources/<id>` schema-version-1 projection. An inactive
+client entry owns no projection. Creation fails if an inactive entry would
+adopt a pre-existing projection; a mutation of legacy state removes only an
+exact matching orphan, and any projection drift aborts the whole transaction.
+
+`app-review`, `shared`, and `review-sandbox-*` remain reserved;
+`client-resources` remains client-only. `health-advisor`, `ai-cosmetic-scan`,
+`service-hub`, and `sleep-lab` remain permanently retired. Titles are at most
+80 characters, summaries at most 240, and localized text may not contain ASCII
+controls.
+
+Every Staff, Functions, stored-catalog, native-catalog, and launch boundary
+uses the same syntactic URL policy. External destinations require canonical
+public HTTPS with no userinfo, raw authority ambiguity, non-default port,
+single-label/local/private namespace, IP literal, control, whitespace,
+backslash, malformed escape, encoded traversal, or encoded slash/backslash.
+Explicit `:443` canonicalizes away; safe paths, queries, fragments, and literal
+`@` outside authority are preserved. The policy does not DNS-resolve or
+preflight. Exact host `cabohealth.org` is never external: only its canonical
+`/apps/<id>/` form can pass, subject to all reserved/retired rules.
+
+Staff mutations still require verified password auth without an enrolled
+second factor, the fixed active production staff document,
+`client_resource_publish`, a recent session, Staff Web App Check, a UUID-v4
+idempotency key, and the exact item revision where applicable.
+
+The backend atomically commits the catalog, matching projection, idempotency
+receipt, and sanitized audit. New item receipts are exact schema version 2 and
+omit `url`; replay re-reads `_private_catalog/current` in the same transaction,
+validates immutable authority, and reconstructs the response. Legacy
+schema-version-1 CaboHealth receipts remain bounded compatibility input only.
+VIP previews, grants, projections, receipts, sanitized audits, logs, errors,
+route parameters, and durable native state do not contain an external URL.
+
+## Versioned publication and build 7 compatibility
+
+All catalog callables require the exact iOS App Check surface, exact `{}`
+input, and no Firebase Authentication:
+
+| Callable | Response contract | External behavior |
+| --- | --- | --- |
+| `getPublishedCatalog` | legacy V1 active Public items | filters external items |
+| `getPublishedCatalogV2` | legacy V2 Public items plus URL-free active VIP previews | filters external Public items and previews |
+| `getPublishedCatalogV3` | exact schema 3 with discriminated Public items and URL-free active VIP previews | Public items carry `destinationKind:'cabohealth'|'external_https'` |
+
+Installed build 7 continues using the legacy endpoints and therefore never
+receives an external record that would invalidate its parser. Build 8 source
+uses V3 and the isolated `@cabohealth_published_catalog_v3` cache; it neither
+reads nor overwrites the V1 cache. Deploy the additive backend and verify legacy
+responses before activating external entries or distributing build 8.
+
+The native parser rejects unknown fields, malformed copy, invalid/noncanonical
+URLs, mismatched ID classes, duplicate IDs, impossible times, preview
+URL/destination fields, reserved routes, and more than 12 entries. A valid
+empty snapshot remains a kill switch; invalid/network responses never replace
+a valid cache.
+
+Internal items use `/apps/[slug]`. External Public items use only
+`/external-miniapp/[resourceId]`, containing the opaque ID and no URL. AASA
+never claims that native-only route. It re-resolves live V3 authority on every
+render, latches the first destination, and permanently tears down if the item
+disappears, deactivates, changes class or URL, or the route ID changes.
+
+The external WebView loads the exact URL without a CaboHealth presentation
+fragment. It allows only safe same-origin HTTPS navigation and blocks
+cross-origin redirects, unsafe schemes, local targets, traversal, and popups in
+place. Rejected URLs never open Safari, Chrome, or an OS browser sheet. Only
+that external instance uses `limitsNavigationsToAppBoundDomains:false`;
+`WKAppBoundDomains` stays exactly `["cabohealth.org"]`, and internal/broker
+WebViews remain app-bound. Mixed content, file/universal-file access,
+shared/third-party cookies, automatic windows, media capture, geolocation,
+native messaging, and injected privileged JavaScript remain disabled.
+
+## VIP grants and launch union
+
+Locked previews contain only `access`, `id`, `icon`, `title`, and `summary`.
+They never expose URL, path, launch metadata, code, pricing, entitlement,
+timestamp, or owner identity. Production build 8 uses
+`redeemClientAccessCodeV2` and `refreshClientAccessV2`; their exact
+schema-version-2 grants remain URL-free. Production V1 redeem/refresh and all
+legacy launch/broker operations use `legacy_cabohealth` resolution and filter
+external resources. App Review remains separate schema version 1 with its
+fixed sample and fixed launch.
+
+`createClientLaunchV2` accepts exactly `{installationId,resourceId}`. Extra
+keys, including `targetUrl`, fail before service invocation. One transaction
+revalidates subject, installation, live grant/code and expiries, active catalog
+authority, the complete active projection set, and requested resource. It then
+returns exactly one branch:
 
 ```text
-https://cabohealth.org/apps/<lowercase-kebab-id>/
+{kind:'broker',expiresAtMs,launchUrl:'https://cabohealth.org/apps/client-resources/launch/',method:'POST',nonce}
+{kind:'external_https',expiresAtMs,url}
 ```
 
-The ID is 1–64 characters. `app-review`, `shared`, and the entire
-`review-sandbox-*` namespace are reserved.
-`client-resources` is client-only. The historical App Review rejection IDs
-`health-advisor`, `ai-cosmetic-scan`, `service-hub`, and `sleep-lab` are
-permanently retired for both public and client access. Staff rejects their URLs
-and mutation IDs before any network call, Functions rejects both mutations and
-stored catalog records containing them, and the native parser rejects an entire
-remote or cached snapshot containing one. Do not rename or reuse these IDs.
-Titles are at most 80 characters, summaries at most 240, and localized text may
-not contain ASCII control characters.
-URLs with credentials, ports, queries, fragments, escapes, backslashes,
-whitespace, mixed hosts, or a noncanonical path are rejected.
+The broker branch keeps the hashed one-time POST nonce. The external branch
+creates no nonce or session document; its URL exists only in protected catalog
+authority and the transient authorized response. External expiry is the
+earliest of authorization plus 60 seconds, grant expiry, or code expiry.
 
-Staff mutations require all of the following:
+Codes and stored grants remain schema version 1 with the durable
+`client-resources` group marker. Foreground checking, removal/deactivation,
+grant revocation/expiry, code replacement, account deletion, errors, and route
+generation changes clear launch state and destroy an external VIP WebView.
+Retry discards the descriptor, increments the generation, and repeats
+refresh-before-launch; late results are ignored.
 
-- verified password authentication with no enrolled second factor;
-- the fixed active production staff document;
-- the `client_resource_publish` permission;
-- a recent authenticated session;
-- Staff Web App Check;
-- a UUID-v4 idempotency key; and
-- the exact current item revision for updates, activation changes, and deletion.
-
-The backend commits catalog state, the matching client-resource projection,
-the idempotency receipt, and a sanitized audit event atomically. Mutation
-receipts and audit events expire after 30 days. The portal never receives the
-owner UID stored in the internal audit record.
-
-## Public runtime and failure behavior
-
-`getPublishedCatalog` is an iOS-App-Check-only callable. It returns only active
-public entries and never returns client entries. The native parser rejects
-unknown fields, malformed copy, invalid URLs, duplicate IDs, impossible times,
-reserved infrastructure routes, and more than 12 entries.
-
-The app stores the last valid snapshot in AsyncStorage. A valid empty snapshot
-is an intentional kill switch. Network failure or an invalid response never
-overwrites a valid cache. On iOS and Android, a first install without a valid
-server snapshot fails closed and shows no miniapps; the two bundled entries are
-available only to the web/development preview. Unknown or inactive deep links
-fail closed instead of opening arbitrary web content.
-
-Do not restore an older Firestore catalog document as a rollback. Perform a
-new owner mutation so the revision remains monotonic and installed devices
-observe it.
-
-## VIP showcase cards
-
-Status on 2026-08-26: implemented and tested in source. Production activation
-still requires the additive Functions deployment followed by a new signed iOS
-build; this status must not be read as evidence that the installed App Store
-binary already contains the presentation.
-
-The successor iOS Home screen presents every active client entry as an
-individual gold card in the **Client resources** grid, even before access is
-redeemed. A locked card has a lock badge and opens the existing code-entry
-sheet. A successful code redemption closes that sheet, refreshes the secure
-grant state, and unlocks only cards whose exact IDs are present in the grant.
-An unlocked card requests a one-use launch for that exact resource and opens it
-only in the restricted client WebView. Access removal and deletion remain in a
-separate **Manage access** control.
-
-The public teaser boundary is deliberately smaller than a catalog item. It may
-contain only `access`, `id`, `icon`, `title`, and `summary`. It must never expose
-the canonical URL, protected path, private content, launch metadata, access
-code, price or currency amount, purchase/subscription wording, entitlement,
-timestamps, or owner identity.
-The native parser rejects the entire response if a teaser has unknown fields,
-unsafe identifiers, invalid localized copy, duplicate IDs, or overlaps a
-public entry. Isolated medical abbreviations such as `AED`, `CHF`, or `INR`
-remain valid; a currency code is rejected when it is paired with an amount or
-explicit pricing language.
-
-Backward compatibility is handled with two callables:
-
-- `getPublishedCatalog` remains byte-contract compatible with installed older
-  clients and returns only active public entries.
-- `getPublishedCatalogV2` returns the same public entries plus sanitized
-  `clientPreviews` for active client entries. Only the successor binary calls
-  V2.
-
-During the staged migration, V2 recognizes only the exact historical active
-`client-resources` record and emits its neutral teaser summary without changing
-the stored record. Any near-match still fails closed. The catalog migration
-then replaces that exact legacy projection and seed atomically with the neutral
-canonical copy; arbitrary drift is never accepted as legacy compatibility.
-
-Deploy V2 before distributing the successor binary. Verify the legacy callable
-again after that additive deployment, then create the signed iOS build and test
-all four states on a physical device: locked preview, invalid code, successful
-unlock, and exact-resource launch. Pull-to-refresh must update both the public
-showcase snapshot and the secure client grant. Deactivating an entry in Staff
-must remove its teaser after refresh and cause new protected launches to fail
-closed. App Review remains isolated: its fixed review-sandbox resource is never
-published as a production teaser.
-
-## Client runtime
-
-Codes and grants retain the durable `client-resources` group marker. Every
-redeem, refresh, launch, web-session redemption, and session introspection
-resolves that marker against the current active client catalog. A missing
-catalog keeps the legacy `client-resources` item during the staged migration;
-a malformed catalog or a catalog/resource mismatch fails closed.
-
-The protected Hostinger broker receives a one-use launch for one exact resource.
-Its session contains exactly that resource entitlement. Private content lives
-outside `public_html` and is selected only from the validated server entitlement,
-never from a request path. Removing or deactivating a client entry invalidates
-new launches and live introspection immediately. Revoking a code remains the
-way to remove one client's entire access.
+VIP gating protects only CaboHealth's in-app entry point. It does **not** make
+a third-party website private. Anyone who independently knows the URL may open
+it outside CaboHealth. The owner must have permission to display or distribute
+the linked content.
 
 ## Apple operating policy
 
 Apple App Review Guideline 4.7 applies to hosted HTML5/JavaScript miniapps. The
-owner remains the publisher and is responsible for every active entry. The
-Staff notice records the operating rule: publish only CaboHealth-owned content
-that has no user-generated content, digital goods, new native API exposure,
-new privacy permission, or content above the app's declared age rating.
+owner remains responsible for every active entry. Internal content retains the
+CaboHealth ownership/editorial rule. External content may be third-party and
+must have verified rights, suitable age/privacy treatment, no unsupported UGC
+or digital purchase flow, and no new native API/permission requirement. It is
+not represented as CaboHealth-authored merely because the app launches it.
 
-The native list is the required software index and includes localized metadata.
-The canonical URL of every entry is its Universal Link. AASA excludes broker,
-API, App Review, and protected nested routes before accepting canonical
-`/apps/<id>/` roots. The app still opens a link only when the ID is active in a
-valid catalog snapshot.
+Only canonical CaboHealth entries use Universal Links. External entries use
+the ID-only native route and never enter AASA. AASA excludes broker, API, App
+Review, and protected nested routes before accepting canonical `/apps/<id>/`
+roots.
 
 The ordered AASA authority is exact:
 
@@ -186,11 +190,10 @@ The ordered AASA authority is exact:
 Order is security-significant. Do not replace the final component with
 `/apps/*` or `/apps/**`, and do not move it before a protected exclusion.
 
-If a future module introduces user content, purchases, sensitive data,
-third-party sharing, a native bridge, or a higher age classification, do not
-activate it under this contract. First update the app behavior, privacy and age
-declarations, report/filter/block controls where applicable, App Review notes,
-and the release evidence.
+If an entry introduces user content, purchases, sensitive data, third-party
+sharing beyond ordinary destination requests, a native bridge, or a higher age
+classification, do not activate it under this contract. First update behavior,
+privacy/age declarations, controls, App Review notes, and release evidence.
 
 Official policy authority:
 `https://developer.apple.com/app-store/review/guidelines/#mini-apps-mini-games-streaming-games-chatbots-plugins-and-game-emulators`.
@@ -247,7 +250,23 @@ updated Staff artifact, or the successor iOS presentation has been deployed.
    build, inspect the exact IPA, upload it to
    TestFlight, and complete physical-device QA before selecting it for review.
 
-## VIP showcase rollout (pending)
+## External-HTTPS rollback
+
+Rollback is monotonic and compatibility-first:
+
+1. deactivate external entries with new owner mutations; never restore an old
+   `_private_catalog/current` snapshot or decrement its revision;
+2. verify V1/V2 catalogs and V1 production access so build 7 remains usable;
+3. stop build 8 distribution and restore the prior native/Staff artifacts when
+   applicable; and
+4. if the additive backend must be rolled back, deploy the retained previous
+   schema-compatible Functions release. Do not roll back Firestore rules,
+   schemas, AASA, broker, or App Review to an incompatible state.
+
+No deployment, EAS build, TestFlight upload, physical-device observation, or
+Apple submission is evidenced by this source-contract section.
+
+## VIP showcase rollout (historical build-7 plan)
 
 Use this order so the currently installed clients remain compatible while the
 locked gold VIP cards are activated:

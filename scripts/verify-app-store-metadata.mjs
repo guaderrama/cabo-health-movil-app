@@ -127,7 +127,7 @@ const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmeti
 const EXACT_REVIEWED_PROSE_SHA256 = Object.freeze({
   'age-rating.md': 'a6f11c4ab2005ec58498931571a2212b3804db2dcfb081d91aa8e40ce07bd023',
   'app-privacy.md': 'c0450b198b57f01cae2bcb28690d8b6eb183c8315d605ce64864d56c9f7bb691',
-  'content-rights-inventory.md': 'a944fa6158c937d45f756e7e90f4c200698ae077f021053165b525bb8bbb2f38',
+  'content-rights-inventory.md': '865cbdb2d6ed62c2e8a3a33b08114776f298c571e8df27c4e6b6ea2ffb83e2c3',
 });
 
 const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
@@ -172,7 +172,7 @@ const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
     paths: Object.freeze(['content/clinic-guide.json']),
   }),
   Object.freeze({
-    sha256: 'c78f8b9c2a7f4fc287df77ae4ee5ac04d2309c82f74ae0e79b2d8852edcb3176',
+    sha256: '1670784ca0f2725cbd26e9b16d62f88617513155eeb7da5126b8bcac596a8bfb',
     paths: Object.freeze(['i18n/messages.ts']),
   }),
   Object.freeze({
@@ -180,7 +180,7 @@ const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
     paths: Object.freeze(['features/onboarding/IntroScreen.tsx']),
   }),
   Object.freeze({
-    sha256: '893555428a9ac632f4964912cf98e7ba79f56c125ca6ba745bbdaf95910946aa',
+    sha256: '7306d82fd7de694b16de85401a8aab431c5408037f5038ce95fc5f79edef9dda',
     paths: Object.freeze(['constants/publicMiniapps.ts']),
   }),
   Object.freeze({
@@ -220,7 +220,7 @@ const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
     paths: Object.freeze(['app-review-private/content/sample.json']),
   }),
   Object.freeze({
-    sha256: '4d8d4f76da44c689b1fb6d168514a8cd462fe2bdd16e2ee4da43f3dad0400959',
+    sha256: '1999940156e2def03b1ce970fd948b253da2d26968bc0413bd86f60f7bde0eeb',
     paths: Object.freeze(['staff-portal/src/i18n/messages.ts']),
   }),
   Object.freeze({

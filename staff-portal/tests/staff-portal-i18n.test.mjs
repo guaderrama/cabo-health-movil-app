@@ -31,8 +31,8 @@ test('the staff portal has the same complete contract in English and Mexican Spa
   assert.match(STAFF_MESSAGES['es-MX']['miniapps.externalWarning'], /no vuelve privado/u);
   assert.match(STAFF_MESSAGES.en['miniapps.externalWarning'], /display and distribution rights/u);
   assert.match(STAFF_MESSAGES['es-MX']['miniapps.externalWarning'], /derechos de exhibición y distribución/u);
-  assert.match(STAFF_MESSAGES.en['miniapps.createActiveHelp'], /build 7/u);
-  assert.match(STAFF_MESSAGES['es-MX']['miniapps.createActiveHelp'], /build 7/u);
+  assert.match(STAFF_MESSAGES.en['miniapps.createActiveHelp'], /build 8/u);
+  assert.match(STAFF_MESSAGES['es-MX']['miniapps.createActiveHelp'], /build 8/u);
   assert.match(STAFF_MESSAGES.en['miniapps.urlInvalid'], /safe public HTTPS/u);
   assert.match(STAFF_MESSAGES['es-MX']['miniapps.urlInvalid'], /HTTPS público seguro/u);
   assert.doesNotMatch(STAFF_MESSAGES.en['miniapps.appleRule'], /CaboHealth-authored only/u);

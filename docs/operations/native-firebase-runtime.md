@@ -20,6 +20,80 @@ by an undeclared over-the-air JavaScript update. Ship code changes through a
 new signed App Store/TestFlight build unless a separately reviewed OTA policy
 is added in a future release.
 
+## External HTTPS catalog and launch contract
+
+The external-HTTPS source candidate is locally verified but not evidenced as
+deployed or built. Installed build 7 remains compatible because its legacy
+`getPublishedCatalog`/`getPublishedCatalogV2`, production V1 redeem/refresh,
+and legacy launch/broker contracts filter or reject every external resource.
+Build 8 source fetches exactly `getPublishedCatalogV3` into the separate
+`@cabohealth_published_catalog_v3` cache and uses only
+`redeemClientAccessCodeV2`, `refreshClientAccessV2`, and
+`createClientLaunchV2` for the production-client realm. App Review remains
+exact schema version 1 and cannot parse or render an external launch.
+
+Public V3 records use an exact destination discriminant. External Public items
+have opaque IDs matching `external-[0-9a-f]{32}` and use the native-only route
+`/external-miniapp/[resourceId]`; no URL enters route parameters. Internal
+items remain under `/apps/[slug]` and retain their Universal Links. AASA does
+not include the external route, remains CaboHealth-only, and the Expo config
+retains `applinks:cabohealth.org` plus exact
+`WKAppBoundDomains: ["cabohealth.org"]`.
+
+The external route re-resolves current catalog authority every render and
+latches the first authorized ID/URL. Removal, deactivation, destination-class
+change, URL replacement, or route-ID change makes the state terminally
+unavailable and unmounts the WebView. External VIP routes retain the existing
+refresh-before-launch generation boundary: foreground checking, resource
+removal/deactivation, grant revocation/expiry, code replacement, account
+deletion, errors, and route-generation changes clear the descriptor and
+destroy the WebView. Retry advances the generation and obtains a fresh
+descriptor; late results are discarded.
+
+`createClientLaunchV2` receives only `{installationId,resourceId}` and returns
+an exact broker/external union. Broker launches retain the fixed POST source and
+app-bound WebView. External launches are allowed only in the
+`production_client` realm, validate the Task 6 canonical URL policy and
+120-second parser ceiling, and hold the URL only in transient launch state.
+VIP previews, grants, route parameters, AsyncStorage-facing session state,
+favorites, messages, logs, receipts, and audits remain URL-free.
+
+The dedicated external WebView loads the exact canonical URL without an
+`#embedded-*` fragment. `originWhitelist` is the selected origin; application
+policy allows only safe same-origin HTTPS navigation and blocks cross-origin
+redirects, popups, unsafe schemes, local/IP targets, and traversal. It never
+calls `Linking.openURL`, `Share`, or a browser sheet, and adds no `onMessage` or
+injected privileged JavaScript. Mixed content, file access, universal file URL
+access, shared/third-party cookies, automatic windows, media capture,
+geolocation, and link previews remain disabled. Only this WebView instance
+sets `limitsNavigationsToAppBoundDomains:false`; internal and broker instances
+remain app-bound.
+
+Pinned `react-native-webview` 13.15.0 would otherwise send an
+`originWhitelist` rejection to React Native `Linking` before the app can block
+it. `patches/react-native-webview+13.15.0.patch` removes that escape: the shared
+iOS/Android wrapper calls the application callback for generic blocked-state
+UI and always returns `false` to native for the rejected load. The root
+`postinstall` contract is exactly
+`patch-package --error-on-fail --error-on-warn`, so a missing, stale, or
+warning-producing dependency patch fails installation. Executable tests load
+the installed patched wrapper and prove zero Linking effects. Do not remove or
+rebase the patch without pinning a reviewed upstream equivalent and repeating
+native build review.
+
+The schema-V2 grant parser's sole legacy-copy exception requires the complete
+authoritative `client-resources` tuple: ID `client-resources`, access `client`,
+native icon `sparkles-outline`, title `Client Resources` / `Recursos para
+clientes`, and summaries `Complimentary educational resources for eligible
+existing CaboHealth clients.` / `Recursos educativos incluidos para clientes
+actuales elegibles de CaboHealth.` Only validation substitutes the approved
+neutral summary; returned copy is unchanged. Every near-match remains subject
+to the ordinary URL/credential/commercial-copy rejection policy.
+
+VIP gating controls only CaboHealth's in-app entry point. It does **not** make a
+third-party website private, and it does not prevent someone who independently
+knows the URL from opening that site elsewhere.
+
 ## Build inputs
 
 The EAS profile supplies `APP_ENV` (`development`, `staging`, or `production`).
@@ -165,6 +239,13 @@ Before a release:
    IPA. Confirm `com.apple.developer.devicecheck.appattest-environment` is
    `production`, then exercise App Attest on a physical iPhone through
    TestFlight. A missing or altered signed entitlement must block release.
+
+External-HTTPS rollback starts by deactivating external entries with new
+monotonic catalog mutations, then verifying legacy build-7 responses. Stop
+build-8 distribution and return to the prior native candidate if needed. Never
+restore an old catalog snapshot, add a third-party AASA/app-bound domain, or
+weaken the WebView policy as a rollback. Backend/Staff rollback must use the
+retained schema-compatible artifacts described in their runbooks.
 
 The exact privacy-report, two-device QA, App Store Connect, and final screenshot
 contracts are documented in

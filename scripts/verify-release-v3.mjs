@@ -32,7 +32,7 @@ const EXACT_AUTHORITY_SHA256 = Object.freeze({
   'app.json': '41c801ad98f891fc103e2cfc3acd730c2feb3375382a8f9d596682c0ebd27530',
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
   'constants/config.ts': 'a70123950afa81a7948847e397fb0b9a5695ceb5948483bf46b4440d71954515',
-  'constants/publicMiniapps.ts': '893555428a9ac632f4964912cf98e7ba79f56c125ca6ba745bbdaf95910946aa',
+  'constants/publicMiniapps.ts': '7306d82fd7de694b16de85401a8aab431c5408037f5038ce95fc5f79edef9dda',
   'release/app-store/3.0/release-manifest.json': '9a0738dfd49f2e8a0f022d8bfd46109eb3e08575836a85a68785c812a5121c33',
   'release/app-store/3.0/age-rating.json': 'b2bd2fdd9a5109a600923dee82eb0186df99a446128f3b05a37d54e2428e19bb',
   'release/app-store/3.0/app-privacy.json': '9e02d9906fb19bbaac82268c45022d071b216ea65c6e4e12cb9de72b72632b10',

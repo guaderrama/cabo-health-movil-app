@@ -16,6 +16,71 @@ Review Hostinger overlay is active and hosting-boundary verified.
 Physical-iPhone App Check, issuance and controlled rotation of the App Review
 credential, valid-credential/nonce/replay/revocation and reciprocal cross-realm
 E2E, TestFlight, and the exact release candidate remain separate release gates.
+The additive external-HTTPS Functions contracts described below are implemented
+and locally verified in source; this document does not claim they have been
+deployed. The earlier 26-Function statement above remains historical deployment
+evidence, not the current source inventory.
+
+## External HTTPS source contract
+
+The protected administrative catalog remains `_private_catalog/current`
+schema version 1. Access codes, stored grants, and
+`_private_client_resources/<id>` projections also retain their existing schema
+version 1 and contain no destination URL. An external URL exists durably only
+in protected catalog authority. New catalog mutation receipts use exact schema
+version 2 and omit the URL; their replay re-reads and validates catalog
+authority in the same transaction. Sanitized audits contain action, opaque
+target identity, time, and retention data, never the destination URL.
+
+Internal CaboHealth IDs retain their canonical URL slug. External entries use
+exactly `external-[0-9a-f]{32}`, derived by Functions from the lowercase
+UUID-v4 create request ID with domain-separated SHA-256 namespace
+`cabohealth/catalog-external-id/v1` plus one NUL byte. The ID is not derived
+from the URL, and the URL is immutable after creation.
+
+The version/realm matrix is exact:
+
+| Surface | Version/realm | External behavior |
+| --- | --- | --- |
+| `getPublishedCatalog` | legacy catalog V1 | external Public items omitted |
+| `getPublishedCatalogV2` | legacy catalog V2 | external Public items and VIP previews omitted |
+| `getPublishedCatalogV3` | catalog V3 | discriminated Public destinations; all VIP previews URL-free |
+| `redeemClientAccessCode`, `refreshClientAccess`, `createClientLaunch` | production V1 / `legacy_cabohealth` | external resources omitted/rejected |
+| `redeemClientAccessCodeV2`, `refreshClientAccessV2` | production schema V2 / `v2_all` | URL-free grants may authorize external resource IDs |
+| `createClientLaunchV2` | production V2 / `v2_all` | exact broker/external union after live transactional authorization |
+| App Review redeem/refresh/launch | `review_sandbox`, schema V1 | fixed review resource only; external launch forbidden |
+
+`createClientLaunchV2` accepts exactly `{installationId,resourceId}`. A caller
+cannot provide `targetUrl`. Its response is exactly either:
+
+```text
+{kind:'broker',expiresAtMs,launchUrl:'https://cabohealth.org/apps/client-resources/launch/',method:'POST',nonce}
+{kind:'external_https',expiresAtMs,url}
+```
+
+The broker branch preserves the existing POST nonce flow. The external branch
+creates no nonce or hosted session and returns the canonical URL only after one
+transaction revalidates the subject, installation, grant, bound code, both
+expiries, requested resource, complete active catalog/projection set, and
+destination identity. Its expiry is `min(now + 60 seconds, grant expiry, code
+expiry)`. Every invalid, revoked, replaced, expired, deactivated, mismatched,
+or wrong-installation case fails without returning the URL.
+
+The production native schema-V2 parser has one narrow compatibility exception
+for the migrated `client-resources` grant view. Only the full tuple is accepted:
+ID `client-resources`, access `client`, native icon `sparkles-outline`, English
+title `Client Resources`, Spanish title `Recursos para clientes`, English
+summary `Complimentary educational resources for eligible existing CaboHealth
+clients.`, and Spanish summary `Recursos educativos incluidos para clientes
+actuales elegibles de CaboHealth.` The parser substitutes the already-approved
+neutral summary only while validating this exact tuple, then returns the
+authoritative legacy copy unchanged. Changed IDs, icons, copy, URL/credential
+text, generic “free” wording, and commercial wording do not receive the
+exception. App Review remains on its separate exact parser.
+
+VIP gating authorizes CaboHealth's in-app entry point only. It does **not** make
+a third-party website private; anyone who independently knows its URL may open
+it elsewhere.
 
 ## Implemented trust boundaries
 
@@ -43,16 +108,18 @@ E2E, TestFlight, and the exact release candidate remain separate release gates.
   supplied installation ID cannot bypass the source limit. All invalid access
   cases are intentionally indistinguishable.
 - Client grants contain bilingual presentation metadata only: resource ID,
-  title, summary, icon key, access, status, and expiry. They contain no client
-  name, code ID, installation ID, private URL, health data, or reusable web
-  credential.
+  title, summary, icon key, access, status, and expiry. Both production grant
+  versions contain no client name, code ID, installation ID, destination URL,
+  health data, or reusable web credential.
 - Client refresh and launch re-check the live code, grant, installation
   binding, resource, and expiry. Remove verifies that same live binding, then
   atomically revokes access and creates the durable deletion job described
   below. Explicit account deletion instead verifies the retained installation
   binding, so an authenticated client can still request erasure after its code
-  was revoked or expired. A launch nonce is
-  one-use, valid for 60 seconds, and opens only the fixed CaboHealth POST URL.
+  was revoked or expired. The legacy/broker launch nonce is one-use, valid for
+  60 seconds, and opens only the fixed CaboHealth POST URL. A V2 external
+  launch has no nonce and exposes its URL only in the transient authorized
+  response bounded by the earliest live expiry.
 - The web broker consumes the launch nonce into a one-hour-or-shorter hashed
   session. Every introspection re-checks the live production grant/code and
   exact entitlement. CSRF is exact, versioned HMAC material; revoke is
@@ -82,11 +149,14 @@ E2E, TestFlight, and the exact release candidate remain separate release gates.
   stores the raw receipt: separate production and review Firestore collections
   are addressed only by separate versioned keyed-HMAC lookups derived with
   separate receipt pepper rings.
-- The staff catalog workflow is draft-only. It stores opaque-ID candidates in
+- The staff draft workflow remains non-publishing. It stores opaque-ID candidates in
   `_private_catalog_drafts` with bilingual title/summary, a reviewed icon key,
   `public|clients` access, and a normalized HTTPS candidate URL. Revision
-  checks are transactional. There is deliberately no publish callable and no
-  draft write can modify `_private_client_resources` or a signed catalog.
+  checks are transactional. No draft write can modify
+  `_private_client_resources` or the live catalog. Separately, the authorized
+  **Miniapps** workspace uses exact live-catalog CRUD callables and the
+  `client_resource_publish` permission; those mutations atomically maintain
+  the catalog and matching projections.
 - App Review uses a separate synthetic `purpose: "app_review"` credential,
   `review_*` Firebase Auth subjects, eight independent HMAC key rings, an
   independently named Firestore database, and a separate HTTP broker signing
@@ -104,12 +174,14 @@ The deliberate response exceptions are: a one-time production code or App
 Review credential to the authorized administrator, a Firebase custom token
 from the corresponding redemption endpoint, the short launch nonce to the
 authenticated native client, and the opaque web session and CSRF token across
-the corresponding authenticated server-to-server broker. No response contains
-a premium target URL.
+the corresponding authenticated server-to-server broker. In addition, only a
+successful production `createClientLaunchV2` external branch transiently
+returns the server-resolved canonical destination URL. Catalog previews,
+grants, receipts, audits, errors, and all App Review responses remain URL-free.
 
 ## Callable Functions v2 contracts
 
-The implemented callable surface contains 11 staff-web callables and 11 iOS
+The current source callable surface contains 16 staff-web callables and 17 iOS
 client callables. Every callable enforces a fresh, consumed limited-use Firebase
 App Check assertion and an exact deployment-configured app ID. Client callables
 accept only the exact `CLIENT_IOS_FIREBASE_APP_ID`; administrator callables
@@ -130,15 +202,26 @@ and require the exact configured iOS Firebase App ID.
 | `adminCreateCatalogDraft` | `{access,icon,summary,title,url}` | `{draft}` |
 | `adminUpdateCatalogDraft` | `{draftId,revision,access,icon,summary,title,url}` | `{draft}` |
 | `adminArchiveCatalogDraft` | `{draftId,revision}` | `{archived:true,draft}` |
+| `adminListCatalogItems` | `{}` | `{items:[...]}` exact protected owner views |
+| `adminCreateCatalogItem` | `{requestId,item}` | `{item}`; Functions assigns external ID |
+| `adminUpdateCatalogItem` | `{id,revision,requestId,item}` | `{item}`; URL is immutable |
+| `adminSetCatalogItemActive` | `{id,revision,requestId,active}` | `{item}` |
+| `adminDeleteCatalogItem` | `{id,revision,requestId}` | `{deleted:true,id}` |
 | `adminListAudit` | `{}` | `{events:[...]}` (maximum 100, newest first) |
 | `adminGetAppReviewCredentialStatus` | `{}` | `{configured,generation,rotatedAtMs,purpose:'app_review'}` |
 | `adminRotateAppReviewCredential` | `{expectedGeneration:number\|null}` | `{oneTimeCredential,generation,rotatedAtMs,purpose:'app_review'}` |
+| `getPublishedCatalog` | `{}` | legacy V1 active internal Public items only |
+| `getPublishedCatalogV2` | `{}` | legacy V2 internal Public items plus URL-free internal VIP previews |
+| `getPublishedCatalogV3` | `{}` | exact schema 3 discriminated Public items plus URL-free VIP previews |
 | `redeemClientAccessCode` | `{code, installationId, requestId}` | `{customToken, grant}` |
+| `redeemClientAccessCodeV2` | `{code, installationId, requestId}` | `{customToken, grant}` with URL-free schema-version-2 production grant |
 | `refreshClientAccess` | `{installationId}` | `{grant}` |
+| `refreshClientAccessV2` | `{installationId}` | `{grant}` with URL-free schema-version-2 production grant |
 | `removeClientAccess` | `{installationId}` | `{removed:true}` after revocation and deletion job are durable |
 | `deleteClientAccount` | `{installationId,deletionReceipt}` | exact five-field deletion status below |
 | `getClientAccountDeletionStatus` | `{deletionReceipt}` | exact five-field deletion status below; no Firebase Auth required |
 | `createClientLaunch` | `{installationId, resourceId}` | fixed HTTPS POST URL, nonce, expiry |
+| `createClientLaunchV2` | `{installationId,resourceId}` | exact broker/external launch union; no caller URL |
 | `redeemAppReviewCredential` | `{credential,installationId,requestId}` | `{customToken,grant}` in the review realm only |
 | `refreshAppReviewAccess` | `{installationId}` | `{grant}` for the authenticated `review_*` subject |
 | `deleteAppReviewAccount` | `{installationId,deletionReceipt}` | exact five-field deletion status below after a durable review deletion job is accepted |
@@ -190,9 +273,12 @@ email-enumeration privacy must be enabled and independently verified.
 Draft input is exact: icons are `laboratory`, `guide`, `nutrition`, `recipes`,
 `wellness`, `location`, `contact`, or `featured`; localized objects contain
 only `en` and `es-MX`, with non-empty values of at most 120 characters. URLs
-must be HTTPS and cannot contain credentials, a custom port, query, fragment,
-control characters, whitespace, or a backslash. Draft creation/update/archive
-write only a sanitized 30-day audit event. The staff audit response exposes
+use the shared safe-catalog policy: canonical internal CaboHealth paths or safe
+public HTTPS destinations; safe external query/fragment data is preserved, but
+credentials, custom ports, local/private/IP targets, controls, whitespace,
+backslashes, malformed escapes, traversal, and encoded separators fail closed.
+Draft creation/update/archive write only a sanitized 30-day audit event. The
+staff audit response exposes
 only successful `client_code.created`, `client_code.revoked`, `draft.created`,
 `draft.updated`, and `draft.archived` actions, the label `Staff`, an opaque
 event ID, a short target suffix, and occurrence time. It never exposes a draft
@@ -446,8 +532,10 @@ Seed only reviewed `_private_client_resources/{resourceId}` documents:
 }
 ```
 
-No URL belongs in this document. The reviewed CaboHealth web release maps the
-entitlement ID to bundled/server-controlled content.
+No URL belongs in this document. Internal broker resources map the entitlement
+ID to bundled/server-controlled content. For an external resource, only the
+protected administrative catalog maps the opaque ID to a URL, and only the V2
+transactional launch response may disclose it transiently.
 
 The committed Firestore configuration enables TTL on `expiresAtMs` for:
 
@@ -506,8 +594,8 @@ Do not call this Apple-ready or production-ready until all are complete:
    secret rings without exposing values. Do not create a staging project
    without a superseding ADR.
 2. Enable App Check with App Attest for the production iOS bundle and verify
-   exact app-ID binding and consumed-token replay behavior across all 11 iOS
-   client callables on a physical iPhone.
+   exact app-ID binding and consumed-token replay behavior across all 17 current
+   iOS client callables on a physical iPhone.
 3. Maintain the completed password-only owner migration and live personal E2E.
    The guarded 2026-08-23
    operation enforced the password-reset prerequisite, verified the enabled and
@@ -526,9 +614,10 @@ Do not call this Apple-ready or production-ready until all are complete:
    read-back, and rollback is limited to a reviewed schema-2-compatible build.
    Separately migrate or remove any verified historical numeric `expiresAtMs`
    value and require every retained TTL deadline to be a Firestore `Timestamp`.
-5. Integrate and test the native adapter against all six production client
-   callables—redeem, refresh, remove, delete, deletion status, and launch—plus
-   the staff portal and PHP broker adapter end-to-end. Verify the 256-bit
+5. Integrate and test the native adapter against all nine production client
+   access callables—V1/V2 redeem, V1/V2 refresh, remove, delete, deletion
+   status, and V1/V2 launch—plus all three catalog callables, the Staff portal,
+   and PHP broker adapter end-to-end. Verify the 256-bit
    receipt remains only in SecureStore and exercise remove/delete/revoke during
    active native and web sessions.
 6. Exercise the durable deletion worker with injected Auth/Firestore failures
@@ -553,6 +642,14 @@ Do not call this Apple-ready or production-ready until all are complete:
    `uuid` advisories arrive transitively through the latest pinned Firebase
    Admin/Functions packages. `npm audit` offers only a breaking downgrade;
    there are no high or critical findings in this package audit.
+
+For external-HTTPS rollback, first deactivate external catalog entries through
+new monotonic owner mutations and verify the legacy catalog/redeem/refresh/
+launch contracts. Stop compatible-binary distribution and restore the prior
+Staff/native artifacts as applicable. If the Functions addition itself must be
+reverted, deploy the retained previous schema-compatible release; do not
+restore an older catalog snapshot or roll back Firestore schema, rules, broker,
+or App Review authority. This source runbook supplies no deployment evidence.
 
 Firestore rules/indexes/TTL, the independent Secret Manager rings, runtime IAM,
 and the final strict 26-Function backend have been provisioned in the exact
