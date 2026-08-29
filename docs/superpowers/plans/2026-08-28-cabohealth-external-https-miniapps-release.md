@@ -114,6 +114,11 @@ git commit -m "chore(release): rebaseline CaboHealth build 8"
 - [ ] **Step 1: Run all source and release gates from a clean tree**
 
 ```bash
+npm ci --ignore-scripts
+npm run postinstall
+npm ls eslint eslint-config-expo --depth=0
+npm ls @xmldom/xmldom minimatch --all --depth=6
+node --test tests/external-miniapp-navigation.test.mjs tests/native-firebase-ios-codegen-patch.test.mjs tests/release-command-guard.test.mjs
 npm --prefix functions test
 npm --prefix functions run build
 npm --prefix staff-portal test
@@ -132,6 +137,18 @@ npm run --silent expo:config \
 git diff --check
 git status --short
 ```
+
+Install lifecycle scripts stay disabled during dependency materialization. The
+exact reviewed `postinstall` (`patch-package --error-on-fail
+--error-on-warn`) is then invoked explicitly. Both dependency-tree checks must
+exit 0 with exact pinned versions and no invalid, extraneous, missing, or
+`ELSPROBLEMS` state. The focused tests prove all three native patches plus the
+EAS parser tree.
+
+Never run `npm ci --ignore-scripts --dry-run` on the candidate tree. With npm
+10.9.8 it rewrites `node_modules/.package-lock.json` with optional phantom
+entries and invalidates the reviewed EAS alias. Dependency materialization must
+not change tracked files; any tracked drift blocks the release.
 
 Before the Expo inspection, resolve the already-approved plist without printing
 its path and require exactly one current-user-owned, non-symlink, mode-`0600`
