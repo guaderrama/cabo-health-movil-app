@@ -120,9 +120,22 @@ equivalent. A different media type, a different charset, an added parameter,
 or a missing `Content-Type` still fails closed.
 
 Retain the manifest, all three pins, build logs, local verification result, and
-live verification result together. A rollback must restore a previously pinned
-Staff Portal artifact and repeat the same live verification; it must not alter
-the public capsule or any mini-app path.
+live verification result together. Pins and retention alone do not make an
+older Staff Portal artifact rollback-eligible. A prior artifact may be restored
+only after proving that its exact parser accepts every record retained in
+`_private_catalog/current` under the current backend contract. In particular,
+a pre-feature Staff artifact is prohibited while even one active or inactive
+external record remains.
+
+Eligibility for such a pre-feature artifact requires a separately designed and
+verified monotonic migration that permanently purges every external record,
+reconciles matching projections and every other authoritative reference,
+handles all outstanding catalog idempotency receipts without unsafe replay,
+and proves the complete retained state against that exact older parser. This
+runbook authorizes no cleanup command; without the migration and its evidence,
+retain the external-aware Staff artifact and treat rollback as blocked. Any
+eligible rollback must repeat the same live verification and must not alter the
+public capsule or any mini-app path.
 
 ## 4. Operational App Review freeze
 

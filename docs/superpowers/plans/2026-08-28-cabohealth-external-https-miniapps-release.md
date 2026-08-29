@@ -157,7 +157,20 @@ Verify every expected Cloud Function and Cloud Run service is active on Node.js 
 - App Review contracts unchanged;
 - broker nonce launch/replay/revocation unchanged.
 
-If any legacy probe fails, stop distribution, deactivate external entries through a new monotonic mutation, and deploy the previous schema-v2-compatible Functions release retained by the existing rollback policy.
+If any legacy probe fails, stop distribution and deactivate external entries
+through new monotonic mutations to stop exposure, but retain the external-aware
+Functions and Staff artifacts while even one active or inactive external record
+remains. Deactivation does not make retained external records compatible with
+pre-feature parsers, and an unchanged schema label is not parser proof.
+
+Restoring any pre-feature Functions or Staff artifact is a hard block unless a
+separately designed and verified monotonic migration permanently purges every
+external record, reconciles matching projections and every other authoritative
+reference, handles all outstanding catalog idempotency receipts without unsafe
+replay, and proves that the exact proposed older parsers accept the complete
+retained state and legacy responses. This plan authorizes no cleanup command;
+if that migration or evidence is absent, investigate and fix forward with the
+external-aware artifacts retained.
 
 ---
 
@@ -186,9 +199,15 @@ npm --prefix staff-portal run release:verify-artifact -- --dist dist --manifest 
 
 Record the new release ID, inventory SHA-256, and artifact SHA-256. Never overwrite or relabel the prior artifact.
 
-- [ ] **Step 3: Promote only `public_html/staff` with rollback retained**
+- [ ] **Step 3: Promote only `public_html/staff` with the prior artifact retained conditionally**
 
-Follow `docs/operations/staff-portal-release.md` using the existing approved Hostinger channel. Promote the byte-exact verified Staff directory only; do not add it to the public-web capsule and do not use broad deletion. Retain the prior complete Staff directory as rollback.
+Follow `docs/operations/staff-portal-release.md` using the existing approved
+Hostinger channel. Promote the byte-exact verified Staff directory only; do not
+add it to the public-web capsule and do not use broad deletion. Retain the prior
+complete Staff directory without treating retention or pins as rollback
+eligibility. It may be restored only if the runbook's retained-catalog
+parser-compatibility precondition is proved; a pre-feature Staff artifact is
+prohibited while any external record remains.
 
 - [ ] **Step 4: Verify live bytes and behavior**
 
@@ -214,7 +233,12 @@ Use `https://www.eightsleep.com/mx/` only as a functional display test under the
 
 - [ ] **Step 3: Confirm build-7 containment before build-8 distribution**
 
-On an installed build 7, refresh Public and VIP states and verify neither temporary external entry appears or launches. Re-run legacy endpoint probes. A visible external entry on build 7 blocks build 8 distribution and triggers rollback/deactivation.
+On an installed build 7, refresh Public and VIP states and verify neither
+temporary external entry appears or launches. Re-run legacy endpoint probes. A
+visible external entry on build 7 blocks build 8 distribution; deactivate
+external exposure through monotonic mutations while retaining external-aware
+Functions and Staff, then investigate and fix forward under Task 3's hard
+rollback block.
 
 ---
 
@@ -302,7 +326,14 @@ Verify exact initial page, normal same-origin navigation, blocked cross-origin l
 
 - [ ] **Step 3: Prove regressions remain closed**
 
-Verify App Review sample, one-time broker nonce, replay rejection, code replacement/revocation, deletion, AASA Universal Links for CaboHealth-only `/apps/*/`, and build-7 containment. Confirm no external URL appears in VIP preview, grant, route params, AsyncStorage, favorites, app logs, Functions logs, or sanitized audit evidence.
+Verify App Review sample, one-time broker nonce, replay rejection, code
+replacement/revocation, deletion, AASA Universal Links for CaboHealth-only
+`/apps/*/`, and build-7 containment. Confirm no VIP destination URL appears in
+the VIP preview, grant, route parameters, VIP session AsyncStorage, favorites,
+app logs, Functions logs, receipts, or sanitized audit evidence. The separately
+reviewed Public V3 catalog cache is the intentional exception:
+`@cabohealth_published_catalog_v3` may and should contain the canonical URL for
+a validated external Public item until a valid newer snapshot replaces it.
 
 - [ ] **Step 4: Produce final evidence, not planned evidence**
 
