@@ -68,7 +68,7 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
 // guard behavior remains part of the reviewed source. An unpinned checked-in
 // attestation is historical evidence only and cannot satisfy a current phase.
 const BUILD_INPUT_ATTESTATION_SHA256 = 'f4ee8c3da75be23d300b816495649c414f2900efaef9e88294bdc52824c3ed8e';
-const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;
+const BUILD_ARTIFACT_ATTESTATION_SHA256 = '966e00960c688ec1d0299dae36b6eff599f1286c20c218b434720bdd882ab4cb';
 const RC_ATTESTATION_SHA256 = null;
 const PINNED_EAS_CLI = null;
 const PINNED_APP_STORE_SUBMIT_ADAPTER = null;
