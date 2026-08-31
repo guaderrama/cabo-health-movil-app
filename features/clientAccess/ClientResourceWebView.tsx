@@ -15,6 +15,7 @@ import type {
   WebViewErrorEvent,
   WebViewHttpErrorEvent,
   WebViewOpenWindowEvent,
+  WebViewProgressEvent,
 } from 'react-native-webview/lib/WebViewTypes';
 import { useTheme, useTranslations } from '../../hooks';
 import type { ClientResourceLaunch } from './clientAccessController';
@@ -44,6 +45,7 @@ export function ClientResourceWebView({
   const { colors } = useTheme();
   const { t } = useTranslations();
   const [loading, setLoading] = useState(true);
+  const [loadProgress, setLoadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const showUnavailable = useCallback(() => {
@@ -93,9 +95,16 @@ export function ClientResourceWebView({
     incognito: true,
     onError: handleLoadError,
     onHttpError: handleHttpError,
-    onLoadEnd: () => setLoading(false),
+    onLoadEnd: () => {
+      setLoading(false);
+      setLoadProgress(1);
+    },
+    onLoadProgress: (event: WebViewProgressEvent) => {
+      setLoadProgress(Math.max(0, Math.min(event.nativeEvent.progress, 1)));
+    },
     onLoadStart: () => {
       setLoading(true);
+      setLoadProgress(0);
       setErrorMessage(null);
     },
     style: styles.webview,
@@ -129,6 +138,22 @@ export function ClientResourceWebView({
       </View>
 
       <View style={styles.content}>
+        {launch.kind === 'external_https' && loading && !errorMessage && (
+          <View
+            accessibilityLabel={t('clientAccess.openingResource')}
+            accessibilityRole="progressbar"
+            accessibilityValue={{ min: 0, max: 100, now: Math.round(loadProgress * 100) }}
+            style={[styles.progressTrack, { backgroundColor: colors.border }]}
+          >
+            <View
+              style={[
+                styles.progress,
+                { backgroundColor: colors.primary, width: `${loadProgress * 100}%` },
+              ]}
+            />
+          </View>
+        )}
+
         {launch.kind === 'external_https' ? (
           <WebView
             {...commonWebViewProps}
@@ -148,7 +173,7 @@ export function ClientResourceWebView({
           />
         )}
 
-        {loading && !errorMessage && (
+        {launch.kind !== 'external_https' && loading && !errorMessage && (
           <View style={[styles.loading, { backgroundColor: colors.background }]}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
@@ -217,6 +242,8 @@ const styles = StyleSheet.create({
   headerSpacer: { width: 48, height: 48 },
   title: { flex: 1, height: 48, textAlign: 'center', textAlignVertical: 'center', paddingTop: 13, fontSize: 16, lineHeight: 21, fontWeight: '700' },
   content: { flex: 1 },
+  progressTrack: { height: 3, overflow: 'hidden' },
+  progress: { height: '100%' },
   webview: { flex: 1 },
   loading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { fontSize: 14, lineHeight: 20 },

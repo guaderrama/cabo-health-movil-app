@@ -178,6 +178,66 @@ test('broker error keeps the unchanged Back-only behavior', () => {
   assert.deepEqual(actionLabels, ['clientAccess.backToResources']);
 });
 
+test('external VIP loading shows nonblocking accessible progress and removes it on load end', () => {
+  const runtime = loadClientResourceWebView();
+  const props = {
+    launch: externalLaunch,
+    title: 'Sleep Resource',
+    onClose: () => {},
+    onRetry: () => {},
+  };
+
+  const initialView = runtime.render(props);
+  const initialProgress = descendants(initialView).find(
+    (node) => node.props?.accessibilityRole === 'progressbar',
+  );
+  assert.ok(initialProgress, 'external VIP launch renders an accessible progressbar');
+  assert.equal(initialProgress.props.accessibilityLabel, 'clientAccess.openingResource');
+  assert.equal(initialProgress.props.accessibilityValue?.now, 0);
+  assert.equal(
+    descendants(initialView).some(
+      (node) => node.type === 'Text' && node.props.children === 'clientAccess.openingResource',
+    ),
+    false,
+  );
+
+  getWebView(initialView).props.onLoadProgress({ nativeEvent: { progress: 0.42 } });
+  const progressingView = runtime.render(props);
+  const progressingProgress = descendants(progressingView).find(
+    (node) => node.props?.accessibilityRole === 'progressbar',
+  );
+  assert.equal(progressingProgress?.props.accessibilityValue?.now, 42);
+
+  getWebView(progressingView).props.onLoadEnd();
+  const loadedView = runtime.render(props);
+  assert.equal(
+    descendants(loadedView).some((node) => node.props?.accessibilityRole === 'progressbar'),
+    false,
+  );
+});
+
+test('broker loading keeps the existing blocking loader overlay', () => {
+  const runtime = loadClientResourceWebView();
+  const view = runtime.render({
+    launch: brokerLaunch,
+    title: 'Broker Resource',
+    onClose: () => {},
+    onRetry: () => {},
+  });
+
+  assert.equal(descendants(view).some((node) => node.type === 'ActivityIndicator'), true);
+  assert.equal(
+    descendants(view).some(
+      (node) => node.type === 'Text' && node.props.children === 'clientAccess.openingResource',
+    ),
+    true,
+  );
+  assert.equal(
+    descendants(view).some((node) => node.props?.accessibilityRole === 'progressbar'),
+    false,
+  );
+});
+
 test('external VIP WebView silently allows a safe inherited blank iframe but renders an unsafe top-frame block', () => {
   const runtime = loadClientResourceWebView();
   const props = {

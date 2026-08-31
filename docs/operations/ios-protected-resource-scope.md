@@ -17,6 +17,16 @@ unsafe schemes, local/IP targets, and traversal are blocked in place. A
 third-party site that needs a denied permission is unavailable inside
 CaboHealth; the app does not grant the permission or open another browser.
 
+An external page may create an inherited `about:blank` subframe only when its
+frame metadata identifies it as a non-top-frame request whose parent document
+is safe same-origin HTTPS. Missing metadata, a cross-origin parent, and a
+top-frame blank request remain blocked. Rejected subframes are cancelled
+silently so they cannot replace the parent with generic error UI; rejected
+top-frame navigations and popups remain cancelled and show the existing blocked
+state. External VIP launches use a nonblocking, accessible three-point loading
+progress indicator while their page loads; broker launches retain their opaque
+blocking loader. This introduces no browser handoff or privacy relaxation.
+
 Only the external WebView instance opts out of app-bound-domain navigation.
 The signed/static authority remains exactly
 `WKAppBoundDomains: ["cabohealth.org"]`, AASA remains

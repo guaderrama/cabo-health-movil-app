@@ -130,6 +130,15 @@ WebViews remain app-bound. Mixed content, file/universal-file access,
 shared/third-party cookies, automatic windows, media capture, geolocation,
 native messaging, and injected privileged JavaScript remain disabled.
 
+The sole frame-aware exception is `about:blank` for a non-top-frame request
+with a safe same-origin HTTPS parent document. Missing frame metadata,
+top-frame blanks, and cross-origin parents remain blocked. A rejected subframe
+is cancelled silently, while a rejected top-frame navigation or popup remains
+cancelled and presents the existing blocked state. During an external VIP
+launch, an accessible nonblocking three-point progress indicator stays visible
+only while the page loads; the broker route keeps its opaque blocking loader.
+This change adds neither browser handoff nor any privacy relaxation.
+
 ## VIP grants and launch union
 
 Locked previews contain only `access`, `id`, `icon`, `title`, and `summary`.
