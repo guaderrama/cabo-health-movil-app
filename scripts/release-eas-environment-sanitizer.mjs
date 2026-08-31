@@ -55,7 +55,8 @@ function field(line, label) {
 }
 
 export function parseEasEnvironmentLongOutput(bytes) {
-  const text = decodeUtf8(bytes);
+  const decoded = decodeUtf8(bytes);
+  const text = decoded.startsWith('\n') ? decoded.slice(1) : decoded;
   const prefix = 'Environment: production\nVariables for this project:\n';
   if (!text.startsWith(prefix)) fail();
   const body = text.slice(prefix.length).replace(/\n$/u, '');

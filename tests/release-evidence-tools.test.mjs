@@ -148,17 +148,81 @@ test('environment sanitizer emits only the exact canonical value-free inventory 
   assert.doesNotMatch(bytes.toString(), /provider-id|Aug 3|example-secret/u);
 });
 
-test('environment sanitizer rejects value-bearing, duplicate, extra, and oversized input', async () => {
+test('environment sanitizer accepts the current EAS long output with one leading LF', async (t) => {
+  const { sanitizeEasEnvironment } = await import('../scripts/release-eas-environment-sanitizer.mjs');
+  const fixture = sddEvidenceRoot('task-2');
+  t.after(() => rmSync(fixture.base, { recursive: true, force: true }));
+  const easConfig = join(fixture.base, 'eas.json');
+  writeFileSync(easConfig, `${JSON.stringify({
+    build: { production: { environment: 'production', env: { APP_ENV: 'production' } } },
+  })}\n`);
+  const output = join(fixture.path, 'eas-environment.json');
+
+  const value = sanitizeEasEnvironment({
+    stdinBytes: Buffer.from(`\n${ENV_LONG}`),
+    environmentName: 'production',
+    easConfigPath: easConfig,
+    outputPath: output,
+  });
+
+  assert.deepEqual(value.projectVariables, [
+    { name: 'CABOHEALTH_FIREBASE_PROJECT_ID', source: 'eas-project-environment', kind: 'sensitive' },
+    { name: 'CABOHEALTH_GOOGLE_SERVICES_PLIST', source: 'eas-project-environment', kind: 'secret-file' },
+  ]);
+  assert.equal(statSync(output).mode & 0o777, 0o600);
+  assert.doesNotMatch(readFileSync(output, 'utf8'), /provider-id|Aug 3|\*\*\*\*\*/u);
+});
+
+test('environment sanitizer accepts no more than one exact leading LF', async (t) => {
+  const { sanitizeEasEnvironment } = await import('../scripts/release-eas-environment-sanitizer.mjs');
+  const fixture = sddEvidenceRoot('task-2');
+  t.after(() => rmSync(fixture.base, { recursive: true, force: true }));
+  const easConfig = join(fixture.base, 'eas.json');
+  writeFileSync(easConfig, `${JSON.stringify({
+    build: { production: { environment: 'production', env: { APP_ENV: 'production' } } },
+  })}\n`);
+  const output = join(fixture.path, 'eas-environment.json');
+  for (const input of [
+    `\n\n${ENV_LONG}`,
+    ` ${ENV_LONG}`,
+    `\r\n${ENV_LONG}`,
+    `\uFEFF${ENV_LONG}`,
+    `\n \n${ENV_LONG}`,
+  ]) {
+    assert.throws(
+      () => sanitizeEasEnvironment({
+        stdinBytes: Buffer.from(input),
+        environmentName: 'production',
+        easConfigPath: easConfig,
+        outputPath: output,
+      }),
+      /EAS_ENVIRONMENT_SANITIZATION_FAILED/u,
+    );
+    assert.equal(existsSync(output), false);
+  }
+});
+
+test('environment sanitizer rejects value-bearing, duplicate, extra, config-drift, and oversized input', async () => {
   const {
     parseEasEnvironmentLongOutput,
     sanitizeEasEnvironment,
   } = await import('../scripts/release-eas-environment-sanitizer.mjs');
   assert.throws(
-    () => parseEasEnvironmentLongOutput(Buffer.from(ENV_LONG.replace('***** (This is a sensitive', 'revealed-value (This is a sensitive'))),
+    () => parseEasEnvironmentLongOutput(Buffer.from(`\n${ENV_LONG.replace('***** (This is a sensitive', 'revealed-value (This is a sensitive')}`)),
     /EAS_ENVIRONMENT_SANITIZATION_FAILED/u,
   );
   assert.throws(
-    () => parseEasEnvironmentLongOutput(Buffer.from(`${ENV_LONG}\n${ENV_LONG.split('\n').slice(3).join('\n')}`)),
+    () => parseEasEnvironmentLongOutput(Buffer.from(ENV_LONG.replace(
+      'Name          CABOHEALTH_GOOGLE_SERVICES_PLIST',
+      'Name          CABOHEALTH_FIREBASE_PROJECT_ID',
+    ))),
+    /EAS_ENVIRONMENT_SANITIZATION_FAILED/u,
+  );
+  assert.throws(
+    () => parseEasEnvironmentLongOutput(Buffer.from(`\n${ENV_LONG.replace(
+      'Name          CABOHEALTH_GOOGLE_SERVICES_PLIST',
+      'Name          CABOHEALTH_UNREVIEWED_EXTRA',
+    )}`)),
     /EAS_ENVIRONMENT_SANITIZATION_FAILED/u,
   );
   assert.throws(
@@ -180,6 +244,22 @@ test('environment sanitizer rejects value-bearing, duplicate, extra, and oversiz
       outputPath: wrongOutput,
     }), /EAS_ENVIRONMENT_SANITIZATION_FAILED/u);
     assert.equal(existsSync(wrongOutput), false);
+
+    const output = join(fixture.path, 'eas-environment.json');
+    for (const config of [
+      { build: { production: { environment: 'preview', env: { APP_ENV: 'production' } } } },
+      { build: { production: { environment: 'production', env: { APP_ENV: 'preview' } } } },
+      { build: { production: { environment: 'production', env: { APP_ENV: 'production', EXTRA: 'forbidden' } } } },
+    ]) {
+      writeFileSync(easConfig, `${JSON.stringify(config)}\n`);
+      assert.throws(() => sanitizeEasEnvironment({
+        stdinBytes: Buffer.from(`\n${ENV_LONG}`),
+        environmentName: 'production',
+        easConfigPath: easConfig,
+        outputPath: output,
+      }), /EAS_ENVIRONMENT_SANITIZATION_FAILED/u);
+      assert.equal(existsSync(output), false);
+    }
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }
