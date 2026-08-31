@@ -53,14 +53,14 @@ const ATTESTATION_PATHS = Object.freeze({
   rc: 'release/app-store/3.0/rc-attestation.json',
 });
 const PRIVATE_EVIDENCE_PATHS = Object.freeze({
-  ipa: 'release/private/rc-build-9/CaboHealth-3.0-build-9.ipa',
-  signedEntitlements: 'release/private/rc-build-9/signed-entitlements.plist',
-  privacyReport: 'release/private/rc-build-9/privacy-report.json',
-  embeddedGoogleServicesPlist: 'release/private/rc-build-9/embedded-GoogleService-Info.plist',
-  signingCertificate: 'release/private/rc-build-9/signing-certificate.der',
-  embeddedProvisioningProfile: 'release/private/rc-build-9/embedded.mobileprovision',
-  physicalIphoneQa: 'release/private/rc-build-9/physical-iphone-qa.json',
-  appStoreConnectEvidence: 'release/private/rc-build-9/app-store-connect-evidence.json',
+  ipa: 'release/private/rc-build-10/CaboHealth-3.0-build-10.ipa',
+  signedEntitlements: 'release/private/rc-build-10/signed-entitlements.plist',
+  privacyReport: 'release/private/rc-build-10/privacy-report.json',
+  embeddedGoogleServicesPlist: 'release/private/rc-build-10/embedded-GoogleService-Info.plist',
+  signingCertificate: 'release/private/rc-build-10/signing-certificate.der',
+  embeddedProvisioningProfile: 'release/private/rc-build-10/embedded.mobileprovision',
+  physicalIphoneQa: 'release/private/rc-build-10/physical-iphone-qa.json',
+  appStoreConnectEvidence: 'release/private/rc-build-10/app-store-connect-evidence.json',
 });
 
 // Each phase pin starts null and becomes authoritative only after that phase
@@ -69,7 +69,7 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
 // values, so advancing a reviewed pin is not circular while every executable
 // guard behavior remains part of the reviewed source. An unpinned checked-in
 // attestation is historical evidence only and cannot satisfy a current phase.
-const BUILD_INPUT_ATTESTATION_SHA256 = '6e75a41633948ebeb3a8d25fb871d2ac23da0872c7709a2fb9035190fefb2215';
+const BUILD_INPUT_ATTESTATION_SHA256 = null;
 const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;
 const RC_ATTESTATION_SHA256 = null;
 const PINNED_EAS_CLI = null;
@@ -93,7 +93,7 @@ const CANDIDATE = Object.freeze({
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '9',
+  buildNumber: '10',
 });
 const PRODUCTION_FIREBASE_PROJECT_ID = 'cabohealth-owner-prod';
 const PRIVATE_GOOGLE_SERVICES_PLIST_MARKER = '<PRIVATE_GOOGLE_SERVICES_PLIST>';
@@ -1511,7 +1511,7 @@ export function verifyRcAttestation(root, {
     validateScreenshotsManifest(parseExactJson(screenshotsManifestBytes, code), {
       phase: 'final',
       ...bindings,
-      evidenceRoot: join(root, 'release/private/rc-build-9'),
+      evidenceRoot: join(root, 'release/private/rc-build-10'),
       requireFiles: true,
     });
   } catch {

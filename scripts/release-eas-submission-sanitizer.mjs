@@ -17,7 +17,7 @@ import {
 
 const CODE = 'SUBMISSION_STATUS_SANITIZATION_FAILED';
 const MAX_INPUT_BYTES = 4 * 1024 * 1024;
-const TASK_PARENT = '/.superpowers/sdd/2026-08-30-cabohealth-build9-testflight-release/task-7-evidence';
+const TASK_PARENT = '/.superpowers/sdd/2026-08-31-cabohealth-build10-testflight-release/task-7-evidence';
 const STATUSES = new Set(['NEW', 'IN_QUEUE', 'IN_PROGRESS', 'FINISHED', 'ERRORED', 'CANCELED']);
 const TERMINAL = new Set(['FINISHED', 'ERRORED', 'CANCELED']);
 

@@ -1,6 +1,6 @@
 # TestFlight — What to Test
 
-Candidate: CaboHealth 3.0 (build 9)
+Candidate: CaboHealth 3.0 (build 10)
 
 Status: Draft; use only after App Store Connect shows this exact processed build.
 

@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.cabohealth.app",
-      "buildNumber": "9",
+      "buildNumber": "10",
       "associatedDomains": [
         "applinks:cabohealth.org"
       ],

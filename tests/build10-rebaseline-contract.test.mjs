@@ -8,6 +8,23 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
+function currentAuthorityPins(guard) {
+  const optionalPin = (name, pattern) => {
+    const value = guard.match(
+      new RegExp(`^const ${name} = (null|'${pattern}');$`, 'mu'),
+    )?.[1];
+    assert.ok(value, `${name} must use one exact reviewed literal`);
+    return value === 'null' ? null : value.slice(1, -1);
+  };
+  return {
+    buildInputPin: optionalPin('BUILD_INPUT_ATTESTATION_SHA256', '[a-f0-9]{64}'),
+    buildArtifactPin: optionalPin('BUILD_ARTIFACT_ATTESTATION_SHA256', '[a-f0-9]{64}'),
+    rcPin: optionalPin('RC_ATTESTATION_SHA256', '[a-f0-9]{64}'),
+    easPin: optionalPin('PINNED_EAS_CLI', '[A-Za-z0-9+/]+={0,2}'),
+    adapterPin: optionalPin('PINNED_APP_STORE_SUBMIT_ADAPTER', '[A-Za-z0-9+/]+={0,2}'),
+  };
+}
+
 const CURRENT_DOCUMENT_REVIEW_ALLOWLIST = Object.freeze([
   'release/app-store/3.0/release-manifest.json',
   'release/app-store/3.0/en-US.md',
@@ -36,15 +53,22 @@ const CURRENT_DOCUMENT_REVIEW_ALLOWLIST = Object.freeze([
   'tools/app-store-submit-adapter/package.json',
 ]);
 
-const BUILD_8_REFERENCE = /\b(?:build[- /]?8|builds\s+4[–-]8)\b|["']buildNumber["']\s*:\s*["']8["']/giu;
+const BUILD_8_REFERENCE = /\b(?:build[- /]?8|builds\s+4[–-]8)\b|["']buildNumber["']\s*:\s*["']8["']|\bbuild\s+number\s*:\s*`8`/giu;
 const HISTORICAL_BUILD_8_CONTEXT = /\b(?:immutable|histor(?:y|ical)|obsolete(?:-source)?|subsequently|introduced|preserv(?:e|ed|es|ing)|added|verified before|not current authority|cannot authorize|was (?:then )?built|complete)\b/iu;
 const STALE_BUILD_8_AUTHORITY = [
   /\bbuild[- /]?8\s+(?:is|remains|will be)\s+(?:the\s+)?(?:sole\s+unbuilt|next|current|pending)\b/iu,
   /\b(?:sole\s+unbuilt|next|current)\s+(?:release\s+)?candidate\s+(?:is\s+)?(?:3\.0\/)?build[- /]?8\b/iu,
   /\bpending\s+(?:exact\s+)?(?:3\.0\/)?build[- /]?8\b/iu,
 ];
+const BUILD_9_REFERENCE = /\bbuild[- /]?9\b|["']buildNumber["']\s*:\s*["']9["']|\bbuild\s+number\s*:\s*`9`/giu;
+const HISTORICAL_BUILD_9_CONTEXT = /\b(?:aborted|histor(?:y|ical)|pre-provider|never repin|do not reuse|cannot authorize|no provider operation)\b/iu;
+const STALE_BUILD_9_AUTHORITY = [
+  /\bbuild[- /]?9\s+(?:is|remains|will be)\s+(?:the\s+)?(?:sole\s+unbuilt|next|current|pending)\b/iu,
+  /\b(?:sole\s+unbuilt|next|current)\s+(?:release\s+)?candidate\s+(?:is\s+)?(?:3\.0\/)?build[- /]?9\b/iu,
+  /\bpending\s+(?:exact\s+)?(?:3\.0\/)?build[- /]?9\b/iu,
+];
 
-test('the sole current candidate is 3.0 build 9 with no current phase authority', () => {
+test('the sole current candidate is 3.0 build 10 with one contiguous authority phase', () => {
   const app = JSON.parse(readFileSync(join(root, 'app.json'), 'utf8'));
   const config = readFileSync(join(root, 'constants/config.ts'), 'utf8');
   const guard = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
@@ -54,22 +78,43 @@ test('the sole current candidate is 3.0 build 9 with no current phase authority'
   ));
 
   assert.equal(app.expo.version, '3.0');
-  assert.equal(app.expo.ios.buildNumber, '9');
-  assert.match(config, /buildNumber:\s*'9'/u);
-  assert.equal(manifest.candidate.buildNumber, '9');
-  for (const pin of [
-    'BUILD_INPUT_ATTESTATION_SHA256',
-    'BUILD_ARTIFACT_ATTESTATION_SHA256',
-    'RC_ATTESTATION_SHA256',
-    'PINNED_EAS_CLI',
-    'PINNED_APP_STORE_SUBMIT_ADAPTER',
-  ]) assert.match(guard, new RegExp(`^const ${pin} = null;$`, 'mu'));
-  assert.equal(existsSync(join(root, 'release/app-store/3.0/build-input-attestation.json')), false);
-  assert.equal(existsSync(join(root, 'release/app-store/3.0/build-artifact-attestation.json')), false);
-  assert.equal(existsSync(join(root, 'release/app-store/3.0/rc-attestation.json')), false);
+  assert.equal(app.expo.ios.buildNumber, '10');
+  assert.match(config, /buildNumber:\s*'10'/u);
+  assert.equal(manifest.candidate.buildNumber, '10');
+  const {
+    buildInputPin,
+    buildArtifactPin,
+    rcPin,
+    easPin,
+    adapterPin,
+  } = currentAuthorityPins(guard);
+  assert.equal(easPin, null);
+  let sawUnpinnedPhase = false;
+  for (const pin of [buildInputPin, buildArtifactPin, rcPin, adapterPin]) {
+    if (pin === null) sawUnpinnedPhase = true;
+    else assert.equal(sawUnpinnedPhase, false, 'authority phases must be contiguous');
+  }
+  for (const [relativePath, pin, artifactKind] of [
+    ['release/app-store/3.0/build-input-attestation.json', buildInputPin,
+      'cabohealth-ios-build-input-attestation'],
+    ['release/app-store/3.0/build-artifact-attestation.json', buildArtifactPin,
+      'cabohealth-ios-build-artifact-attestation'],
+    ['release/app-store/3.0/rc-attestation.json', rcPin,
+      'cabohealth-ios-exact-rc-attestation'],
+  ]) {
+    const path = join(root, relativePath);
+    assert.equal(existsSync(path), pin !== null);
+    if (pin !== null) {
+      const bytes = readFileSync(path);
+      const attestation = JSON.parse(bytes);
+      assert.equal(sha256(bytes), pin);
+      assert.equal(attestation.artifactKind, artifactKind);
+      assert.equal(attestation.candidate.buildNumber, '10');
+    }
+  }
 });
 
-test('build 8 authority is immutable hash-bound history and never current build 9 authority', () => {
+test('build 8 authority is immutable hash-bound history and never current build 10 authority', () => {
   const history = join(root, 'release/app-store/3.0/history/build-8');
   const inputBytes = readFileSync(join(history, 'build-input-attestation.json'));
   const artifactBytes = readFileSync(join(history, 'build-artifact-attestation.json'));
@@ -96,6 +141,38 @@ test('build 8 authority is immutable hash-bound history and never current build 
   assert.equal(JSON.parse(artifactBytes).candidate.buildNumber, '8');
 });
 
+test('build 9 input authority is immutable aborted-pre-provider history', () => {
+  const history = join(root, 'release/app-store/3.0/history/build-9-aborted');
+  const inputBytes = readFileSync(join(history, 'build-input-attestation.json'));
+  const manifest = JSON.parse(readFileSync(join(history, 'manifest.json'), 'utf8'));
+
+  assert.equal(
+    sha256(inputBytes),
+    '6e75a41633948ebeb3a8d25fb871d2ac23da0872c7709a2fb9035190fefb2215',
+  );
+  assert.deepEqual(manifest, {
+    schemaVersion: 1,
+    candidate: { marketingVersion: '3.0', buildNumber: '9' },
+    status: 'aborted-pre-provider-phase-gate-failure',
+    frozenSource: {
+      commit: '5e345b76fbc7b6090e882dffad2411961de67557',
+      sha256: '085f5bfa362bedd7dc51017fc89f549292e231401e75de5e7ca2316c291ce3f6',
+    },
+    buildInputAuthority: {
+      commit: '62a24157a66185f3de05350734d48da5cb4e2838',
+      relativePath: 'build-input-attestation.json',
+      sha256: sha256(inputBytes),
+    },
+    abortReason: 'post-pin-phase-stale-release-tests',
+    providerOperationInitiated: false,
+    easBuildId: null,
+    ipaSha256: null,
+    easSubmissionId: null,
+    appleUploadStatus: null,
+  });
+  assert.equal(JSON.parse(inputBytes).candidate.buildNumber, '9');
+});
+
 test('every build-8 reference in the current-document allowlist is classified as history', () => {
   let classifiedReferenceCount = 0;
   for (const relativePath of CURRENT_DOCUMENT_REVIEW_ALLOWLIST) {
@@ -104,7 +181,7 @@ test('every build-8 reference in the current-document allowlist is classified as
     if (relativePath === 'release/app-store/3.0/release-manifest.json') {
       assert.equal(references.length, 3, 'release manifest build-8 references drifted');
       const manifest = JSON.parse(source);
-      assert.equal(manifest.candidate.buildNumber, '9');
+      assert.equal(manifest.candidate.buildNumber, '10');
       assert.equal(manifest.ascEvidence.inspectionMode, 'read-only');
       assert.equal(manifest.ascEvidence.observedAt, '2026-08-27T20:35:04.000Z');
       assert.equal(manifest.ascEvidence.nextCandidateBuild, '8');
@@ -150,6 +227,56 @@ test('every build-8 reference in the current-document allowlist is classified as
     }
   }
   assert.ok(classifiedReferenceCount > 0, 'allowlist must retain classified build-8 history');
+});
+
+test('every build-9 reference in current documents is classified as aborted history', () => {
+  let classifiedReferenceCount = 0;
+  for (const relativePath of CURRENT_DOCUMENT_REVIEW_ALLOWLIST) {
+    const source = readFileSync(join(root, relativePath), 'utf8');
+    const references = [...source.matchAll(BUILD_9_REFERENCE)];
+    if (relativePath === 'release/app-store/3.0/release-manifest.json') {
+      const manifest = JSON.parse(source);
+      const historical = manifest.historicalCandidateEvidence.filter(
+        ({ marketingVersion, buildNumber }) => marketingVersion === '3.0' && buildNumber === '9',
+      );
+      assert.deepEqual(historical, [{
+        marketingVersion: '3.0',
+        buildNumber: '9',
+        status: 'input-attested-aborted-pre-provider',
+        appStoreObserved: false,
+        trackedHistoryRoot: 'release/app-store/3.0/history/build-9-aborted',
+        privateHistoryRoot: null,
+      }]);
+      classifiedReferenceCount += references.length + 1;
+      continue;
+    }
+    if (relativePath.endsWith('.json')) {
+      assert.equal(references.length, 0, `${relativePath} must not contain stale build-9 authority`);
+      continue;
+    }
+    for (const reference of references) {
+      const paragraphStart = source.lastIndexOf('\n\n', reference.index) + 2;
+      const nextBreak = source.indexOf('\n\n', reference.index);
+      const paragraph = source.slice(
+        paragraphStart,
+        nextBreak === -1 ? source.length : nextBreak,
+      );
+      assert.match(
+        paragraph,
+        HISTORICAL_BUILD_9_CONTEXT,
+        `${relativePath}: ${reference[0]} lacks aborted-history classification`,
+      );
+      for (const stalePattern of STALE_BUILD_9_AUTHORITY) {
+        assert.doesNotMatch(
+          paragraph,
+          stalePattern,
+          `${relativePath}: ${reference[0]} is stale current/future authority`,
+        );
+      }
+      classifiedReferenceCount += 1;
+    }
+  }
+  assert.ok(classifiedReferenceCount > 0, 'allowlist must retain classified build-9 history');
 });
 
 test('current package actions route through the durable runner and separate group guard actions', () => {

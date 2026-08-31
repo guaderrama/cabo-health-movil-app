@@ -14,7 +14,7 @@ const OBSERVATION_KEYS = [
 
 export const internalGroupPaths = Object.freeze({
   app: () => '/v1/apps/6758285327?fields%5Bapps%5D=bundleId',
-  builds: () => '/v1/builds?filter%5Bapp%5D=6758285327&filter%5Bversion%5D=9&filter%5BpreReleaseVersion.version%5D=3.0&filter%5BpreReleaseVersion.platform%5D=IOS&fields%5Bbuilds%5D=version%2CuploadedDate%2CprocessingState%2Cexpired%2CbuildAudienceType&limit=200',
+  builds: () => '/v1/builds?filter%5Bapp%5D=6758285327&filter%5Bversion%5D=10&filter%5BpreReleaseVersion.version%5D=3.0&filter%5BpreReleaseVersion.platform%5D=IOS&fields%5Bbuilds%5D=version%2CuploadedDate%2CprocessingState%2Cexpired%2CbuildAudienceType&limit=200',
   preRelease: (buildId) => `/v1/builds/${buildId}/preReleaseVersion?fields%5BpreReleaseVersions%5D=version%2Cplatform`,
   buildApp: (buildId) => `/v1/builds/${buildId}/app?fields%5Bapps%5D=bundleId`,
   groups: () => '/v1/apps/6758285327/betaGroups?fields%5BbetaGroups%5D=name%2CisInternalGroup%2ChasAccessToAllBuilds&limit=200',

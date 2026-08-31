@@ -23,7 +23,7 @@ function fixtures({
     builds: page([{
       type: 'builds', id: BUILD_ID,
       attributes: {
-        version: '9', uploadedDate: '2026-08-30T11:00:00.000Z',
+        version: '10', uploadedDate: '2026-08-30T11:00:00.000Z',
         processingState: 'VALID', expired: false, buildAudienceType: 'APP_STORE_ELIGIBLE',
       },
     }]),
@@ -111,7 +111,7 @@ const bindings = {
 
 const EXACT_GET_REQUESTS = Object.freeze([
   'GET /v1/apps/6758285327?fields%5Bapps%5D=bundleId',
-  'GET /v1/builds?filter%5Bapp%5D=6758285327&filter%5Bversion%5D=9&filter%5BpreReleaseVersion.version%5D=3.0&filter%5BpreReleaseVersion.platform%5D=IOS&fields%5Bbuilds%5D=version%2CuploadedDate%2CprocessingState%2Cexpired%2CbuildAudienceType&limit=200',
+  'GET /v1/builds?filter%5Bapp%5D=6758285327&filter%5Bversion%5D=10&filter%5BpreReleaseVersion.version%5D=3.0&filter%5BpreReleaseVersion.platform%5D=IOS&fields%5Bbuilds%5D=version%2CuploadedDate%2CprocessingState%2Cexpired%2CbuildAudienceType&limit=200',
   `GET /v1/builds/${BUILD_ID}/preReleaseVersion?fields%5BpreReleaseVersions%5D=version%2Cplatform`,
   `GET /v1/builds/${BUILD_ID}/app?fields%5Bapps%5D=bundleId`,
   'GET /v1/apps/6758285327/betaGroups?fields%5BbetaGroups%5D=name%2CisInternalGroup%2ChasAccessToAllBuilds&limit=200',

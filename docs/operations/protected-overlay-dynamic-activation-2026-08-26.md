@@ -91,7 +91,9 @@ harnesses:
 - replay, expiry, revocation, reciprocal-realm isolation, and deletion/retry
   behavior through the complete valid flow;
 - two-device App Review and Universal Link QA;
-- the exact signed 3.0/build 9 release-candidate audit, TestFlight processing,
+- build 9 remains input-attested, aborted-pre-provider history and cannot
+  authorize a release; and
+- the exact signed 3.0/build 10 release-candidate audit, TestFlight processing,
   screenshots, final App Store metadata/privacy reconciliation, and Apple
   review submission.
 

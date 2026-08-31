@@ -73,18 +73,18 @@ recorded. Do not use the diagnostic IPA described in
 umask 077
 
 node scripts/audit-ios-ipa.mjs \
-  --ipa /ABS/PRIVATE/CaboHealth-3.0-build-9.ipa \
+  --ipa /ABS/PRIVATE/CaboHealth-3.0-build-10.ipa \
   --google-services-plist /ABS/PRIVATE/GoogleService-Info.plist \
   --bundle-id com.cabohealth.app \
   --version 3.0 \
-  --build 9 \
+  --build 10 \
   --team-id DQ8PH2DZ3R \
   --firebase-project-id cabohealth-owner-prod \
   --app-attest-environment production \
   --associated-domain applinks:cabohealth.org \
   --generated-at 2026-08-25T22:00:00.000Z \
-  --output /ABS/REPO/release/private/rc-build-9/privacy-report.json \
-  --attestation-input-dir /ABS/REPO/release/private/rc-build-9
+  --output /ABS/REPO/release/private/rc-build-10/privacy-report.json \
+  --attestation-input-dir /ABS/REPO/release/private/rc-build-10
 ```
 
 On success the only stdout line is:

@@ -2,7 +2,9 @@
 
 Status: the pre-existing public and protected dynamic control planes are active.
 External-HTTPS source support and its additive Functions/Staff deployment are
-implemented and preserved in immutable build-8 distribution history. Build 9,
+implemented and preserved in immutable build-8 distribution history. Build 9
+was input-attested and then aborted before any provider operation when its
+mandatory post-pin gates exposed phase-stale release tests. Build 10,
 physical-device QA, and current release evidence remain pending. This document
 does not claim those later steps. The sanitized production boundary and exact active pins are recorded in
 `dynamic-miniapp-production-activation-2026-08-25.md`.
@@ -104,10 +106,10 @@ input, and no Firebase Authentication:
 
 Installed build 7 continues using the legacy endpoints and therefore never
 receives an external record that would invalidate its parser. Build 8 introduced
-V3 and the isolated `@cabohealth_published_catalog_v3` cache; build 9 preserves
+V3 and the isolated `@cabohealth_published_catalog_v3` cache; build 10 preserves
 that compatibility while adding the reviewed WebView subframe fix. Neither
 reads nor overwrites the V1 cache. The additive backend and legacy responses
-were verified before build 8 distribution and remain required for build 9.
+were verified before build 8 distribution and remain required for build 10.
 
 The native parser rejects unknown fields, malformed copy, invalid/noncanonical
 URLs, mismatched ID classes, duplicate IDs, impossible times, preview
@@ -144,7 +146,7 @@ This change adds neither browser handoff nor any privacy relaxation.
 
 Locked previews contain only `access`, `id`, `icon`, `title`, and `summary`.
 They never expose URL, path, launch metadata, code, pricing, entitlement,
-timestamp, or owner identity. Production build 8 introduced, and build 9 preserves,
+timestamp, or owner identity. Production build 8 introduced, and build 10 preserves,
 `redeemClientAccessCodeV2` and `refreshClientAccessV2`; their exact
 schema-version-2 grants remain URL-free. Production V1 redeem/refresh and all
 legacy launch/broker operations use `legacy_cabohealth` resolution and filter
@@ -264,9 +266,10 @@ updated Staff artifact, or the successor iOS presentation has been deployed.
 7. **Completed:** Promote and verify the new AASA at origin and Apple's CDN.
 8. **Pending:** Verify public create/edit/deactivate/delete and one-code client expansion in
    production using non-sensitive test entries, then remove the test entries.
-9. **Build 8 complete and immutable; build 9 pending:** Build 8 was built,
+9. **Build 8 complete and immutable; build 9 aborted; build 10 pending:** Build 8 was built,
    attested, uploaded, and made available internally before becoming obsolete
-   for the WebView subframe fix. Freeze CaboHealth 3.0 build 9, create the new
+   for the WebView subframe fix. Build 9 was input-attested and then aborted
+   before any EAS build or other provider operation. Freeze CaboHealth 3.0 build 10, create the new
    iOS build, inspect the exact IPA, upload it to
    TestFlight, and complete physical-device QA before selecting it for review.
 
@@ -277,7 +280,7 @@ Rollback is monotonic and compatibility-first:
 1. deactivate external entries with new owner mutations; never restore an old
    `_private_catalog/current` snapshot or decrement its revision;
 2. verify V1/V2 catalogs and V1 production access so build 7 remains usable;
-3. stop build 9 distribution and return to the prior native candidate when
+3. stop build 10 distribution and return to the prior native candidate when
    applicable, but retain the external-aware Functions and Staff artifacts
    while even one active or inactive external catalog record remains; and
 4. treat restoration of any pre-feature Functions or Staff artifact as blocked
