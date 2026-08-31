@@ -11,7 +11,8 @@ build-9 release rebaseline. It is based on these reviewed commits:
 
 | Purpose | Commit |
 | --- | --- |
-| Frozen build-8 source authority | `ec11ebed2de7c7d7103355c2a635bb5478ea191b` |
+| Build-8 artifact-attestation authority commit | `ec11ebed2de7c7d7103355c2a635bb5478ea191b` |
+| Build-8 attested frozen source commit | `288ff2185c46fee117555ae0842a4a63c34df938` |
 | Plan and design/specification | `43e82b9` |
 | Safe inherited subframe fix | `663380d` |
 | VIP external-loading progress fix | `d008594` |
