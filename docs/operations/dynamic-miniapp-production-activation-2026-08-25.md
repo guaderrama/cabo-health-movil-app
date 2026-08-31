@@ -19,7 +19,10 @@ internal TestFlight group, but is obsolete for the full-screen VIP navigation
 source. Build 7 later produced two EAS `FINISHED` builds for obsolete
 external-HTTPS source; one has preserved historical build-input and artifact
 attestations. That EAS status proves build completion only, not TestFlight or
-App Store Connect processing. CaboHealth 3.0 build 8 is the sole unbuilt next
+App Store Connect processing. Build 8 was subsequently built, exactly attested,
+uploaded, observed Ready to Submit, and made available to the existing internal
+group; it is immutable obsolete history for the WebView subframe fix and cannot
+authorize build 9. CaboHealth 3.0 build 9 is the sole unbuilt next
 candidate; its current build-input, artifact, and RC authorities are absent.
 
 ## Active and verified components
@@ -87,7 +90,7 @@ candidate; its current build-input, artifact, and RC authorities are absent.
   verification is complete; it is not a substitute for device behavior.
 - A controlled production owner CRUD exercise with a non-sensitive temporary
   entry and cleanup remains separate from the component activation evidence.
-- Build 8 input freeze, EAS build, exact IPA audit, TestFlight processing,
+- Build 9 input freeze, EAS build, exact IPA audit, TestFlight processing,
   two-iPhone QA, screenshots, App Attest valid-flow evidence, final App Store
   metadata, privacy/age answers, rights sign-off, and Apple review remain
   pending.

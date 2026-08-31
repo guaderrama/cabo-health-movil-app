@@ -91,7 +91,7 @@ function writeFinalScreenshotAuthority(root) {
   for (const locale of screenshotLocales) {
     for (const sceneId of screenshotSceneIds) {
       const relativePath = `screenshots/${locale}/iphone-6.9/${sceneId}.png`;
-      const absolutePath = join(root, 'release/private/rc-build-8', relativePath);
+      const absolutePath = join(root, 'release/private/rc-build-9', relativePath);
       mkdirSync(dirname(absolutePath), { recursive: true, mode: 0o700 });
       const bytes = screenshotPng(1320, 2868, `${locale}:${sceneId}`);
       writeFileSync(absolutePath, bytes, { mode: 0o600 });
@@ -113,7 +113,7 @@ function writeFinalScreenshotAuthority(root) {
     schemaVersion: 2,
     status: 'exact-rc-captured-and-approved',
     marketingVersion: '3.0',
-    buildNumber: '8',
+    buildNumber: '9',
     deviceClass: 'iPhone 6.9-inch',
     locales: [...screenshotLocales],
     sceneIds: [...screenshotSceneIds],
@@ -135,7 +135,7 @@ function writeFinalScreenshotAuthority(root) {
       appleId: '6758285327',
       bundleIdentifier: 'com.cabohealth.app',
       marketingVersion: '3.0',
-      buildNumber: '8',
+      buildNumber: '9',
     },
     buildArtifactAttestationSha256: 'b'.repeat(64),
     sourceTreeSha256,
@@ -187,7 +187,7 @@ function withReleaseFixture(mutate, assertion) {
   }
 }
 
-test('versioned App Store metadata is a valid pre-build-configured 3.0 build 8 candidate', () => {
+test('versioned App Store metadata is a valid pre-build-configured 3.0 build 9 candidate', () => {
   const result = verify(projectRoot);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /pre-build metadata verified; submission remains blocked/i);
@@ -207,7 +207,7 @@ test('metadata verifier rejects stale or contradictory live ASC evidence', async
     }],
     ['wrong highest build', (manifest) => { manifest.ascEvidence.highestTestFlightBuild = '5'; }],
     ['wrong next build', (manifest) => { manifest.ascEvidence.nextCandidateBuild = '6'; }],
-    ['build 8 unavailable', (manifest) => { manifest.ascEvidence.nextCandidateBuildAvailable = false; }],
+    ['historical build 8 availability drift', (manifest) => { manifest.ascEvidence.nextCandidateBuildAvailable = false; }],
     ['wrong rejection date', (manifest) => { manifest.ascEvidence.latestReviewDate = '2026-02-23'; }],
     ['missing rejection guideline', (manifest) => { manifest.ascEvidence.latestReviewGuidelines = ['2.1', '4.1']; }],
     ['information request omitted', (manifest) => { manifest.ascEvidence.informationRequested = false; }],
@@ -219,7 +219,7 @@ test('metadata verifier rejects stale or contradictory live ASC evidence', async
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed ASC evidence validation`);
         assert.doesNotMatch(result.stderr, /TypeError|RELEASE_METADATA_INTERNAL_ERROR/u);
-        assert.match(result.stderr, /ASC read-only evidence must (?:retain the exact sanitized authority schema|retain builds 1 through 6 exactly and reserve build 8 without inventing build-7 Apple state)/i);
+        assert.match(result.stderr, /(?:ASC read-only evidence must retain the exact sanitized authority schema|dated ASC read-only evidence must retain its exact build-8-era snapshot)/i);
       },
     ));
   }
@@ -239,7 +239,7 @@ test('metadata verifier keeps the candidate configured but unbuilt', async (t) =
       (root) => mutateJson(root, `${releasePath}/release-manifest.json`, (manifest) => mutate(manifest.candidate)),
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed candidate phase validation`);
-        assert.match(result.stderr, /unbuilt pre-build-configured 3\.0 build 8 authority/i);
+        assert.match(result.stderr, /unbuilt pre-build-configured 3\.0 build 9 authority/i);
       },
     ));
   }
@@ -269,13 +269,13 @@ test('metadata verifier binds the exact content-rights inventory to every listed
     (root) => writeFileSync(
       join(root, releasePath, 'content-rights-inventory.md'),
       readFileSync(join(root, releasePath, 'content-rights-inventory.md'), 'utf8')
-        .replace('build `8`', 'build `7`'),
+        .replace('build `9`', 'build `7`'),
     ),
     (result) => {
       assert.equal(result.status, 1, 'stale content-rights candidate build bypassed verifier');
       assert.match(
         result.stderr,
-        /Content-rights inventory must target Apple ID 6758285327, bundle com\.cabohealth\.app, version 3\.0, and build 8/iu,
+        /Content-rights inventory must target Apple ID 6758285327, bundle com\.cabohealth\.app, version 3\.0, and build 9/iu,
       );
     },
   ));
@@ -296,13 +296,13 @@ test('metadata verifier binds the exact content-rights inventory to every listed
     (root) => {
       const path = join(root, releasePath, 'content-rights-inventory.md');
       writeFileSync(path, readFileSync(path, 'utf8').replace(
-        'exact 3.0 (8) RC',
+        'exact 3.0 (9) RC',
         'exact 3.0 (6) RC',
       ));
     },
     (result) => {
       assert.equal(result.status, 1, 'stale exact build-6 RC bypassed verifier');
-      assert.match(result.stderr, /exact RC must be build 8/iu);
+      assert.match(result.stderr, /exact RC must be build 9/iu);
     },
   ));
 
@@ -796,8 +796,8 @@ test('metadata verifier keeps the live-reconciled pre-build configuration gate c
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 8 after archiving the exact build-7 input/artifact attestations and private evidence as immutable obsolete history; no current build-8 input attestation, IPA, or TestFlight upload exists yet.',
-        '- [ ] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 8 after archiving the exact build-7 input/artifact attestations and private evidence as immutable obsolete history; no current build-8 input attestation, IPA, or TestFlight upload exists yet.',
+        '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 9 after archiving the exact build-8 input/artifact attestations and preserving its private evidence as immutable obsolete history; no current build-9 input attestation, IPA, or TestFlight upload exists yet.',
+        '- [ ] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 9 after archiving the exact build-8 input/artifact attestations and preserving its private evidence as immutable obsolete history; no current build-9 input attestation, IPA, or TestFlight upload exists yet.',
       ));
     },
     (result) => {
@@ -841,19 +841,19 @@ test('metadata verifier keeps the build-6 build-input attestation gate completed
   );
 });
 
-test('metadata verifier keeps the build-7 evidence historical and the build-8 build-input attestation gate pending', () => {
+test('metadata verifier keeps build-8 evidence historical and the build-9 build-input attestation gate pending', () => {
   withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [ ] Generate, independently review, and pin the build-8 canonical build-input attestation against the frozen 3.0/build 8 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-7 authority.',
-        '- [x] Generate, independently review, and pin the build-8 canonical build-input attestation against the frozen 3.0/build 8 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-7 authority.',
+        '- [ ] Generate, independently review, and pin the build-9 canonical build-input attestation against the frozen 3.0/build 9 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8 authority.',
+        '- [x] Generate, independently review, and pin the build-9 canonical build-input attestation against the frozen 3.0/build 9 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8 authority.',
       ));
     },
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /must retain the exact pending build-8 build-input attestation checkbox/i);
+      assert.match(result.stderr, /must retain the exact pending build-9 build-input attestation checkbox/i);
     },
   );
 });
@@ -1386,7 +1386,7 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured pre
     ['configured app rolled back', (root) => mutateJson(root, 'app.json', (app) => {
       app.expo.version = '2.0.0';
       app.expo.ios.buildNumber = '3';
-    }), /manifest says appJsonUpdated=true.*3\.0\/build 8/i],
+    }), /manifest says appJsonUpdated=true.*3\.0\/build 9/i],
     ['premature release-ready saved age authority', (root) => mutateJson(
       root,
       'release/compliance-facts.json',
@@ -1394,7 +1394,7 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured pre
         facts.releaseReady = true;
         facts.slice = 'task-7f-age-rating-saved';
       },
-    ), /pending build-8 age-review root\/legal facts/i],
+    ), /pending build-9 age-review root\/legal facts/i],
     ['third actual catalog slug', (root) => {
       const file = join(root, 'constants/publicMiniapps.ts');
       const source = readFileSync(file, 'utf8');
@@ -1416,10 +1416,10 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured pre
   }
 });
 
-test('current release instructions name build 8 and retain builds 6/7 only as history', () => {
+test('current release instructions name build 9 and classify builds 6–8 only as history', () => {
   const dataInventory = readFileSync(join(projectRoot, 'release/data-inventory.md'), 'utf8');
-  assert.match(dataInventory, /exact signed 3\.0\/build 8 RC must independently confirm/iu);
-  assert.match(dataInventory, /exact 3\.0\/build 8 signed RC.*still pending/iu);
+  assert.match(dataInventory, /exact signed 3\.0\/build 9 RC must independently confirm/iu);
+  assert.match(dataInventory, /exact 3\.0\/build 9 signed RC.*still pending/iu);
   assert.doesNotMatch(dataInventory, /exact signed 3\.0\/build [67] RC must/iu);
   assert.doesNotMatch(dataInventory, /exact 3\.0\/build [67] signed RC.*still pending/iu);
 
@@ -1427,7 +1427,7 @@ test('current release instructions name build 8 and retain builds 6/7 only as hi
     join(projectRoot, 'docs/operations/dynamic-miniapp-production-activation-2026-08-25.md'),
     'utf8',
   );
-  assert.match(activation, /CaboHealth 3\.0 build 8 is the sole unbuilt next\s+candidate/iu);
+  assert.match(activation, /CaboHealth 3\.0 build 9 is the sole unbuilt next\s+candidate/iu);
   assert.doesNotMatch(activation, /build [67] is the next candidate/iu);
 
   for (const relativePath of [
@@ -1436,7 +1436,7 @@ test('current release instructions name build 8 and retain builds 6/7 only as hi
     'docs/operations/vip-showcase-production-activation-2026-08-26.md',
   ]) {
     const source = readFileSync(join(projectRoot, relativePath), 'utf8');
-    assert.match(source, /3\.0(?:\/build | build )8/iu, relativePath);
+    assert.match(source, /3\.0(?:\/build | build )9/iu, relativePath);
     assert.doesNotMatch(source, /exact signed 3\.0\/build [67]|source for CaboHealth 3\.0 build [67]/iu, relativePath);
   }
 });
@@ -1446,14 +1446,14 @@ test('metadata verifier rejects build 6 or 7 as the next exact RC authority', as
     ['build 7 in primary Firebase mapping gate', (root) => {
       const path = join(root, 'release/data-inventory.md');
       writeFileSync(path, readFileSync(path, 'utf8').replace(
-        'exact signed 3.0/build 8 RC must independently confirm',
+        'exact signed 3.0/build 9 RC must independently confirm',
         'exact signed 3.0/build 7 RC must independently confirm',
       ));
     }],
     ['build 6 in reconciliation gate', (root) => {
       const path = join(root, 'release/data-inventory.md');
       writeFileSync(path, readFileSync(path, 'utf8').replace(
-        'exact 3.0/build 8 signed RC',
+        'exact 3.0/build 9 signed RC',
         'exact 3.0/build 6 signed RC',
       ));
     }],
@@ -1461,7 +1461,7 @@ test('metadata verifier rejects build 6 or 7 as the next exact RC authority', as
   for (const [name, mutate] of mutations) {
     await t.test(name, () => withReleaseFixture(mutate, (result) => {
       assert.equal(result.status, 1, `${name} bypassed exact-RC validation`);
-      assert.match(result.stderr, /must name build 8, never build 6 or 7, as the next exact RC/iu);
+      assert.match(result.stderr, /must name build 9, with build 8 classified only as immutable history, as the next exact RC/iu);
     }));
   }
 });
@@ -1846,7 +1846,7 @@ test('metadata verifier binds screenshot planning to the exact candidate build',
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /screenshot manifest must target 3\.0 build 8/i);
+      assert.match(result.stderr, /screenshot manifest must target 3\.0 build 9/i);
     },
   );
 });
@@ -1878,7 +1878,7 @@ test('metadata verifier accepts the exact file-backed screenshot RC phase and re
     (root) => {
       const captures = writeFinalScreenshotAuthority(root);
       writeFileSync(
-        join(root, 'release/private/rc-build-8', captures[0].relativePath),
+        join(root, 'release/private/rc-build-9', captures[0].relativePath),
         screenshotPng(1320, 2868, 'drifted'),
         { mode: 0o600 },
       );

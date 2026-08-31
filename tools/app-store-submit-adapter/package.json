@@ -3,13 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Pinned fail-closed App Store Connect review submission adapter for CaboHealth 3.0 build 8.",
+  "description": "Pinned fail-closed App Store Connect release adapters for CaboHealth 3.0 build 9.",
   "engines": {
     "node": "22.22.3"
   },
   "bin": {
     "cabohealth-app-store-submit": "./bin/submit.mjs",
-    "cabohealth-app-store-submit-dry-run": "./bin/dry-run.mjs"
+    "cabohealth-app-store-submit-dry-run": "./bin/dry-run.mjs",
+    "cabohealth-internal-group-observe": "./bin/observe-internal-group.mjs",
+    "cabohealth-internal-group-observe-dry-run": "./bin/observe-internal-group-dry-run.mjs",
+    "cabohealth-internal-group-assign": "./bin/assign-internal-group.mjs",
+    "cabohealth-internal-group-assign-dry-run": "./bin/assign-internal-group-dry-run.mjs"
   },
   "scripts": {
     "test": "node --test ./test/*.test.mjs"

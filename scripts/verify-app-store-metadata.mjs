@@ -72,8 +72,8 @@ const expectedGateStates = Object.freeze({
   ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
   privacyMapping: 'pending-final-linkage-category-review-and-save',
   brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-  exactReleaseCandidate: 'build-8-pending-build-input-attestation-eas-build-and-qa',
-  testFlight: 'builds-4-through-7-obsolete-source-build-8-pending-build-upload-selection-and-physical-iphone-qa',
+  exactReleaseCandidate: 'build-9-pending-build-input-attestation-eas-build-and-qa',
+  testFlight: 'builds-4-through-8-obsolete-source-build-9-pending-build-upload-selection-and-physical-iphone-qa',
   accessibilityLabels: 'pending-exact-rc-evidence',
   screenshots: 'pending-exact-rc-capture',
   appStoreConnect: 'pending-final-save',
@@ -117,7 +117,7 @@ const expectedUnresolvedExternalGates = Object.freeze({
   appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
   staffReviewAccess: 'owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested',
   clientAccessModel: 'pending-apple-review-determination',
-  exactReleaseCandidate: 'build-8-pending-build-input-attestation-eas-build-and-qa',
+  exactReleaseCandidate: 'build-9-pending-build-input-attestation-eas-build-and-qa',
   screenshots: 'pending-exact-rc-capture',
   appStoreConnectSave: 'pending-final-save',
 });
@@ -125,9 +125,9 @@ const expectedUnresolvedExternalGates = Object.freeze({
 const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmetic Scan)\b/iu;
 
 const EXACT_REVIEWED_PROSE_SHA256 = Object.freeze({
-  'age-rating.md': '997faffa448b38a800d114876dfcfab6e7f4f945d0a40ef6ff4f8d325e71c6de',
-  'app-privacy.md': '11b42558a365a0eee8c5b3d132f397c758d6624b4db9033a97a58d1ee72f2b6f',
-  'content-rights-inventory.md': '1c803e5ce142b10a809d98aa66801ae8a60be820e5eec417206c28ea158a9c75',
+  'age-rating.md': 'dfab8e621a932e2275750b01a5362d8cc5748913dfdc0c7e661cc24009e5bf55',
+  'app-privacy.md': '5773490c0c6ef0661cfca240fc0c7738ffc4e626ac5b5e05a6953de1e44c06af',
+  'content-rights-inventory.md': '10d62c736623f9b3e830ce7a3daf15f8fd553d4dd8369c37389e38e0dbcc7f6d',
 });
 
 const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
@@ -349,13 +349,13 @@ function verifyContentRightsInventory() {
   );
   requireText(
     inventory,
-    /Release scope: Apple ID `6758285327`; bundle ID `com\.cabohealth\.app`; marketing version `3\.0`; build `8`; initial territories Mexico and United States\./u,
-    'Content-rights inventory must target Apple ID 6758285327, bundle com.cabohealth.app, version 3.0, and build 8',
+    /Release scope: Apple ID `6758285327`; bundle ID `com\.cabohealth\.app`; marketing version `3\.0`; build `9`; initial territories Mexico and United States\./u,
+    'Content-rights inventory must target Apple ID 6758285327, bundle com.cabohealth.app, version 3.0, and build 9',
   );
   requireText(
     inventory,
-    /Must be reconciled to the exact 3\.0 \(8\) RC and saved ASC record/u,
-    'Content-rights inventory exact RC must be build 8',
+    /Must be reconciled to the exact 3\.0 \(9\) RC and saved ASC record/u,
+    'Content-rights inventory exact RC must be build 9',
   );
 
   for (const group of CONTENT_RIGHTS_SOURCE_GROUPS) {
@@ -534,14 +534,14 @@ function verifyManifest() {
     candidate?.appleId !== '6758285327'
     || candidate?.bundleIdentifier !== 'com.cabohealth.app'
     || candidate?.marketingVersion !== '3.0'
-    || candidate?.buildNumber !== '8'
+    || candidate?.buildNumber !== '9'
     || candidate?.status !== 'pre-build-configured'
     || candidate?.appJsonUpdated !== true
     || candidate?.configUpdated !== true
     || candidate?.rcSourceSha !== null
     || candidate?.testFlightBuildId !== null
   ) {
-    errors.push('Candidate must remain an unbuilt pre-build-configured 3.0 build 8 authority');
+    errors.push('Candidate must remain an unbuilt pre-build-configured 3.0 build 9 authority');
   }
   const expectedHistoricalCandidateEvidence = [
     { marketingVersion: '3.0', buildNumber: '4', status: 'testflight-ready-to-submit-obsolete-source', appStoreObserved: true },
@@ -555,9 +555,17 @@ function verifyManifest() {
       trackedHistoryRoot: 'release/app-store/3.0/history/build-7',
       privateHistoryRoot: 'release/private/rc-build-7',
     },
+    {
+      marketingVersion: '3.0',
+      buildNumber: '8',
+      status: 'testflight-ready-to-submit-internal-available-obsolete-source',
+      appStoreObserved: true,
+      trackedHistoryRoot: 'release/app-store/3.0/history/build-8',
+      privateHistoryRoot: 'release/private/rc-build-8',
+    },
   ];
   if (!equalJson(historicalCandidateEvidence, expectedHistoricalCandidateEvidence)) {
-    errors.push('Historical candidate evidence must retain builds 4 through 7 exactly, with build 7 EAS-only and obsolete');
+    errors.push('Historical candidate evidence must retain builds 4 through 8 exactly, with build 8 uploaded/internal and obsolete');
   }
   if (!hasExactKeys(ascEvidence, [
     'observedAt',
@@ -599,7 +607,7 @@ function verifyManifest() {
     || !equalJson(ascEvidence?.latestReviewGuidelines, expectedAscReviewGuidelines)
     || ascEvidence?.informationRequested !== true
   ) {
-    errors.push('ASC read-only evidence must retain builds 1 through 6 exactly and reserve build 8 without inventing build-7 Apple state');
+    errors.push('Dated ASC read-only evidence must retain its exact build-8-era snapshot without becoming current build-9 authority');
   }
   if (!hasExactKeys(ownerSeller, Object.keys(expectedOwnerSeller))) {
     errors.push('Owner/seller record must contain the exact individual and trade-brand fields');
@@ -852,19 +860,19 @@ function verifyAuthoritativeProjectState() {
   if (app) {
     if (
       app.expo?.version !== '3.0'
-      || app.expo?.ios?.buildNumber !== '8'
+      || app.expo?.ios?.buildNumber !== '9'
       || app.expo?.ios?.bundleIdentifier !== 'com.cabohealth.app'
     ) {
-      errors.push('Manifest says appJsonUpdated=true, but authoritative app.json no longer matches configured 3.0/build 8');
+      errors.push('Manifest says appJsonUpdated=true, but authoritative app.json no longer matches configured 3.0/build 9');
     }
   }
 
   const configSource = readProject('constants/config.ts');
   if (
     !/\bversion:\s*'3\.0'/u.test(configSource)
-    || !/\bbuildNumber:\s*'8'/u.test(configSource)
+    || !/\bbuildNumber:\s*'9'/u.test(configSource)
   ) {
-    errors.push('Authoritative constants/config.ts no longer matches configured 3.0/build 8');
+    errors.push('Authoritative constants/config.ts no longer matches configured 3.0/build 9');
   }
 
   const catalogSource = readProject('constants/publicMiniapps.ts');
@@ -967,7 +975,7 @@ function verifyAuthoritativeProjectState() {
       compliance.schemaVersion !== 1
       || compliance.brand !== 'Cabo Health'
       || compliance.releaseReady !== false
-      || compliance.slice !== 'build-8-age-rating-review-pending'
+      || compliance.slice !== 'build-9-age-rating-review-pending'
       || compliance.legalEntity?.name !== 'Ivan Guaderrama'
       || compliance.legalEntity?.nameStatus !== 'owner-confirmed'
       || compliance.legalEntity?.sellerType !== 'individual'
@@ -975,7 +983,7 @@ function verifyAuthoritativeProjectState() {
       || compliance.legalEntity?.dunsApplicable !== false
       || compliance.legalEntity?.dunsNumber !== null
     ) {
-      errors.push('Authoritative owner-confirmation and pending build-8 age-review root/legal facts do not match this draft');
+      errors.push('Authoritative owner-confirmation and pending build-9 age-review root/legal facts do not match this draft');
     }
     if (
       compliance.appStore?.seller?.status !== 'verified'
@@ -1012,11 +1020,11 @@ function verifyAuthoritativeProjectState() {
     }
   }
   const inventory = readProject('release/data-inventory.md');
-  if (!/exact signed 3\.0\/build 8 RC must independently confirm/iu.test(inventory)
-    || !/exact 3\.0\/build 8 signed RC[\s\S]{0,160}still pending/iu.test(inventory)
+  if (!/exact signed 3\.0\/build 9 RC must independently confirm/iu.test(inventory)
+    || !/exact 3\.0\/build 9 signed RC[\s\S]{0,160}still pending/iu.test(inventory)
     || /exact signed 3\.0\/build [67] RC must/iu.test(inventory)
     || /exact 3\.0\/build [67] signed RC[\s\S]{0,160}still pending/iu.test(inventory)) {
-    errors.push('Authoritative data inventory must name build 8, never build 6 or 7, as the next exact RC');
+    errors.push('Authoritative data inventory must name build 9, with build 8 classified only as immutable history, as the next exact RC');
   }
   if (!/fixed `actorLabel: Staff`/u.test(inventory)
     || !/no actor UID, codes, client names, or resource URLs/iu.test(inventory)) {
@@ -1129,7 +1137,7 @@ function verifyReviewNotes() {
     if (!['marketing', 'staff'].includes(name) && !body.includes(url)) errors.push(`Review Notes missing ${name} URL`);
   }
   const requiredPatterns = [
-    [/CaboHealth 3\.0 \(build 8\)/u, 'Review Notes missing exact version/build'],
+    [/CaboHealth 3\.0 \(build 9\)/u, 'Review Notes missing exact version/build'],
     [/Owner-added Public or VIP resources may display third-party HTTPS websites inside CaboHealth/iu, 'Review Notes missing dynamic third-party HTTPS disclosure'],
     [/same-origin navigation is constrained/iu, 'Review Notes missing same-origin constraint disclosure'],
     [/VIP access controls only the in-app entry point/iu, 'Review Notes missing VIP entry-only boundary'],
@@ -1736,14 +1744,14 @@ function verifyScreenshots() {
         testFlightBuildId: rc.testFlightBuildId,
         sourceTreeSha256: rc.sourceTreeSha256,
         testFlightProcessedAt: rc.testFlightProcessedAt,
-        evidenceRoot: join(root, 'release/private/rc-build-8'),
+        evidenceRoot: join(root, 'release/private/rc-build-9'),
         requireFiles: true,
       });
     } else {
       validateScreenshotsManifest(screenshots, { phase: 'pending' });
     }
   } catch {
-    errors.push('Screenshot manifest must target 3.0 build 8 on the 6.9-inch iPhone class. Screenshot manifest must retain the exact authority schema and be either the exact empty pending authority or the exact file-backed RC authority bound to its RC attestation');
+    errors.push('Screenshot manifest must target 3.0 build 9 on the 6.9-inch iPhone class. Screenshot manifest must retain the exact authority schema and be either the exact empty pending authority or the exact file-backed RC authority bound to its RC attestation');
   }
   const screenshotStoryboard = read('screenshots/storyboard.md');
   rejectContradictoryCaboHealthEntityClaims(screenshotStoryboard, 'screenshot storyboard');
@@ -1761,10 +1769,10 @@ function verifyHumanChecklists() {
     '- [x] Promote and origin-verify the revised Healthy Recipes and Clinic Guide citation bytes plus the updated Privacy disclosure, then regenerate the exact public-release evidence. Marketing, Terms, Support, Report Content, and AASA remained byte-identical to the preceding 17-file release.',
     '- [x] Verify the revised two-miniapp/Privacy payload is exact and no WordPress or unrelated file changes occurred during promotion. The preceding release remains retained as rollback.',
   ];
-  const completedVersionConfigurationGate = '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 8 after archiving the exact build-7 input/artifact attestations and private evidence as immutable obsolete history; no current build-8 input attestation, IPA, or TestFlight upload exists yet.';
+  const completedVersionConfigurationGate = '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 9 after archiving the exact build-8 input/artifact attestations and preserving its private evidence as immutable obsolete history; no current build-9 input attestation, IPA, or TestFlight upload exists yet.';
   const completedBuild5BuildInputAttestationGate = '- [x] Regenerate, freeze, and independently review the build-5 canonical build-input attestation; bind the exact external mode-0600 production plist hash, sanitized resolved Expo config, `cabohealth-owner-prod`, source/lock/manifests/verifiers, recursive clean `node_modules` runtime, and Node executable bytes/version. Retain the build-4 attestation only as obsolete diagnostic evidence. Pin the new authority so `build:prod` can run with `--freeze-credentials` from a unique private snapshot outside Dropbox whose parent `node_modules` resolves every Expo plugin.';
   const completedBuild6BuildInputAttestationGate = '- [x] Generate, independently review, and pin the build-6 canonical build-input attestation against the rebaselined 3.0/build 6 source and exact external mode-0600 production plist before its EAS build; do not reuse either obsolete build-5 attestation.';
-  const pendingBuild8BuildInputAttestationGate = '- [ ] Generate, independently review, and pin the build-8 canonical build-input attestation against the frozen 3.0/build 8 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-7 authority.';
+  const pendingBuild9BuildInputAttestationGate = '- [ ] Generate, independently review, and pin the build-9 canonical build-input attestation against the frozen 3.0/build 9 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8 authority.';
   const required = [
     'apple-review-remediation-2026-08-24.md',
     'testflight-what-to-test.md',
@@ -1816,8 +1824,8 @@ function verifyHumanChecklists() {
       if (!source.includes(completedBuild6BuildInputAttestationGate)) {
         errors.push('submission-gates.md must retain the exact completed build-6 build-input attestation checkbox');
       }
-      if (!source.includes(pendingBuild8BuildInputAttestationGate)) {
-        errors.push('submission-gates.md must retain the exact pending build-8 build-input attestation checkbox');
+      if (!source.includes(pendingBuild9BuildInputAttestationGate)) {
+        errors.push('submission-gates.md must retain the exact pending build-9 build-input attestation checkbox');
       }
       if (!source.includes(pendingPhysicalAppAttestGate)) {
         errors.push('submission-gates.md must retain the exact pending physical App Attest valid-flow checkbox');
@@ -1875,8 +1883,8 @@ function verifyHumanChecklists() {
   const remediation = read('apple-review-remediation-2026-08-24.md');
   requireText(
     remediation,
-    /Build 4 was subsequently produced and inspected as diagnostic evidence, but it\s+predates the completed dynamic-catalog source and is obsolete for release\.\s+Build 5 was subsequently built, pinned by the exact build-input and build-artifact attestations, and processed in TestFlight as Ready to Submit, but it is obsolete for the rebaselined VIP source\.\s+Build 6 was subsequently built, exactly attested, processed, and activated for the internal TestFlight group, but it is obsolete for the full-screen VIP navigation source\.\s+Build 7 produced two FINISHED EAS builds; one is exactly attested and both are obsolete for the external-HTTPS miniapps source, with no App Store Connect processing inferred\.\s+CaboHealth 3\.0 build 8 is the sole unbuilt candidate\./iu,
-    'Apple remediation record must retain builds 4 through 7 as obsolete historical evidence and build 8 as the sole unbuilt candidate',
+    /Build 4 was subsequently produced and inspected as diagnostic evidence, but it\s+predates the completed dynamic-catalog source and is obsolete for release\.\s+Build 5 was subsequently built, pinned by the exact build-input and build-artifact attestations, and processed in TestFlight as Ready to Submit, but it is obsolete for the rebaselined VIP source\.\s+Build 6 was subsequently built, exactly attested, processed, and activated for the internal TestFlight group, but it is obsolete for the full-screen VIP navigation source\.\s+Build 7 produced two FINISHED EAS builds; one is exactly attested and both are obsolete for the external-HTTPS miniapps source, with no App Store Connect processing inferred\.\s+Build 8 was built and attested, uploaded to TestFlight, observed as Ready to Submit, and available to the existing internal group, but is obsolete for the WebView subframe fix\.\s+CaboHealth 3\.0 build 9 is the sole unbuilt candidate\./iu,
+    'Apple remediation record must retain builds 4 through 8 as obsolete historical evidence and build 9 as the sole unbuilt candidate',
   );
   requireText(remediation, /Guideline 2\.1/iu, 'Apple remediation record missing the completeness and stability response');
   requireText(remediation, /Guideline 1\.4\.1/iu, 'Apple remediation record missing the medical citation response');

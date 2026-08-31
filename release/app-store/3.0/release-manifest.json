@@ -5,7 +5,7 @@
     "appleId": "6758285327",
     "bundleIdentifier": "com.cabohealth.app",
     "marketingVersion": "3.0",
-    "buildNumber": "8",
+    "buildNumber": "9",
     "status": "pre-build-configured",
     "appJsonUpdated": true,
     "configUpdated": true,
@@ -90,6 +90,14 @@
       "appStoreObserved": false,
       "trackedHistoryRoot": "release/app-store/3.0/history/build-7",
       "privateHistoryRoot": "release/private/rc-build-7"
+    },
+    {
+      "marketingVersion": "3.0",
+      "buildNumber": "8",
+      "status": "testflight-ready-to-submit-internal-available-obsolete-source",
+      "appStoreObserved": true,
+      "trackedHistoryRoot": "release/app-store/3.0/history/build-8",
+      "privateHistoryRoot": "release/private/rc-build-8"
     }
   ],
   "ownerSeller": {
@@ -282,7 +290,7 @@
       "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
       "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
       "clientAccessModel": "pending-apple-review-determination",
-      "exactReleaseCandidate": "build-8-pending-build-input-attestation-eas-build-and-qa",
+      "exactReleaseCandidate": "build-9-pending-build-input-attestation-eas-build-and-qa",
       "screenshots": "pending-exact-rc-capture",
       "appStoreConnectSave": "pending-final-save"
     }
@@ -309,8 +317,8 @@
     "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
     "privacyMapping": "pending-final-linkage-category-review-and-save",
     "brandAndContentRights": "pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis",
-    "exactReleaseCandidate": "build-8-pending-build-input-attestation-eas-build-and-qa",
-    "testFlight": "builds-4-through-7-obsolete-source-build-8-pending-build-upload-selection-and-physical-iphone-qa",
+    "exactReleaseCandidate": "build-9-pending-build-input-attestation-eas-build-and-qa",
+    "testFlight": "builds-4-through-8-obsolete-source-build-9-pending-build-upload-selection-and-physical-iphone-qa",
     "screenshots": "pending-exact-rc-capture",
     "accessibilityLabels": "pending-exact-rc-evidence",
     "appStoreConnect": "pending-final-save",

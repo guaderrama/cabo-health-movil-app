@@ -5,14 +5,16 @@ import { reject } from './errors.mjs';
 
 const METHODS = new Set(['GET', 'POST', 'PATCH']);
 
-function validateRequest(method, path, body) {
+function validateRequest(method, path, body, responseKind) {
   if (!METHODS.has(method)
     || typeof path !== 'string' || !path.startsWith('/v1/')
     || path.includes('\\') || /[\u0000-\u001f\u007f]/u.test(path)
     || new URL(path, API_ORIGIN).origin !== API_ORIGIN
     || (method === 'GET' ? body !== undefined : (
       body === null || typeof body !== 'object' || Array.isArray(body)
-    ))) reject('APP_STORE_CONNECT_REQUEST_INVALID');
+    ))
+    || !['json', 'empty'].includes(responseKind)
+    || (responseKind === 'empty' && method !== 'POST')) reject('APP_STORE_CONNECT_REQUEST_INVALID');
 }
 
 function parseResponseBytes(bytes) {
@@ -72,8 +74,8 @@ export class AppStoreConnectTransport {
     this.timeoutMs = timeoutMs;
   }
 
-  async request({ method, path, body }) {
-    validateRequest(method, path, body);
+  async request({ method, path, body, responseKind = 'json' }) {
+    validateRequest(method, path, body, responseKind);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     let response;
@@ -106,6 +108,22 @@ export class AppStoreConnectTransport {
         reject(`APP_STORE_CONNECT_HTTP_${response.status}`);
       }
       const contentLength = response.headers?.get?.('content-length');
+      if (responseKind === 'empty') {
+        if (response.status !== 204
+          || (contentLength !== null && contentLength !== undefined && contentLength !== '0')) {
+          reject('APP_STORE_CONNECT_RESPONSE_INVALID');
+        }
+        if (response.body !== null && response.body !== undefined) {
+          let bytes;
+          try {
+            bytes = await readCappedResponseBytes(response);
+          } catch {
+            reject('APP_STORE_CONNECT_RESPONSE_INVALID');
+          }
+          if (bytes.length !== 0) reject('APP_STORE_CONNECT_RESPONSE_INVALID');
+        }
+        return Object.freeze({ status: 204, body: null });
+      }
       if (contentLength !== null && contentLength !== undefined
         && (!/^\d+$/u.test(contentLength) || Number(contentLength) > MAX_JSON_BYTES)) {
         reject('APP_STORE_CONNECT_RESPONSE_INVALID');
@@ -134,23 +152,27 @@ export class FixtureTransport {
     this.requests = [];
   }
 
-  async request({ method, path, body }) {
-    validateRequest(method, path, body);
+  async request({ method, path, body, responseKind = 'json' }) {
+    validateRequest(method, path, body, responseKind);
     const expectation = this.expectations.shift();
     if (expectation === undefined
       || expectation.method !== method || expectation.path !== path
       || !isDeepStrictEqual(expectation.body, body)
       || !Number.isInteger(expectation.status)
-      || expectation.response === null || typeof expectation.response !== 'object'
-      || Array.isArray(expectation.response)) reject('DRY_RUN_FIXTURE_MISMATCH');
-    this.requests.push(structuredClone({ method, path, body }));
+      || (expectation.responseKind ?? 'json') !== responseKind
+      || (responseKind === 'json'
+        ? (expectation.response === null || typeof expectation.response !== 'object'
+          || Array.isArray(expectation.response))
+        : expectation.response !== null)) reject('DRY_RUN_FIXTURE_MISMATCH');
+    this.requests.push(structuredClone({ method, path, body, responseKind }));
     if (expectation.status < 200 || expectation.status > 299) {
       reject(`APP_STORE_CONNECT_HTTP_${expectation.status}`);
     }
-    return Object.freeze({
-      status: expectation.status,
-      body: structuredClone(expectation.response),
-    });
+    if (responseKind === 'empty') {
+      if (expectation.status !== 204) reject('DRY_RUN_FIXTURE_MISMATCH');
+      return Object.freeze({ status: 204, body: null });
+    }
+    return Object.freeze({ status: expectation.status, body: structuredClone(expectation.response) });
   }
 
   assertConsumed() {

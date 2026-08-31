@@ -162,6 +162,33 @@ test('HTTP failures expose only a deterministic status code, never the Apple bod
   assert.ok(authorization.startsWith('Bearer '));
 });
 
+test('empty response mode accepts only an exact bodyless 204 and preserves JSON behavior', async () => {
+  const fixture = credentialFixture();
+  const credentials = loadCredentials(fixture.environment);
+  const empty = new AppStoreConnectTransport(credentials, {
+    now: () => NOW,
+    fetchImpl: async () => new Response(null, {
+      status: 204,
+      headers: { 'content-length': '0' },
+    }),
+  });
+  assert.deepEqual(await empty.request({
+    method: 'POST',
+    path: '/v1/betaGroups/group-one/relationships/builds',
+    body: { data: [{ type: 'builds', id: 'build-one' }] },
+    responseKind: 'empty',
+  }), { status: 204, body: null });
+
+  const wrongStatus = new AppStoreConnectTransport(credentials, {
+    now: () => NOW,
+    fetchImpl: async () => new Response(null, { status: 200 }),
+  });
+  await assert.rejects(wrongStatus.request({
+    method: 'POST', path: '/v1/betaGroups/group-one/relationships/builds',
+    body: { data: [] }, responseKind: 'empty',
+  }), /APP_STORE_CONNECT_RESPONSE_INVALID/u);
+});
+
 test('transport rejects alternate origins, malformed paths, and unexpected response media types', async () => {
   const fixture = credentialFixture();
   const credentials = loadCredentials(fixture.environment);

@@ -64,11 +64,12 @@ No catalog migration was executed as part of this activation.
   `pageSheet` presentation and is retained only as obsolete-source evidence.
   Build 7 replaced that presentation with a dedicated full-screen internal
   route and an in-app back control, but its EAS `FINISHED` binaries are now
-  obsolete-source history. Build 8 carries the full-screen behavior plus the
-  external-HTTPS miniapps source; neither hands an internal launch to Chrome,
+  obsolete-source history. Build 8 added the external-HTTPS miniapps source,
+  was built and uploaded, and is now immutable obsolete history. Build 9
+  carries that behavior plus the WebView subframe fix; neither hands an internal launch to Chrome,
   Safari, or another external browser.
 - Positive V2 catalog retrieval and complete VIP showcase QA depend on the
-  exact signed CaboHealth 3.0 build 8 running on a physical iPhone with its valid App
+  exact signed CaboHealth 3.0 build 9 running on a physical iPhone with its valid App
   Check flow.
 - The corresponding Staff Portal release has not yet been promoted.
 - This activation did not submit a build or release to App Review.

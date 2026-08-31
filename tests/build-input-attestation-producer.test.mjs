@@ -20,9 +20,13 @@ const easCli = {
   runtimeTreeSha256: hash('4'),
 };
 const easEnvironment = {
+  schemaVersion: 1,
+  evidenceKind: 'cabohealth-eas-environment-inventory',
   environmentName: 'production',
-  variables: [
+  profileVariables: [
     { name: 'APP_ENV', source: 'eas-profile', kind: 'plain' },
+  ],
+  projectVariables: [
     {
       name: 'CABOHEALTH_FIREBASE_PROJECT_ID',
       source: 'eas-project-environment',
@@ -34,11 +38,12 @@ const easEnvironment = {
       kind: 'secret-file',
     },
   ],
+  extras: [],
   valuesIncluded: false,
-  reviewStatus: 'independently-reviewed',
+  providerValuesRetained: false,
 };
 
-test('build-input producer assembles the exact canonical build 8 authority', () => {
+test('build-input producer assembles the exact canonical build 9 authority with inventory digest', () => {
   const value = assembleBuildInputAttestation({
     reviewedAt: '2026-08-26T07:00:00.000Z',
     sourceCommit,
@@ -55,11 +60,12 @@ test('build-input producer assembles the exact canonical build 8 authority', () 
     resolvedProductionExpoConfigSha256: hash('2'),
     nodeRuntime,
     easCli,
+    easEnvironmentInventorySha256: hash('5'),
     easEnvironment,
   });
 
   assert.deepEqual(value.candidate, BUILD_INPUT_CANDIDATE);
-  assert.equal(value.candidate.buildNumber, '8');
+  assert.equal(value.candidate.buildNumber, '9');
   assert.equal(value.firebaseProjectId, 'cabohealth-owner-prod');
   assert.equal(`${JSON.stringify(value)}\n`.endsWith('\n'), true);
   assert.deepEqual(Object.keys(value), [
@@ -79,6 +85,7 @@ test('build-input producer assembles the exact canonical build 8 authority', () 
     'resolvedProductionExpoConfigSha256',
     'nodeRuntime',
     'easCli',
+    'easEnvironmentInventorySha256',
     'easEnvironment',
     'reviewedAt',
   ]);
@@ -101,6 +108,7 @@ test('build-input producer rejects a stale candidate, malformed hash, or ambiguo
     resolvedProductionExpoConfigSha256: hash('2'),
     nodeRuntime,
     easCli,
+    easEnvironmentInventorySha256: hash('5'),
     easEnvironment,
   };
 
@@ -120,7 +128,7 @@ test('build-input producer rejects a stale candidate, malformed hash, or ambiguo
     ...base,
     easEnvironment: {
       ...easEnvironment,
-      variables: easEnvironment.variables.filter(
+      projectVariables: easEnvironment.projectVariables.filter(
         (variable) => variable.name !== 'CABOHEALTH_GOOGLE_SERVICES_PLIST',
       ),
     },

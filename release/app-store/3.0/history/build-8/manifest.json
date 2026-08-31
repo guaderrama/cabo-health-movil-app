@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "candidate": {
+    "marketingVersion": "3.0",
+    "buildNumber": "8"
+  },
+  "status": "obsolete-source-history",
+  "buildInputAttestation": {
+    "relativePath": "build-input-attestation.json",
+    "sha256": "f4ee8c3da75be23d300b816495649c414f2900efaef9e88294bdc52824c3ed8e"
+  },
+  "buildArtifactAttestation": {
+    "relativePath": "build-artifact-attestation.json",
+    "sha256": "966e00960c688ec1d0299dae36b6eff599f1286c20c218b434720bdd882ab4cb"
+  },
+  "frozenSource": {
+    "commit": "288ff2185c46fee117555ae0842a4a63c34df938",
+    "sha256": "a36b34e28d26032ae71e4bc61f767423774faa90873551e0cabbbbfcb310374b"
+  },
+  "easArtifactAssociation": {
+    "buildId": "9f0e9405-9e2a-4900-9f06-558d7c790c67",
+    "buildStatus": "FINISHED",
+    "ipaSha256": "419b9e2da17e04161c396f746330907906f7f743c05e313b4ebda09cccc91e4c",
+    "associationGuardProven": false,
+    "evidenceRef": ".superpowers/sdd/2026-08-28-cabohealth-external-https-miniapps-release/task-7-stage-a-evidence/task-7-eas-association-sanitized.json"
+  },
+  "easSubmission": {
+    "submissionId": "c06b252d-422b-4271-9473-29683b5fe9b5",
+    "status": "FINISHED",
+    "evidenceRef": ".superpowers/sdd/2026-08-28-cabohealth-external-https-miniapps-release/task-8-submission-status-sanitized.json"
+  },
+  "appleObservation": {
+    "inspectionMode": "read-only",
+    "uploadStatus": "Complete",
+    "processingStatus": "Ready to Submit",
+    "internalGroupName": "cabo health",
+    "internalGroupAvailable": true,
+    "mutationPerformed": false,
+    "evidenceRef": ".superpowers/sdd/2026-08-28-cabohealth-external-https-miniapps-release/task-8-apple-verification-report.md"
+  },
+  "rcAttestation": {
+    "relativePath": null,
+    "sha256": null,
+    "status": "never-created"
+  }
+}

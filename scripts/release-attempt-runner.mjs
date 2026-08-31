@@ -1,0 +1,557 @@
+#!/usr/bin/env node
+
+import { spawnSync } from 'node:child_process';
+import {
+  closeSync,
+  constants as FS_CONSTANTS,
+  existsSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+} from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import {
+  CANDIDATE,
+  COMMIT_PATTERN,
+  EAS_ACCOUNT,
+  EAS_PROJECT_SLUG,
+  SHA256_PATTERN,
+  UUID_PATTERN,
+  atomicReplaceCanonicalJson,
+  canonicalJsonBytes,
+  hasExactKeys,
+  isCanonicalUtc,
+  isWithin,
+  parseJsonBytes,
+  readSecureFile,
+  sha256,
+  validateOwnedDirectory,
+  writeExclusiveCanonicalJson,
+  writeExclusiveFile,
+} from './release-evidence-common.mjs';
+
+const ARGUMENT = 'RELEASE_ATTEMPT_ARGUMENT_INVALID';
+const ROOT = 'RELEASE_ATTEMPT_EVIDENCE_ROOT_INVALID';
+const MARKER = 'RELEASE_ATTEMPT_MARKER_INVALID';
+const STATE = 'RELEASE_ATTEMPT_STATE_INVALID';
+const RECOVERY = 'RELEASE_ATTEMPT_ARMED_RECOVERY_INVALID';
+const RETRY = 'RELEASE_ATTEMPT_RETRY_NOT_AUTHORIZED';
+const RECONCILIATION = 'RELEASE_ATTEMPT_RECONCILIATION_INVALID';
+const ACTIONS = new Set(['build', 'upload-testflight']);
+const TERMINAL_STATUSES = new Set(['FINISHED', 'ERRORED', 'CANCELED']);
+const MARKER_KEYS = [
+  'schemaVersion', 'action', 'candidate', 'attemptNumber', 'runnerPid', 'state',
+  'providerOperationId', 'startedAt', 'terminalAt', 'outcome', 'rawEvidenceSha256',
+  'reconciliationEvidenceSha256', 'retryReviewSha256',
+];
+const CANDIDATE_KEYS = ['bundleIdentifier', 'marketingVersion', 'buildNumber', 'sourceCommit'];
+const STATE_OUTCOMES = new Map([
+  ['armed', 'pending'],
+  ['provider_started', 'pending'],
+  ['preprovider_failed', 'preprovider-blocked'],
+  ['unknown', 'unknown'],
+  ['terminal_failure', 'failed'],
+  ['terminal_success', 'succeeded'],
+]);
+
+function fail(code) {
+  throw new Error(code);
+}
+
+function markerName(action) {
+  if (!ACTIONS.has(action)) fail(ARGUMENT);
+  return `${action}-attempt.json`;
+}
+
+function logName(action, attemptNumber, stream) {
+  if (!ACTIONS.has(action) || ![1, 2].includes(attemptNumber)
+    || !['stdout', 'stderr'].includes(stream)) fail(MARKER);
+  return `${action}-attempt-${attemptNumber}.${stream}.log`;
+}
+
+function validateEvidenceRoot(evidenceRoot) {
+  return validateOwnedDirectory(evidenceRoot, ROOT, { outsideDropbox: true });
+}
+
+function validateMarker(value, code = MARKER) {
+  if (!hasExactKeys(value, MARKER_KEYS)
+    || value.schemaVersion !== 1 || !ACTIONS.has(value.action)
+    || !hasExactKeys(value.candidate, CANDIDATE_KEYS)
+    || value.candidate.bundleIdentifier !== CANDIDATE.bundleIdentifier
+    || value.candidate.marketingVersion !== CANDIDATE.marketingVersion
+    || value.candidate.buildNumber !== CANDIDATE.buildNumber
+    || !COMMIT_PATTERN.test(value.candidate.sourceCommit ?? '')
+    || ![1, 2].includes(value.attemptNumber)
+    || !Number.isSafeInteger(value.runnerPid) || value.runnerPid <= 0
+    || !STATE_OUTCOMES.has(value.state)
+    || value.outcome !== STATE_OUTCOMES.get(value.state)
+    || !isCanonicalUtc(value.startedAt)
+    || (value.terminalAt !== null && !isCanonicalUtc(value.terminalAt))
+    || (['preprovider_failed', 'terminal_failure', 'terminal_success'].includes(value.state)
+      ? value.terminalAt === null : value.terminalAt !== null)
+    || (value.providerOperationId !== null && !UUID_PATTERN.test(value.providerOperationId))
+    || (['armed', 'provider_started', 'preprovider_failed'].includes(value.state)
+      && value.providerOperationId !== null)
+    || (['terminal_failure', 'terminal_success'].includes(value.state)
+      && !UUID_PATTERN.test(value.providerOperationId ?? ''))
+    || (['armed', 'provider_started'].includes(value.state)
+      ? value.rawEvidenceSha256 !== null
+      : (value.rawEvidenceSha256 === null
+        ? value.reconciliationEvidenceSha256 === null
+        : !SHA256_PATTERN.test(value.rawEvidenceSha256)))
+    || (value.reconciliationEvidenceSha256 !== null
+      && !SHA256_PATTERN.test(value.reconciliationEvidenceSha256))
+    || (value.reconciliationEvidenceSha256 !== null
+      && !['terminal_failure', 'terminal_success'].includes(value.state))
+    || (value.attemptNumber === 1
+      ? value.retryReviewSha256 !== null : !SHA256_PATTERN.test(value.retryReviewSha256 ?? ''))) fail(code);
+  return value;
+}
+
+function markerPath(evidenceRoot, action) {
+  return join(validateEvidenceRoot(evidenceRoot), markerName(action));
+}
+
+function readMarkerAt(path, expectedAction) {
+  try {
+    if (typeof path !== 'string' || !isAbsolute(path) || resolve(path) !== path
+      || dirname(path) === path) fail(MARKER);
+    const root = validateEvidenceRoot(dirname(path));
+    if (path !== join(root, markerName(expectedAction))) fail(MARKER);
+    const bytes = readSecureFile(path, MARKER, { maxBytes: 128 * 1024, parent: root });
+    const value = validateMarker(parseJsonBytes(bytes, MARKER, { canonical: true }));
+    if (value.action !== expectedAction || !canonicalJsonBytes(value).equals(bytes)) fail(MARKER);
+    return value;
+  } catch (error) {
+    if (error instanceof Error && [MARKER, ROOT].includes(error.message)) throw error;
+    fail(MARKER);
+  }
+}
+
+export function readAttemptMarker(evidenceRoot, action) {
+  return readMarkerAt(markerPath(evidenceRoot, action), action);
+}
+
+export function armAttempt({ evidenceRoot, action, sourceCommit, runnerPid, startedAt }) {
+  const root = validateEvidenceRoot(evidenceRoot);
+  if (!ACTIONS.has(action) || !COMMIT_PATTERN.test(sourceCommit ?? '')
+    || !Number.isSafeInteger(runnerPid) || runnerPid <= 0 || !isCanonicalUtc(startedAt)) fail(ARGUMENT);
+  const value = {
+    schemaVersion: 1,
+    action,
+    candidate: {
+      bundleIdentifier: CANDIDATE.bundleIdentifier,
+      marketingVersion: CANDIDATE.marketingVersion,
+      buildNumber: CANDIDATE.buildNumber,
+      sourceCommit,
+    },
+    attemptNumber: 1,
+    runnerPid,
+    state: 'armed',
+    providerOperationId: null,
+    startedAt,
+    terminalAt: null,
+    outcome: 'pending',
+    rawEvidenceSha256: null,
+    reconciliationEvidenceSha256: null,
+    retryReviewSha256: null,
+  };
+  try {
+    writeExclusiveCanonicalJson(join(root, markerName(action)), value, MARKER, { expectedParent: root });
+  } catch {
+    fail(MARKER);
+  }
+  return value;
+}
+
+export function createAttemptLogs({ evidenceRoot, action, attemptNumber }) {
+  const root = validateEvidenceRoot(evidenceRoot);
+  const marker = readAttemptMarker(root, action);
+  if (marker.attemptNumber !== attemptNumber || marker.state !== 'armed') fail(STATE);
+  const paths = {};
+  for (const stream of ['stdout', 'stderr']) {
+    const path = join(root, logName(action, attemptNumber, stream));
+    try {
+      writeExclusiveFile(path, Buffer.alloc(0), MARKER, {
+        expectedParent: root,
+      });
+    } catch {
+      fail(MARKER);
+    }
+    paths[stream] = path;
+  }
+  return paths;
+}
+
+export function rawEvidenceSha256(stdoutBytes, stderrBytes) {
+  if (!Buffer.isBuffer(stdoutBytes) || !Buffer.isBuffer(stderrBytes)) fail(MARKER);
+  const stdoutLength = Buffer.alloc(8);
+  const stderrLength = Buffer.alloc(8);
+  stdoutLength.writeBigUInt64BE(BigInt(stdoutBytes.length));
+  stderrLength.writeBigUInt64BE(BigInt(stderrBytes.length));
+  return sha256(Buffer.concat([stdoutLength, stdoutBytes, stderrLength, stderrBytes]));
+}
+
+function replaceMarker(path, value, code = MARKER) {
+  validateMarker(value, code);
+  try {
+    atomicReplaceCanonicalJson(path, value, code);
+  } catch {
+    fail(code);
+  }
+  return value;
+}
+
+export function markProviderStarted(path, { action, sourceCommit }) {
+  const marker = readMarkerAt(path, action);
+  if (marker.state !== 'armed' || marker.candidate.sourceCommit !== sourceCommit) fail(STATE);
+  return replaceMarker(path, { ...marker, state: 'provider_started' }, STATE);
+}
+
+function readAttemptLog(root, action, attemptNumber, stream, { createMissing = false } = {}) {
+  const path = join(root, logName(action, attemptNumber, stream));
+  if (createMissing && !existsSync(path)) {
+    try {
+      writeExclusiveFile(path, Buffer.alloc(0), MARKER, { expectedParent: root });
+    } catch {
+      fail(MARKER);
+    }
+  }
+  return readSecureFile(path, MARKER, {
+    maxBytes: 1024 * 1024 * 1024,
+    allowEmpty: true,
+    parent: root,
+  });
+}
+
+function uniqueProviderId(action, stdoutBytes, stderrBytes) {
+  const text = Buffer.concat([stdoutBytes, Buffer.from('\n'), stderrBytes]).toString('utf8');
+  const suffix = action === 'build' ? 'builds' : 'submissions';
+  const pattern = new RegExp(`/\\b${suffix}/([a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})(?=$|[\\s?#])`, 'gu');
+  const ids = new Set([...text.matchAll(pattern)].map((match) => match[1]));
+  return ids.size === 1 ? [...ids][0] : null;
+}
+
+export function finalizeObservedAttempt({
+  evidenceRoot,
+  action,
+  exitStatus,
+  terminalAt = new Date().toISOString(),
+}) {
+  const root = validateEvidenceRoot(evidenceRoot);
+  const path = join(root, markerName(action));
+  const marker = readMarkerAt(path, action);
+  if (!['armed', 'provider_started'].includes(marker.state)
+    || !Number.isInteger(exitStatus) || exitStatus < 0 || !isCanonicalUtc(terminalAt)) fail(STATE);
+  const stdoutBytes = readAttemptLog(root, action, marker.attemptNumber, 'stdout');
+  const stderrBytes = readAttemptLog(root, action, marker.attemptNumber, 'stderr');
+  const rawDigest = rawEvidenceSha256(stdoutBytes, stderrBytes);
+  const parsedId = uniqueProviderId(action, stdoutBytes, stderrBytes);
+  if (marker.state === 'armed') {
+    return replaceMarker(path, {
+      ...marker,
+      state: 'preprovider_failed', terminalAt, outcome: 'preprovider-blocked',
+      rawEvidenceSha256: rawDigest,
+    }, STATE);
+  }
+  if (exitStatus === 0 && parsedId !== null) {
+    return replaceMarker(path, {
+      ...marker,
+      state: 'terminal_success', providerOperationId: parsedId, terminalAt,
+      outcome: 'succeeded', rawEvidenceSha256: rawDigest,
+    }, STATE);
+  }
+  return replaceMarker(path, {
+    ...marker,
+    state: 'unknown', providerOperationId: parsedId, terminalAt: null,
+    outcome: 'unknown', rawEvidenceSha256: rawDigest,
+  }, STATE);
+}
+
+export function recoverArmedAttempt({
+  evidenceRoot,
+  action,
+  expectedRunnerPid,
+  terminalAt = new Date().toISOString(),
+  kill = process.kill,
+}) {
+  const root = validateEvidenceRoot(evidenceRoot);
+  const path = join(root, markerName(action));
+  const marker = readMarkerAt(path, action);
+  if (marker.state !== 'armed' || marker.providerOperationId !== null
+    || !Number.isSafeInteger(expectedRunnerPid) || expectedRunnerPid <= 0
+    || marker.runnerPid !== expectedRunnerPid || !isCanonicalUtc(terminalAt)
+    || typeof kill !== 'function') fail(RECOVERY);
+  try {
+    kill(expectedRunnerPid, 0);
+    fail(RECOVERY);
+  } catch (error) {
+    if (error instanceof Error && error.message === RECOVERY) throw error;
+    if (error?.code !== 'ESRCH') fail(RECOVERY);
+  }
+  const stdoutBytes = readAttemptLog(root, action, marker.attemptNumber, 'stdout', { createMissing: true });
+  const stderrBytes = readAttemptLog(root, action, marker.attemptNumber, 'stderr', { createMissing: true });
+  return replaceMarker(path, {
+    ...marker,
+    state: 'preprovider_failed', terminalAt, outcome: 'preprovider-blocked',
+    rawEvidenceSha256: rawEvidenceSha256(stdoutBytes, stderrBytes),
+  }, RECOVERY);
+}
+
+export function retryAttempt({ evidenceRoot, action, reviewSha256, runnerPid, startedAt }) {
+  const root = validateEvidenceRoot(evidenceRoot);
+  const path = join(root, markerName(action));
+  const marker = readMarkerAt(path, action);
+  if (marker.state !== 'preprovider_failed' || marker.attemptNumber !== 1
+    || !SHA256_PATTERN.test(reviewSha256 ?? '')
+    || !Number.isSafeInteger(runnerPid) || runnerPid <= 0 || !isCanonicalUtc(startedAt)
+    || ['stdout', 'stderr'].some((stream) => existsSync(join(root, logName(action, 2, stream))))) fail(RETRY);
+  return replaceMarker(path, {
+    ...marker,
+    attemptNumber: 2,
+    runnerPid,
+    state: 'armed',
+    providerOperationId: null,
+    startedAt,
+    terminalAt: null,
+    outcome: 'pending',
+    rawEvidenceSha256: null,
+    reconciliationEvidenceSha256: null,
+    retryReviewSha256: reviewSha256,
+  }, RETRY);
+}
+
+const BUILD_RECONCILIATION_KEYS = [
+  'schemaVersion', 'evidenceKind', 'easBuildId', 'status', 'terminal', 'platform',
+  'distribution', 'account', 'projectSlug', 'buildProfile', 'bundleIdentifier',
+  'marketingVersion', 'buildNumber', 'artifactAvailable', 'createdAt', 'completedAt',
+  'errorPresent', 'errorCode', 'mutationPerformed', 'rawProviderResponseRetained',
+  'providerUrlsOmitted', 'providerFieldsOmitted', 'credentialFieldsOmitted',
+];
+const SUBMISSION_RECONCILIATION_KEYS = [
+  'schemaVersion', 'evidenceKind', 'submissionId', 'status', 'terminal', 'platform',
+  'createdAt', 'completedAt', 'errorPresent', 'errorCode', 'app',
+  'appleProcessingStatus', 'appleProcessingPendingReadOnlyVerification',
+  'appStoreConnectBuildSelectionPerformed', 'mutationPerformed',
+  'rawProviderResponseRetained', 'providerUrlsOmitted', 'providerFieldsOmitted',
+  'credentialFieldsOmitted',
+];
+const SUBMISSION_APP_KEYS = [
+  'appleId', 'account', 'projectSlug', 'submittedBuildIdentityAvailable',
+  'bundleIdentifier', 'marketingVersion', 'buildNumber', 'easBuildId',
+];
+
+function validateReconciliationTimesAndError(value) {
+  if (!isCanonicalUtc(value.createdAt) || !isCanonicalUtc(value.completedAt)
+    || typeof value.errorPresent !== 'boolean'
+    || (value.errorCode !== null
+      && (typeof value.errorCode !== 'string' || !/^[A-Z0-9_]{1,128}$/u.test(value.errorCode)))
+    || (value.errorPresent === false && value.errorCode !== null)) fail(RECONCILIATION);
+}
+
+function validateReconciliationEvidence(action, value, providerOperationId, terminalStatus) {
+  if (action === 'build') {
+    if (!hasExactKeys(value, BUILD_RECONCILIATION_KEYS)
+      || value.evidenceKind !== 'cabohealth-eas-build-read-only-status'
+      || value.easBuildId !== providerOperationId
+      || value.distribution !== 'STORE'
+      || value.account !== EAS_ACCOUNT
+      || value.projectSlug !== EAS_PROJECT_SLUG
+      || value.buildProfile !== 'production'
+      || value.bundleIdentifier !== CANDIDATE.bundleIdentifier
+      || value.marketingVersion !== CANDIDATE.marketingVersion
+      || value.buildNumber !== CANDIDATE.buildNumber
+      || typeof value.artifactAvailable !== 'boolean') fail(RECONCILIATION);
+  } else if (!hasExactKeys(value, SUBMISSION_RECONCILIATION_KEYS)
+    || value.evidenceKind !== 'cabohealth-eas-submission-read-only-status'
+    || value.submissionId !== providerOperationId
+    || !hasExactKeys(value.app, SUBMISSION_APP_KEYS)
+    || value.app.appleId !== CANDIDATE.appleId
+    || value.app.account !== EAS_ACCOUNT
+    || value.app.projectSlug !== EAS_PROJECT_SLUG
+    || value.app.submittedBuildIdentityAvailable !== true
+    || value.app?.bundleIdentifier !== CANDIDATE.bundleIdentifier
+    || value.app?.marketingVersion !== CANDIDATE.marketingVersion
+    || value.app?.buildNumber !== CANDIDATE.buildNumber
+    || !UUID_PATTERN.test(value.app.easBuildId ?? '')
+    || value.appleProcessingStatus !== 'not-proven-by-eas-submission'
+    || value.appleProcessingPendingReadOnlyVerification !== true
+    || value.appStoreConnectBuildSelectionPerformed !== false) fail(RECONCILIATION);
+  if (value.schemaVersion !== 1 || value.status !== terminalStatus || value.terminal !== true
+    || value.platform !== 'IOS' || value.mutationPerformed !== false
+    || value.rawProviderResponseRetained !== false || value.providerUrlsOmitted !== true
+    || value.providerFieldsOmitted !== true || value.credentialFieldsOmitted !== true) fail(RECONCILIATION);
+  validateReconciliationTimesAndError(value);
+}
+
+export function reconcileAttempt({
+  evidenceRoot,
+  action,
+  providerOperationId,
+  terminalStatus,
+  evidencePath,
+  evidenceSha256,
+  terminalAt = new Date().toISOString(),
+}) {
+  const root = validateEvidenceRoot(evidenceRoot);
+  const path = join(root, markerName(action));
+  const marker = readMarkerAt(path, action);
+  const expectedEvidenceName = action === 'build'
+    ? 'build-reconciliation.json' : 'upload-testflight-reconciliation.json';
+  if (!['provider_started', 'unknown'].includes(marker.state)
+    || !UUID_PATTERN.test(providerOperationId ?? '')
+    || (marker.providerOperationId !== null && marker.providerOperationId !== providerOperationId)
+    || !TERMINAL_STATUSES.has(terminalStatus)
+    || !SHA256_PATTERN.test(evidenceSha256 ?? '') || !isCanonicalUtc(terminalAt)
+    || typeof evidencePath !== 'string' || !isAbsolute(evidencePath)
+    || resolve(evidencePath) !== evidencePath || !isWithin(root, evidencePath)
+    || evidencePath !== join(root, expectedEvidenceName)) fail(RECONCILIATION);
+  let bytes;
+  let value;
+  try {
+    bytes = readSecureFile(evidencePath, RECONCILIATION, { maxBytes: 1024 * 1024, parent: root });
+    if (sha256(bytes) !== evidenceSha256) fail(RECONCILIATION);
+    value = parseJsonBytes(bytes, RECONCILIATION, { canonical: true });
+    validateReconciliationEvidence(action, value, providerOperationId, terminalStatus);
+  } catch {
+    fail(RECONCILIATION);
+  }
+  const succeeded = terminalStatus === 'FINISHED';
+  return replaceMarker(path, {
+    ...marker,
+    state: succeeded ? 'terminal_success' : 'terminal_failure',
+    providerOperationId,
+    terminalAt,
+    outcome: succeeded ? 'succeeded' : 'failed',
+    reconciliationEvidenceSha256: evidenceSha256,
+  }, RECONCILIATION);
+}
+
+export function parseReleaseAttemptArguments(values) {
+  if (!Array.isArray(values)) fail(ARGUMENT);
+  const [command, action] = values;
+  if (!ACTIONS.has(action)) fail(ARGUMENT);
+  if (command === 'start' && values.length === 2) return { command, action };
+  if (command === 'retry' && values.length === 4 && values[2] === '--review-sha256'
+    && SHA256_PATTERN.test(values[3] ?? '')) {
+    return { command, action, reviewSha256: values[3] };
+  }
+  if (command === 'recover-armed' && values.length === 4
+    && values[2] === '--expected-runner-pid' && /^[1-9]\d*$/u.test(values[3] ?? '')) {
+    const expectedRunnerPid = Number(values[3]);
+    if (Number.isSafeInteger(expectedRunnerPid) && expectedRunnerPid > 0) {
+      return { command, action, expectedRunnerPid };
+    }
+  }
+  if (command === 'reconcile' && values.length === 10
+    && values[2] === '--provider-operation-id' && UUID_PATTERN.test(values[3] ?? '')
+    && values[4] === '--terminal-status' && TERMINAL_STATUSES.has(values[5])
+    && values[6] === '--evidence' && typeof values[7] === 'string' && isAbsolute(values[7])
+    && values[8] === '--evidence-sha256' && SHA256_PATTERN.test(values[9] ?? '')) {
+    return {
+      command, action, providerOperationId: values[3], terminalStatus: values[5],
+      evidencePath: values[7], evidenceSha256: values[9],
+    };
+  }
+  fail(ARGUMENT);
+}
+
+function frozenSourceCommit(projectRoot) {
+  try {
+    const path = join(projectRoot, 'release/app-store/3.0/build-input-attestation.json');
+    const value = JSON.parse(readFileSync(path, 'utf8'));
+    if (!COMMIT_PATTERN.test(value.sourceCommit ?? '')
+      || value.candidate?.buildNumber !== CANDIDATE.buildNumber) fail(MARKER);
+    return value.sourceCommit;
+  } catch (error) {
+    if (error instanceof Error && error.message === MARKER) throw error;
+    fail(MARKER);
+  }
+}
+
+function openLogForChild(path) {
+  const descriptor = openSync(path, FS_CONSTANTS.O_WRONLY | FS_CONSTANTS.O_APPEND
+    | (FS_CONSTANTS.O_NOFOLLOW ?? 0));
+  const stat = fstatSync(descriptor);
+  const uid = typeof process.getuid === 'function' ? process.getuid() : stat.uid;
+  if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== uid || (stat.mode & 0o777) !== 0o600) {
+    closeSync(descriptor);
+    fail(MARKER);
+  }
+  return descriptor;
+}
+
+function runGuard(projectRoot, evidenceRoot, action, attemptNumber) {
+  const stdoutPath = join(evidenceRoot, logName(action, attemptNumber, 'stdout'));
+  const stderrPath = join(evidenceRoot, logName(action, attemptNumber, 'stderr'));
+  const stdout = openLogForChild(stdoutPath);
+  const stderr = openLogForChild(stderrPath);
+  let result;
+  try {
+    result = spawnSync(process.execPath, [
+      join(projectRoot, 'scripts/release-command-guard.mjs'), action,
+    ], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        CABOHEALTH_RELEASE_ATTEMPT_STATE: join(evidenceRoot, markerName(action)),
+      },
+      stdio: ['ignore', stdout, stderr],
+    });
+  } finally {
+    closeSync(stdout);
+    closeSync(stderr);
+  }
+  const exitStatus = Number.isInteger(result.status) ? result.status : 1;
+  const final = finalizeObservedAttempt({ evidenceRoot, action, exitStatus });
+  if (exitStatus !== 0 || final.state !== 'terminal_success') fail('RELEASE_ATTEMPT_GUARD_FAILED');
+}
+
+function main() {
+  const options = parseReleaseAttemptArguments(process.argv.slice(2));
+  const evidenceRoot = validateEvidenceRoot(process.env.CABOHEALTH_RELEASE_EVIDENCE_ROOT);
+  if (options.command === 'recover-armed') {
+    recoverArmedAttempt({ evidenceRoot, ...options });
+    return;
+  }
+  if (options.command === 'reconcile') {
+    reconcileAttempt({ evidenceRoot, ...options });
+    return;
+  }
+  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  if (options.command === 'start') {
+    armAttempt({
+      evidenceRoot,
+      action: options.action,
+      sourceCommit: frozenSourceCommit(projectRoot),
+      runnerPid: process.pid,
+      startedAt: new Date().toISOString(),
+    });
+  } else {
+    retryAttempt({
+      evidenceRoot,
+      action: options.action,
+      reviewSha256: options.reviewSha256,
+      runnerPid: process.pid,
+      startedAt: new Date().toISOString(),
+    });
+  }
+  const marker = readAttemptMarker(evidenceRoot, options.action);
+  createAttemptLogs({ evidenceRoot, action: options.action, attemptNumber: marker.attemptNumber });
+  runGuard(projectRoot, evidenceRoot, options.action, marker.attemptNumber);
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    main();
+  } catch (error) {
+    const publicCodes = new Set([
+      ARGUMENT, ROOT, MARKER, STATE, RECOVERY, RETRY, RECONCILIATION,
+      'RELEASE_ATTEMPT_GUARD_FAILED',
+    ]);
+    process.stderr.write(`${publicCodes.has(error?.message) ? error.message : 'RELEASE_ATTEMPT_INTERNAL_ERROR'}\n`);
+    process.exitCode = 1;
+  }
+}

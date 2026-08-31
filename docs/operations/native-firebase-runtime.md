@@ -22,11 +22,12 @@ is added in a future release.
 
 ## External HTTPS catalog and launch contract
 
-The external-HTTPS source candidate is locally verified but not evidenced as
-deployed or built. Installed build 7 remains compatible because its legacy
+The external-HTTPS source was deployed and built in immutable build 8 history;
+build 8 is not current authority for the WebView subframe fix. Installed build
+7 remains compatible because its legacy
 `getPublishedCatalog`/`getPublishedCatalogV2`, production V1 redeem/refresh,
 and legacy launch/broker contracts filter or reject every external resource.
-Build 8 source fetches exactly `getPublishedCatalogV3` into the separate
+Build 8 introduced, and build 9 preserves, exact `getPublishedCatalogV3` fetches into the separate
 `@cabohealth_published_catalog_v3` cache and uses only
 `redeemClientAccessCodeV2`, `refreshClientAccessV2`, and
 `createClientLaunchV2` for the production-client realm. App Review remains
@@ -251,7 +252,7 @@ Before a release:
 
 External-HTTPS rollback starts by deactivating external entries with new
 monotonic catalog mutations, then verifying legacy build-7 responses. Stop
-build-8 distribution and return to the prior native candidate if needed, but
+build-9 distribution and return to the prior native candidate if needed, but
 retain external-aware Functions and Staff while any active or inactive external
 record remains. Deactivation stops exposure; it does not make those records
 parseable by pre-feature artifacts, whose stored-catalog parsers validate every

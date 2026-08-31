@@ -2,7 +2,7 @@
 
 Status: **REVISED ITEMIZED DRAFT — OWNER RECONFIRMATION, PER-FAMILY BASIS, SIGNED DECLARATION, AND PRIVATE EVIDENCE PENDING.** On 2026-08-22 Ivan Guaderrama confirmed the earlier itemized scope for app, website, App Store metadata, screenshots, distribution, and updates in Mexico and the United States. The 2026-08-24 revision removes unsupported original-authorship wording, updates editorial citations, and adds previously omitted exact source families. Ivan has not yet reconfirmed these revised bytes. This inventory is not a signed declaration, trademark registration, licence, assignment, or proof that a third party granted rights.
 
-Release scope: Apple ID `6758285327`; bundle ID `com.cabohealth.app`; marketing version `3.0`; build `8`; initial territories Mexico and United States.
+Release scope: Apple ID `6758285327`; bundle ID `com.cabohealth.app`; marketing version `3.0`; build `9`; initial territories Mexico and United States.
 
 External catalog entries are not CaboHealth-authored by default and receive no CaboHealth editorial-source attribution or fixed per-item age rating. Before activation, each destination requires a private record of the exact URL, operator, suitability review, content-rights basis, territory, reviewer, date, and any attribution limits. VIP gating controls only the in-app entry point and does not make third-party content private.
 
@@ -84,7 +84,7 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 | Hosted Terms copy | `web-hosting/cabohealth.org/app/terms/index.html` | `b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22` | Pending final owner reconfirmation |
 | Hosted Support copy | `web-hosting/cabohealth.org/app/support/index.html` | `06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa` | Pending final owner reconfirmation |
 | Hosted Report Content copy | `web-hosting/cabohealth.org/app/report-content/index.html` | `f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c` | Pending final owner reconfirmation |
-| App Store metadata and Review Notes | `release/app-store/3.0/` | Must be reconciled to the exact 3.0 (8) RC and saved ASC record | Pending |
+| App Store metadata and Review Notes | `release/app-store/3.0/` | Must be reconciled to the exact 3.0 (9) RC and saved ASC record | Pending |
 | App Store screenshots | Exact RC captures | Not captured | Pending |
 
 `Firebase`, `Google Cloud`, `Hostinger`, `Apple`, `App Store`, `App Attest`, and `DeviceCheck` appear only to identify actual providers, platform features, review processes, or contractual disclosures. No ownership or endorsement is claimed.

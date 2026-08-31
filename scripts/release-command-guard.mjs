@@ -4,6 +4,7 @@ import {
   chmodSync,
   closeSync,
   constants as FS_CONSTANTS,
+  fchmodSync,
   fstatSync,
   fsyncSync,
   lstatSync,
@@ -30,6 +31,7 @@ import {
   validatePhysicalIphoneQaEvidence,
   validateScreenshotsManifest,
 } from './apple-post-build-evidence.mjs';
+import { markProviderStarted } from './release-attempt-runner.mjs';
 
 export {
   validateAppStoreConnectEvidence,
@@ -51,14 +53,14 @@ const ATTESTATION_PATHS = Object.freeze({
   rc: 'release/app-store/3.0/rc-attestation.json',
 });
 const PRIVATE_EVIDENCE_PATHS = Object.freeze({
-  ipa: 'release/private/rc-build-8/CaboHealth-3.0-build-8.ipa',
-  signedEntitlements: 'release/private/rc-build-8/signed-entitlements.plist',
-  privacyReport: 'release/private/rc-build-8/privacy-report.json',
-  embeddedGoogleServicesPlist: 'release/private/rc-build-8/embedded-GoogleService-Info.plist',
-  signingCertificate: 'release/private/rc-build-8/signing-certificate.der',
-  embeddedProvisioningProfile: 'release/private/rc-build-8/embedded.mobileprovision',
-  physicalIphoneQa: 'release/private/rc-build-8/physical-iphone-qa.json',
-  appStoreConnectEvidence: 'release/private/rc-build-8/app-store-connect-evidence.json',
+  ipa: 'release/private/rc-build-9/CaboHealth-3.0-build-9.ipa',
+  signedEntitlements: 'release/private/rc-build-9/signed-entitlements.plist',
+  privacyReport: 'release/private/rc-build-9/privacy-report.json',
+  embeddedGoogleServicesPlist: 'release/private/rc-build-9/embedded-GoogleService-Info.plist',
+  signingCertificate: 'release/private/rc-build-9/signing-certificate.der',
+  embeddedProvisioningProfile: 'release/private/rc-build-9/embedded.mobileprovision',
+  physicalIphoneQa: 'release/private/rc-build-9/physical-iphone-qa.json',
+  appStoreConnectEvidence: 'release/private/rc-build-9/app-store-connect-evidence.json',
 });
 
 // Each phase pin starts null and becomes authoritative only after that phase
@@ -67,8 +69,8 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
 // values, so advancing a reviewed pin is not circular while every executable
 // guard behavior remains part of the reviewed source. An unpinned checked-in
 // attestation is historical evidence only and cannot satisfy a current phase.
-const BUILD_INPUT_ATTESTATION_SHA256 = 'f4ee8c3da75be23d300b816495649c414f2900efaef9e88294bdc52824c3ed8e';
-const BUILD_ARTIFACT_ATTESTATION_SHA256 = '966e00960c688ec1d0299dae36b6eff599f1286c20c218b434720bdd882ab4cb';
+const BUILD_INPUT_ATTESTATION_SHA256 = null;
+const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;
 const RC_ATTESTATION_SHA256 = null;
 const PINNED_EAS_CLI = null;
 const PINNED_APP_STORE_SUBMIT_ADAPTER = null;
@@ -91,7 +93,7 @@ const CANDIDATE = Object.freeze({
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '8',
+  buildNumber: '9',
 });
 const PRODUCTION_FIREBASE_PROJECT_ID = 'cabohealth-owner-prod';
 const PRIVATE_GOOGLE_SERVICES_PLIST_MARKER = '<PRIVATE_GOOGLE_SERVICES_PLIST>';
@@ -113,6 +115,7 @@ const BUILD_INPUT_KEYS = [
   'resolvedProductionExpoConfigSha256',
   'nodeRuntime',
   'easCli',
+  'easEnvironmentInventorySha256',
   'easEnvironment',
   'reviewedAt',
 ];
@@ -170,9 +173,13 @@ const PINNED_NODE_TOOL_KEYS = [
   'runtimeTreeSha256',
 ];
 const EXPECTED_EAS_ENVIRONMENT = Object.freeze({
+  schemaVersion: 1,
+  evidenceKind: 'cabohealth-eas-environment-inventory',
   environmentName: 'production',
-  variables: Object.freeze([
+  profileVariables: Object.freeze([
     Object.freeze({ name: 'APP_ENV', source: 'eas-profile', kind: 'plain' }),
+  ]),
+  projectVariables: Object.freeze([
     Object.freeze({
       name: 'CABOHEALTH_FIREBASE_PROJECT_ID',
       source: 'eas-project-environment',
@@ -184,9 +191,19 @@ const EXPECTED_EAS_ENVIRONMENT = Object.freeze({
       kind: 'secret-file',
     }),
   ]),
+  extras: Object.freeze([]),
   valuesIncluded: false,
-  reviewStatus: 'independently-reviewed',
+  providerValuesRetained: false,
 });
+const INTERNAL_GROUP_OBSERVATION_KEYS = [
+  'schemaVersion', 'evidenceKind', 'candidate', 'sourceCommit', 'sourceTreeSha256',
+  'buildInputAttestationSha256', 'buildArtifactAttestationSha256', 'easBuildId',
+  'appStoreConnectBuildResourceId', 'buildProcessingState', 'buildExpired',
+  'buildAudienceType', 'buildUploadedAt', 'betaGroupResourceId', 'betaGroupName',
+  'betaGroupInternal', 'betaGroupHasAccessToAllBuilds', 'observedAt', 'available',
+  'availabilityReason', 'mutationPerformed', 'rawProviderResponseRetained',
+  'providerUrlsOmitted', 'credentialFieldsOmitted',
+];
 const PRIVATE_OPERATION_PREFIX = 'cabohealth-release-';
 const PRIVATE_OPERATION_MARKER = '.cabohealth-private-operation';
 
@@ -560,7 +577,6 @@ function cleanTrackedEntries(root) {
 function writeExclusiveFile(path, bytes, mode, code) {
   let descriptor;
   try {
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     descriptor = openSync(
       path,
       FS_CONSTANTS.O_WRONLY
@@ -569,12 +585,37 @@ function writeExclusiveFile(path, bytes, mode, code) {
         | (FS_CONSTANTS.O_NOFOLLOW ?? 0),
       mode,
     );
+    fchmodSync(descriptor, mode);
     writeFileSync(descriptor, bytes);
     fsyncSync(descriptor);
+    const stat = fstatSync(descriptor);
+    if (!stat.isFile() || stat.nlink !== 1 || (stat.mode & 0o777) !== mode
+      || stat.size !== bytes.length) reject(code);
   } catch {
     reject(code);
   } finally {
     if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+function ensurePrivateDirectoryTree(root, relativeDirectory, code) {
+  const absoluteRoot = resolve(root);
+  const segments = relativeDirectory === '' ? [] : relativeDirectory.split('/');
+  let directory = absoluteRoot;
+  try {
+    for (const segment of segments) {
+      if (segment === '' || segment === '.' || segment === '..') reject(code);
+      directory = join(directory, segment);
+      mkdirSync(directory, { recursive: true, mode: 0o700 });
+      chmodSync(directory, 0o700);
+      const stat = lstatSync(directory);
+      if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(directory) !== directory) {
+        reject(code);
+      }
+    }
+  } catch (error) {
+    if (error instanceof ReleaseGuardError) throw error;
+    reject(code);
   }
 }
 
@@ -586,6 +627,11 @@ function digestTrackedEntries(root, entries, snapshotRoot = null) {
       invalidCode: 'BUILD_SOURCE_FILE_INVALID',
     });
     if (snapshotRoot !== null) {
+      ensurePrivateDirectoryTree(
+        snapshotRoot,
+        dirname(relativePath) === '.' ? '' : dirname(relativePath),
+        'PRIVATE_BUILD_SNAPSHOT_INVALID',
+      );
       writeExclusiveFile(
         join(snapshotRoot, relativePath),
         originalBytes,
@@ -679,6 +725,7 @@ export function createPrivateBuildSnapshot(root, expectedSourceSha256, options =
   const workspaceRoot = join(operationRoot, 'workspace');
   try {
     mkdirSync(workspaceRoot, { mode: 0o700 });
+    chmodSync(workspaceRoot, 0o700);
     if (isWithin(sourceRoot, operationRoot)) reject('PRIVATE_BUILD_SNAPSHOT_INVALID');
     assertOutsideSynchronizedWorkspace(
       sourceRoot,
@@ -710,7 +757,8 @@ export function verifyPrivateBuildSnapshot(workspaceRoot, expectedSourceSha256) 
   const root = realpathSync(resolve(workspaceRoot));
   const rootStat = lstatSync(root);
   const currentUid = typeof process.getuid === 'function' ? process.getuid() : rootStat.uid;
-  if (!rootStat.isDirectory() || rootStat.isSymbolicLink() || rootStat.uid !== currentUid) {
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink() || rootStat.uid !== currentUid
+    || (rootStat.mode & 0o777) !== 0o700) {
     reject('PRIVATE_BUILD_SNAPSHOT_INVALID');
   }
   const entries = [];
@@ -726,6 +774,7 @@ export function verifyPrivateBuildSnapshot(workspaceRoot, expectedSourceSha256) 
         reject('PRIVATE_BUILD_SNAPSHOT_INVALID');
       }
       if (stat.isDirectory()) {
+        if ((stat.mode & 0o777) !== 0o700) reject('PRIVATE_BUILD_SNAPSHOT_INVALID');
         visit(relativePath);
       } else if (stat.isFile()) {
         const privateMode = stat.mode & 0o777;
@@ -790,6 +839,7 @@ export function createPrivateUploadSnapshot(sourceIpaPath, expectedSha256, optio
       operationRoot,
       'PRIVATE_UPLOAD_IPA_INVALID',
     );
+    ensurePrivateDirectoryTree(operationRoot, 'payload', 'PRIVATE_UPLOAD_IPA_INVALID');
     writeExclusiveFile(ipaPath, bytes, 0o600, 'PRIVATE_UPLOAD_IPA_INVALID');
     verifyPrivateUploadIpa(ipaPath, expectedSha256);
     fsyncDirectory(operationRoot, 'PRIVATE_UPLOAD_IPA_INVALID');
@@ -808,6 +858,7 @@ function copyRuntimeTree(sourceDirectory, destinationDirectory) {
   const sourceRoot = realpathSync(resolve(sourceDirectory));
   try {
     mkdirSync(destinationDirectory, { mode: 0o700 });
+    chmodSync(destinationDirectory, 0o700);
   } catch {
     reject('PRIVATE_TOOL_SNAPSHOT_INVALID');
   }
@@ -905,6 +956,7 @@ export function snapshotPinnedNodeTool(operationRoot, resolvedTool, pin) {
   copyRuntimeTree(resolvedTool.runtimeRoot, runtimeRoot);
   const nodeDirectory = join(absoluteOperationRoot, 'node-runtime');
   mkdirSync(nodeDirectory, { mode: 0o700 });
+  chmodSync(nodeDirectory, 0o700);
   const nodeExecutable = join(nodeDirectory, 'node');
   writeExclusiveFile(
     nodeExecutable,
@@ -1152,6 +1204,10 @@ export function verifyBuildInputAttestation(root, expectedSha256, {
     invalidCode: code,
   }));
   const googleServicesPlist = readProductionGoogleServicesPlist();
+  const environmentInventoryBytes = Buffer.from(
+    `${JSON.stringify(attestation.easEnvironment)}\n`,
+    'utf8',
+  );
   if (attestation.sourceTreeSha256 !== computeTrackedSourceSha256(root)
     || attestation.appJsonSha256 !== hashProjectFile(root, 'app.json', code)
     || attestation.configSha256 !== hashProjectFile(root, 'constants/config.ts', code)
@@ -1176,6 +1232,7 @@ export function verifyBuildInputAttestation(root, expectedSha256, {
     || attestation.nodeRuntime?.version !== 'v22.22.3'
     || attestation.nodeRuntime?.executableSha256 !== nodeExecutableSha256
     || !isDeepStrictEqual(attestation.easEnvironment, EXPECTED_EAS_ENVIRONMENT)
+    || attestation.easEnvironmentInventorySha256 !== sha256(environmentInventoryBytes)
     || attestation.googleServicesPlistSha256 !== googleServicesPlist.sha256
     || attestation.resolvedProductionExpoConfigSha256
       !== computeResolvedProductionExpoConfigSha256(root, googleServicesPlist.bytes)) {
@@ -1369,7 +1426,7 @@ export function verifyRcAttestation(root, {
     validateScreenshotsManifest(parseExactJson(screenshotsManifestBytes, code), {
       phase: 'final',
       ...bindings,
-      evidenceRoot: join(root, 'release/private/rc-build-8'),
+      evidenceRoot: join(root, 'release/private/rc-build-9'),
       requireFiles: true,
     });
   } catch {
@@ -1584,8 +1641,8 @@ export function easArgumentsForAction(action, { ipaPath } = {}) {
       'build',
       '--platform', 'ios',
       '--profile', 'production',
-      '--freeze-credentials',
       '--non-interactive',
+      '--freeze-credentials',
     ];
   }
   if (action === 'upload-testflight') {
@@ -1597,6 +1654,7 @@ export function easArgumentsForAction(action, { ipaPath } = {}) {
       '--platform', 'ios',
       '--path', ipaPath,
       '--non-interactive',
+      '--no-auto-testflight-setup',
     ];
   }
   reject('RELEASE_COMMAND_INVALID');
@@ -1646,9 +1704,197 @@ export function appStoreSubmitArguments(root, {
   ];
 }
 
+function releaseEvidenceRoot(environment = process.env) {
+  const value = environment.CABOHEALTH_RELEASE_EVIDENCE_ROOT;
+  if (typeof value !== 'string' || !isAbsolute(value) || resolve(value) !== value
+    || synchronizedWorkspaceAncestor(value) !== null) reject('INTERNAL_GROUP_OUTPUT_INVALID');
+  let stat;
+  try {
+    stat = lstatSync(value);
+  } catch {
+    reject('INTERNAL_GROUP_OUTPUT_INVALID');
+  }
+  const currentUid = typeof process.getuid === 'function' ? process.getuid() : stat.uid;
+  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== currentUid
+    || (stat.mode & 0o777) !== 0o700 || realpathSync(value) !== value) {
+    reject('INTERNAL_GROUP_OUTPUT_INVALID');
+  }
+  return value;
+}
+
+export function validateInternalGroupObservation(bytes, {
+  buildInput,
+  buildArtifact,
+  buildInputSha256,
+  buildArtifactSha256,
+  now = Date.now(),
+}) {
+  const code = 'INTERNAL_GROUP_INPUT_INVALID';
+  const resourceIdPattern = /^[A-Za-z0-9-]{1,128}$/u;
+  if (!Buffer.isBuffer(bytes) || !Number.isFinite(now)
+    || !SHA256_PATTERN.test(buildInputSha256 ?? '')
+    || !SHA256_PATTERN.test(buildArtifactSha256 ?? '')) reject(code);
+  const observation = parseExactJson(bytes, code);
+  const observedAt = Date.parse(observation.observedAt);
+  const uploadedAt = Date.parse(observation.buildUploadedAt);
+  if (!bytes.equals(Buffer.from(`${JSON.stringify(observation)}\n`, 'utf8'))
+    || !isDeepStrictEqual(Object.keys(observation), INTERNAL_GROUP_OBSERVATION_KEYS)
+    || observation.schemaVersion !== 1
+    || observation.evidenceKind
+      !== 'cabohealth-app-store-connect-internal-group-observation'
+    || !isDeepStrictEqual(Object.keys(observation.candidate ?? {}), CANDIDATE_KEYS)
+    || !isDeepStrictEqual(observation.candidate, CANDIDATE)
+    || observation.sourceCommit !== buildInput?.sourceCommit
+    || observation.sourceTreeSha256 !== buildInput?.sourceTreeSha256
+    || observation.buildInputAttestationSha256 !== buildInputSha256
+    || observation.buildArtifactAttestationSha256 !== buildArtifactSha256
+    || observation.easBuildId !== buildArtifact?.easBuildId
+    || !resourceIdPattern.test(observation.appStoreConnectBuildResourceId ?? '')
+    || observation.buildProcessingState !== 'VALID'
+    || observation.buildExpired !== false
+    || observation.buildAudienceType !== 'APP_STORE_ELIGIBLE'
+    || !Number.isFinite(uploadedAt)
+    || new Date(uploadedAt).toISOString() !== observation.buildUploadedAt
+    || !resourceIdPattern.test(observation.betaGroupResourceId ?? '')
+    || observation.betaGroupName !== 'cabo health'
+    || observation.betaGroupInternal !== true
+    || observation.betaGroupHasAccessToAllBuilds !== false
+    || observation.available !== false
+    || observation.availabilityReason !== 'not-assigned'
+    || observation.mutationPerformed !== false
+    || observation.rawProviderResponseRetained !== false
+    || observation.providerUrlsOmitted !== true
+    || observation.credentialFieldsOmitted !== true
+    || !Number.isFinite(observedAt)
+    || new Date(observedAt).toISOString() !== observation.observedAt
+    || observedAt > now || now - observedAt > 15 * 60 * 1000) reject(code);
+  return observation;
+}
+
+export function internalGroupAdapterArguments({
+  action,
+  sourceCommit,
+  buildInputSha256,
+  buildArtifactSha256,
+  buildInputPath,
+  buildArtifactPath,
+  evidenceRoot,
+  observationSha256 = null,
+}) {
+  if (!['observe-testflight-internal', 'assign-testflight-internal'].includes(action)
+    || !COMMIT_PATTERN.test(sourceCommit ?? '')
+    || !SHA256_PATTERN.test(buildInputSha256 ?? '')
+    || !SHA256_PATTERN.test(buildArtifactSha256 ?? '')
+    || !isAbsolute(buildInputPath) || resolve(buildInputPath) !== buildInputPath
+    || !isAbsolute(buildArtifactPath) || resolve(buildArtifactPath) !== buildArtifactPath
+    || !isAbsolute(evidenceRoot) || resolve(evidenceRoot) !== evidenceRoot) {
+    reject('INTERNAL_GROUP_ARGUMENT_INVALID');
+  }
+  const assignment = action === 'assign-testflight-internal';
+  if (assignment !== SHA256_PATTERN.test(observationSha256 ?? '')) {
+    reject('INTERNAL_GROUP_ARGUMENT_INVALID');
+  }
+  const values = [
+    '--operation', assignment
+      ? 'ensure-existing-internal-testflight-access'
+      : 'observe-existing-internal-testflight-access',
+    '--apple-id', CANDIDATE.appleId,
+    '--bundle-identifier', CANDIDATE.bundleIdentifier,
+    '--marketing-version', CANDIDATE.marketingVersion,
+    '--build-number', CANDIDATE.buildNumber,
+    '--group-name', 'cabo health',
+    '--source-commit', sourceCommit,
+    '--build-input-attestation', buildInputPath,
+    '--build-input-attestation-sha256', buildInputSha256,
+    '--build-artifact-attestation', buildArtifactPath,
+    '--build-artifact-attestation-sha256', buildArtifactSha256,
+  ];
+  if (assignment) values.push(
+    '--observation', join(evidenceRoot, 'internal-testflight-group-observation.json'),
+    '--observation-sha256', observationSha256,
+  );
+  values.push('--output', join(
+    evidenceRoot,
+    assignment
+      ? 'internal-testflight-group-assignment.json'
+      : 'internal-testflight-group-observation.json',
+  ));
+  return values;
+}
+
+function executeInternalGroupAction(action) {
+  const buildArtifact = verifyBuildArtifactAttestation(projectRoot, {
+    buildInputSha256: BUILD_INPUT_ATTESTATION_SHA256,
+    buildArtifactSha256: BUILD_ARTIFACT_ATTESTATION_SHA256,
+  });
+  const buildInput = verifyBuildInputAttestation(
+    projectRoot,
+    BUILD_INPUT_ATTESTATION_SHA256,
+    {
+      phase: 'artifact',
+      phasePins: { buildArtifactSha256: BUILD_ARTIFACT_ATTESTATION_SHA256 },
+    },
+  );
+  const evidenceRoot = releaseEvidenceRoot();
+  let observationSha256 = null;
+  if (action === 'assign-testflight-internal') {
+    const observationPath = join(evidenceRoot, 'internal-testflight-group-observation.json');
+    const observationBytes = readBoundRegularFile(observationPath, {
+      missingCode: 'INTERNAL_GROUP_INPUT_INVALID',
+      invalidCode: 'INTERNAL_GROUP_INPUT_INVALID',
+      privateMode: 0o600,
+      maxBytes: 1024 * 1024,
+    });
+    validateInternalGroupObservation(observationBytes, {
+      buildInput,
+      buildArtifact,
+      buildInputSha256: BUILD_INPUT_ATTESTATION_SHA256,
+      buildArtifactSha256: BUILD_ARTIFACT_ATTESTATION_SHA256,
+    });
+    observationSha256 = sha256(observationBytes);
+  }
+  const { operationRoot } = createPrivateOperationRoot(
+    action === 'assign-testflight-internal' ? 'internal-assign' : 'internal-observe',
+  );
+  try {
+    const inputSnapshot = join(operationRoot, 'build-input-attestation.json');
+    const artifactSnapshot = join(operationRoot, 'build-artifact-attestation.json');
+    writeExclusiveFile(inputSnapshot, readBoundRegularFile(
+      join(projectRoot, ATTESTATION_PATHS.buildInput),
+      { missingCode: 'INTERNAL_GROUP_INPUT_INVALID', invalidCode: 'INTERNAL_GROUP_INPUT_INVALID' },
+    ), 0o600, 'INTERNAL_GROUP_INPUT_INVALID');
+    writeExclusiveFile(artifactSnapshot, readBoundRegularFile(
+      join(projectRoot, ATTESTATION_PATHS.buildArtifact),
+      { missingCode: 'INTERNAL_GROUP_INPUT_INVALID', invalidCode: 'INTERNAL_GROUP_INPUT_INVALID' },
+    ), 0o600, 'INTERNAL_GROUP_INPUT_INVALID');
+    const assignment = action === 'assign-testflight-internal';
+    executeNodeProgram(
+      projectRoot,
+      join(
+        projectRoot,
+        `tools/app-store-submit-adapter/bin/${assignment ? 'assign' : 'observe'}-internal-group.mjs`,
+      ),
+      internalGroupAdapterArguments({
+        action,
+        sourceCommit: buildInput.sourceCommit,
+        buildInputSha256: BUILD_INPUT_ATTESTATION_SHA256,
+        buildArtifactSha256: BUILD_ARTIFACT_ATTESTATION_SHA256,
+        buildInputPath: inputSnapshot,
+        buildArtifactPath: artifactSnapshot,
+        evidenceRoot,
+        observationSha256,
+      }),
+      assignment ? 'Internal TestFlight assignment' : 'Internal TestFlight observation',
+    );
+  } finally {
+    removePrivateOperationSnapshot(operationRoot);
+  }
+}
+
 export function executeNodeProgram(root, executable, args, label, {
   nodeExecutable = process.execPath,
   environment = {},
+  releaseAttempt = null,
 } = {}) {
   process.stdout.write(`${label} command started\n`);
   const childEnvironment = { ...process.env, ...environment };
@@ -1660,8 +1906,18 @@ export function executeNodeProgram(root, executable, args, label, {
     'DYLD_LIBRARY_PATH',
     'LD_PRELOAD',
     'LD_LIBRARY_PATH',
+    'CABOHEALTH_RELEASE_ATTEMPT_STATE',
   ]) {
     delete childEnvironment[key];
+  }
+  if (releaseAttempt !== null) {
+    const attemptPath = process.env.CABOHEALTH_RELEASE_ATTEMPT_STATE;
+    if (typeof attemptPath !== 'string') reject('RELEASE_ATTEMPT_STATE_INVALID');
+    try {
+      markProviderStarted(attemptPath, releaseAttempt);
+    } catch {
+      reject('RELEASE_ATTEMPT_STATE_INVALID');
+    }
   }
   const result = spawnSync(nodeExecutable, [executable, ...args], {
     cwd: root,
@@ -1673,7 +1929,10 @@ export function executeNodeProgram(root, executable, args, label, {
 
 function main() {
   const [action, authorizationArgument, ...extra] = process.argv.slice(2);
-  if (!['build', 'upload-testflight', 'submit-review'].includes(action) || extra.length > 0) {
+  if (![
+    'build', 'upload-testflight', 'observe-testflight-internal',
+    'assign-testflight-internal', 'submit-review',
+  ].includes(action) || extra.length > 0) {
     reject('RELEASE_COMMAND_INVALID');
   }
 
@@ -1706,6 +1965,7 @@ function main() {
         {
           nodeExecutable: privateTool.nodeExecutable,
           environment: { EAS_NO_VCS: '1' },
+          releaseAttempt: { action: 'build', sourceCommit: buildInput.sourceCommit },
         },
       );
     } finally {
@@ -1754,11 +2014,23 @@ function main() {
         privateTool.executable,
         easArgumentsForAction('upload-testflight', { ipaPath: snapshot.ipaPath }),
         'EAS',
-        { nodeExecutable: privateTool.nodeExecutable },
+        {
+          nodeExecutable: privateTool.nodeExecutable,
+          releaseAttempt: {
+            action: 'upload-testflight',
+            sourceCommit: buildInput.sourceCommit,
+          },
+        },
       );
     } finally {
       removePrivateOperationSnapshot(snapshot.operationRoot);
     }
+    return;
+  }
+
+  if (['observe-testflight-internal', 'assign-testflight-internal'].includes(action)) {
+    if (authorizationArgument !== undefined) reject('RELEASE_COMMAND_INVALID');
+    executeInternalGroupAction(action);
     return;
   }
 

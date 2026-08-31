@@ -60,10 +60,10 @@ function withFixture(mutate, assertion) {
   }
 }
 
-test('release v3 verifier accepts the truthful pre-build-configured 3.0/build 8 package', () => {
+test('release v3 verifier accepts the truthful pre-build-configured 3.0/build 9 package', () => {
   const result = runVerifier();
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /Release 3\.0\/build 8 verified: pre-build-configured\./u);
+  assert.match(result.stdout, /Release 3\.0\/build 9 verified: pre-build-configured\./u);
 });
 
 test('release v3 verifier rejects a non-array ASC build list without throwing', () => {
@@ -348,7 +348,7 @@ test('release v3 verifier rejects rollback from the ASC-confirmed native version
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /app\.json must remain 3\.0\/build 8/iu);
+      assert.match(result.stderr, /app\.json must remain 3\.0\/build 9/iu);
     },
   );
 });
@@ -387,10 +387,10 @@ test('release v3 verifier rejects executable config drift hidden behind stale co
       const path = join(root, 'constants/config.ts');
       const source = readFileSync(path, 'utf8')
         .replace("version: '3.0',", "version: '3.0.0',")
-        .replace("buildNumber: '8',", "buildNumber: '9',");
+        .replace("buildNumber: '9',", "buildNumber: '9',");
       writeFileSync(
         path,
-        `${source}\n// Stale reviewed values: version: '3.0'; buildNumber: '8'\n`,
+        `${source}\n// Stale reviewed values: version: '3.0'; buildNumber: '9'\n`,
       );
     },
     (result) => {
