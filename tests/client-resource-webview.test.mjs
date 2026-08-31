@@ -4,6 +4,11 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 import ts from 'typescript';
 
+import {
+  applyExternalHttpsNavigationDecision,
+  classifyExternalHttpsNavigationRequest,
+} from '../.test-build/features/launch/externalHttpsNavigationPolicy.js';
+
 const require = createRequire(import.meta.url);
 
 function loadClientResourceWebView() {
@@ -67,7 +72,8 @@ function loadClientResourceWebView() {
       }),
     };
     if (specifier === '../launch/externalHttpsNavigationPolicy') return {
-      classifyExternalHttpsNavigation: () => ({ decision: 'allow' }),
+      applyExternalHttpsNavigationDecision,
+      classifyExternalHttpsNavigationRequest,
       handleExternalPopup: () => false,
     };
     return require(specifier);
@@ -97,6 +103,12 @@ function triggerLoadError(view) {
   const webView = descendants(view).find((node) => node.type === 'WebView');
   assert.ok(webView, 'WebView did not render');
   webView.props.onError({ nativeEvent: {} });
+}
+
+function getWebView(view) {
+  const webView = descendants(view).find((node) => node.type === 'WebView');
+  assert.ok(webView, 'WebView did not render');
+  return webView;
 }
 
 const brokerLaunch = Object.freeze({
@@ -164,4 +176,35 @@ test('broker error keeps the unchanged Back-only behavior', () => {
     .filter((label) => label === 'common.retry' || label === 'clientAccess.backToResources');
 
   assert.deepEqual(actionLabels, ['clientAccess.backToResources']);
+});
+
+test('external VIP WebView silently allows a safe inherited blank iframe but renders an unsafe top-frame block', () => {
+  const runtime = loadClientResourceWebView();
+  const props = {
+    launch: externalLaunch,
+    title: 'Sleep Resource',
+    onClose: () => {},
+    onRetry: () => {},
+  };
+  const safeRequest = {
+    url: 'about:blank',
+    isTopFrame: false,
+    mainDocumentURL: 'https://www.eightsleep.com/mx/',
+  };
+  const unsafeRequest = {
+    url: 'https://attacker.example/',
+    isTopFrame: true,
+    mainDocumentURL: 'https://www.eightsleep.com/mx/',
+  };
+
+  assert.equal(getWebView(runtime.render(props)).props.onShouldStartLoadWithRequest(safeRequest), true);
+  assert.equal(
+    descendants(runtime.render(props)).some((node) => node.props?.accessibilityRole === 'alert'),
+    false,
+  );
+  assert.equal(getWebView(runtime.render(props)).props.onShouldStartLoadWithRequest(unsafeRequest), false);
+  assert.equal(
+    descendants(runtime.render(props)).some((node) => node.props?.accessibilityRole === 'alert'),
+    true,
+  );
 });

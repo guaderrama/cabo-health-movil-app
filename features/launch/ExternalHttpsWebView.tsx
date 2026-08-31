@@ -21,7 +21,7 @@ import type { ExternalHttpsCatalogPublicMiniapp } from '../../constants/publicMi
 import { useFavorites, useTheme, useTranslations } from '../../hooks';
 import {
   applyExternalHttpsNavigationDecision,
-  classifyExternalHttpsNavigation,
+  classifyExternalHttpsNavigationRequest,
   getExternalHttpsWebViewPolicyProps,
   handleExternalPopup,
 } from './externalHttpsNavigationPolicy';
@@ -50,7 +50,7 @@ export function ExternalHttpsWebView({
 
   const handleNavigationRequest = useCallback((request: ShouldStartLoadRequest) => (
     applyExternalHttpsNavigationDecision(
-      classifyExternalHttpsNavigation(request.url, miniapp.destinationOrigin),
+      classifyExternalHttpsNavigationRequest(request, miniapp.destinationOrigin),
       { showError: showGenericError },
     )
   ), [miniapp.destinationOrigin, showGenericError]);

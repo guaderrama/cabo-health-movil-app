@@ -7,6 +7,7 @@ import ts from 'typescript';
 import {
   applyExternalHttpsNavigationDecision,
   classifyExternalHttpsNavigation,
+  classifyExternalHttpsNavigationRequest,
   getExternalHttpsWebViewPolicyProps,
   getExternalHttpsWebViewSource,
   handleExternalPopup,
@@ -71,6 +72,90 @@ function loadPinnedSharedWrapper(platform) {
   };
 }
 
+function loadExternalHttpsWebView() {
+  const source = readFileSync('features/launch/ExternalHttpsWebView.tsx', 'utf8');
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      esModuleInterop: true,
+      jsx: ts.JsxEmit.ReactJSX,
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  const state = [];
+  let cursor = 0;
+  const runtimeModule = { exports: {} };
+  const runtimeRequire = (specifier) => {
+    if (specifier === 'react') return {
+      useCallback: (callback) => callback,
+      useState: (initial) => {
+        const index = cursor++;
+        if (state.length <= index) state[index] = initial;
+        return [state[index], (next) => {
+          state[index] = typeof next === 'function' ? next(state[index]) : next;
+        }];
+      },
+    };
+    if (specifier === 'react-native') return {
+      ActivityIndicator: 'ActivityIndicator',
+      Pressable: 'Pressable',
+      ScrollView: 'ScrollView',
+      StyleSheet: { create: (styles) => styles },
+      Text: 'Text',
+      View: 'View',
+    };
+    if (specifier === '@expo/vector-icons') return { Ionicons: 'Ionicons' };
+    if (specifier === 'expo-router') return { useRouter: () => ({ back: () => {} }) };
+    if (specifier === 'react-native-safe-area-context') return {
+      useSafeAreaInsets: () => ({ top: 0 }),
+    };
+    if (specifier === 'react-native-webview') return { WebView: 'WebView' };
+    if (specifier === '../../hooks') return {
+      useFavorites: () => ({ isFavorite: () => false, toggleFavorite: () => {} }),
+      useTheme: () => ({ colors: {
+        accent: 'accent', background: 'background', border: 'border', cardBackground: 'card',
+        error: 'error', favorite: 'favorite', primary: 'primary', text: 'text', textSecondary: 'secondary', white: 'white',
+      } }),
+      useTranslations: () => ({ language: 'en-US', t: (key) => key }),
+    };
+    if (specifier === './externalHttpsNavigationPolicy') return {
+      applyExternalHttpsNavigationDecision,
+      classifyExternalHttpsNavigationRequest,
+      getExternalHttpsWebViewPolicyProps,
+      handleExternalPopup: () => false,
+    };
+    if (specifier === './restrictedWebViewBehavior') return {
+      handleRestrictedWebViewBack: () => {},
+    };
+    return require(specifier);
+  };
+  new Function('require', 'module', 'exports', compiled)(
+    runtimeRequire,
+    runtimeModule,
+    runtimeModule.exports,
+  );
+  return {
+    render(props) {
+      cursor = 0;
+      return runtimeModule.exports.ExternalHttpsWebView(props);
+    },
+  };
+}
+
+function descendants(node) {
+  if (node === null || node === undefined || typeof node !== 'object') return [];
+  const children = Array.isArray(node.props?.children)
+    ? node.props.children
+    : [node.props?.children];
+  return [node, ...children.flatMap(descendants)];
+}
+
+function getPublicWebView(view) {
+  const webView = descendants(view).find((node) => node.type === 'WebView');
+  assert.ok(webView, 'WebView did not render');
+  return webView;
+}
+
 test('external WebView loads the exact URL and allows only safe same-origin top-frame navigation', () => {
   assert.deepEqual(getExternalHttpsWebViewSource(destination), {
     uri: 'https://www.eightsleep.com/mx/?locale=es#sleep',
@@ -91,6 +176,35 @@ test('external WebView loads the exact URL and allows only safe same-origin top-
     ).decision,
     'block',
   );
+});
+
+test('external WebView allows only a safe inherited blank subframe', () => {
+  const expectedOrigin = 'https://profound-health.com';
+  const inheritedBlankSubframe = {
+    url: 'about:blank',
+    isTopFrame: false,
+    mainDocumentURL: 'https://profound-health.com/products/page/4/',
+  };
+
+  assert.deepEqual(
+    classifyExternalHttpsNavigationRequest(inheritedBlankSubframe, expectedOrigin),
+    { decision: 'allow', reason: 'safe-inherited-subframe' },
+  );
+
+  for (const request of [
+    { url: 'about:blank', isTopFrame: true, mainDocumentURL: 'https://profound-health.com/products/page/4/' },
+    { url: 'about:blank', isTopFrame: false },
+    { url: 'about:blank', isTopFrame: false, mainDocumentURL: 'https://attacker.example/' },
+    { url: 'https://attacker.example/', isTopFrame: false, mainDocumentURL: 'https://profound-health.com/products/page/4/' },
+  ]) {
+    const decision = classifyExternalHttpsNavigationRequest(request, expectedOrigin);
+    assert.equal(decision.decision, 'block');
+    assert.equal(
+      decision.presentation,
+      request.isTopFrame === false ? 'silent' : 'error',
+      request.url,
+    );
+  }
 });
 
 test('external WebView policy opts out of app-bound domains only for the selected origin', () => {
@@ -210,6 +324,70 @@ test('patched shared wrapper keeps a whitelist-prefix lookalike blocked by the e
     assert.deepEqual(nativeDecisions, [[false, lookalikeUrl, 42]], platform);
     assert.deepEqual(runtime.linkingEffects, [], platform);
   }
+});
+
+test('patched shared wrapper allows a safe inherited blank iframe without Linking effects', () => {
+  const runtime = loadPinnedSharedWrapper('ios');
+  const applicationRequests = [];
+  const nativeDecisions = [];
+  let errorCalls = 0;
+  const request = {
+    url: 'about:blank',
+    isTopFrame: false,
+    mainDocumentURL: 'https://profound-health.com/products/page/4/',
+    lockIdentifier: 43,
+  };
+  const handler = runtime.createOnShouldStartLoadWithRequest(
+    (shouldStart, url, lockIdentifier) => {
+      nativeDecisions.push([shouldStart, url, lockIdentifier]);
+    },
+    ['https://profound-health.com'],
+    (applicationRequest) => {
+      applicationRequests.push(applicationRequest);
+      return applyExternalHttpsNavigationDecision(
+        classifyExternalHttpsNavigationRequest(applicationRequest, 'https://profound-health.com'),
+        { showError: () => { errorCalls += 1; } },
+      );
+    },
+  );
+
+  handler({ nativeEvent: request });
+
+  assert.deepEqual(applicationRequests, [request]);
+  assert.deepEqual(nativeDecisions, [[true, 'about:blank', 43]]);
+  assert.equal(errorCalls, 0);
+  assert.deepEqual(runtime.linkingEffects, []);
+});
+
+test('external Public WebView silently allows a safe inherited blank iframe but renders an unsafe top-frame block', () => {
+  const runtime = loadExternalHttpsWebView();
+  const miniapp = {
+    slug: 'profound-health',
+    title: { en: 'ProFound Health', es: 'ProFound Health' },
+    destinationUrl: 'https://profound-health.com/products/page/4/',
+    destinationOrigin: 'https://profound-health.com',
+  };
+  const safeRequest = {
+    url: 'about:blank',
+    isTopFrame: false,
+    mainDocumentURL: 'https://profound-health.com/products/page/4/',
+  };
+  const unsafeRequest = {
+    url: 'https://attacker.example/',
+    isTopFrame: true,
+    mainDocumentURL: 'https://profound-health.com/products/page/4/',
+  };
+
+  assert.equal(getPublicWebView(runtime.render({ miniapp })).props.onShouldStartLoadWithRequest(safeRequest), true);
+  assert.equal(
+    descendants(runtime.render({ miniapp })).some((node) => node.props?.accessibilityRole === 'alert'),
+    false,
+  );
+  assert.equal(getPublicWebView(runtime.render({ miniapp })).props.onShouldStartLoadWithRequest(unsafeRequest), false);
+  assert.equal(
+    descendants(runtime.render({ miniapp })).some((node) => node.props?.accessibilityRole === 'alert'),
+    true,
+  );
 });
 
 test('external WebView source denies privileged surfaces and has no browser, share, or bridge escape', () => {

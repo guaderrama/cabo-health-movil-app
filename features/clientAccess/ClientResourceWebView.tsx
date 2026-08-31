@@ -24,7 +24,8 @@ import {
   getClientResourceWebViewPolicyProps,
 } from './clientResourceNavigation';
 import {
-  classifyExternalHttpsNavigation,
+  applyExternalHttpsNavigationDecision,
+  classifyExternalHttpsNavigationRequest,
   handleExternalPopup,
 } from '../launch/externalHttpsNavigationPolicy';
 
@@ -52,11 +53,15 @@ export function ClientResourceWebView({
 
   const handleNavigationRequest = useCallback((request: ShouldStartLoadRequest) => {
     if (launch.kind === 'external_https') {
-      const decision = classifyExternalHttpsNavigation(request.url, launch.origin);
-      if (decision.decision === 'allow') return true;
-      setLoading(false);
-      setErrorMessage(t('clientAccess.navigationBlocked'));
-      return false;
+      return applyExternalHttpsNavigationDecision(
+        classifyExternalHttpsNavigationRequest(request, launch.origin),
+        {
+          showError: () => {
+            setLoading(false);
+            setErrorMessage(t('clientAccess.navigationBlocked'));
+          },
+        },
+      );
     }
     const decision = classifyClientResourceNavigation(request.url, launch.realm);
     if (decision.decision === 'allow') return true;

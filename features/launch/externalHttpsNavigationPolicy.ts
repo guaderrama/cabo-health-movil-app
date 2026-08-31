@@ -6,8 +6,19 @@ import {
 
 export type ExternalHttpsNavigationDecision = Readonly<
   | { decision: 'allow'; reason: 'safe-same-origin' }
-  | { decision: 'block'; reason: 'unsafe-or-cross-origin' }
+  | { decision: 'allow'; reason: 'safe-inherited-subframe' }
+  | {
+    decision: 'block';
+    reason: 'unsafe-or-cross-origin';
+    presentation: 'error' | 'silent';
+  }
 >;
+
+export interface ExternalHttpsNavigationRequest {
+  readonly url: string;
+  readonly isTopFrame?: boolean;
+  readonly mainDocumentURL?: string;
+}
 
 export interface ExternalHttpsNavigationEffects {
   showError: () => void;
@@ -34,9 +45,29 @@ export function classifyExternalHttpsNavigation(
   value: string,
   expectedOrigin: string,
 ): ExternalHttpsNavigationDecision {
-  return isSafeSameOriginExternalNavigation(value, expectedOrigin)
-    ? Object.freeze({ decision: 'allow', reason: 'safe-same-origin' })
-    : Object.freeze({ decision: 'block', reason: 'unsafe-or-cross-origin' });
+  return classifyExternalHttpsNavigationRequest({ url: value }, expectedOrigin);
+}
+
+export function classifyExternalHttpsNavigationRequest(
+  request: Readonly<ExternalHttpsNavigationRequest>,
+  expectedOrigin: string,
+): ExternalHttpsNavigationDecision {
+  if (isSafeSameOriginExternalNavigation(request.url, expectedOrigin)) {
+    return Object.freeze({ decision: 'allow', reason: 'safe-same-origin' });
+  }
+  if (
+    request.url === 'about:blank'
+    && request.isTopFrame === false
+    && typeof request.mainDocumentURL === 'string'
+    && isSafeSameOriginExternalNavigation(request.mainDocumentURL, expectedOrigin)
+  ) {
+    return Object.freeze({ decision: 'allow', reason: 'safe-inherited-subframe' });
+  }
+  return Object.freeze({
+    decision: 'block',
+    reason: 'unsafe-or-cross-origin',
+    presentation: request.isTopFrame === false ? 'silent' : 'error',
+  });
 }
 
 export function applyExternalHttpsNavigationDecision(
@@ -44,7 +75,7 @@ export function applyExternalHttpsNavigationDecision(
   effects: ExternalHttpsNavigationEffects,
 ): boolean {
   if (decision.decision === 'allow') return true;
-  effects.showError();
+  if (decision.presentation === 'error') effects.showError();
   return false;
 }
 
