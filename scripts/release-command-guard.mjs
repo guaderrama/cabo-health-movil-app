@@ -206,6 +206,51 @@ const INTERNAL_GROUP_OBSERVATION_KEYS = [
 ];
 const PRIVATE_OPERATION_PREFIX = 'cabohealth-release-';
 const PRIVATE_OPERATION_MARKER = '.cabohealth-private-operation';
+const TRUSTED_GIT_EXECUTABLE = '/usr/bin/git';
+const TRUSTED_GIT_EXEC_PATH = '/Library/Developer/CommandLineTools/usr/libexec/git-core';
+const TRUSTED_GIT_VERSION = 'git version 2.39.5 (Apple Git-154)\n';
+const TRUSTED_GIT_DIRECTORIES = Object.freeze([
+  '/',
+  '/usr',
+  '/usr/bin',
+  '/Library',
+  '/Library/Developer',
+  '/Library/Developer/CommandLineTools',
+  '/Library/Developer/CommandLineTools/usr',
+  '/Library/Developer/CommandLineTools/usr/libexec',
+  TRUSTED_GIT_EXEC_PATH,
+]);
+const TRUSTED_GIT_ENVIRONMENT = Object.freeze({
+  PATH: '/usr/bin:/bin',
+  LANG: 'C',
+  LC_ALL: 'C',
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_ATTR_NOSYSTEM: '1',
+  GIT_EXEC_PATH: TRUSTED_GIT_EXEC_PATH,
+  GIT_ALTERNATE_OBJECT_DIRECTORIES: '',
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_OPTIONAL_LOCKS: '0',
+  GIT_NO_REPLACE_OBJECTS: '1',
+  GIT_SSH: '/usr/bin/false',
+  GIT_SSH_COMMAND: '/usr/bin/false',
+  GIT_ASKPASS: '/usr/bin/false',
+  SSH_ASKPASS: '/usr/bin/false',
+});
+const TRUSTED_GIT_OPTIONS = Object.freeze([
+  `--exec-path=${TRUSTED_GIT_EXEC_PATH}`,
+  '--no-pager',
+  '--no-replace-objects',
+  '-c', 'core.fsmonitor=false',
+  '-c', 'core.untrackedCache=false',
+  '-c', 'core.hooksPath=/dev/null',
+  '-c', 'core.attributesFile=/dev/null',
+  '-c', 'diff.external=',
+  '-c', 'core.sshCommand=/usr/bin/false',
+  '-c', 'credential.helper=',
+]);
+let trustedGitVerified = false;
 
 export class ReleaseGuardError extends Error {
   constructor(code) {
@@ -534,11 +579,55 @@ export function computeResolvedProductionExpoConfigSha256(root, plistBytes) {
   return sha256(Buffer.from(JSON.stringify(resolvedConfig), 'utf8'));
 }
 
+function validateTrustedGit(code) {
+  if (trustedGitVerified) return;
+  try {
+    if (process.platform !== 'darwin') reject(code);
+    for (const directory of TRUSTED_GIT_DIRECTORIES) {
+      const stat = lstatSync(directory);
+      if (realpathSync(directory) !== directory
+        || !stat.isDirectory() || stat.isSymbolicLink()
+        || stat.uid !== 0 || stat.gid !== 0
+        || (stat.mode & 0o7777) !== 0o755) reject(code);
+    }
+    if (realpathSync(TRUSTED_GIT_EXECUTABLE) !== TRUSTED_GIT_EXECUTABLE) reject(code);
+    const executable = lstatSync(TRUSTED_GIT_EXECUTABLE);
+    if (!executable.isFile() || executable.isSymbolicLink()
+      || executable.uid !== 0 || executable.gid !== 0
+      || (executable.mode & 0o7777) !== 0o755 || executable.size <= 0) reject(code);
+    const version = spawnSync(TRUSTED_GIT_EXECUTABLE, [
+      `--exec-path=${TRUSTED_GIT_EXEC_PATH}`,
+      '--version',
+    ], {
+      cwd: '/',
+      env: TRUSTED_GIT_ENVIRONMENT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 1024 * 1024,
+    });
+    if (version.status !== 0 || version.stdout !== TRUSTED_GIT_VERSION || version.stderr !== '') {
+      reject(code);
+    }
+    trustedGitVerified = true;
+  } catch (error) {
+    if (error instanceof ReleaseGuardError && error.message === code) throw error;
+    reject(code);
+  }
+}
+
 function runGit(root, args, code) {
-  const result = spawnSync('git', args, {
-    cwd: root,
+  validateTrustedGit(code);
+  const result = spawnSync(TRUSTED_GIT_EXECUTABLE, [
+    ...TRUSTED_GIT_OPTIONS,
+    '-c', `core.worktree=${root}`,
+    '-C', root,
+    ...args,
+  ], {
+    cwd: '/',
+    env: TRUSTED_GIT_ENVIRONMENT,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 16 * 1024 * 1024,
   });
   if (result.status !== 0) reject(code);
   return result.stdout;
@@ -1079,11 +1168,7 @@ export function verifyPhaseAuthorityCommitHistory(root, sourceCommit, phase, exp
   const requestedIndex = PHASE_AUTHORITY_RULES.findIndex((rule) => rule.phase === phase);
   if (requestedIndex < 0 || !COMMIT_PATTERN.test(sourceCommit ?? '')) reject(code);
   runGit(root, ['cat-file', '-e', `${sourceCommit}^{commit}`], code);
-  const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', sourceCommit, 'HEAD'], {
-    cwd: root,
-    stdio: 'ignore',
-  });
-  if (ancestor.status !== 0) reject(code);
+  runGit(root, ['merge-base', '--is-ancestor', sourceCommit, 'HEAD'], code);
 
   const baseGuardBytes = guardBytesAtCommit(root, sourceCommit, code);
   const basePins = parseAuthorityPins(baseGuardBytes, code);

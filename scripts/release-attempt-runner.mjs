@@ -468,11 +468,13 @@ function verifyCommittedAuthority(projectRoot, sourceCommit, sourceTreeSha256, p
     "  process.stdout.write(`${computeTrackedSourceSha256(root)}\\n`);",
     '} catch { process.exitCode = 1; }',
   ].join('\n');
-  const environment = { ...process.env };
-  for (const key of [
-    'NODE_OPTIONS', 'NODE_PATH', 'npm_config_node_options',
-    'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
-  ]) delete environment[key];
+  // This child performs only committed Git authority checks. It receives no
+  // caller-controlled repository, executable, Node preload, or loader state.
+  const environment = {
+    PATH: '/usr/bin:/bin',
+    LANG: 'C',
+    LC_ALL: 'C',
+  };
   const result = spawnSync(process.execPath, [
     '--input-type=module', '--eval', program,
     projectRoot, sourceCommit, phase, JSON.stringify(expectedPins),

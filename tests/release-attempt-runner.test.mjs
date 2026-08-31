@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import {
   chmodSync,
   closeSync,
+  existsSync,
   fstatSync,
   fsyncSync,
   mkdtempSync,
@@ -128,10 +129,59 @@ function commitAll(project, message) {
   git(project, ['commit', '--quiet', '-m', message]);
 }
 
+function withProcessEnvironment(overrides, callback) {
+  const previous = new Map();
+  for (const [name, value] of Object.entries(overrides)) {
+    previous.set(name, Object.hasOwn(process.env, name) ? process.env[name] : undefined);
+    process.env[name] = value;
+  }
+  try {
+    return callback();
+  } finally {
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}
+
+function fakeGitPath(t, { delegate }) {
+  const directory = root(t);
+  const sentinel = join(directory, 'fake-git-invoked');
+  const executable = join(directory, 'git');
+  writeFileSync(executable, [
+    '#!/bin/sh',
+    `: > "${sentinel}"`,
+    delegate ? 'exec /usr/bin/git "$@"' : 'exit 97',
+    '',
+  ].join('\n'), { mode: 0o755 });
+  chmodSync(executable, 0o755);
+  return { directory, sentinel };
+}
+
+function copyAuthorityWorkingFiles(source, destination) {
+  for (const relativePath of [
+    'scripts/release-command-guard.mjs',
+    'release/app-store/3.0/build-input-attestation.json',
+    'release/app-store/3.0/build-artifact-attestation.json',
+    'release/private/rc-build-9/CaboHealth-3.0-build-9.ipa',
+  ]) {
+    writeFileSync(
+      join(destination.projectRoot, relativePath),
+      readFileSync(join(source.projectRoot, relativePath)),
+    );
+  }
+  chmodSync(
+    join(destination.projectRoot, 'release/private/rc-build-9/CaboHealth-3.0-build-9.ipa'),
+    0o600,
+  );
+}
+
 async function currentLocalIpaAuthority(t, {
   sourceTreeSha256,
   combinedHistory = false,
   laterPhase = null,
+  trackedSource = 'frozen build 9 source\n',
 } = {}) {
   const project = root(t);
   git(project, ['init', '--quiet']);
@@ -139,7 +189,7 @@ async function currentLocalIpaAuthority(t, {
   git(project, ['config', 'user.email', 'cabohealth-test@example.invalid']);
   mkdirSync(join(project, 'scripts'), { recursive: true });
   writeFileSync(join(project, '.gitignore'), 'release/private/\n');
-  writeFileSync(join(project, 'tracked-source.txt'), 'frozen build 9 source\n');
+  writeFileSync(join(project, 'tracked-source.txt'), trackedSource);
   writeFileSync(join(project, 'scripts/release-command-guard.mjs'), authorityGuard());
   commitAll(project, 'freeze build 9 source');
   const sourceCommit = git(project, ['rev-parse', 'HEAD']);
@@ -412,6 +462,41 @@ test('runner accepts only the frozen ordered command grammars', async () => {
     ['recover-armed', 'build', '--expected-runner-pid', '0'],
     ['reconcile', 'build', '--provider-operation-id', BUILD_ID, '--terminal-status', 'RUNNING', '--evidence', '/tmp/x', '--evidence-sha256', 'c'.repeat(64)],
   ]) assert.throws(() => parseReleaseAttemptArguments(values), /RELEASE_ATTEMPT_ARGUMENT_INVALID/u);
+});
+
+test('guard and runner CLI entry points retain finite errors under hostile Git environment', (t) => {
+  const fake = fakeGitPath(t, { delegate: false });
+  const hostileEnvironment = {
+    ...process.env,
+    PATH: `${fake.directory}:/usr/bin:/bin`,
+    GIT_DIR: join(fake.directory, 'forged-repository'),
+    GIT_WORK_TREE: fake.directory,
+    GIT_INDEX_FILE: join(fake.directory, 'forged-index'),
+    GIT_OBJECT_DIRECTORY: join(fake.directory, 'forged-objects'),
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'alias.status',
+    GIT_CONFIG_VALUE_0: '!/usr/bin/false',
+    GIT_NO_REPLACE_OBJECTS: '0',
+    GIT_EXEC_PATH: fake.directory,
+    GIT_SSH_COMMAND: '/usr/bin/false',
+  };
+  for (const [script, argument, expected] of [
+    ['release-command-guard.mjs', 'not-a-release-command', 'RELEASE_COMMAND_INVALID'],
+    ['release-attempt-runner.mjs', 'not-a-runner-command', 'RELEASE_ATTEMPT_ARGUMENT_INVALID'],
+  ]) {
+    const result = spawnSync(process.execPath, [
+      join(projectRoot, 'scripts', script),
+      argument,
+    ], {
+      cwd: projectRoot,
+      env: hostileEnvironment,
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, `${expected}\n`);
+  }
+  assert.equal(existsSync(fake.sentinel), false);
 });
 
 test('runner exposes every finite stable public failure code without a provider call', async (t) => {
@@ -1134,6 +1219,84 @@ test('local-IPA reconciliation accepts exact later RC and submit-tool phase hist
       assert.equal(module.readAttemptMarker(evidenceRoot, 'upload-testflight').state, 'terminal_success');
     });
   }
+});
+
+test('hostile Git environment cannot synthesize committed null-identity authority', async (t) => {
+  const module = await import('../scripts/release-attempt-runner.mjs');
+  const actual = await currentLocalIpaAuthority(t);
+  const malicious = await currentLocalIpaAuthority(t, {
+    trackedSource: 'forged alternate build 9 source\n',
+  });
+  copyAuthorityWorkingFiles(malicious, actual);
+  const evidenceRoot = root(t);
+  prepareUnknownUploadAttempt(module, evidenceRoot, { sourceCommit: malicious.sourceCommit });
+  const fake = fakeGitPath(t, { delegate: true });
+  const poisonConfig = join(fake.directory, 'poisoned-global-gitconfig');
+  writeFileSync(poisonConfig, `[core]\n\tworktree = ${actual.projectRoot}\n`);
+  const error = withProcessEnvironment({
+    PATH: `${fake.directory}:/usr/bin:/bin`,
+    GIT_DIR: join(malicious.projectRoot, '.git'),
+    GIT_WORK_TREE: actual.projectRoot,
+    GIT_INDEX_FILE: join(malicious.projectRoot, '.git/index'),
+    GIT_OBJECT_DIRECTORY: join(malicious.projectRoot, '.git/objects'),
+    GIT_ALTERNATE_OBJECT_DIRECTORIES: join(malicious.projectRoot, '.git/objects'),
+    GIT_CONFIG_GLOBAL: poisonConfig,
+    GIT_CONFIG_NOSYSTEM: '0',
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'core.worktree',
+    GIT_CONFIG_VALUE_0: actual.projectRoot,
+    GIT_NO_REPLACE_OBJECTS: '0',
+    GIT_REPLACE_REF_BASE: 'refs/forged-replace',
+    GIT_EXEC_PATH: fake.directory,
+    GIT_SSH_COMMAND: '/usr/bin/false',
+    GIT_ASKPASS: '/usr/bin/false',
+  }, () => {
+    try {
+      reconcileUpload(module, {
+        evidenceRoot,
+        projectRoot: actual.projectRoot,
+      });
+      return null;
+    } catch (caught) {
+      return caught;
+    }
+  });
+  assert.equal(error?.message, 'RELEASE_ATTEMPT_RECONCILIATION_INVALID');
+  assert.equal(existsSync(fake.sentinel), false, 'caller PATH must never select Git');
+  assert.equal(module.readAttemptMarker(evidenceRoot, 'upload-testflight').state, 'unknown');
+});
+
+test('exact committed authority still reconciles when caller PATH contains a failing fake Git', async (t) => {
+  const module = await import('../scripts/release-attempt-runner.mjs');
+  const authority = await currentLocalIpaAuthority(t);
+  const evidenceRoot = root(t);
+  prepareUnknownUploadAttempt(module, evidenceRoot, { sourceCommit: authority.sourceCommit });
+  const fake = fakeGitPath(t, { delegate: false });
+  const preloadSentinel = join(fake.directory, 'authority-child-preload-invoked');
+  const preload = join(fake.directory, 'authority-child-preload.cjs');
+  writeFileSync(preload, [
+    "const { writeFileSync } = require('node:fs');",
+    `writeFileSync(${JSON.stringify(preloadSentinel)}, 'invoked');`,
+    '',
+  ].join('\n'));
+  withProcessEnvironment({
+    PATH: `${fake.directory}:/usr/bin:/bin`,
+    NODE_OPTIONS: `--require=${preload}`,
+    NODE_PATH: fake.directory,
+    npm_config_node_options: `--require=${preload}`,
+    DYLD_INSERT_LIBRARIES: join(fake.directory, 'forged-loader.dylib'),
+    DYLD_LIBRARY_PATH: fake.directory,
+    LD_PRELOAD: join(fake.directory, 'forged-loader.so'),
+    LD_LIBRARY_PATH: fake.directory,
+  }, () => {
+    reconcileUpload(module, {
+      evidenceRoot,
+      projectRoot: authority.projectRoot,
+    });
+  });
+  assert.equal(existsSync(fake.sentinel), false, 'caller PATH must never select Git');
+  assert.equal(existsSync(preloadSentinel), false, 'authority child must reject preload state');
+  assert.equal(module.readAttemptMarker(evidenceRoot, 'upload-testflight').state, 'terminal_success');
 });
 
 test('null submittedBuild reconciliation rejects uncommitted or forged phase authority', async (t) => {
