@@ -201,14 +201,71 @@ git add features/clientAccess/ClientResourceWebView.tsx tests/client-resource-we
 git commit -m "fix: show external VIP loading progress"
 ```
 
-### Task 3: Build-9 source readiness evidence
+### Task 3: Align release-guard regressions with immutable build-8 authority
+
+**Files:**
+- Modify: `tests/release-command-guard.test.mjs`
+
+**Interfaces:**
+- Consumes: the existing build-8 input/artifact attestations and their pinned
+  hashes, plus the changed source tree produced by Tasks 1 and 2.
+- Produces: current-state regression coverage proving build 7 remains immutable,
+  build 8 remains pinned, and changed source fails closed before any EAS call.
+
+- [ ] **Step 1: Capture the existing RED state**
+
+Run:
+
+```bash
+node --test --test-name-pattern='build-7 attestations remain immutable|production build 8 command fails closed' tests/release-command-guard.test.mjs
+```
+
+Expected: the two legacy snapshot tests fail because they still expect absent
+build-8 authority even though build 8 was already attested and uploaded.
+
+- [ ] **Step 2: Replace only the stale expectations**
+
+Keep the production guard and every attestation byte unchanged. Update the
+first regression to assert the exact pinned build-8 input/artifact hashes,
+their matching files and linkage, null RC/EAS/adapter pins, preserved build-7
+history, and a source-digest mismatch after the WebView commits. Expect input
+and artifact verification to fail with `EXACT_*_ATTESTATION_INVALID`; RC still
+fails with `EXACT_RC_ATTESTATION_MISSING`.
+
+Update the production-build regression to expect
+`EXACT_BUILD_INPUT_ATTESTATION_INVALID` with empty stdout, proving execution
+stops before EAS. Do not make old build-8 authority valid for changed source.
+
+- [ ] **Step 3: Run GREEN and full source gates**
+
+Run:
+
+```bash
+node --test --test-name-pattern='build-7 attestations remain immutable|production build command fails closed' tests/release-command-guard.test.mjs
+npm run typecheck
+npm run lint
+npm test
+npm run test:scope
+```
+
+Expected: every command exits 0; no release guard, attestation, provider, EAS,
+TestFlight, or Apple state is modified.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add tests/release-command-guard.test.mjs
+git commit -m "test: align release guard expectations with build 8 authority"
+```
+
+### Task 4: Build-9 source readiness evidence
 
 **Files:**
 - Create: `docs/operations/external-webview-build9-readiness.md`
 - Test: existing full source and scope gates only
 
 **Interfaces:**
-- Consumes: reviewed Task 1 and Task 2 commits and their test evidence.
+- Consumes: reviewed Task 1 through Task 3 commits and their test evidence.
 - Produces: a source-only handoff that a separate build-9 release rebaseline can bind without reusing build-8 authority.
 
 - [ ] **Step 1: Reconcile the real-destination reproduction**
@@ -236,7 +293,7 @@ Expected: clean tracked tree and every gate exits 0.
 
 - [ ] **Step 3: Write the source-readiness record**
 
-Record the base build-8 commit, the two reviewed fix commits, exact test
+Record the base build-8 commit, the reviewed fix and regression commits, exact test
 commands/results, preserved security boundaries, and a prominent statement
 that no build number, EAS build, TestFlight upload, Apple state, or build-9
 attestation exists yet.
