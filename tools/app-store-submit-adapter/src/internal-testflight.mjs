@@ -217,13 +217,27 @@ function assignmentResult(observation, {
 }
 
 async function relationshipPresent(transport, groupId, buildId) {
-  const relationships = collection(
-    await get(transport, internalGroupPaths.relationshipBuilds(groupId)),
-    'INTERNAL_GROUP_ASSIGNMENT_FAILED',
-  );
-  if (relationships.some((item) => item?.type !== 'builds'
-    || !RESOURCE_ID_PATTERN.test(item.id ?? ''))) reject('INTERNAL_GROUP_ASSIGNMENT_FAILED');
-  return relationships.some((item) => item.id === buildId);
+  try {
+    const response = await transport.request({
+      method: 'GET',
+      path: internalGroupPaths.relationshipBuilds(groupId),
+    });
+    if (response?.status !== 200 || response.body === null || typeof response.body !== 'object') {
+      reject('INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN');
+    }
+    const relationships = collection(response.body, 'INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN');
+    if (relationships.some((item) => item?.type !== 'builds'
+      || !RESOURCE_ID_PATTERN.test(item.id ?? ''))) {
+      reject('INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN');
+    }
+    return relationships.some((item) => item.id === buildId);
+  } catch (error) {
+    if (error?.message === 'APP_STORE_CONNECT_HTTP_401'
+      || error?.message === 'APP_STORE_CONNECT_HTTP_403') {
+      reject('INTERNAL_GROUP_AUTHORIZATION_FAILED');
+    }
+    reject('INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN');
+  }
 }
 
 export async function assignInternalGroup(transport, bindings, {
@@ -266,7 +280,8 @@ export async function assignInternalGroup(transport, bindings, {
     }
   }
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  const readbackLimit = responseKind === '409-readback' ? 1 : 3;
+  for (let attempt = 0; attempt < readbackLimit; attempt += 1) {
     if (attempt > 0) await sleep(1_000);
     if (await relationshipPresent(
       transport,

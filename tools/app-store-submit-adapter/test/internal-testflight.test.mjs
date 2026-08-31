@@ -12,7 +12,12 @@ function page(data) {
   return { data, links: { next: null }, meta: { paging: { total: data.length } } };
 }
 
-function fixtures({ allBuilds = false, assigned = false, postStatus = 204 } = {}) {
+function fixtures({
+  allBuilds = false,
+  assigned = false,
+  postStatus = 204,
+  postError = null,
+} = {}) {
   return {
     app: { data: { type: 'apps', id: '6758285327', attributes: { bundleId: 'com.cabohealth.app' } } },
     builds: page([{
@@ -31,14 +36,16 @@ function fixtures({ allBuilds = false, assigned = false, postStatus = 204 } = {}
     groupApp: { data: { type: 'apps', id: '6758285327', attributes: { bundleId: 'com.cabohealth.app' } } },
     relationships: page(assigned ? [{ type: 'builds', id: BUILD_ID }] : []),
     postStatus,
+    postError,
   };
 }
 
 class RecordingTransport {
-  constructor(values, { revealAfterPost = false } = {}) {
+  constructor(values, { revealAfterPost = false, postReadbacks = [] } = {}) {
     this.values = values;
     this.requests = [];
     this.revealAfterPost = revealAfterPost;
+    this.postReadbacks = [...postReadbacks];
     this.posted = false;
   }
 
@@ -47,6 +54,7 @@ class RecordingTransport {
     const path = request.path;
     if (request.method === 'POST') {
       this.posted = true;
+      if (this.values.postError !== null) throw new Error(this.values.postError);
       if (this.values.postStatus === 409) {
         const error = new Error('APP_STORE_CONNECT_HTTP_409');
         throw error;
@@ -60,6 +68,11 @@ class RecordingTransport {
     if (path.includes('/betaGroups?')) return { status: 200, body: this.values.groups };
     if (path === `/v1/betaGroups/${GROUP_ID}/app?fields%5Bapps%5D=bundleId`) return { status: 200, body: this.values.groupApp };
     if (path === `/v1/betaGroups/${GROUP_ID}/relationships/builds?limit=200`) {
+      if (this.posted && this.postReadbacks.length > 0) {
+        const next = this.postReadbacks.shift();
+        if (next instanceof Error) throw next;
+        return { status: 200, body: next };
+      }
       const body = this.revealAfterPost && this.posted
         ? page([{ type: 'builds', id: BUILD_ID }])
         : this.values.relationships;
@@ -77,6 +90,31 @@ const bindings = {
   easBuildId: '12345678-1234-4234-8234-123456789abc',
 };
 
+const EXACT_GET_REQUESTS = Object.freeze([
+  'GET /v1/apps/6758285327?fields%5Bapps%5D=bundleId',
+  'GET /v1/builds?filter%5Bapp%5D=6758285327&filter%5Bversion%5D=9&filter%5BpreReleaseVersion.version%5D=3.0&filter%5BpreReleaseVersion.platform%5D=IOS&fields%5Bbuilds%5D=version%2CuploadedDate%2CprocessingState%2Cexpired%2CbuildAudienceType&limit=200',
+  `GET /v1/builds/${BUILD_ID}/preReleaseVersion?fields%5BpreReleaseVersions%5D=version%2Cplatform`,
+  `GET /v1/builds/${BUILD_ID}/app?fields%5Bapps%5D=bundleId`,
+  'GET /v1/apps/6758285327/betaGroups?fields%5BbetaGroups%5D=name%2CisInternalGroup%2ChasAccessToAllBuilds&limit=200',
+  `GET /v1/betaGroups/${GROUP_ID}/app?fields%5Bapps%5D=bundleId`,
+  `GET /v1/betaGroups/${GROUP_ID}/relationships/builds?limit=200`,
+]);
+const EXACT_ASSIGN_REQUEST = `POST /v1/betaGroups/${GROUP_ID}/relationships/builds`;
+
+function assertExactRequestAllowlist(requests, { assignment }) {
+  const allowed = new Set([
+    ...EXACT_GET_REQUESTS,
+    ...(assignment ? [EXACT_ASSIGN_REQUEST] : []),
+  ]);
+  for (const { method, path } of requests) {
+    assert.equal(allowed.has(`${method} ${path}`), true, `unexpected internal request: ${method} ${path}`);
+  }
+  assert.equal(requests.some(({ method }) => ['PATCH', 'DELETE'].includes(method)), false);
+  assert.equal(requests.some(({ path }) => (
+    /betaTesters|betaAppReview|appStoreVersions|reviewSubmissions|externalTest|\/v1\/betaGroups(?:\?|$)|\/v1\/betaGroups\/[^/]+(?:\?|$)/u.test(path)
+  )), false);
+}
+
 test('observer performs only the exact read-only sequence and emits canonical unavailable evidence', async () => {
   const { observeInternalGroup, internalGroupPaths } = await import('../src/internal-testflight.mjs');
   const transport = new RecordingTransport(fixtures());
@@ -91,6 +129,7 @@ test('observer performs only the exact read-only sequence and emits canonical un
     internalGroupPaths.groups(), internalGroupPaths.groupApp(GROUP_ID),
     internalGroupPaths.relationshipBuilds(GROUP_ID),
   ]);
+  assertExactRequestAllowlist(transport.requests, { assignment: false });
   assert.deepEqual(Object.keys(result), [
     'schemaVersion', 'evidenceKind', 'candidate', 'sourceCommit', 'sourceTreeSha256',
     'buildInputAttestationSha256', 'buildArtifactAttestationSha256', 'easBuildId',
@@ -122,7 +161,7 @@ test('assignment makes one exact relationship POST, accepts bodyless 204, and ve
   assert.equal(result.testerMutationPerformed, false);
   assert.equal(result.externalTestingMutationPerformed, false);
   assert.equal(result.appReviewMutationPerformed, false);
-  assert.equal(transport.requests.some(({ path }) => /betaTesters|appStoreVersions|reviewSubmissions/u.test(path)), false);
+  assertExactRequestAllowlist(transport.requests, { assignment: true });
 });
 
 test('assignment is zero-mutation when access already exists and conflict readback never repeats POST', async () => {
@@ -138,6 +177,175 @@ test('assignment is zero-mutation when access already exists and conflict readba
   assert.equal(conflict.requests.filter(({ method }) => method === 'POST').length, 1);
   assert.equal(recovered.mutationResponse, '409-readback');
   assert.equal(recovered.result, 'assigned-after-conflict-readback');
+});
+
+test('HTTP 409 performs exactly one readback and fails when that readback is absent', async () => {
+  const { assignInternalGroup } = await import('../src/internal-testflight.mjs');
+  const transport = new RecordingTransport(fixtures({ postStatus: 409 }), {
+    postReadbacks: [page([]), page([{ type: 'builds', id: BUILD_ID }])],
+  });
+  await assert.rejects(
+    assignInternalGroup(transport, bindings, { now: () => NOW, sleep: async () => {} }),
+    /INTERNAL_GROUP_ASSIGNMENT_FAILED/u,
+  );
+  assert.equal(transport.requests.filter(({ method }) => method === 'POST').length, 1);
+  assert.equal(transport.requests.filter(({ path }) => (
+    path === `/v1/betaGroups/${GROUP_ID}/relationships/builds?limit=200`
+  )).length, 2, 'one initial observation plus exactly one conflict readback');
+});
+
+test('post-send readback network and format failures report an unknown mutation outcome', async (t) => {
+  const { assignInternalGroup } = await import('../src/internal-testflight.mjs');
+  for (const code of [
+    'APP_STORE_CONNECT_NETWORK_ERROR',
+    'APP_STORE_CONNECT_RESPONSE_INVALID',
+  ]) {
+    await t.test(code, async () => {
+      const transport = new RecordingTransport(fixtures(), {
+        postReadbacks: [new Error(code)],
+      });
+      await assert.rejects(
+        assignInternalGroup(transport, bindings, { now: () => NOW, sleep: async () => {} }),
+        /INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN/u,
+      );
+      assert.equal(transport.requests.filter(({ method }) => method === 'POST').length, 1);
+    });
+  }
+});
+
+test('204 and network-uncertain outcomes retain three readbacks while absent outcomes stop safely', async (t) => {
+  const { assignInternalGroup } = await import('../src/internal-testflight.mjs');
+  const present = page([{ type: 'builds', id: BUILD_ID }]);
+  const absent = page([]);
+  for (const scenario of [
+    { name: '204 becomes present on third read', values: fixtures(), want: 'assigned' },
+    {
+      name: 'uncertain POST becomes present on third read',
+      values: fixtures({ postError: 'APP_STORE_CONNECT_NETWORK_ERROR' }),
+      want: 'assigned-after-uncertain-response',
+    },
+  ]) {
+    await t.test(scenario.name, async () => {
+      const transport = new RecordingTransport(scenario.values, {
+        postReadbacks: [absent, absent, present],
+      });
+      const result = await assignInternalGroup(transport, bindings, {
+        now: () => NOW,
+        sleep: async () => {},
+      });
+      assert.equal(result.result, scenario.want);
+      assert.equal(transport.requests.filter(({ path }) => (
+        path === `/v1/betaGroups/${GROUP_ID}/relationships/builds?limit=200`
+      )).length, 4, 'one initial observation plus all three post-send readbacks');
+      assert.equal(transport.requests.filter(({ method }) => method === 'POST').length, 1);
+    });
+  }
+
+  for (const scenario of [
+    { name: '204 remains absent', values: fixtures() },
+    {
+      name: 'uncertain POST remains absent',
+      values: fixtures({ postError: 'APP_STORE_CONNECT_NETWORK_ERROR' }),
+    },
+  ]) {
+    await t.test(scenario.name, async () => {
+      const transport = new RecordingTransport(scenario.values, {
+        postReadbacks: [absent, absent, absent],
+      });
+      await assert.rejects(
+        assignInternalGroup(transport, bindings, { now: () => NOW, sleep: async () => {} }),
+        /INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN/u,
+      );
+      assert.equal(transport.requests.filter(({ path }) => (
+        path === `/v1/betaGroups/${GROUP_ID}/relationships/builds?limit=200`
+      )).length, 4, 'one initial observation plus exactly three post-send readbacks');
+      assert.equal(transport.requests.filter(({ method }) => method === 'POST').length, 1);
+    });
+  }
+});
+
+test('a successful assignment is idempotent on the next exact observation', async () => {
+  const { assignInternalGroup, observeInternalGroup } = await import('../src/internal-testflight.mjs');
+  const first = new RecordingTransport(fixtures(), { revealAfterPost: true });
+  assert.equal((await assignInternalGroup(first, bindings, { now: () => NOW })).result, 'assigned');
+
+  const observationTransport = new RecordingTransport(fixtures({ assigned: true }));
+  const observation = await observeInternalGroup(observationTransport, bindings, { now: () => NOW });
+  assert.equal(observation.available, true);
+  assert.equal(observation.availabilityReason, 'explicit-relationship');
+  assert.equal(observationTransport.requests.some(({ method }) => method === 'POST'), false);
+
+  const followup = new RecordingTransport(fixtures({ assigned: true }));
+  const result = await assignInternalGroup(followup, bindings, { now: () => NOW });
+  assert.equal(result.result, 'already-assigned');
+  assert.equal(result.mutationAttempted, false);
+  assert.equal(followup.requests.some(({ method }) => method === 'POST'), false);
+});
+
+test('wrong and ambiguous build or group variants fail closed before mutation', async (t) => {
+  const { observeInternalGroup } = await import('../src/internal-testflight.mjs');
+  const cases = [
+    ['no exact build', 'INTERNAL_GROUP_BUILD_INVALID', (value) => { value.builds = page([]); }],
+    ['ambiguous exact build', 'INTERNAL_GROUP_BUILD_INVALID', (value) => { value.builds.data.push(structuredClone(value.builds.data[0])); value.builds.meta.paging.total = 2; }],
+    ['invalid build resource id', 'INTERNAL_GROUP_BUILD_INVALID', (value) => { value.builds.data[0].id = 'bad/id'; }],
+    ['wrong build number', 'INTERNAL_GROUP_BUILD_INVALID', (value) => { value.builds.data[0].attributes.version = '8'; }],
+    ['wrong processing state', 'INTERNAL_GROUP_BUILD_INVALID', (value) => { value.builds.data[0].attributes.processingState = 'PROCESSING'; }],
+    ['expired build', 'INTERNAL_GROUP_BUILD_INVALID', (value) => { value.builds.data[0].attributes.expired = true; }],
+    ['wrong build audience', 'INTERNAL_GROUP_BUILD_INVALID', (value) => { value.builds.data[0].attributes.buildAudienceType = 'INTERNAL_ONLY'; }],
+    ['wrong prerelease version', 'INTERNAL_GROUP_BUILD_INVALID', (value) => { value.prerelease.data.attributes.version = '2.0'; }],
+    ['wrong prerelease platform', 'INTERNAL_GROUP_BUILD_INVALID', (value) => { value.prerelease.data.attributes.platform = 'MAC_OS'; }],
+    ['wrong build app', 'INTERNAL_GROUP_BUILD_INVALID', (value) => { value.buildApp.data.attributes.bundleId = 'com.example.other'; }],
+    ['wrong top-level app', 'INTERNAL_GROUP_TARGET_INVALID', (value) => { value.app.data.attributes.bundleId = 'com.example.other'; }],
+    ['no exact group', 'INTERNAL_GROUP_TARGET_INVALID', (value) => { value.groups.data[0].attributes.name = 'Cabo Health'; }],
+    ['ambiguous exact group', 'INTERNAL_GROUP_TARGET_INVALID', (value) => { value.groups.data.push(structuredClone(value.groups.data[0])); value.groups.meta.paging.total = 2; }],
+    ['invalid group resource id', 'INTERNAL_GROUP_TARGET_INVALID', (value) => { value.groups.data[0].id = 'bad/id'; }],
+    ['external group', 'INTERNAL_GROUP_TARGET_INVALID', (value) => { value.groups.data[0].attributes.isInternalGroup = false; }],
+    ['invalid all-builds flag', 'INTERNAL_GROUP_TARGET_INVALID', (value) => { value.groups.data[0].attributes.hasAccessToAllBuilds = 'false'; }],
+    ['wrong group app', 'INTERNAL_GROUP_TARGET_INVALID', (value) => { value.groupApp.data.id = 'other-app'; }],
+    ['invalid relationship item', 'INTERNAL_GROUP_TARGET_INVALID', (value) => { value.relationships = page([{ type: 'betaTesters', id: 'tester-one' }]); }],
+  ];
+  for (const [name, code, mutate] of cases) {
+    await t.test(name, async () => {
+      const value = fixtures();
+      mutate(value);
+      const transport = new RecordingTransport(value);
+      await assert.rejects(
+        observeInternalGroup(transport, bindings, { now: () => NOW }),
+        new RegExp(code, 'u'),
+      );
+      assert.equal(transport.requests.some(({ method }) => method === 'POST'), false);
+    });
+  }
+});
+
+test('authorization and pre-mutation network failures use only finite internal-group errors', async (t) => {
+  const { observeInternalGroup } = await import('../src/internal-testflight.mjs');
+  for (const [providerCode, publicCode] of [
+    ['APP_STORE_CONNECT_HTTP_401', 'INTERNAL_GROUP_AUTHORIZATION_FAILED'],
+    ['APP_STORE_CONNECT_HTTP_403', 'INTERNAL_GROUP_AUTHORIZATION_FAILED'],
+    ['APP_STORE_CONNECT_NETWORK_ERROR', 'INTERNAL_GROUP_LIVE_OBSERVATION_FAILED'],
+    ['APP_STORE_CONNECT_RESPONSE_INVALID', 'INTERNAL_GROUP_LIVE_OBSERVATION_FAILED'],
+  ]) {
+    await t.test(providerCode, async () => {
+      const transport = { request: async () => { throw new Error(providerCode); } };
+      await assert.rejects(
+        observeInternalGroup(transport, bindings, { now: () => NOW }),
+        (error) => error?.message === publicCode,
+      );
+    });
+  }
+});
+
+test('the exact request allowlist excludes group creation/editing, testers, external testing, Beta Review, and App Review', async () => {
+  const { assignInternalGroup, observeInternalGroup } = await import('../src/internal-testflight.mjs');
+  const observer = new RecordingTransport(fixtures());
+  await observeInternalGroup(observer, bindings, { now: () => NOW });
+  assertExactRequestAllowlist(observer.requests, { assignment: false });
+
+  const assignment = new RecordingTransport(fixtures(), { revealAfterPost: true });
+  await assignInternalGroup(assignment, bindings, { now: () => NOW });
+  assertExactRequestAllowlist(assignment.requests, { assignment: true });
+  assert.equal(assignment.requests.filter(({ method }) => method === 'POST').length, 1);
 });
 
 test('ambiguous build/group and pagination fail closed before mutation', async () => {
