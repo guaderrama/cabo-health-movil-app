@@ -441,7 +441,7 @@ test('artifact verification compares complete plist content across XML and binar
   assert.equal(googleServicesPlistsHaveSameContent(xml, Buffer.from('not-a-plist')), false);
 });
 
-test('build-7 attestations remain immutable history while build-8 authorities are absent', async () => {
+test('build-7 attestations remain immutable history while build-8 authorities remain pinned', async () => {
   const {
     computeRuntimeTreeSha256,
     verifyBuildInputAttestation,
@@ -470,7 +470,13 @@ test('build-7 attestations remain immutable history while build-8 authorities ar
   const adapterPin = optionalToolPin('PINNED_APP_STORE_SUBMIT_ADAPTER');
   assert.deepEqual(
     { buildInputPin, buildArtifactPin, rcPin, easPin, adapterPin },
-    { buildInputPin: null, buildArtifactPin: null, rcPin: null, easPin: null, adapterPin: null },
+    {
+      buildInputPin: 'f4ee8c3da75be23d300b816495649c414f2900efaef9e88294bdc52824c3ed8e',
+      buildArtifactPin: '966e00960c688ec1d0299dae36b6eff599f1286c20c218b434720bdd882ab4cb',
+      rcPin: null,
+      easPin: null,
+      adapterPin: null,
+    },
   );
 
   const historyRoot = join(projectRoot, 'release/app-store/3.0/history/build-7');
@@ -505,22 +511,37 @@ test('build-7 attestations remain immutable history while build-8 authorities ar
     assert.equal(hash(bytes), expectedSha256);
     assert.equal(JSON.parse(bytes).candidate.buildNumber, '7');
   }
-  for (const name of [
-    'build-input-attestation.json',
-    'build-artifact-attestation.json',
-    'rc-attestation.json',
-  ]) assert.equal(existsSync(join(projectRoot, 'release/app-store/3.0', name)), false);
+  const currentRoot = join(projectRoot, 'release/app-store/3.0');
+  const buildInputPath = join(currentRoot, 'build-input-attestation.json');
+  const buildArtifactPath = join(currentRoot, 'build-artifact-attestation.json');
+  assert.equal(existsSync(buildInputPath), true);
+  assert.equal(existsSync(buildArtifactPath), true);
+  assert.equal(existsSync(join(currentRoot, 'rc-attestation.json')), false);
+  const buildInput = JSON.parse(readFileSync(buildInputPath, 'utf8'));
+  const buildArtifact = JSON.parse(readFileSync(buildArtifactPath, 'utf8'));
+  assert.equal(hash(readFileSync(buildInputPath)), buildInputPin);
+  assert.equal(hash(readFileSync(buildArtifactPath)), buildArtifactPin);
+  assert.deepEqual(buildInput.candidate, {
+    appleId: '6758285327',
+    bundleIdentifier: 'com.cabohealth.app',
+    marketingVersion: '3.0',
+    buildNumber: '8',
+  });
+  assert.deepEqual(buildArtifact.candidate, buildInput.candidate);
+  assert.equal(buildArtifact.buildInputAttestationSha256, buildInputPin);
+  assert.equal(buildArtifact.sourceTreeSha256, buildInput.sourceTreeSha256);
+  assert.notEqual(git(projectRoot, 'rev-parse', 'HEAD'), buildInput.sourceCommit);
 
   assert.throws(
     () => verifyBuildInputAttestation(projectRoot, buildInputPin),
-    /EXACT_BUILD_INPUT_ATTESTATION_MISSING/u,
+    /EXACT_BUILD_INPUT_ATTESTATION_INVALID/u,
   );
   assert.throws(
     () => verifyBuildArtifactAttestation(projectRoot, {
       buildInputSha256: buildInputPin,
       buildArtifactSha256: buildArtifactPin,
     }),
-    /EXACT_BUILD_ARTIFACT_ATTESTATION_MISSING/u,
+    /EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID/u,
   );
   assert.throws(
     () => verifyRcAttestation(projectRoot, {
@@ -532,7 +553,7 @@ test('build-7 attestations remain immutable history while build-8 authorities ar
   );
 });
 
-test('the production build 8 command fails closed before EAS while current build-input authority is absent', () => {
+test('the production build command fails closed before EAS for build 8 when source differs from pinned authority', () => {
   const environment = { ...process.env };
   delete environment.CABOHEALTH_FIREBASE_PROJECT_ID;
   delete environment.CABOHEALTH_GOOGLE_SERVICES_PLIST;
@@ -544,7 +565,7 @@ test('the production build 8 command fails closed before EAS while current build
 
   assert.equal(result.status, 1, result.stdout || result.stderr);
   assert.equal(result.stdout, '');
-  assert.equal(result.stderr, 'EXACT_BUILD_INPUT_ATTESTATION_MISSING\n');
+  assert.equal(result.stderr, 'EXACT_BUILD_INPUT_ATTESTATION_INVALID\n');
 });
 
 test('release guard separates source, built artifact, and final reviewed RC authorities', () => {
