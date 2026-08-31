@@ -15,7 +15,7 @@ import {
   realpathSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   CANDIDATE,
@@ -240,19 +240,18 @@ function uniqueProviderId(action, stdoutBytes, stderrBytes) {
   return ids.size === 1 ? [...ids][0] : null;
 }
 
-export function finalizeObservedAttempt({
-  evidenceRoot,
+function finalizeObservedBytes({
+  path,
+  marker,
   action,
   exitStatus,
-  terminalAt = new Date().toISOString(),
+  terminalAt,
+  stdoutBytes,
+  stderrBytes,
 }) {
-  const root = validateEvidenceRoot(evidenceRoot);
-  const path = join(root, markerName(action));
-  const marker = readMarkerAt(path, action);
   if (!['armed', 'provider_started'].includes(marker.state)
-    || !Number.isInteger(exitStatus) || exitStatus < 0 || !isCanonicalUtc(terminalAt)) fail(STATE);
-  const stdoutBytes = readAttemptLog(root, action, marker.attemptNumber, 'stdout');
-  const stderrBytes = readAttemptLog(root, action, marker.attemptNumber, 'stderr');
+    || !Number.isInteger(exitStatus) || exitStatus < 0 || !isCanonicalUtc(terminalAt)
+    || !Buffer.isBuffer(stdoutBytes) || !Buffer.isBuffer(stderrBytes)) fail(STATE);
   const rawDigest = rawEvidenceSha256(stdoutBytes, stderrBytes);
   const parsedId = uniqueProviderId(action, stdoutBytes, stderrBytes);
   if (marker.state === 'armed') {
@@ -274,6 +273,26 @@ export function finalizeObservedAttempt({
     state: 'unknown', providerOperationId: parsedId, terminalAt: null,
     outcome: 'unknown', rawEvidenceSha256: rawDigest,
   }, STATE);
+}
+
+export function finalizeObservedAttempt({
+  evidenceRoot,
+  action,
+  exitStatus,
+  terminalAt = new Date().toISOString(),
+}) {
+  const root = validateEvidenceRoot(evidenceRoot);
+  const path = join(root, markerName(action));
+  const marker = readMarkerAt(path, action);
+  return finalizeObservedBytes({
+    path,
+    marker,
+    action,
+    exitStatus,
+    terminalAt,
+    stdoutBytes: readAttemptLog(root, action, marker.attemptNumber, 'stdout'),
+    stderrBytes: readAttemptLog(root, action, marker.attemptNumber, 'stderr'),
+  });
 }
 
 export function recoverArmedAttempt({
@@ -366,6 +385,13 @@ const ARTIFACT_ASSOCIATION_KEYS = [
   'evidenceType', 'buildId', 'buildStatus', 'downloadedIpaSha256',
   'associationGuardProven', 'reviewedAt',
 ];
+const AUTHORITY_PIN_RULES = Object.freeze([
+  ['BUILD_INPUT_ATTESTATION_SHA256', /^(?:null|'[a-f0-9]{64}')$/u],
+  ['BUILD_ARTIFACT_ATTESTATION_SHA256', /^(?:null|'[a-f0-9]{64}')$/u],
+  ['RC_ATTESTATION_SHA256', /^(?:null|'[a-f0-9]{64}')$/u],
+  ['PINNED_EAS_CLI', /^(?:null|'[A-Za-z0-9+/]+={0,2}')$/u],
+  ['PINNED_APP_STORE_SUBMIT_ADAPTER', /^(?:null|'[A-Za-z0-9+/]+={0,2}')$/u],
+]);
 
 function readCurrentAuthorityFile(projectRoot, relativePath, maxBytes) {
   let descriptor;
@@ -398,15 +424,66 @@ function readCurrentAuthorityFile(projectRoot, relativePath, maxBytes) {
   }
 }
 
-function currentAuthorityPin(guardBytes, name) {
+function currentAuthorityPins(guardBytes) {
   const source = guardBytes.toString('utf8');
   if (!Buffer.from(source, 'utf8').equals(guardBytes)) fail(RECONCILIATION);
-  const matches = [...source.matchAll(new RegExp(
-    `^const ${name} = '([a-f0-9]{64})';$`,
-    'gmu',
-  ))];
-  if (matches.length !== 1) fail(RECONCILIATION);
-  return matches[0][1];
+  const pins = {};
+  for (const [name, pattern] of AUTHORITY_PIN_RULES) {
+    const matches = [...source.matchAll(new RegExp(`^const ${name} = ([^\\r\\n]*);$`, 'gmu'))];
+    if (matches.length !== 1 || !pattern.test(matches[0][1])) fail(RECONCILIATION);
+    pins[name] = matches[0][1] === 'null' ? null : matches[0][1].slice(1, -1);
+  }
+  return pins;
+}
+
+function committedAuthorityPhase(pins) {
+  if (!SHA256_PATTERN.test(pins.BUILD_INPUT_ATTESTATION_SHA256 ?? '')
+    || !SHA256_PATTERN.test(pins.BUILD_ARTIFACT_ATTESTATION_SHA256 ?? '')
+    || pins.PINNED_EAS_CLI !== null
+    || (pins.RC_ATTESTATION_SHA256 !== null
+      && !SHA256_PATTERN.test(pins.RC_ATTESTATION_SHA256))
+    || (pins.PINNED_APP_STORE_SUBMIT_ADAPTER !== null
+      && pins.RC_ATTESTATION_SHA256 === null)) fail(RECONCILIATION);
+  if (pins.PINNED_APP_STORE_SUBMIT_ADAPTER !== null) return 'submit-tool';
+  if (pins.RC_ATTESTATION_SHA256 !== null) return 'rc';
+  return 'artifact';
+}
+
+function verifyCommittedAuthority(projectRoot, sourceCommit, sourceTreeSha256, pins) {
+  const phase = committedAuthorityPhase(pins);
+  const expectedPins = {
+    buildInputSha256: pins.BUILD_INPUT_ATTESTATION_SHA256,
+    buildArtifactSha256: pins.BUILD_ARTIFACT_ATTESTATION_SHA256,
+  };
+  if (pins.RC_ATTESTATION_SHA256 !== null) expectedPins.rcSha256 = pins.RC_ATTESTATION_SHA256;
+  if (pins.PINNED_APP_STORE_SUBMIT_ADAPTER !== null) {
+    expectedPins.submitAdapterPin = pins.PINNED_APP_STORE_SUBMIT_ADAPTER;
+  }
+  const guardUrl = pathToFileURL(join(DEFAULT_PROJECT_ROOT, 'scripts/release-command-guard.mjs')).href;
+  const program = [
+    `const { computeTrackedSourceSha256, verifyPhaseAuthorityCommitHistory } = await import(${JSON.stringify(guardUrl)});`,
+    'const [root, commit, phase, encodedPins] = process.argv.slice(1);',
+    'try {',
+    '  verifyPhaseAuthorityCommitHistory(root, commit, phase, JSON.parse(encodedPins));',
+    "  process.stdout.write(`${computeTrackedSourceSha256(root)}\\n`);",
+    '} catch { process.exitCode = 1; }',
+  ].join('\n');
+  const environment = { ...process.env };
+  for (const key of [
+    'NODE_OPTIONS', 'NODE_PATH', 'npm_config_node_options',
+    'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
+  ]) delete environment[key];
+  const result = spawnSync(process.execPath, [
+    '--input-type=module', '--eval', program,
+    projectRoot, sourceCommit, phase, JSON.stringify(expectedPins),
+  ], {
+    cwd: DEFAULT_PROJECT_ROOT,
+    env: environment,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.status !== 0 || result.stdout !== `${sourceTreeSha256}\n`) fail(RECONCILIATION);
 }
 
 function hashCurrentIpa(projectRoot) {
@@ -451,8 +528,9 @@ function validateCurrentLocalIpaAuthority(projectRoot, marker) {
     'scripts/release-command-guard.mjs',
     2 * 1024 * 1024,
   );
-  const inputPin = currentAuthorityPin(guardBytes, 'BUILD_INPUT_ATTESTATION_SHA256');
-  const artifactPin = currentAuthorityPin(guardBytes, 'BUILD_ARTIFACT_ATTESTATION_SHA256');
+  const pins = currentAuthorityPins(guardBytes);
+  const inputPin = pins.BUILD_INPUT_ATTESTATION_SHA256;
+  const artifactPin = pins.BUILD_ARTIFACT_ATTESTATION_SHA256;
   const inputBytes = readCurrentAuthorityFile(
     projectRoot,
     'release/app-store/3.0/build-input-attestation.json',
@@ -494,7 +572,104 @@ function validateCurrentLocalIpaAuthority(projectRoot, marker) {
     || BUILD_ARTIFACT_AUTHORITY_KEYS.filter((key) => key.endsWith('Sha256'))
       .some((key) => !SHA256_PATTERN.test(artifact[key] ?? ''))
     || artifact.ipaSha256 !== hashCurrentIpa(projectRoot)) fail(RECONCILIATION);
+  verifyCommittedAuthority(projectRoot, input.sourceCommit, input.sourceTreeSha256, pins);
   return artifact;
+}
+
+function validateAttemptLogStat(stat) {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : stat.uid;
+  if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== uid
+    || (stat.mode & 0o777) !== 0o600 || stat.size < 0
+    || stat.size > 1024 * 1024 * 1024) fail(RECONCILIATION);
+}
+
+function openFsyncedAttemptLog(root, action, attemptNumber, stream) {
+  const path = join(root, logName(action, attemptNumber, stream));
+  let descriptor;
+  try {
+    const before = lstatSync(path);
+    validateAttemptLogStat(before);
+    if (realpathSync(path) !== path) fail(RECONCILIATION);
+    descriptor = openSync(path, FS_CONSTANTS.O_RDWR | FS_CONSTANTS.O_APPEND
+      | (FS_CONSTANTS.O_NOFOLLOW ?? 0));
+    const opened = fstatSync(descriptor);
+    validateAttemptLogStat(opened);
+    if (opened.dev !== before.dev || opened.ino !== before.ino
+      || opened.size !== before.size || opened.mtimeMs !== before.mtimeMs) fail(RECONCILIATION);
+    fsyncSync(descriptor);
+    const synced = fstatSync(descriptor);
+    validateAttemptLogStat(synced);
+    if (synced.dev !== opened.dev || synced.ino !== opened.ino
+      || synced.size !== opened.size || synced.mtimeMs !== opened.mtimeMs) fail(RECONCILIATION);
+    const bytes = Buffer.alloc(synced.size);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const count = readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+      if (count <= 0) fail(RECONCILIATION);
+      offset += count;
+    }
+    const afterRead = fstatSync(descriptor);
+    validateAttemptLogStat(afterRead);
+    if (afterRead.dev !== synced.dev || afterRead.ino !== synced.ino
+      || afterRead.size !== synced.size || afterRead.mtimeMs !== synced.mtimeMs) fail(RECONCILIATION);
+    return {
+      path,
+      descriptor,
+      bytes,
+      dev: afterRead.dev,
+      ino: afterRead.ino,
+      size: afterRead.size,
+      mtimeMs: afterRead.mtimeMs,
+    };
+  } catch (error) {
+    if (descriptor !== undefined) closeSync(descriptor);
+    if (error?.message === RECONCILIATION) throw error;
+    fail(RECONCILIATION);
+  }
+}
+
+function revalidateAttemptLog(log) {
+  try {
+    const descriptorStat = fstatSync(log.descriptor);
+    const pathStat = lstatSync(log.path);
+    validateAttemptLogStat(descriptorStat);
+    validateAttemptLogStat(pathStat);
+    if (realpathSync(log.path) !== log.path
+      || descriptorStat.dev !== log.dev || descriptorStat.ino !== log.ino
+      || descriptorStat.size !== log.size || descriptorStat.mtimeMs !== log.mtimeMs
+      || pathStat.dev !== log.dev || pathStat.ino !== log.ino
+      || pathStat.size !== log.size || pathStat.mtimeMs !== log.mtimeMs) fail(RECONCILIATION);
+  } catch (error) {
+    if (error?.message === RECONCILIATION) throw error;
+    fail(RECONCILIATION);
+  }
+}
+
+function openSubmissionAttemptAnchor(root, marker) {
+  if (marker.state !== 'provider_started' || marker.providerOperationId !== null
+    || marker.rawEvidenceSha256 !== null) fail(RECONCILIATION);
+  const logs = [];
+  try {
+    for (const stream of ['stdout', 'stderr']) {
+      logs.push(openFsyncedAttemptLog(root, marker.action, marker.attemptNumber, stream));
+    }
+    const providerOperationId = uniqueProviderId(
+      marker.action,
+      logs[0].bytes,
+      logs[1].bytes,
+    );
+    if (providerOperationId === null) fail(RECONCILIATION);
+    return { logs, providerOperationId };
+  } catch (error) {
+    for (const log of logs) closeSync(log.descriptor);
+    if (error?.message === RECONCILIATION) throw error;
+    fail(RECONCILIATION);
+  }
+}
+
+function closeSubmissionAttemptAnchor(anchor) {
+  if (anchor === null) return;
+  for (const log of anchor.logs) closeSync(log.descriptor);
 }
 
 function validateReconciliationTimesAndError(value) {
@@ -512,6 +687,7 @@ function validateReconciliationEvidence(
   terminalStatus,
   marker,
   projectRoot,
+  attemptedSubmissionId,
 ) {
   if (action === 'build') {
     if (!hasExactKeys(value, BUILD_RECONCILIATION_KEYS)
@@ -545,7 +721,8 @@ function validateReconciliationEvidence(
         || value.app.easBuildId !== localAuthority.easBuildId) fail(RECONCILIATION);
     } else {
       if (value.app.bundleIdentifier !== null || value.app.marketingVersion !== null
-        || value.app.buildNumber !== null || value.app.easBuildId !== null) fail(RECONCILIATION);
+        || value.app.buildNumber !== null || value.app.easBuildId !== null
+        || attemptedSubmissionId !== providerOperationId) fail(RECONCILIATION);
     }
   }
   if (value.schemaVersion !== 1 || value.status !== terminalStatus || value.terminal !== true
@@ -578,12 +755,20 @@ export function reconcileAttempt({
     || typeof evidencePath !== 'string' || !isAbsolute(evidencePath)
     || resolve(evidencePath) !== evidencePath || !isWithin(root, evidencePath)
     || evidencePath !== join(root, expectedEvidenceName)) fail(RECONCILIATION);
-  let bytes;
-  let value;
+  let anchor = null;
   try {
-    bytes = readSecureFile(evidencePath, RECONCILIATION, { maxBytes: 1024 * 1024, parent: root });
+    const bytes = readSecureFile(
+      evidencePath,
+      RECONCILIATION,
+      { maxBytes: 1024 * 1024, parent: root },
+    );
     if (sha256(bytes) !== evidenceSha256) fail(RECONCILIATION);
-    value = parseJsonBytes(bytes, RECONCILIATION, { canonical: true });
+    const value = parseJsonBytes(bytes, RECONCILIATION, { canonical: true });
+    if (action === 'upload-testflight'
+      && value?.app?.submittedBuildIdentityAvailable === false
+      && marker.providerOperationId === null) {
+      anchor = openSubmissionAttemptAnchor(root, marker);
+    }
     validateReconciliationEvidence(
       action,
       value,
@@ -591,19 +776,26 @@ export function reconcileAttempt({
       terminalStatus,
       marker,
       projectRoot,
+      marker.providerOperationId ?? anchor?.providerOperationId ?? null,
     );
-  } catch {
+    if (anchor !== null) {
+      for (const log of anchor.logs) revalidateAttemptLog(log);
+    }
+    const succeeded = terminalStatus === 'FINISHED';
+    return replaceMarker(path, {
+      ...marker,
+      state: succeeded ? 'terminal_success' : 'terminal_failure',
+      providerOperationId,
+      terminalAt,
+      outcome: succeeded ? 'succeeded' : 'failed',
+      reconciliationEvidenceSha256: evidenceSha256,
+    }, RECONCILIATION);
+  } catch (error) {
+    if (error?.message === RECONCILIATION) throw error;
     fail(RECONCILIATION);
+  } finally {
+    closeSubmissionAttemptAnchor(anchor);
   }
-  const succeeded = terminalStatus === 'FINISHED';
-  return replaceMarker(path, {
-    ...marker,
-    state: succeeded ? 'terminal_success' : 'terminal_failure',
-    providerOperationId,
-    terminalAt,
-    outcome: succeeded ? 'succeeded' : 'failed',
-    reconciliationEvidenceSha256: evidenceSha256,
-  }, RECONCILIATION);
 }
 
 export function parseReleaseAttemptArguments(values) {
@@ -649,7 +841,7 @@ function frozenSourceCommit(projectRoot) {
 }
 
 function openLogForChild(path) {
-  const descriptor = openSync(path, FS_CONSTANTS.O_WRONLY | FS_CONSTANTS.O_APPEND
+  const descriptor = openSync(path, FS_CONSTANTS.O_RDWR | FS_CONSTANTS.O_APPEND
     | (FS_CONSTANTS.O_NOFOLLOW ?? 0));
   const stat = fstatSync(descriptor);
   const uid = typeof process.getuid === 'function' ? process.getuid() : stat.uid;
@@ -658,6 +850,7 @@ function openLogForChild(path) {
     fail(MARKER);
   }
   return {
+    path,
     descriptor,
     dev: stat.dev,
     ino: stat.ino,
@@ -665,13 +858,49 @@ function openLogForChild(path) {
   };
 }
 
-function syncAndRevalidateLog(log, { fsync, fstat }) {
-  fsync(log.descriptor);
-  const stat = fstat(log.descriptor);
+function validateRunLogDescriptor(log, stat) {
   const uid = typeof process.getuid === 'function' ? process.getuid() : stat.uid;
   if (!stat.isFile() || stat.dev !== log.dev || stat.ino !== log.ino
     || stat.nlink !== 1 || stat.uid !== log.uid || stat.uid !== uid
-    || (stat.mode & 0o777) !== 0o600) fail(MARKER);
+    || (stat.mode & 0o777) !== 0o600 || stat.size < 0
+    || stat.size > 1024 * 1024 * 1024) fail(MARKER);
+}
+
+function syncAndReadLog(log, { fsync, fstat }) {
+  fsync(log.descriptor);
+  const synced = fstat(log.descriptor);
+  validateRunLogDescriptor(log, synced);
+  const bytes = Buffer.alloc(synced.size);
+  let offset = 0;
+  while (offset < bytes.length) {
+    const count = readSync(log.descriptor, bytes, offset, bytes.length - offset, offset);
+    if (count <= 0) fail(MARKER);
+    offset += count;
+  }
+  const afterRead = fstat(log.descriptor);
+  validateRunLogDescriptor(log, afterRead);
+  if (afterRead.size !== synced.size || afterRead.mtimeMs !== synced.mtimeMs) fail(MARKER);
+  log.size = afterRead.size;
+  log.mtimeMs = afterRead.mtimeMs;
+  return bytes;
+}
+
+function revalidateRunLogPath(log, { fstat }) {
+  try {
+    const descriptorStat = fstat(log.descriptor);
+    const pathStat = lstatSync(log.path);
+    validateRunLogDescriptor(log, descriptorStat);
+    const uid = typeof process.getuid === 'function' ? process.getuid() : pathStat.uid;
+    if (!pathStat.isFile() || pathStat.isSymbolicLink() || pathStat.nlink !== 1
+      || pathStat.uid !== uid || (pathStat.mode & 0o777) !== 0o600
+      || realpathSync(log.path) !== log.path
+      || descriptorStat.size !== log.size || descriptorStat.mtimeMs !== log.mtimeMs
+      || pathStat.dev !== log.dev || pathStat.ino !== log.ino
+      || pathStat.size !== log.size || pathStat.mtimeMs !== log.mtimeMs) fail(MARKER);
+  } catch (error) {
+    if (error?.message === MARKER) throw error;
+    fail(MARKER);
+  }
 }
 
 export function runGuard(projectRoot, evidenceRoot, action, attemptNumber, {
@@ -687,6 +916,7 @@ export function runGuard(projectRoot, evidenceRoot, action, attemptNumber, {
   const stdout = openLogForChild(stdoutPath);
   let stderr;
   let result;
+  let final;
   try {
     stderr = openLogForChild(stderrPath);
     result = spawn(process.execPath, [
@@ -699,8 +929,21 @@ export function runGuard(projectRoot, evidenceRoot, action, attemptNumber, {
       },
       stdio: ['ignore', stdout.descriptor, stderr.descriptor],
     });
-    syncAndRevalidateLog(stdout, { fsync, fstat });
-    syncAndRevalidateLog(stderr, { fsync, fstat });
+    const stdoutBytes = syncAndReadLog(stdout, { fsync, fstat });
+    const stderrBytes = syncAndReadLog(stderr, { fsync, fstat });
+    revalidateRunLogPath(stdout, { fstat });
+    revalidateRunLogPath(stderr, { fstat });
+    const exitStatus = Number.isInteger(result.status) ? result.status : 1;
+    const markerPath = join(evidenceRoot, markerName(action));
+    final = finalizeObservedBytes({
+      path: markerPath,
+      marker: readMarkerAt(markerPath, action),
+      action,
+      exitStatus,
+      terminalAt: new Date().toISOString(),
+      stdoutBytes,
+      stderrBytes,
+    });
   } finally {
     let closeError;
     try {
@@ -718,7 +961,6 @@ export function runGuard(projectRoot, evidenceRoot, action, attemptNumber, {
     if (closeError !== undefined) throw closeError;
   }
   const exitStatus = Number.isInteger(result.status) ? result.status : 1;
-  const final = finalizeObservedAttempt({ evidenceRoot, action, exitStatus });
   if (exitStatus !== 0 || final.state !== 'terminal_success') fail('RELEASE_ATTEMPT_GUARD_FAILED');
 }
 

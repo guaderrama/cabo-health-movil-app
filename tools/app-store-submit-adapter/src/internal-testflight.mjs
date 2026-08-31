@@ -28,6 +28,12 @@ function exactKeys(value, keys) {
     && JSON.stringify(Object.keys(value)) === JSON.stringify(keys);
 }
 
+function plainObject(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 function canonicalTime(milliseconds) {
   if (!Number.isFinite(milliseconds)) reject('INTERNAL_GROUP_LIVE_OBSERVATION_FAILED');
   return new Date(milliseconds).toISOString();
@@ -57,17 +63,35 @@ function validateOne(value, type, id, code) {
 }
 
 function collection(value, code) {
-  const next = value?.links?.next;
-  if (value === null || typeof value !== 'object' || Array.isArray(value)
-    || !Array.isArray(value.data) || (next !== null && next !== undefined)) {
-    if (next !== null && next !== undefined) {
-      reject('INTERNAL_GROUP_PAGINATION_UNSUPPORTED');
+  if (!plainObject(value) || !Array.isArray(value.data)) reject(code);
+  let nullNextProvesComplete = false;
+  if (Object.hasOwn(value, 'links')) {
+    if (!plainObject(value.links)) reject(code);
+    if (Object.hasOwn(value.links, 'next')) {
+      if (value.links.next !== null) {
+        if (value.links.next !== undefined) reject('INTERNAL_GROUP_PAGINATION_UNSUPPORTED');
+        reject(code);
+      }
+      nullNextProvesComplete = true;
     }
-    reject(code);
   }
-  if (value.meta?.paging?.total !== undefined
-    && (!Number.isSafeInteger(value.meta.paging.total)
-      || value.meta.paging.total !== value.data.length)) reject(code);
+  let exactTotalProvesComplete = false;
+  if (Object.hasOwn(value, 'meta')) {
+    if (!plainObject(value.meta)) reject(code);
+    if (Object.hasOwn(value.meta, 'paging')) {
+      if (!plainObject(value.meta.paging)) reject(code);
+      if (Object.hasOwn(value.meta.paging, 'total')) {
+        const { total } = value.meta.paging;
+        if (!Number.isSafeInteger(total) || total < 0 || total !== value.data.length) reject(code);
+        exactTotalProvesComplete = true;
+      }
+    }
+  }
+  if (value.data.length > 200
+    || (value.data.length === 200
+      && !nullNextProvesComplete && !exactTotalProvesComplete)) {
+    reject('INTERNAL_GROUP_PAGINATION_UNSUPPORTED');
+  }
   return value.data;
 }
 

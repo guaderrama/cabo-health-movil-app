@@ -7,7 +7,9 @@ import {
   lstatSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -30,6 +32,7 @@ const BUILD_RESOURCE_ID = 'build-resource-one';
 const GROUP_RESOURCE_ID = 'group-resource-one';
 const NOW = '2026-08-30T12:00:00.000Z';
 const ASSIGNMENT_ATTEMPT_NAME = 'internal-testflight-group-assignment-attempt.json';
+const ASSIGNMENT_ATTEMPT_TEMP_PREFIX = '.internal-testflight-group-assignment-attempt.';
 const CANDIDATE = {
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
@@ -203,6 +206,16 @@ function assignmentArguments(value, observationPath, observationSha256, outputPa
   ];
   args[1] = 'ensure-existing-internal-testflight-access';
   return args;
+}
+
+function preparedAssignment(value) {
+  const observationPath = join(value.root, 'internal-testflight-group-observation.json');
+  const observationSha256 = writeCanonical(observationPath, exactObservation(value));
+  const outputPath = join(value.root, 'internal-testflight-group-assignment.json');
+  return {
+    args: assignmentArguments(value, observationPath, observationSha256, outputPath),
+    outputPath,
+  };
 }
 
 test('internal group argument grammar is exact, ordered, absolute, and build-9-bound', (t) => {
@@ -464,6 +477,180 @@ test('a durable provider_started marker blocks a later assignment before live ac
   ), /INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN/u);
   assert.equal(transport.requests.length, 0);
   assert.equal(JSON.parse(readFileSync(attemptPath)).state, 'provider_started');
+});
+
+test('assignment marker transitions are crash-atomic at every durable phase', async (t) => {
+  const { armAssignmentAttempt, transitionAssignmentAttempt } = await import('../src/assignment-attempt.mjs');
+  const phases = [
+    'before_transition_snapshot',
+    'temp_created',
+    'temp_written',
+    'temp_fsynced',
+    'temp_validated',
+    'destination_validated',
+    'before_rename',
+    'after_rename',
+    'directory_fsynced',
+    'before_final_readback',
+  ];
+  for (const phase of phases) {
+    await t.test(phase, async (subtest) => {
+      const value = fixture(subtest);
+      const environment = { CABOHEALTH_RELEASE_EVIDENCE_ROOT: value.root };
+      const attemptPath = armAssignmentAttempt(exactObservation(value), environment, Date.parse(NOW));
+      const oldBytes = readFileSync(attemptPath);
+      const oldValue = JSON.parse(oldBytes);
+      const expectedNewBytes = Buffer.from(`${JSON.stringify({
+        ...oldValue,
+        state: 'provider_started',
+        providerStartedAt: NOW,
+        terminalAt: null,
+        outcome: 'pending',
+      })}\n`);
+      assert.throws(() => transitionAssignmentAttempt(
+        attemptPath,
+        'provider_started',
+        environment,
+        Date.parse(NOW),
+        {
+          failpoint(name) {
+            if (name === phase) throw new Error(`injected ${phase}`);
+          },
+        },
+      ), /INTERNAL_GROUP_OUTPUT_INVALID/u);
+      const durableBytes = readFileSync(attemptPath);
+      const afterRename = [
+        'after_rename', 'directory_fsynced', 'before_final_readback',
+      ].includes(phase);
+      assert.deepEqual(durableBytes, afterRename ? expectedNewBytes : oldBytes);
+      assert.equal(statSync(attemptPath).mode & 0o777, 0o600);
+      assert.equal(lstatSync(attemptPath).nlink, 1);
+      assert.equal(readdirSync(value.root).some((name) => (
+        name.startsWith(ASSIGNMENT_ATTEMPT_TEMP_PREFIX) && name.endsWith('.tmp')
+      )), false);
+
+      const prepared = preparedAssignment(value);
+      const transport = new FixtureTransport(expectations());
+      await assert.rejects(runInternalGroup(prepared.args, {
+        assignment: true,
+        transport,
+        now: Date.parse(NOW),
+        environment,
+      }), /INTERNAL_GROUP_(?:ASSIGNMENT_FAILED|ASSIGNMENT_OUTCOME_UNKNOWN)/u);
+      assert.equal(transport.requests.length, 0);
+    });
+  }
+});
+
+test('atomic transition rejects destination and temporary-path inode replacement races', async (t) => {
+  const { armAssignmentAttempt, transitionAssignmentAttempt } = await import('../src/assignment-attempt.mjs');
+  for (const race of ['destination', 'temporary']) {
+    await t.test(race, async (subtest) => {
+      const value = fixture(subtest);
+      const environment = { CABOHEALTH_RELEASE_EVIDENCE_ROOT: value.root };
+      const attemptPath = armAssignmentAttempt(exactObservation(value), environment, Date.parse(NOW));
+      const oldBytes = readFileSync(attemptPath);
+      let racedPath;
+      assert.throws(() => transitionAssignmentAttempt(
+        attemptPath,
+        'provider_started',
+        environment,
+        Date.parse(NOW),
+        {
+          failpoint(name, context) {
+            if (name !== 'temp_validated') return;
+            if (race === 'destination') {
+              renameSync(attemptPath, `${attemptPath}.original`);
+              writeFileSync(attemptPath, oldBytes, { mode: 0o600 });
+              chmodSync(attemptPath, 0o600);
+            } else {
+              racedPath = context.tempPath;
+              renameSync(racedPath, `${racedPath}.original`);
+              writeFileSync(racedPath, context.newBytes, { mode: 0o600 });
+              chmodSync(racedPath, 0o600);
+            }
+          },
+        },
+      ), /INTERNAL_GROUP_OUTPUT_INVALID/u);
+      assert.deepEqual(readFileSync(attemptPath), oldBytes);
+      if (race === 'temporary') {
+        assert.deepEqual(readFileSync(racedPath), Buffer.from(`${JSON.stringify({
+          ...JSON.parse(oldBytes),
+          state: 'provider_started',
+          providerStartedAt: NOW,
+          terminalAt: null,
+          outcome: 'pending',
+        })}\n`));
+        assert.equal(lstatSync(racedPath).nlink, 1);
+        assert.equal(statSync(racedPath).mode & 0o777, 0o600);
+      }
+
+      const prepared = preparedAssignment(value);
+      const transport = new FixtureTransport(expectations());
+      await assert.rejects(runInternalGroup(prepared.args, {
+        assignment: true,
+        transport,
+        now: Date.parse(NOW),
+        environment,
+      }), /INTERNAL_GROUP_(?:OUTPUT_INVALID|ASSIGNMENT_FAILED|ASSIGNMENT_OUTCOME_UNKNOWN)/u);
+      assert.equal(transport.requests.length, 0);
+    });
+  }
+});
+
+test('atomic transition cannot overwrite a concurrent canonical state transition', async (t) => {
+  const { armAssignmentAttempt, transitionAssignmentAttempt } = await import('../src/assignment-attempt.mjs');
+  const value = fixture(t);
+  const environment = { CABOHEALTH_RELEASE_EVIDENCE_ROOT: value.root };
+  const attemptPath = armAssignmentAttempt(exactObservation(value), environment, Date.parse(NOW));
+  assert.throws(() => transitionAssignmentAttempt(
+    attemptPath,
+    'preprovider_failed',
+    environment,
+    Date.parse(NOW),
+    {
+      failpoint(name) {
+        if (name === 'before_transition_snapshot') {
+          transitionAssignmentAttempt(
+            attemptPath,
+            'provider_started',
+            environment,
+            Date.parse(NOW),
+          );
+        }
+      },
+    },
+  ), /INTERNAL_GROUP_OUTPUT_INVALID/u);
+  assert.equal(JSON.parse(readFileSync(attemptPath)).state, 'provider_started');
+  assert.equal(readdirSync(value.root).some((name) => (
+    name.startsWith(ASSIGNMENT_ATTEMPT_TEMP_PREFIX)
+  )), false);
+});
+
+test('stale assignment transition files of every link kind block before live access', async (t) => {
+  for (const kind of ['file', 'symlink', 'hardlink']) {
+    await t.test(kind, async (subtest) => {
+      const value = fixture(subtest);
+      const prepared = preparedAssignment(value);
+      const preserved = join(value.root, `${kind}-transition-preserved`);
+      const stale = join(value.root, `${ASSIGNMENT_ATTEMPT_TEMP_PREFIX}${kind}.tmp`);
+      writeFileSync(preserved, 'preserve', { mode: 0o600 });
+      chmodSync(preserved, 0o600);
+      if (kind === 'file') writeFileSync(stale, 'stale', { mode: 0o600 });
+      else if (kind === 'symlink') symlinkSync(preserved, stale);
+      else linkSync(preserved, stale);
+      if (kind === 'file') chmodSync(stale, 0o600);
+      const transport = new FixtureTransport(expectations());
+      await assert.rejects(runInternalGroup(prepared.args, {
+        assignment: true,
+        transport,
+        now: Date.parse(NOW),
+        environment: { CABOHEALTH_RELEASE_EVIDENCE_ROOT: value.root },
+      }), /INTERNAL_GROUP_OUTPUT_INVALID/u);
+      assert.equal(transport.requests.length, 0);
+      if (kind !== 'file') assert.equal(readFileSync(preserved, 'utf8'), 'preserve');
+    });
+  }
 });
 
 test('a failure after attempt arming but before POST is durably distinguished', async (t) => {

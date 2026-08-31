@@ -40,6 +40,25 @@ function fixtures({
   };
 }
 
+function resizeCollection(values, collectionName, count) {
+  const original = values[collectionName].data[0] ?? (
+    collectionName === 'relationships'
+      ? { type: 'builds', id: 'other-build-template' }
+      : null
+  );
+  values[collectionName].data = Array.from({ length: count }, (_, index) => {
+    const item = structuredClone(original);
+    if (collectionName === 'builds') item.id = index === 0 ? BUILD_ID : `other-build-${index}`;
+    if (collectionName === 'groups') {
+      item.id = index === 0 ? GROUP_ID : `other-group-${index}`;
+      if (index > 0) item.attributes.name = `other group ${index}`;
+    }
+    if (collectionName === 'relationships') item.id = `other-build-${index}`;
+    return item;
+  });
+  values[collectionName].meta = { paging: { total: count } };
+}
+
 class RecordingTransport {
   constructor(values, { revealAfterPost = false, postReadbacks = [] } = {}) {
     this.values = values;
@@ -360,15 +379,159 @@ test('ambiguous build/group and pagination fail closed before mutation', async (
   assert.equal(transport.requests.some(({ method }) => method === 'POST'), false);
 });
 
-test('collections with an omitted links.next field are accepted as unpaginated', async () => {
+test('collections with omitted links or links.next are accepted as unpaginated', async (t) => {
   const { observeInternalGroup } = await import('../src/internal-testflight.mjs');
-  const values = fixtures();
-  for (const collectionName of ['builds', 'groups', 'relationships']) {
-    values[collectionName].links = {};
+  for (const omission of ['links', 'next']) {
+    await t.test(omission, async () => {
+      const values = fixtures();
+      for (const collectionName of ['builds', 'groups', 'relationships']) {
+        if (omission === 'links') delete values[collectionName].links;
+        else values[collectionName].links = {};
+      }
+      const transport = new RecordingTransport(values);
+      const result = await observeInternalGroup(transport, bindings, { now: () => NOW });
+      assert.equal(result.available, false);
+      assert.equal(result.availabilityReason, 'not-assigned');
+      assert.equal(transport.requests.some(({ method }) => method === 'POST'), false);
+    });
   }
-  const transport = new RecordingTransport(values);
-  const result = await observeInternalGroup(transport, bindings, { now: () => NOW });
-  assert.equal(result.available, false);
-  assert.equal(result.availabilityReason, 'not-assigned');
-  assert.equal(transport.requests.some(({ method }) => method === 'POST'), false);
+});
+
+test('malformed collection links and meta shapes fail before the sole POST', async (t) => {
+  const { assignInternalGroup } = await import('../src/internal-testflight.mjs');
+  const malformedCases = [
+    ['null links', (value) => { value.links = null; }],
+    ['scalar links', (value) => { value.links = 1; }],
+    ['array links', (value) => { value.links = []; }],
+    ['null meta', (value) => { value.meta = null; }],
+    ['scalar meta', (value) => { value.meta = 'meta'; }],
+    ['null paging', (value) => { value.meta = { paging: null }; }],
+    ['array paging', (value) => { value.meta = { paging: [] }; }],
+    ['undefined next field', (value) => { value.links = { next: undefined }; }],
+    ['negative total', (value) => { value.meta.paging.total = -1; }],
+    ['fractional total', (value) => { value.meta.paging.total = 0.5; }],
+    ['mismatched total', (value) => { value.meta.paging.total = value.data.length + 1; }],
+  ];
+  for (const collectionName of ['builds', 'groups', 'relationships']) {
+    for (const [caseName, mutate] of malformedCases) {
+      await t.test(`${collectionName}: ${caseName}`, async () => {
+        const values = fixtures();
+        mutate(values[collectionName]);
+        const transport = new RecordingTransport(values);
+        const code = collectionName === 'builds'
+          ? 'INTERNAL_GROUP_BUILD_INVALID' : 'INTERNAL_GROUP_TARGET_INVALID';
+        await assert.rejects(
+          assignInternalGroup(transport, bindings, { now: () => NOW, sleep: async () => {} }),
+          new RegExp(code, 'u'),
+        );
+        assert.equal(transport.requests.some(({ method }) => method === 'POST'), false);
+      });
+    }
+  }
+});
+
+test('every collection rejects a defined non-null next link before mutation', async (t) => {
+  const { assignInternalGroup } = await import('../src/internal-testflight.mjs');
+  for (const collectionName of ['builds', 'groups', 'relationships']) {
+    await t.test(collectionName, async () => {
+      const values = fixtures();
+      values[collectionName].links.next = 'https://api.appstoreconnect.apple.com/v1/next';
+      const transport = new RecordingTransport(values);
+      await assert.rejects(
+        assignInternalGroup(transport, bindings, { now: () => NOW }),
+        /INTERNAL_GROUP_PAGINATION_UNSUPPORTED/u,
+      );
+      assert.equal(transport.requests.some(({ method }) => method === 'POST'), false);
+    });
+  }
+});
+
+test('collections reject over-limit and ambiguous full pages before mutation', async (t) => {
+  const { assignInternalGroup } = await import('../src/internal-testflight.mjs');
+  for (const collectionName of ['builds', 'groups', 'relationships']) {
+    for (const [caseName, count] of [['over limit', 201], ['full without proof', 200]]) {
+      await t.test(`${collectionName}: ${caseName}`, async () => {
+        const values = fixtures();
+        resizeCollection(values, collectionName, count);
+        values[collectionName].links = {};
+        if (count === 200) delete values[collectionName].meta;
+        const transport = new RecordingTransport(values);
+        await assert.rejects(
+          assignInternalGroup(transport, bindings, { now: () => NOW, sleep: async () => {} }),
+          /INTERNAL_GROUP_PAGINATION_UNSUPPORTED/u,
+        );
+        assert.equal(transport.requests.some(({ method }) => method === 'POST'), false);
+      });
+    }
+  }
+});
+
+test('a full page is bounded when explicit null-next or exact total proves completion', async (t) => {
+  const { observeInternalGroup } = await import('../src/internal-testflight.mjs');
+  for (const completionProof of ['null-next', 'exact-total']) {
+    for (const collectionName of ['builds', 'groups', 'relationships']) {
+      await t.test(`${collectionName}: ${completionProof}`, async () => {
+        const values = fixtures();
+        resizeCollection(values, collectionName, 200);
+        if (completionProof === 'null-next') {
+          values[collectionName].links = { next: null };
+          delete values[collectionName].meta;
+        } else {
+          values[collectionName].links = {};
+          values[collectionName].meta = { paging: { total: 200 } };
+        }
+        const transport = new RecordingTransport(values);
+        if (collectionName === 'builds') {
+          await assert.rejects(
+            observeInternalGroup(transport, bindings, { now: () => NOW }),
+            (error) => error?.message === 'INTERNAL_GROUP_BUILD_INVALID',
+          );
+        } else {
+          const result = await observeInternalGroup(transport, bindings, { now: () => NOW });
+          assert.equal(result.available, false);
+        }
+        assert.equal(transport.requests.some(({ method }) => method === 'POST'), false);
+      });
+    }
+  }
+});
+
+test('malformed, over-limit, and ambiguous full post-send readbacks stop after one GET', async (t) => {
+  const { assignInternalGroup } = await import('../src/internal-testflight.mjs');
+  const malformed = page([]);
+  malformed.links = null;
+  const malformedMeta = page([]);
+  malformedMeta.meta = null;
+  const malformedPaging = page([]);
+  malformedPaging.meta = { paging: [] };
+  const paginated = page([]);
+  paginated.links.next = 'https://api.appstoreconnect.apple.com/v1/next';
+  const overLimit = page([]);
+  resizeCollection({ relationships: overLimit }, 'relationships', 201);
+  const ambiguousFull = page([]);
+  resizeCollection({ relationships: ambiguousFull }, 'relationships', 200);
+  ambiguousFull.links = {};
+  delete ambiguousFull.meta;
+  for (const [caseName, readback] of [
+    ['malformed links', malformed],
+    ['malformed meta', malformedMeta],
+    ['malformed paging', malformedPaging],
+    ['defined next', paginated],
+    ['over limit', overLimit],
+    ['full without completion proof', ambiguousFull],
+  ]) {
+    await t.test(caseName, async () => {
+      const transport = new RecordingTransport(fixtures(), {
+        postReadbacks: [readback, page([{ type: 'builds', id: BUILD_ID }])],
+      });
+      await assert.rejects(
+        assignInternalGroup(transport, bindings, { now: () => NOW, sleep: async () => {} }),
+        /INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN/u,
+      );
+      assert.equal(transport.requests.filter(({ method }) => method === 'POST').length, 1);
+      assert.equal(transport.requests.filter(({ path }) => (
+        path === `/v1/betaGroups/${GROUP_ID}/relationships/builds?limit=200`
+      )).length, 2, 'one initial relationship GET plus one invalid readback');
+    });
+  }
 });

@@ -1,13 +1,17 @@
+import { randomBytes } from 'node:crypto';
 import {
   closeSync,
   constants as FS_CONSTANTS,
   fchmodSync,
   fstatSync,
   fsyncSync,
-  ftruncateSync,
   lstatSync,
   openSync,
+  readdirSync,
   readSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -18,6 +22,7 @@ import { canonicalJsonBytes, parseCanonicalJson } from './files.mjs';
 import { validateInternalEvidenceRoot } from './secure-output.mjs';
 
 export const ASSIGNMENT_ATTEMPT_NAME = 'internal-testflight-group-assignment-attempt.json';
+export const ASSIGNMENT_ATTEMPT_TEMP_PREFIX = '.internal-testflight-group-assignment-attempt.';
 
 const KEYS = [
   'schemaVersion', 'evidenceKind', 'candidate', 'sourceCommit', 'sourceTreeSha256',
@@ -96,37 +101,110 @@ function validateOpened(stat) {
   }
 }
 
-function readAttempt(path) {
+function sameStableStat(left, right) {
+  return left.dev === right.dev
+    && left.ino === right.ino
+    && left.mode === right.mode
+    && left.uid === right.uid
+    && left.nlink === right.nlink
+    && left.size === right.size
+    && left.mtimeMs === right.mtimeMs
+    && left.ctimeMs === right.ctimeMs;
+}
+
+function readDescriptorBytes(descriptor, size) {
+  if (!Number.isSafeInteger(size) || size <= 0 || size > 128 * 1024) {
+    reject('INTERNAL_GROUP_OUTPUT_INVALID');
+  }
+  const bytes = Buffer.alloc(size);
+  let offset = 0;
+  while (offset < bytes.length) {
+    const count = readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+    if (count <= 0) reject('INTERNAL_GROUP_OUTPUT_INVALID');
+    offset += count;
+  }
+  return bytes;
+}
+
+function validateDescriptorPath(snapshot, path) {
+  const opened = fstatSync(snapshot.descriptor);
+  validateOpened(opened);
+  if (!sameStableStat(opened, snapshot.stat)) reject('INTERNAL_GROUP_OUTPUT_INVALID');
+  const bytes = readDescriptorBytes(snapshot.descriptor, opened.size);
+  const after = fstatSync(snapshot.descriptor);
+  validateOpened(after);
+  if (!sameStableStat(after, opened) || !bytes.equals(snapshot.bytes)) {
+    reject('INTERNAL_GROUP_OUTPUT_INVALID');
+  }
+  const currentPath = lstatSync(path);
+  validateOpened(currentPath);
+  if (!sameStableStat(currentPath, opened) || realpathSync(path) !== path) {
+    reject('INTERNAL_GROUP_OUTPUT_INVALID');
+  }
+  return bytes;
+}
+
+function openAttemptSnapshot(path) {
   let descriptor;
   try {
     const before = lstatSync(path);
     validateOpened(before);
+    if (realpathSync(path) !== path) reject('INTERNAL_GROUP_OUTPUT_INVALID');
     descriptor = openSync(path, FS_CONSTANTS.O_RDONLY | (FS_CONSTANTS.O_NOFOLLOW ?? 0));
     const opened = fstatSync(descriptor);
     validateOpened(opened);
-    if (opened.dev !== before.dev || opened.ino !== before.ino || opened.size !== before.size
-      || opened.mtimeMs !== before.mtimeMs || opened.size <= 0 || opened.size > 128 * 1024) {
-      reject('INTERNAL_GROUP_OUTPUT_INVALID');
-    }
-    const bytes = Buffer.alloc(opened.size);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const count = readSync(descriptor, bytes, offset, bytes.length - offset, offset);
-      if (count <= 0) reject('INTERNAL_GROUP_OUTPUT_INVALID');
-      offset += count;
-    }
+    if (!sameStableStat(opened, before)) reject('INTERNAL_GROUP_OUTPUT_INVALID');
+    const bytes = readDescriptorBytes(descriptor, opened.size);
     const after = fstatSync(descriptor);
     validateOpened(after);
-    if (after.dev !== opened.dev || after.ino !== opened.ino || after.size !== opened.size
-      || after.mtimeMs !== opened.mtimeMs) reject('INTERNAL_GROUP_OUTPUT_INVALID');
+    if (!sameStableStat(after, opened)) reject('INTERNAL_GROUP_OUTPUT_INVALID');
+    const currentPath = lstatSync(path);
+    validateOpened(currentPath);
+    if (!sameStableStat(currentPath, opened) || realpathSync(path) !== path) {
+      reject('INTERNAL_GROUP_OUTPUT_INVALID');
+    }
     const value = validateAttempt(parseCanonicalJson(bytes, 'INTERNAL_GROUP_OUTPUT_INVALID'));
     if (!canonicalJsonBytes(value).equals(bytes)) reject('INTERNAL_GROUP_OUTPUT_INVALID');
-    return { bytes, value };
+    const snapshot = {
+      bytes,
+      descriptor,
+      stat: opened,
+      value,
+    };
+    descriptor = undefined;
+    return snapshot;
   } catch (error) {
     if (error?.message === 'INTERNAL_GROUP_OUTPUT_INVALID') throw error;
     reject('INTERNAL_GROUP_OUTPUT_INVALID');
   } finally {
-    if (descriptor !== undefined) closeSync(descriptor);
+    if (descriptor !== undefined) {
+      try { closeSync(descriptor); } catch { /* stable error already selected */ }
+    }
+  }
+}
+
+function readAttempt(path) {
+  const snapshot = openAttemptSnapshot(path);
+  try {
+    return { bytes: snapshot.bytes, value: snapshot.value };
+  } finally {
+    try { closeSync(snapshot.descriptor); } catch { reject('INTERNAL_GROUP_OUTPUT_INVALID'); }
+  }
+}
+
+function transitionTempNames(root) {
+  try {
+    return readdirSync(root).filter((name) => name.startsWith(ASSIGNMENT_ATTEMPT_TEMP_PREFIX));
+  } catch {
+    reject('INTERNAL_GROUP_OUTPUT_INVALID');
+  }
+}
+
+function assertTransitionTemps(root, allowedName = null) {
+  const names = transitionTempNames(root);
+  if (allowedName === null ? names.length !== 0
+    : names.length !== 1 || names[0] !== allowedName) {
+    reject('INTERNAL_GROUP_OUTPUT_INVALID');
   }
 }
 
@@ -134,6 +212,7 @@ function createAttempt(path, root, value) {
   const bytes = canonicalJsonBytes(validateAttempt(value));
   let descriptor;
   try {
+    assertTransitionTemps(root);
     descriptor = openSync(path,
       FS_CONSTANTS.O_WRONLY | FS_CONSTANTS.O_CREAT | FS_CONSTANTS.O_EXCL
         | (FS_CONSTANTS.O_NOFOLLOW ?? 0), 0o600);
@@ -147,6 +226,7 @@ function createAttempt(path, root, value) {
     descriptor = undefined;
     fsyncDirectory(root);
     if (!readAttempt(path).bytes.equals(bytes)) reject('INTERNAL_GROUP_OUTPUT_INVALID');
+    assertTransitionTemps(root);
   } catch (error) {
     if (error?.message === 'INTERNAL_GROUP_OUTPUT_INVALID') throw error;
     reject('INTERNAL_GROUP_OUTPUT_INVALID');
@@ -155,38 +235,102 @@ function createAttempt(path, root, value) {
   }
 }
 
-function replaceAttempt(path, root, value) {
-  const current = readAttempt(path);
-  const bytes = canonicalJsonBytes(validateAttempt(value));
-  let descriptor;
+function cleanupOwnedTemp(tempPath, descriptor, root) {
   try {
-    const before = lstatSync(path);
-    validateOpened(before);
-    descriptor = openSync(path, FS_CONSTANTS.O_WRONLY | (FS_CONSTANTS.O_NOFOLLOW ?? 0));
     const opened = fstatSync(descriptor);
     validateOpened(opened);
-    const currentPath = lstatSync(path);
+    const currentPath = lstatSync(tempPath);
     validateOpened(currentPath);
-    if (opened.dev !== before.dev || opened.ino !== before.ino
-      || opened.dev !== currentPath.dev || opened.ino !== currentPath.ino
-      || !current.bytes.equals(readAttempt(path).bytes)) reject('INTERNAL_GROUP_OUTPUT_INVALID');
-    ftruncateSync(descriptor, 0);
-    writeFileSync(descriptor, bytes);
-    fsyncSync(descriptor);
-    const after = fstatSync(descriptor);
-    validateOpened(after);
-    if (after.dev !== opened.dev || after.ino !== opened.ino || after.size !== bytes.length) {
+    if (opened.dev !== currentPath.dev || opened.ino !== currentPath.ino
+      || realpathSync(tempPath) !== tempPath) return;
+    unlinkSync(tempPath);
+    fsyncDirectory(root);
+  } catch {
+    // Never unlink a path unless it is still the exact exclusively-created inode.
+  }
+}
+
+function replaceAttempt(path, root, value, { expectedCurrentBytes, failpoint }) {
+  const bytes = canonicalJsonBytes(validateAttempt(value));
+  let current;
+  let tempDescriptor;
+  let tempPath;
+  let tempName;
+  let renamed = false;
+  try {
+    assertTransitionTemps(root);
+    current = openAttemptSnapshot(path);
+    if (!current.bytes.equals(expectedCurrentBytes)) reject('INTERNAL_GROUP_OUTPUT_INVALID');
+    tempName = `${ASSIGNMENT_ATTEMPT_TEMP_PREFIX}${randomBytes(16).toString('hex')}.tmp`;
+    tempPath = join(root, tempName);
+    tempDescriptor = openSync(tempPath,
+      FS_CONSTANTS.O_RDWR | FS_CONSTANTS.O_CREAT | FS_CONSTANTS.O_EXCL
+        | (FS_CONSTANTS.O_NOFOLLOW ?? 0), 0o600);
+    fchmodSync(tempDescriptor, 0o600);
+    failpoint('temp_created', { tempPath, newBytes: bytes });
+    writeFileSync(tempDescriptor, bytes);
+    failpoint('temp_written', { tempPath, newBytes: bytes });
+    fsyncSync(tempDescriptor);
+    failpoint('temp_fsynced', { tempPath, newBytes: bytes });
+    const tempStat = fstatSync(tempDescriptor);
+    validateOpened(tempStat);
+    if (tempStat.size !== bytes.length) reject('INTERNAL_GROUP_OUTPUT_INVALID');
+    const tempSnapshot = { bytes, descriptor: tempDescriptor, stat: tempStat };
+    validateDescriptorPath(tempSnapshot, tempPath);
+    failpoint('temp_validated', { tempPath, newBytes: bytes });
+
+    assertTransitionTemps(root, tempName);
+    validateDescriptorPath(tempSnapshot, tempPath);
+    validateDescriptorPath(current, path);
+    failpoint('destination_validated', { tempPath, newBytes: bytes });
+
+    assertTransitionTemps(root, tempName);
+    validateDescriptorPath(tempSnapshot, tempPath);
+    validateDescriptorPath(current, path);
+    failpoint('before_rename', { tempPath, newBytes: bytes });
+
+    assertTransitionTemps(root, tempName);
+    validateDescriptorPath(tempSnapshot, tempPath);
+    validateDescriptorPath(current, path);
+    renameSync(tempPath, path);
+    renamed = true;
+    failpoint('after_rename', { tempPath, newBytes: bytes });
+
+    assertTransitionTemps(root);
+    const publishedStat = fstatSync(tempDescriptor);
+    validateOpened(publishedStat);
+    if (publishedStat.dev !== tempSnapshot.stat.dev
+      || publishedStat.ino !== tempSnapshot.stat.ino
+      || publishedStat.mode !== tempSnapshot.stat.mode
+      || publishedStat.uid !== tempSnapshot.stat.uid
+      || publishedStat.nlink !== tempSnapshot.stat.nlink
+      || publishedStat.size !== tempSnapshot.stat.size
+      || publishedStat.mtimeMs !== tempSnapshot.stat.mtimeMs) {
       reject('INTERNAL_GROUP_OUTPUT_INVALID');
     }
-    closeSync(descriptor);
-    descriptor = undefined;
+    // A successful rename changes ctime on supported filesystems without changing the bytes.
+    tempSnapshot.stat = publishedStat;
+    validateDescriptorPath(tempSnapshot, path);
     fsyncDirectory(root);
+    failpoint('directory_fsynced', { tempPath, newBytes: bytes });
+    assertTransitionTemps(root);
+    validateDescriptorPath(tempSnapshot, path);
+    failpoint('before_final_readback', { tempPath, newBytes: bytes });
     if (!readAttempt(path).bytes.equals(bytes)) reject('INTERNAL_GROUP_OUTPUT_INVALID');
+    validateDescriptorPath(tempSnapshot, path);
   } catch (error) {
+    if (!renamed && tempDescriptor !== undefined && tempPath !== undefined) {
+      cleanupOwnedTemp(tempPath, tempDescriptor, root);
+    }
     if (error?.message === 'INTERNAL_GROUP_OUTPUT_INVALID') throw error;
     reject('INTERNAL_GROUP_OUTPUT_INVALID');
   } finally {
-    if (descriptor !== undefined) closeSync(descriptor);
+    if (tempDescriptor !== undefined) {
+      try { closeSync(tempDescriptor); } catch { /* stable error already selected */ }
+    }
+    if (current !== undefined) {
+      try { closeSync(current.descriptor); } catch { /* stable error already selected */ }
+    }
   }
 }
 
@@ -195,11 +339,16 @@ function attemptPath(environment) {
 }
 
 export function assertAssignmentAttemptAbsent(environment = process.env) {
+  const root = validateInternalEvidenceRoot(environment);
+  assertTransitionTemps(root);
   const path = attemptPath(environment);
   try {
     lstatSync(path);
   } catch (error) {
-    if (error?.code === 'ENOENT') return path;
+    if (error?.code === 'ENOENT') {
+      assertTransitionTemps(root);
+      return path;
+    }
     reject('INTERNAL_GROUP_OUTPUT_INVALID');
   }
   const existing = readAttempt(path).value;
@@ -238,10 +387,14 @@ export function transitionAssignmentAttempt(
   nextState,
   environment = process.env,
   now = Date.now(),
+  { failpoint = () => {} } = {},
 ) {
   const root = validateInternalEvidenceRoot(environment);
-  if (path !== join(root, ASSIGNMENT_ATTEMPT_NAME)) reject('INTERNAL_GROUP_OUTPUT_INVALID');
-  const current = readAttempt(path).value;
+  if (path !== join(root, ASSIGNMENT_ATTEMPT_NAME) || typeof failpoint !== 'function') {
+    reject('INTERNAL_GROUP_OUTPUT_INVALID');
+  }
+  const observed = readAttempt(path);
+  const current = observed.value;
   const allowed = (current.state === 'armed'
     && ['provider_started', 'preprovider_failed'].includes(nextState))
     || (current.state === 'provider_started' && nextState === 'unknown')
@@ -256,6 +409,14 @@ export function transitionAssignmentAttempt(
       ? at : null,
     outcome: STATE_OUTCOMES.get(nextState),
   };
-  replaceAttempt(path, root, value);
+  try {
+    failpoint('before_transition_snapshot', { newBytes: canonicalJsonBytes(value) });
+  } catch {
+    reject('INTERNAL_GROUP_OUTPUT_INVALID');
+  }
+  replaceAttempt(path, root, value, {
+    expectedCurrentBytes: observed.bytes,
+    failpoint,
+  });
   return value;
 }
