@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   closeSync,
   constants as FS_CONSTANTS,
   existsSync,
   fstatSync,
+  fsyncSync,
+  lstatSync,
   openSync,
   readFileSync,
+  readSync,
+  realpathSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +46,7 @@ const RETRY = 'RELEASE_ATTEMPT_RETRY_NOT_AUTHORIZED';
 const RECONCILIATION = 'RELEASE_ATTEMPT_RECONCILIATION_INVALID';
 const ACTIONS = new Set(['build', 'upload-testflight']);
 const TERMINAL_STATUSES = new Set(['FINISHED', 'ERRORED', 'CANCELED']);
+const DEFAULT_PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MARKER_KEYS = [
   'schemaVersion', 'action', 'candidate', 'attemptNumber', 'runnerPid', 'state',
   'providerOperationId', 'startedAt', 'terminalAt', 'outcome', 'rawEvidenceSha256',
@@ -342,6 +348,154 @@ const SUBMISSION_APP_KEYS = [
   'appleId', 'account', 'projectSlug', 'submittedBuildIdentityAvailable',
   'bundleIdentifier', 'marketingVersion', 'buildNumber', 'easBuildId',
 ];
+const BUILD_INPUT_AUTHORITY_KEYS = [
+  'schemaVersion', 'artifactKind', 'candidate', 'sourceCommit', 'sourceTreeSha256',
+  'appJsonSha256', 'configSha256', 'packageLockSha256', 'releaseManifestSha256',
+  'releaseVerifierSha256', 'metadataVerifierSha256', 'firebaseProjectId',
+  'googleServicesPlistSha256', 'resolvedProductionExpoConfigSha256', 'nodeRuntime',
+  'easCli', 'easEnvironmentInventorySha256', 'easEnvironment', 'reviewedAt',
+];
+const BUILD_ARTIFACT_AUTHORITY_KEYS = [
+  'schemaVersion', 'artifactKind', 'candidate', 'buildInputAttestationSha256',
+  'sourceTreeSha256', 'easBuildId', 'easArtifactAssociation', 'ipaSha256',
+  'signedEntitlementsSha256', 'privacyReportSha256',
+  'embeddedGoogleServicesPlistSha256', 'signingCertificateSha256',
+  'embeddedProvisioningProfileSha256', 'reviewedAt',
+];
+const ARTIFACT_ASSOCIATION_KEYS = [
+  'evidenceType', 'buildId', 'buildStatus', 'downloadedIpaSha256',
+  'associationGuardProven', 'reviewedAt',
+];
+
+function readCurrentAuthorityFile(projectRoot, relativePath, maxBytes) {
+  let descriptor;
+  try {
+    if (typeof projectRoot !== 'string' || !isAbsolute(projectRoot)
+      || resolve(projectRoot) !== projectRoot || realpathSync(projectRoot) !== projectRoot) {
+      fail(RECONCILIATION);
+    }
+    const path = join(projectRoot, relativePath);
+    if (!isWithin(projectRoot, path) || realpathSync(path) !== path) fail(RECONCILIATION);
+    const before = lstatSync(path);
+    const uid = typeof process.getuid === 'function' ? process.getuid() : before.uid;
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1
+      || before.uid !== uid || before.size <= 0 || before.size > maxBytes) fail(RECONCILIATION);
+    descriptor = openSync(path, FS_CONSTANTS.O_RDONLY | (FS_CONSTANTS.O_NOFOLLOW ?? 0));
+    const opened = fstatSync(descriptor);
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino
+      || opened.size !== before.size || opened.mtimeMs !== before.mtimeMs
+      || opened.nlink !== 1 || opened.uid !== uid) fail(RECONCILIATION);
+    const bytes = readFileSync(descriptor);
+    const after = fstatSync(descriptor);
+    if (after.dev !== opened.dev || after.ino !== opened.ino || after.size !== opened.size
+      || after.mtimeMs !== opened.mtimeMs || after.nlink !== 1) fail(RECONCILIATION);
+    return bytes;
+  } catch (error) {
+    if (error?.message === RECONCILIATION) throw error;
+    fail(RECONCILIATION);
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+function currentAuthorityPin(guardBytes, name) {
+  const source = guardBytes.toString('utf8');
+  if (!Buffer.from(source, 'utf8').equals(guardBytes)) fail(RECONCILIATION);
+  const matches = [...source.matchAll(new RegExp(
+    `^const ${name} = '([a-f0-9]{64})';$`,
+    'gmu',
+  ))];
+  if (matches.length !== 1) fail(RECONCILIATION);
+  return matches[0][1];
+}
+
+function hashCurrentIpa(projectRoot) {
+  const relativePath = 'release/private/rc-build-9/CaboHealth-3.0-build-9.ipa';
+  const path = join(projectRoot, relativePath);
+  let descriptor;
+  try {
+    if (!isWithin(projectRoot, path) || realpathSync(path) !== path) fail(RECONCILIATION);
+    const before = lstatSync(path);
+    const uid = typeof process.getuid === 'function' ? process.getuid() : before.uid;
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1
+      || before.uid !== uid || (before.mode & 0o777) !== 0o600
+      || before.size <= 0 || before.size > 1024 * 1024 * 1024) fail(RECONCILIATION);
+    descriptor = openSync(path, FS_CONSTANTS.O_RDONLY | (FS_CONSTANTS.O_NOFOLLOW ?? 0));
+    const opened = fstatSync(descriptor);
+    if (opened.dev !== before.dev || opened.ino !== before.ino || opened.size !== before.size
+      || opened.mtimeMs !== before.mtimeMs || opened.nlink !== 1) fail(RECONCILIATION);
+    const digest = createHash('sha256');
+    const chunk = Buffer.allocUnsafe(1024 * 1024);
+    let offset = 0;
+    while (offset < opened.size) {
+      const count = readSync(descriptor, chunk, 0, Math.min(chunk.length, opened.size - offset), offset);
+      if (count <= 0) fail(RECONCILIATION);
+      digest.update(chunk.subarray(0, count));
+      offset += count;
+    }
+    const after = fstatSync(descriptor);
+    if (after.dev !== opened.dev || after.ino !== opened.ino || after.size !== opened.size
+      || after.mtimeMs !== opened.mtimeMs || after.nlink !== 1) fail(RECONCILIATION);
+    return digest.digest('hex');
+  } catch (error) {
+    if (error?.message === RECONCILIATION) throw error;
+    fail(RECONCILIATION);
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+function validateCurrentLocalIpaAuthority(projectRoot, marker) {
+  const guardBytes = readCurrentAuthorityFile(
+    projectRoot,
+    'scripts/release-command-guard.mjs',
+    2 * 1024 * 1024,
+  );
+  const inputPin = currentAuthorityPin(guardBytes, 'BUILD_INPUT_ATTESTATION_SHA256');
+  const artifactPin = currentAuthorityPin(guardBytes, 'BUILD_ARTIFACT_ATTESTATION_SHA256');
+  const inputBytes = readCurrentAuthorityFile(
+    projectRoot,
+    'release/app-store/3.0/build-input-attestation.json',
+    1024 * 1024,
+  );
+  const artifactBytes = readCurrentAuthorityFile(
+    projectRoot,
+    'release/app-store/3.0/build-artifact-attestation.json',
+    1024 * 1024,
+  );
+  if (sha256(inputBytes) !== inputPin || sha256(artifactBytes) !== artifactPin) fail(RECONCILIATION);
+  const input = parseJsonBytes(inputBytes, RECONCILIATION, { canonical: true });
+  const artifact = parseJsonBytes(artifactBytes, RECONCILIATION, { canonical: true });
+  if (!canonicalJsonBytes(input).equals(inputBytes) || !canonicalJsonBytes(artifact).equals(artifactBytes)
+    || !hasExactKeys(input, BUILD_INPUT_AUTHORITY_KEYS)
+    || input.schemaVersion !== 1
+    || input.artifactKind !== 'cabohealth-ios-build-input-attestation'
+    || !hasExactKeys(input.candidate, Object.keys(CANDIDATE))
+    || JSON.stringify(input.candidate) !== JSON.stringify(CANDIDATE)
+    || input.sourceCommit !== marker.candidate.sourceCommit
+    || !SHA256_PATTERN.test(input.sourceTreeSha256 ?? '')
+    || !isCanonicalUtc(input.reviewedAt)
+    || !hasExactKeys(artifact, BUILD_ARTIFACT_AUTHORITY_KEYS)
+    || artifact.schemaVersion !== 1
+    || artifact.artifactKind !== 'cabohealth-ios-build-artifact-attestation'
+    || !hasExactKeys(artifact.candidate, Object.keys(CANDIDATE))
+    || JSON.stringify(artifact.candidate) !== JSON.stringify(CANDIDATE)
+    || artifact.buildInputAttestationSha256 !== inputPin
+    || artifact.sourceTreeSha256 !== input.sourceTreeSha256
+    || !UUID_PATTERN.test(artifact.easBuildId ?? '')
+    || !hasExactKeys(artifact.easArtifactAssociation, ARTIFACT_ASSOCIATION_KEYS)
+    || artifact.easArtifactAssociation.evidenceType !== 'independently-reviewed-procedural'
+    || artifact.easArtifactAssociation.buildId !== artifact.easBuildId
+    || artifact.easArtifactAssociation.buildStatus !== 'FINISHED'
+    || artifact.easArtifactAssociation.downloadedIpaSha256 !== artifact.ipaSha256
+    || artifact.easArtifactAssociation.associationGuardProven !== false
+    || !isCanonicalUtc(artifact.easArtifactAssociation.reviewedAt)
+    || !isCanonicalUtc(artifact.reviewedAt)
+    || BUILD_ARTIFACT_AUTHORITY_KEYS.filter((key) => key.endsWith('Sha256'))
+      .some((key) => !SHA256_PATTERN.test(artifact[key] ?? ''))
+    || artifact.ipaSha256 !== hashCurrentIpa(projectRoot)) fail(RECONCILIATION);
+  return artifact;
+}
 
 function validateReconciliationTimesAndError(value) {
   if (!isCanonicalUtc(value.createdAt) || !isCanonicalUtc(value.completedAt)
@@ -351,7 +505,14 @@ function validateReconciliationTimesAndError(value) {
     || (value.errorPresent === false && value.errorCode !== null)) fail(RECONCILIATION);
 }
 
-function validateReconciliationEvidence(action, value, providerOperationId, terminalStatus) {
+function validateReconciliationEvidence(
+  action,
+  value,
+  providerOperationId,
+  terminalStatus,
+  marker,
+  projectRoot,
+) {
   if (action === 'build') {
     if (!hasExactKeys(value, BUILD_RECONCILIATION_KEYS)
       || value.evidenceKind !== 'cabohealth-eas-build-read-only-status'
@@ -364,21 +525,29 @@ function validateReconciliationEvidence(action, value, providerOperationId, term
       || value.marketingVersion !== CANDIDATE.marketingVersion
       || value.buildNumber !== CANDIDATE.buildNumber
       || typeof value.artifactAvailable !== 'boolean') fail(RECONCILIATION);
-  } else if (!hasExactKeys(value, SUBMISSION_RECONCILIATION_KEYS)
-    || value.evidenceKind !== 'cabohealth-eas-submission-read-only-status'
-    || value.submissionId !== providerOperationId
-    || !hasExactKeys(value.app, SUBMISSION_APP_KEYS)
-    || value.app.appleId !== CANDIDATE.appleId
-    || value.app.account !== EAS_ACCOUNT
-    || value.app.projectSlug !== EAS_PROJECT_SLUG
-    || value.app.submittedBuildIdentityAvailable !== true
-    || value.app?.bundleIdentifier !== CANDIDATE.bundleIdentifier
-    || value.app?.marketingVersion !== CANDIDATE.marketingVersion
-    || value.app?.buildNumber !== CANDIDATE.buildNumber
-    || !UUID_PATTERN.test(value.app.easBuildId ?? '')
-    || value.appleProcessingStatus !== 'not-proven-by-eas-submission'
-    || value.appleProcessingPendingReadOnlyVerification !== true
-    || value.appStoreConnectBuildSelectionPerformed !== false) fail(RECONCILIATION);
+  } else {
+    if (!hasExactKeys(value, SUBMISSION_RECONCILIATION_KEYS)
+      || value.evidenceKind !== 'cabohealth-eas-submission-read-only-status'
+      || value.submissionId !== providerOperationId
+      || !hasExactKeys(value.app, SUBMISSION_APP_KEYS)
+      || value.app.appleId !== CANDIDATE.appleId
+      || value.app.account !== EAS_ACCOUNT
+      || value.app.projectSlug !== EAS_PROJECT_SLUG
+      || typeof value.app.submittedBuildIdentityAvailable !== 'boolean'
+      || value.appleProcessingStatus !== 'not-proven-by-eas-submission'
+      || value.appleProcessingPendingReadOnlyVerification !== true
+      || value.appStoreConnectBuildSelectionPerformed !== false) fail(RECONCILIATION);
+    const localAuthority = validateCurrentLocalIpaAuthority(projectRoot, marker);
+    if (value.app.submittedBuildIdentityAvailable) {
+      if (value.app.bundleIdentifier !== CANDIDATE.bundleIdentifier
+        || value.app.marketingVersion !== CANDIDATE.marketingVersion
+        || value.app.buildNumber !== CANDIDATE.buildNumber
+        || value.app.easBuildId !== localAuthority.easBuildId) fail(RECONCILIATION);
+    } else {
+      if (value.app.bundleIdentifier !== null || value.app.marketingVersion !== null
+        || value.app.buildNumber !== null || value.app.easBuildId !== null) fail(RECONCILIATION);
+    }
+  }
   if (value.schemaVersion !== 1 || value.status !== terminalStatus || value.terminal !== true
     || value.platform !== 'IOS' || value.mutationPerformed !== false
     || value.rawProviderResponseRetained !== false || value.providerUrlsOmitted !== true
@@ -394,6 +563,7 @@ export function reconcileAttempt({
   evidencePath,
   evidenceSha256,
   terminalAt = new Date().toISOString(),
+  projectRoot = DEFAULT_PROJECT_ROOT,
 }) {
   const root = validateEvidenceRoot(evidenceRoot);
   const path = join(root, markerName(action));
@@ -414,7 +584,14 @@ export function reconcileAttempt({
     bytes = readSecureFile(evidencePath, RECONCILIATION, { maxBytes: 1024 * 1024, parent: root });
     if (sha256(bytes) !== evidenceSha256) fail(RECONCILIATION);
     value = parseJsonBytes(bytes, RECONCILIATION, { canonical: true });
-    validateReconciliationEvidence(action, value, providerOperationId, terminalStatus);
+    validateReconciliationEvidence(
+      action,
+      value,
+      providerOperationId,
+      terminalStatus,
+      marker,
+      projectRoot,
+    );
   } catch {
     fail(RECONCILIATION);
   }
@@ -480,17 +657,39 @@ function openLogForChild(path) {
     closeSync(descriptor);
     fail(MARKER);
   }
-  return descriptor;
+  return {
+    descriptor,
+    dev: stat.dev,
+    ino: stat.ino,
+    uid: stat.uid,
+  };
 }
 
-function runGuard(projectRoot, evidenceRoot, action, attemptNumber) {
+function syncAndRevalidateLog(log, { fsync, fstat }) {
+  fsync(log.descriptor);
+  const stat = fstat(log.descriptor);
+  const uid = typeof process.getuid === 'function' ? process.getuid() : stat.uid;
+  if (!stat.isFile() || stat.dev !== log.dev || stat.ino !== log.ino
+    || stat.nlink !== 1 || stat.uid !== log.uid || stat.uid !== uid
+    || (stat.mode & 0o777) !== 0o600) fail(MARKER);
+}
+
+export function runGuard(projectRoot, evidenceRoot, action, attemptNumber, {
+  spawn = spawnSync,
+  fsync = fsyncSync,
+  fstat = fstatSync,
+  close = closeSync,
+} = {}) {
+  if (typeof spawn !== 'function' || typeof fsync !== 'function'
+    || typeof fstat !== 'function' || typeof close !== 'function') fail(MARKER);
   const stdoutPath = join(evidenceRoot, logName(action, attemptNumber, 'stdout'));
   const stderrPath = join(evidenceRoot, logName(action, attemptNumber, 'stderr'));
   const stdout = openLogForChild(stdoutPath);
-  const stderr = openLogForChild(stderrPath);
+  let stderr;
   let result;
   try {
-    result = spawnSync(process.execPath, [
+    stderr = openLogForChild(stderrPath);
+    result = spawn(process.execPath, [
       join(projectRoot, 'scripts/release-command-guard.mjs'), action,
     ], {
       cwd: projectRoot,
@@ -498,11 +697,25 @@ function runGuard(projectRoot, evidenceRoot, action, attemptNumber) {
         ...process.env,
         CABOHEALTH_RELEASE_ATTEMPT_STATE: join(evidenceRoot, markerName(action)),
       },
-      stdio: ['ignore', stdout, stderr],
+      stdio: ['ignore', stdout.descriptor, stderr.descriptor],
     });
+    syncAndRevalidateLog(stdout, { fsync, fstat });
+    syncAndRevalidateLog(stderr, { fsync, fstat });
   } finally {
-    closeSync(stdout);
-    closeSync(stderr);
+    let closeError;
+    try {
+      close(stdout.descriptor);
+    } catch (error) {
+      closeError = error;
+    }
+    if (stderr !== undefined) {
+      try {
+        close(stderr.descriptor);
+      } catch (error) {
+        closeError ??= error;
+      }
+    }
+    if (closeError !== undefined) throw closeError;
   }
   const exitStatus = Number.isInteger(result.status) ? result.status : 1;
   const final = finalizeObservedAttempt({ evidenceRoot, action, exitStatus });

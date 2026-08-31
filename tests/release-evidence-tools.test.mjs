@@ -417,3 +417,45 @@ test('submission sanitizer emits the exact build-bound read-only status for both
   });
   assert.deepEqual(readFileSync(reconcileOutput), readFileSync(taskOutput));
 });
+
+test('submission sanitizer preserves an explicit provider submittedBuild null and rejects omission', async (t) => {
+  const { sanitizeSubmissionStatus } = await import('../scripts/release-eas-submission-sanitizer.mjs');
+  const validRoot = ownedDirectory('cabohealth-submission-null-');
+  const omittedRoot = ownedDirectory('cabohealth-submission-omitted-');
+  t.after(() => {
+    rmSync(validRoot, { recursive: true, force: true });
+    rmSync(omittedRoot, { recursive: true, force: true });
+  });
+  const providerNull = submissionView();
+  providerNull.submittedBuild = null;
+  const validOutput = join(validRoot, 'upload-testflight-reconciliation.json');
+  const result = sanitizeSubmissionStatus({
+    stdinBytes: Buffer.from(JSON.stringify(providerNull)),
+    submissionId: SUBMISSION_ID,
+    easBuildId: BUILD_ID,
+    purpose: 'attempt-reconciliation',
+    outputPath: validOutput,
+    environment: { CABOHEALTH_RELEASE_EVIDENCE_ROOT: validRoot },
+  });
+  assert.deepEqual(result.app, {
+    appleId: '6758285327',
+    account: 'guaderrama',
+    projectSlug: 'cabohealth',
+    submittedBuildIdentityAvailable: false,
+    bundleIdentifier: null,
+    marketingVersion: null,
+    buildNumber: null,
+    easBuildId: null,
+  });
+
+  const omitted = submissionView();
+  delete omitted.submittedBuild;
+  assert.throws(() => sanitizeSubmissionStatus({
+    stdinBytes: Buffer.from(JSON.stringify(omitted)),
+    submissionId: SUBMISSION_ID,
+    easBuildId: BUILD_ID,
+    purpose: 'attempt-reconciliation',
+    outputPath: join(omittedRoot, 'upload-testflight-reconciliation.json'),
+    environment: { CABOHEALTH_RELEASE_EVIDENCE_ROOT: omittedRoot },
+  }), /SUBMISSION_STATUS_SANITIZATION_FAILED/u);
+});

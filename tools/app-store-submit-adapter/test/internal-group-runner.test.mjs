@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import {
   chmodSync,
   linkSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -28,6 +29,7 @@ const BUILD_ID = '12345678-1234-4234-8234-123456789abc';
 const BUILD_RESOURCE_ID = 'build-resource-one';
 const GROUP_RESOURCE_ID = 'group-resource-one';
 const NOW = '2026-08-30T12:00:00.000Z';
+const ASSIGNMENT_ATTEMPT_NAME = 'internal-testflight-group-assignment-attempt.json';
 const CANDIDATE = {
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
@@ -329,6 +331,198 @@ test('production assignment writes one canonical mode-0600 result', async (t) =>
   assert.deepEqual(readFileSync(output), Buffer.from(`${JSON.stringify(result)}\n`));
   assert.equal(statSync(output).mode & 0o777, 0o600);
   assert.equal(result.result, 'assigned');
+  const attemptPath = join(value.root, ASSIGNMENT_ATTEMPT_NAME);
+  const attemptBytes = readFileSync(attemptPath);
+  const attempt = JSON.parse(attemptBytes);
+  assert.equal(statSync(attemptPath).mode & 0o777, 0o600);
+  assert.equal(attempt.state, 'terminal_success');
+  assert.equal(attempt.outcome, 'succeeded');
+  assert.equal(attempt.appStoreConnectBuildResourceId, BUILD_RESOURCE_ID);
+  assert.equal(attempt.betaGroupResourceId, GROUP_RESOURCE_ID);
+  assert.doesNotMatch(attemptBytes.toString(), /Bearer|PRIVATE KEY|credential|jwt|secret/iu);
+});
+
+test('an uncertain assignment persists unknown and blocks a second invocation before POST', async (t) => {
+  const value = fixture(t);
+  const observationPath = join(value.root, 'internal-testflight-group-observation.json');
+  const observationSha256 = writeCanonical(observationPath, exactObservation(value));
+  const output = join(value.root, 'internal-testflight-group-assignment.json');
+  const absentRead = {
+    method: 'GET', path: internalGroupPaths.relationshipBuilds(GROUP_RESOURCE_ID),
+    status: 200, response: page([]),
+  };
+  const delegate = new FixtureTransport([
+    ...expectations(), absentRead, absentRead, absentRead,
+  ]);
+  const first = {
+    requests: [],
+    async request(request) {
+      this.requests.push(structuredClone(request));
+      if (request.method === 'POST') throw new Error('APP_STORE_CONNECT_NETWORK_ERROR');
+      return delegate.request(request);
+    },
+  };
+  const args = assignmentArguments(value, observationPath, observationSha256, output);
+  await assert.rejects(runInternalGroup(args, {
+    assignment: true,
+    transport: first,
+    now: Date.parse(NOW),
+    sleep: async () => {},
+    environment: { CABOHEALTH_RELEASE_EVIDENCE_ROOT: value.root },
+  }), /INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN/u);
+  delegate.assertConsumed();
+  assert.equal(first.requests.filter(({ method }) => method === 'POST').length, 1);
+  const attemptPath = join(value.root, ASSIGNMENT_ATTEMPT_NAME);
+  const attempt = JSON.parse(readFileSync(attemptPath));
+  assert.equal(attempt.state, 'unknown');
+  assert.equal(attempt.outcome, 'unknown');
+  assert.equal(lstatSync(attemptPath).nlink, 1);
+  assert.equal(statSync(attemptPath).mode & 0o777, 0o600);
+
+  const second = {
+    requests: [],
+    async request(request) {
+      this.requests.push(structuredClone(request));
+      throw new Error('unexpected live request');
+    },
+  };
+  await assert.rejects(runInternalGroup(args, {
+    assignment: true,
+    transport: second,
+    now: Date.parse(NOW),
+    sleep: async () => {},
+    environment: { CABOHEALTH_RELEASE_EVIDENCE_ROOT: value.root },
+  }), /INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN/u);
+  assert.equal(second.requests.length, 0);
+  assert.equal(JSON.parse(readFileSync(attemptPath)).state, 'unknown');
+});
+
+test('assignment marker is provider_started at POST and unknown before the first readback', async (t) => {
+  const value = fixture(t);
+  const observationPath = join(value.root, 'internal-testflight-group-observation.json');
+  const observationSha256 = writeCanonical(observationPath, exactObservation(value));
+  const output = join(value.root, 'internal-testflight-group-assignment.json');
+  const delegate = new FixtureTransport([
+    ...expectations(),
+    {
+      method: 'POST', path: internalGroupPaths.assign(GROUP_RESOURCE_ID),
+      body: { data: [{ type: 'builds', id: BUILD_RESOURCE_ID }] },
+      responseKind: 'empty', status: 204, response: null,
+    },
+    {
+      method: 'GET', path: internalGroupPaths.relationshipBuilds(GROUP_RESOURCE_ID),
+      status: 200, response: page([{ type: 'builds', id: BUILD_RESOURCE_ID }]),
+    },
+  ]);
+  const attemptPath = join(value.root, ASSIGNMENT_ATTEMPT_NAME);
+  const observedStates = [];
+  const transport = {
+    async request(request) {
+      if (request.method === 'POST') {
+        observedStates.push(JSON.parse(readFileSync(attemptPath)).state);
+      } else if (request.path === internalGroupPaths.relationshipBuilds(GROUP_RESOURCE_ID)
+        && observedStates.length === 1) {
+        observedStates.push(JSON.parse(readFileSync(attemptPath)).state);
+      }
+      return delegate.request(request);
+    },
+  };
+  const result = await runInternalGroup(
+    assignmentArguments(value, observationPath, observationSha256, output),
+    {
+      assignment: true,
+      transport,
+      now: Date.parse(NOW),
+      sleep: async () => {},
+      environment: { CABOHEALTH_RELEASE_EVIDENCE_ROOT: value.root },
+    },
+  );
+  delegate.assertConsumed();
+  assert.deepEqual(observedStates, ['provider_started', 'unknown']);
+  assert.equal(result.result, 'assigned');
+  assert.equal(JSON.parse(readFileSync(attemptPath)).state, 'terminal_success');
+});
+
+test('a durable provider_started marker blocks a later assignment before live access', async (t) => {
+  const value = fixture(t);
+  const { armAssignmentAttempt, transitionAssignmentAttempt } = await import('../src/assignment-attempt.mjs');
+  const environment = { CABOHEALTH_RELEASE_EVIDENCE_ROOT: value.root };
+  const attemptPath = armAssignmentAttempt(exactObservation(value), environment, Date.parse(NOW));
+  transitionAssignmentAttempt(attemptPath, 'provider_started', environment, Date.parse(NOW));
+  const observationPath = join(value.root, 'internal-testflight-group-observation.json');
+  const observationSha256 = writeCanonical(observationPath, exactObservation(value));
+  const output = join(value.root, 'internal-testflight-group-assignment.json');
+  const transport = new FixtureTransport(expectations());
+  await assert.rejects(runInternalGroup(
+    assignmentArguments(value, observationPath, observationSha256, output),
+    {
+      assignment: true,
+      transport,
+      now: Date.parse(NOW),
+      environment,
+    },
+  ), /INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN/u);
+  assert.equal(transport.requests.length, 0);
+  assert.equal(JSON.parse(readFileSync(attemptPath)).state, 'provider_started');
+});
+
+test('a failure after attempt arming but before POST is durably distinguished', async (t) => {
+  const value = fixture(t);
+  const observationPath = join(value.root, 'internal-testflight-group-observation.json');
+  const observationSha256 = writeCanonical(observationPath, exactObservation(value));
+  const output = join(value.root, 'internal-testflight-group-assignment.json');
+  const transport = new FixtureTransport(expectations());
+  await assert.rejects(runInternalGroup(
+    assignmentArguments(value, observationPath, observationSha256, output),
+    {
+      assignment: true,
+      transport,
+      now: Date.parse(NOW),
+      beforeMutation: () => { throw new Error('injected pre-POST failure'); },
+      environment: {
+        CABOHEALTH_RELEASE_EVIDENCE_ROOT: value.root,
+        PRIVATE_SENTINEL: 'do-not-persist-this-secret',
+      },
+    },
+  ), /injected pre-POST failure/u);
+  transport.assertConsumed();
+  assert.equal(transport.requests.some(({ method }) => method === 'POST'), false);
+  const attemptBytes = readFileSync(join(value.root, ASSIGNMENT_ATTEMPT_NAME));
+  const attempt = JSON.parse(attemptBytes);
+  assert.equal(attempt.state, 'preprovider_failed');
+  assert.equal(attempt.outcome, 'preprovider-blocked');
+  assert.doesNotMatch(attemptBytes.toString(), /do-not-persist-this-secret/u);
+});
+
+test('pre-existing assignment-attempt files, symlinks, and hardlinks block before live access', async (t) => {
+  for (const kind of ['file', 'symlink', 'hardlink']) {
+    await t.test(kind, async (subtest) => {
+      const value = fixture(subtest);
+      const observationPath = join(value.root, 'internal-testflight-group-observation.json');
+      const observationSha256 = writeCanonical(observationPath, exactObservation(value));
+      const output = join(value.root, 'internal-testflight-group-assignment.json');
+      const attemptPath = join(value.root, ASSIGNMENT_ATTEMPT_NAME);
+      const preserved = join(value.root, `${kind}-attempt-preserved.json`);
+      writeFileSync(preserved, 'preserve', { mode: 0o600 });
+      chmodSync(preserved, 0o600);
+      if (kind === 'file') writeFileSync(attemptPath, 'preserve', { mode: 0o600 });
+      else if (kind === 'symlink') symlinkSync(preserved, attemptPath);
+      else linkSync(preserved, attemptPath);
+      if (kind === 'file') chmodSync(attemptPath, 0o600);
+      const transport = new FixtureTransport(expectations());
+      await assert.rejects(runInternalGroup(
+        assignmentArguments(value, observationPath, observationSha256, output),
+        {
+          assignment: true,
+          transport,
+          now: Date.parse(NOW),
+          environment: { CABOHEALTH_RELEASE_EVIDENCE_ROOT: value.root },
+        },
+      ), /INTERNAL_GROUP_(?:OUTPUT_INVALID|ASSIGNMENT_OUTCOME_UNKNOWN|ASSIGNMENT_FAILED)/u);
+      assert.equal(transport.requests.length, 0);
+      if (kind !== 'file') assert.equal(readFileSync(preserved, 'utf8'), 'preserve');
+    });
+  }
 });
 
 test('production CLI maps an unexpected failure to the finite internal error', (t) => {

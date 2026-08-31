@@ -4,6 +4,11 @@ import {
   SHA256_PATTERN,
   UUID_PATTERN,
 } from './constants.mjs';
+import {
+  armAssignmentAttempt,
+  assertAssignmentAttemptAbsent,
+  transitionAssignmentAttempt,
+} from './assignment-attempt.mjs';
 import { loadCredentials } from './auth.mjs';
 import { reject } from './errors.mjs';
 import { parseInternalGroupArguments } from './internal-group-arguments.mjs';
@@ -117,9 +122,14 @@ export async function runInternalGroup(argv, {
   transport,
   now = Date.now(),
   sleep,
+  beforeMutation,
 } = {}) {
   const args = parseInternalGroupArguments(argv, { assignment });
   validateInternalOutputTarget(args.outputPath, args.operation, environment);
+  if (beforeMutation !== undefined && typeof beforeMutation !== 'function') {
+    reject('INTERNAL_GROUP_INPUT_INVALID');
+  }
+  if (assignment) assertAssignmentAttemptAbsent(environment);
   const bindings = readBindings(args);
   if (assignment) validateObservation(args, bindings, now);
   let liveTransport = transport;
@@ -130,8 +140,32 @@ export async function runInternalGroup(argv, {
       reject('INTERNAL_GROUP_CREDENTIALS_INVALID');
     }
   }
+  let attemptPath;
+  const prepareMutation = async (observation) => {
+    attemptPath = armAssignmentAttempt(observation, environment, now);
+    try {
+      if (beforeMutation !== undefined) await beforeMutation(observation);
+      transitionAssignmentAttempt(attemptPath, 'provider_started', environment, now);
+    } catch (error) {
+      try {
+        transitionAssignmentAttempt(attemptPath, 'preprovider_failed', environment, now);
+      } catch {
+        // A surviving armed/provider_started marker still blocks a later mutation.
+      }
+      throw error;
+    }
+  };
+  const recordMutationState = async (state) => {
+    if (attemptPath === undefined) reject('INTERNAL_GROUP_OUTPUT_INVALID');
+    transitionAssignmentAttempt(attemptPath, state, environment, now);
+  };
   const result = assignment
-    ? await assignInternalGroup(liveTransport, bindings, { now: () => now, sleep })
+    ? await assignInternalGroup(liveTransport, bindings, {
+      now: () => now,
+      sleep,
+      beforeMutation: prepareMutation,
+      afterMutation: recordMutationState,
+    })
     : await observeInternalGroup(liveTransport, bindings, { now: () => now });
   writeInternalOutput(args.outputPath, result, args.operation, environment);
   return result;

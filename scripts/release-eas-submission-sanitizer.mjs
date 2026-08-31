@@ -62,7 +62,9 @@ export function sanitizeSubmissionStatus({
       || value.app?.ownerAccount?.name !== EAS_ACCOUNT
       || (value.error !== null && (value.error === undefined || typeof value.error !== 'object' || Array.isArray(value.error)))) fail();
     const submitted = value.submittedBuild;
-    const submittedAvailable = submitted !== null && submitted !== undefined;
+    if (!Object.hasOwn(value, 'submittedBuild')
+      || (submitted !== null && (typeof submitted !== 'object' || Array.isArray(submitted)))) fail();
+    const submittedAvailable = submitted !== null;
     if (submittedAvailable && (submitted.id !== easBuildId
       || submitted.platform !== 'IOS'
       || submitted.distribution !== 'STORE'

@@ -359,3 +359,16 @@ test('ambiguous build/group and pagination fail closed before mutation', async (
   );
   assert.equal(transport.requests.some(({ method }) => method === 'POST'), false);
 });
+
+test('collections with an omitted links.next field are accepted as unpaginated', async () => {
+  const { observeInternalGroup } = await import('../src/internal-testflight.mjs');
+  const values = fixtures();
+  for (const collectionName of ['builds', 'groups', 'relationships']) {
+    values[collectionName].links = {};
+  }
+  const transport = new RecordingTransport(values);
+  const result = await observeInternalGroup(transport, bindings, { now: () => NOW });
+  assert.equal(result.available, false);
+  assert.equal(result.availabilityReason, 'not-assigned');
+  assert.equal(transport.requests.some(({ method }) => method === 'POST'), false);
+});

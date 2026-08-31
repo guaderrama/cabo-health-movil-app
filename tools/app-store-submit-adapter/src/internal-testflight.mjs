@@ -57,9 +57,10 @@ function validateOne(value, type, id, code) {
 }
 
 function collection(value, code) {
+  const next = value?.links?.next;
   if (value === null || typeof value !== 'object' || Array.isArray(value)
-    || !Array.isArray(value.data) || value.links?.next !== null) {
-    if (value?.links?.next !== null && value?.links?.next !== undefined) {
+    || !Array.isArray(value.data) || (next !== null && next !== undefined)) {
+    if (next !== null && next !== undefined) {
       reject('INTERNAL_GROUP_PAGINATION_UNSUPPORTED');
     }
     reject(code);
@@ -243,8 +244,11 @@ async function relationshipPresent(transport, groupId, buildId) {
 export async function assignInternalGroup(transport, bindings, {
   now = Date.now,
   sleep = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds)),
+  beforeMutation = async () => {},
+  afterMutation = async () => {},
 } = {}) {
-  if (typeof sleep !== 'function') reject('INTERNAL_GROUP_INPUT_INVALID');
+  if (typeof sleep !== 'function' || typeof beforeMutation !== 'function'
+    || typeof afterMutation !== 'function') reject('INTERNAL_GROUP_INPUT_INVALID');
   const observation = await observeInternalGroup(transport, bindings, { now });
   if (observation.available) {
     return assignmentResult(observation, {
@@ -256,7 +260,9 @@ export async function assignInternalGroup(transport, bindings, {
     });
   }
 
+  await beforeMutation(observation);
   let responseKind = '204-no-content';
+  let postError = null;
   try {
     const response = await transport.request({
       method: 'POST',
@@ -268,14 +274,32 @@ export async function assignInternalGroup(transport, bindings, {
       reject('INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN');
     }
   } catch (error) {
-    if (error?.message === 'APP_STORE_CONNECT_HTTP_409') responseKind = '409-readback';
+    postError = error;
+  }
+  try {
+    await afterMutation('unknown');
+  } catch {
+    reject('INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN');
+  }
+  if (postError !== null) {
+    if (postError?.message === 'APP_STORE_CONNECT_HTTP_409') responseKind = '409-readback';
     else if (['APP_STORE_CONNECT_NETWORK_ERROR', 'APP_STORE_CONNECT_RESPONSE_INVALID',
-      'INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN'].includes(error?.message)) {
+      'INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN'].includes(postError?.message)) {
       responseKind = 'network-uncertain-readback';
-    } else if (error?.message === 'APP_STORE_CONNECT_HTTP_401'
-      || error?.message === 'APP_STORE_CONNECT_HTTP_403') {
+    } else if (postError?.message === 'APP_STORE_CONNECT_HTTP_401'
+      || postError?.message === 'APP_STORE_CONNECT_HTTP_403') {
+      try {
+        await afterMutation('terminal_failure');
+      } catch {
+        reject('INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN');
+      }
       reject('INTERNAL_GROUP_AUTHORIZATION_FAILED');
     } else {
+      try {
+        await afterMutation('terminal_failure');
+      } catch {
+        reject('INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN');
+      }
       reject('INTERNAL_GROUP_ASSIGNMENT_FAILED');
     }
   }
@@ -292,6 +316,11 @@ export async function assignInternalGroup(transport, bindings, {
         ? 'assigned'
         : (responseKind === '409-readback'
           ? 'assigned-after-conflict-readback' : 'assigned-after-uncertain-response');
+      try {
+        await afterMutation('terminal_success');
+      } catch {
+        reject('INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN');
+      }
       return assignmentResult(observation, {
         observedAfterMutationAt: canonicalTime(now()),
         mutationAttempted: true,
@@ -300,7 +329,14 @@ export async function assignInternalGroup(transport, bindings, {
       });
     }
   }
-  if (responseKind === '409-readback') reject('INTERNAL_GROUP_ASSIGNMENT_FAILED');
+  if (responseKind === '409-readback') {
+    try {
+      await afterMutation('terminal_failure');
+    } catch {
+      reject('INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN');
+    }
+    reject('INTERNAL_GROUP_ASSIGNMENT_FAILED');
+  }
   reject('INTERNAL_GROUP_ASSIGNMENT_OUTCOME_UNKNOWN');
 }
 
