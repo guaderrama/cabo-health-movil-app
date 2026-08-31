@@ -359,7 +359,40 @@ test('patched shared wrapper allows a safe inherited blank iframe without Linkin
   assert.deepEqual(runtime.linkingEffects, []);
 });
 
-test('external Public WebView silently allows a safe inherited blank iframe but renders an unsafe top-frame block', () => {
+test('patched shared wrapper silently applies a rejected subframe without errors or Linking effects', () => {
+  const runtime = loadPinnedSharedWrapper('ios');
+  const applicationRequests = [];
+  const nativeDecisions = [];
+  let errorCalls = 0;
+  const request = {
+    url: 'https://attacker.example/',
+    isTopFrame: false,
+    mainDocumentURL: 'https://profound-health.com/products/page/4/',
+    lockIdentifier: 44,
+  };
+  const handler = runtime.createOnShouldStartLoadWithRequest(
+    (shouldStart, url, lockIdentifier) => {
+      nativeDecisions.push([shouldStart, url, lockIdentifier]);
+    },
+    ['https://profound-health.com'],
+    (applicationRequest) => {
+      applicationRequests.push(applicationRequest);
+      return applyExternalHttpsNavigationDecision(
+        classifyExternalHttpsNavigationRequest(applicationRequest, 'https://profound-health.com'),
+        { showError: () => { errorCalls += 1; } },
+      );
+    },
+  );
+
+  handler({ nativeEvent: request });
+
+  assert.deepEqual(applicationRequests, [request]);
+  assert.deepEqual(nativeDecisions, [[false, 'https://attacker.example/', 44]]);
+  assert.equal(errorCalls, 0);
+  assert.deepEqual(runtime.linkingEffects, []);
+});
+
+test('external Public WebView silently applies a rejected subframe without an alert, then renders an unsafe top-frame block', () => {
   const runtime = loadExternalHttpsWebView();
   const miniapp = {
     slug: 'profound-health',
@@ -377,8 +410,21 @@ test('external Public WebView silently allows a safe inherited blank iframe but 
     isTopFrame: true,
     mainDocumentURL: 'https://profound-health.com/products/page/4/',
   };
+  const unsafeSubframeRequest = {
+    url: 'https://attacker.example/',
+    isTopFrame: false,
+    mainDocumentURL: 'https://profound-health.com/products/page/4/',
+  };
 
   assert.equal(getPublicWebView(runtime.render({ miniapp })).props.onShouldStartLoadWithRequest(safeRequest), true);
+  assert.equal(
+    descendants(runtime.render({ miniapp })).some((node) => node.props?.accessibilityRole === 'alert'),
+    false,
+  );
+  assert.equal(
+    getPublicWebView(runtime.render({ miniapp })).props.onShouldStartLoadWithRequest(unsafeSubframeRequest),
+    false,
+  );
   assert.equal(
     descendants(runtime.render({ miniapp })).some((node) => node.props?.accessibilityRole === 'alert'),
     false,

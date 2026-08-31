@@ -99,15 +99,19 @@ export function ClientResourceWebView({
       setLoading(false);
       setLoadProgress(1);
     },
-    onLoadProgress: (event: WebViewProgressEvent) => {
-      setLoadProgress(Math.max(0, Math.min(event.nativeEvent.progress, 1)));
-    },
     onLoadStart: () => {
       setLoading(true);
       setLoadProgress(0);
       setErrorMessage(null);
     },
     style: styles.webview,
+  } as const;
+
+  const externalWebViewProps = {
+    ...commonWebViewProps,
+    onLoadProgress: (event: WebViewProgressEvent) => {
+      setLoadProgress(Math.max(0, Math.min(event.nativeEvent.progress, 1)));
+    },
   } as const;
 
   return (
@@ -156,7 +160,7 @@ export function ClientResourceWebView({
 
         {launch.kind === 'external_https' ? (
           <WebView
-            {...commonWebViewProps}
+            {...externalWebViewProps}
             {...getExternalClientResourceWebViewPolicyProps(
               launch,
               handleNavigationRequest,

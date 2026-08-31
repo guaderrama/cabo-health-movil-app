@@ -236,9 +236,14 @@ test('broker loading keeps the existing blocking loader overlay', () => {
     descendants(view).some((node) => node.props?.accessibilityRole === 'progressbar'),
     false,
   );
+  assert.equal(
+    getWebView(view).props.onLoadProgress,
+    undefined,
+    'broker loading does not subscribe to unused progress events',
+  );
 });
 
-test('external VIP WebView silently allows a safe inherited blank iframe but renders an unsafe top-frame block', () => {
+test('external VIP WebView silently applies a rejected subframe without an alert, then renders an unsafe top-frame block', () => {
   const runtime = loadClientResourceWebView();
   const props = {
     launch: externalLaunch,
@@ -256,8 +261,21 @@ test('external VIP WebView silently allows a safe inherited blank iframe but ren
     isTopFrame: true,
     mainDocumentURL: 'https://www.eightsleep.com/mx/',
   };
+  const unsafeSubframeRequest = {
+    url: 'https://attacker.example/',
+    isTopFrame: false,
+    mainDocumentURL: 'https://www.eightsleep.com/mx/',
+  };
 
   assert.equal(getWebView(runtime.render(props)).props.onShouldStartLoadWithRequest(safeRequest), true);
+  assert.equal(
+    descendants(runtime.render(props)).some((node) => node.props?.accessibilityRole === 'alert'),
+    false,
+  );
+  assert.equal(
+    getWebView(runtime.render(props)).props.onShouldStartLoadWithRequest(unsafeSubframeRequest),
+    false,
+  );
   assert.equal(
     descendants(runtime.render(props)).some((node) => node.props?.accessibilityRole === 'alert'),
     false,
