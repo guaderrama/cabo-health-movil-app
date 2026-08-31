@@ -15,6 +15,7 @@ import {
 const CODE = 'EAS_ENVIRONMENT_SANITIZATION_FAILED';
 const MAX_INPUT_BYTES = 1024 * 1024;
 const TASK_PARENT = '/.superpowers/sdd/2026-08-30-cabohealth-build9-testflight-release/task-2-evidence';
+const UNICODE_WHITESPACE = /[\p{White_Space}\p{Pattern_White_Space}\uFEFF]/u;
 const SENSITIVE_VALUE = '***** (This is a sensitive env variable. To access it, run command with --include-sensitive flag. Learn more.)';
 const SECRET_VALUE = "***** (This is a secret env variable that can only be accessed on EAS builder and can't be read in any UI. Learn more.)";
 const PROJECT_VARIABLES = Object.freeze([
@@ -38,13 +39,22 @@ function fail() {
   throw new Error(CODE);
 }
 
+function hasForbiddenTextCharacter(text) {
+  for (const character of text) {
+    if (character === '\n' || character === ' ') continue;
+    const codePoint = character.codePointAt(0);
+    if (codePoint <= 0x1f
+      || (codePoint >= 0x7f && codePoint <= 0x9f)
+      || UNICODE_WHITESPACE.test(character)) return true;
+  }
+  return false;
+}
+
 function decodeUtf8(bytes) {
   if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > MAX_INPUT_BYTES) fail();
   const text = bytes.toString('utf8');
   if (!Buffer.from(text, 'utf8').equals(bytes)
-    || text.startsWith('\uFEFF')
-    || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)
-    || text.includes('\r')) fail();
+    || hasForbiddenTextCharacter(text)) fail();
   return text;
 }
 

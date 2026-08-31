@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
@@ -14,11 +15,14 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 const BUILD_ID = '12345678-1234-4234-8234-123456789abc';
 const SUBMISSION_ID = '87654321-4321-4234-8234-cba987654321';
 const NOW = Date.parse('2026-08-30T12:00:00.000Z');
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const PROJECT_ROOT = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
+const ENVIRONMENT_SANITIZER_CLI = join(PROJECT_ROOT, 'scripts/release-eas-environment-sanitizer.mjs');
 
 function ownedDirectory(prefix, mode = 0o700) {
   const path = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
@@ -106,6 +110,82 @@ const ENV_LONG = [
   'Updated at    Aug 30 12:00:00',
   '',
 ].join('\n');
+
+const ENV_HIDDEN_CHARACTER_CASES = Object.freeze([
+  {
+    name: 'prefix TAB',
+    input: ENV_LONG.replace('Environment: production', 'Environment:\u0009 production'),
+  },
+  {
+    name: 'prefix CR',
+    input: ENV_LONG.replace('Environment: production', 'Environment:\r production'),
+  },
+  {
+    name: 'separator NBSP',
+    input: ENV_LONG.replace('———', '—\u00A0——'),
+  },
+  {
+    name: 'label left-to-right mark',
+    input: ENV_LONG.replace(
+      'ID            provider-id-one',
+      'I\u200ED            provider-id-one',
+    ),
+  },
+  {
+    name: 'label DEL',
+    input: ENV_LONG.replace(
+      'ID            provider-id-one',
+      'ID\u007F            provider-id-one',
+    ),
+  },
+  {
+    name: 'ID TAB',
+    input: ENV_LONG.replace('provider-id-one', 'provider\u0009-id-one'),
+  },
+  {
+    name: 'ID NUL',
+    input: ENV_LONG.replace('provider-id-one', 'provider\u0000-id-one'),
+  },
+  {
+    name: 'ID byte-order mark',
+    input: ENV_LONG.replace('provider-id-one', 'provider\uFEFF-id-one'),
+  },
+  {
+    name: 'Name right-to-left mark',
+    input: ENV_LONG.replace(
+      'CABOHEALTH_FIREBASE_PROJECT_ID',
+      'CABOHEALTH_FIREBASE\u200F_PROJECT_ID',
+    ),
+  },
+  {
+    name: 'Value line separator',
+    input: ENV_LONG.replace('sensitive env variable', 'sensitive\u2028 env variable'),
+  },
+  {
+    name: 'Scope NBSP',
+    input: ENV_LONG.replace('Scope         PROJECT', 'Scope         PROJ\u00A0ECT'),
+  },
+  {
+    name: 'Visibility thin space',
+    input: ENV_LONG.replace('Visibility    SENSITIVE', 'Visibility    SENSI\u2009TIVE'),
+  },
+  {
+    name: 'Environments ideographic space',
+    input: ENV_LONG.replace('Environments  production', 'Environments  pro\u3000duction'),
+  },
+  {
+    name: 'type paragraph separator',
+    input: ENV_LONG.replace('type          string', 'type          stri\u2029ng'),
+  },
+  {
+    name: 'Created at C1 next-line',
+    input: ENV_LONG.replace('Aug 29 12:00:00', 'Aug\u0085 29 12:00:00'),
+  },
+  {
+    name: 'Updated at C1 control',
+    input: ENV_LONG.replace('Aug 30 12:00:00', 'Aug\u009B 30 12:00:00'),
+  },
+]);
 
 test('environment sanitizer emits only the exact canonical value-free inventory in mode 0600', async (t) => {
   const { sanitizeEasEnvironment } = await import('../scripts/release-eas-environment-sanitizer.mjs');
@@ -199,6 +279,46 @@ test('environment sanitizer accepts no more than one exact leading LF', async (t
       /EAS_ENVIRONMENT_SANITIZATION_FAILED/u,
     );
     assert.equal(existsSync(output), false);
+  }
+});
+
+test('environment parser rejects hidden controls and Unicode blanks in every structural field', async (t) => {
+  const { parseEasEnvironmentLongOutput } = await import('../scripts/release-eas-environment-sanitizer.mjs');
+  for (const fixture of ENV_HIDDEN_CHARACTER_CASES) {
+    await t.test(fixture.name, () => {
+      assert.throws(
+        () => parseEasEnvironmentLongOutput(Buffer.from(fixture.input)),
+        /EAS_ENVIRONMENT_SANITIZATION_FAILED/u,
+      );
+    });
+  }
+});
+
+test('environment sanitizer CLI rejects hidden characters with one finite error and no artifact', async (t) => {
+  for (const hiddenCharacter of ENV_HIDDEN_CHARACTER_CASES) {
+    await t.test(hiddenCharacter.name, (subtest) => {
+      const fixture = sddEvidenceRoot('task-2');
+      subtest.after(() => rmSync(fixture.base, { recursive: true, force: true }));
+      writeFileSync(join(fixture.base, 'eas.json'), JSON.stringify({
+        build: { production: { environment: 'production', env: { APP_ENV: 'production' } } },
+      }) + '\n');
+      const output = join(fixture.path, 'eas-environment.json');
+      const result = spawnSync(process.execPath, [
+        ENVIRONMENT_SANITIZER_CLI,
+        '--environment', 'production',
+        '--eas-config', 'eas.json',
+        '--output', output,
+      ], {
+        cwd: fixture.base,
+        env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
+        input: Buffer.from(hiddenCharacter.input),
+        encoding: 'utf8',
+      });
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.equal(result.stderr, 'EAS_ENVIRONMENT_SANITIZATION_FAILED\n');
+      assert.equal(existsSync(output), false);
+    });
   }
 });
 
