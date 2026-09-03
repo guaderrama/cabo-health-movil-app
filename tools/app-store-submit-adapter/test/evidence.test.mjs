@@ -27,23 +27,27 @@ const bindings = {
   testFlightProcessedAtMs: Date.parse('2026-08-25T17:30:00.000Z'),
 };
 
-test('build artifact requires the exact reviewed EAS-to-IPA association', () => {
+test('build artifact rejects tampering with the reviewed EAS-to-IPA association', () => {
   const fixture = createEvidenceFixture();
   assert.doesNotThrow(() => validateBuildArtifact(fixture.buildArtifact, { now: NOW }));
 
-  const mismatched = structuredClone(fixture.buildArtifact);
-  mismatched.easArtifactAssociation.downloadedIpaSha256 = 'e'.repeat(64);
-  assert.throws(
-    () => validateBuildArtifact(mismatched, { now: NOW }),
-    /BUILD_ARTIFACT_EVIDENCE_INVALID/u,
-  );
-
-  const unreviewed = structuredClone(fixture.buildArtifact);
-  unreviewed.easArtifactAssociation.extra = true;
-  assert.throws(
-    () => validateBuildArtifact(unreviewed, { now: NOW }),
-    /BUILD_ARTIFACT_EVIDENCE_INVALID/u,
-  );
+  const tamperingCases = [
+    ['IPA hash', (artifact) => { artifact.easArtifactAssociation.downloadedIpaSha256 = 'e'.repeat(64); }],
+    ['build ID', (artifact) => { artifact.easArtifactAssociation.buildId = '87654321-1234-4234-8234-123456789abc'; }],
+    ['build status', (artifact) => { artifact.easArtifactAssociation.buildStatus = 'ERRORED'; }],
+    ['association guard', (artifact) => { artifact.easArtifactAssociation.associationGuardProven = true; }],
+    ['association review chronology', (artifact) => { artifact.easArtifactAssociation.reviewedAt = '2026-08-25T17:00:00.001Z'; }],
+    ['unexpected association field', (artifact) => { artifact.easArtifactAssociation.extra = true; }],
+  ];
+  for (const [name, tamper] of tamperingCases) {
+    const tampered = structuredClone(fixture.buildArtifact);
+    tamper(tampered);
+    assert.throws(
+      () => validateBuildArtifact(tampered, { now: NOW }),
+      /BUILD_ARTIFACT_EVIDENCE_INVALID/u,
+      name,
+    );
+  }
 });
 
 test('parses only the exact guard argument contract and fixed candidate', () => {
@@ -217,14 +221,30 @@ test('screenshot evidence is exactly eight scenes in two locales at official 6.9
     /SCREENSHOTS_MANIFEST_INVALID/u,
   );
 
-  const longButValid = structuredClone(validScreenshots());
-  longButValid.captures[0].relativePath = `screenshots/en-US/iphone-6.9/${'a'.repeat(230)}.png`;
-  assert.doesNotThrow(() => validateScreenshotsManifest(longButValid, bindings, { now: NOW }));
-
   const nullByte = structuredClone(validScreenshots());
   nullByte.captures[0].relativePath = 'screenshots/en-US/iphone-6.9/01-launch\0.png';
   assert.throws(
     () => validateScreenshotsManifest(nullByte, bindings, { now: NOW }),
+    /SCREENSHOTS_MANIFEST_INVALID/u,
+  );
+});
+
+test('screenshot relative paths accept 512 JavaScript characters and reject 513', () => {
+  const prefix = 'screenshots/en-US/iphone-6.9/';
+  const extension = '.png';
+  const pathAtLimit = `${prefix}${'a'.repeat(512 - prefix.length - extension.length)}${extension}`;
+  const pathOverLimit = `${prefix}${'a'.repeat(513 - prefix.length - extension.length)}${extension}`;
+  assert.equal(pathAtLimit.length, 512);
+  assert.equal(pathOverLimit.length, 513);
+
+  const valid = structuredClone(validScreenshots());
+  valid.captures[0].relativePath = pathAtLimit;
+  assert.doesNotThrow(() => validateScreenshotsManifest(valid, bindings, { now: NOW }));
+
+  const invalid = structuredClone(validScreenshots());
+  invalid.captures[0].relativePath = pathOverLimit;
+  assert.throws(
+    () => validateScreenshotsManifest(invalid, bindings, { now: NOW }),
     /SCREENSHOTS_MANIFEST_INVALID/u,
   );
 });
