@@ -36,6 +36,37 @@ test('English and Mexican Spanish expose the same non-empty public message contr
   assert.equal(MESSAGES['es-MX']['recipes.beverage'], 'Bebida');
 });
 
+test('the introduction exposes complete English and Mexican Spanish copy', () => {
+  const keys = [
+    'intro.tagline',
+    'intro.message',
+    'intro.enter',
+    'intro.enterLabel',
+    'intro.enterHint',
+  ];
+
+  assert.deepEqual(
+    keys.map((key) => translateMessage('en', key)),
+    [
+      'LONGEVITY, GROUNDED IN SCIENCE.',
+      'One thoughtful place to explore CaboHealth.',
+      'ENTER CABOHEALTH',
+      'Enter CaboHealth',
+      'Opens the CaboHealth apps portal',
+    ],
+  );
+  assert.deepEqual(
+    keys.map((key) => translateMessage('es-MX', key)),
+    [
+      'LONGEVIDAD BASADA EN CIENCIA.',
+      'Un lugar pensado para explorar CaboHealth.',
+      'ENTRAR A CABOHEALTH',
+      'Entrar a CaboHealth',
+      'Abre el portal de aplicaciones de CaboHealth',
+    ],
+  );
+});
+
 test('approved simplified home has matching English and Spanish copy', () => {
   const keys = [
     'home.brandPromise',

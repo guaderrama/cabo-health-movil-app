@@ -37,12 +37,21 @@ const BUILD_ARTIFACT_KEYS = Object.freeze([
   'buildInputAttestationSha256',
   'sourceTreeSha256',
   'easBuildId',
+  'easArtifactAssociation',
   'ipaSha256',
   'signedEntitlementsSha256',
   'privacyReportSha256',
   'embeddedGoogleServicesPlistSha256',
   'signingCertificateSha256',
   'embeddedProvisioningProfileSha256',
+  'reviewedAt',
+]);
+const EAS_ARTIFACT_ASSOCIATION_KEYS = Object.freeze([
+  'evidenceType',
+  'buildId',
+  'buildStatus',
+  'downloadedIpaSha256',
+  'associationGuardProven',
   'reviewedAt',
 ]);
 const PHYSICAL_QA_KEYS = Object.freeze([
@@ -151,8 +160,16 @@ export function validateBuildArtifact(value, { now = Date.now() } = {}) {
     || value.artifactKind !== 'cabohealth-ios-build-artifact-attestation'
     || !exactCandidate(value.candidate)
     || !allSha256(value, hashKeys)
-    || !UUID_PATTERN.test(value.easBuildId ?? '')) reject(code);
-  timestamp(value.reviewedAt, code, now);
+    || !UUID_PATTERN.test(value.easBuildId ?? '')
+    || !exactKeys(value.easArtifactAssociation, EAS_ARTIFACT_ASSOCIATION_KEYS)
+    || value.easArtifactAssociation.evidenceType !== 'independently-reviewed-procedural'
+    || value.easArtifactAssociation.buildId !== value.easBuildId
+    || value.easArtifactAssociation.buildStatus !== 'FINISHED'
+    || value.easArtifactAssociation.downloadedIpaSha256 !== value.ipaSha256
+    || value.easArtifactAssociation.associationGuardProven !== false) reject(code);
+  const associationReviewedAt = timestamp(value.easArtifactAssociation.reviewedAt, code, now);
+  const reviewedAt = timestamp(value.reviewedAt, code, now);
+  if (reviewedAt < associationReviewedAt) reject(code);
   return value;
 }
 
@@ -229,7 +246,8 @@ export function validateAppStoreConnectEvidence(value, bindings, { now = Date.no
 }
 
 function safeScreenshotPath(value, locale, format) {
-  if (typeof value !== 'string' || value.length > 240 || value.includes('\\')
+  if (typeof value !== 'string' || value.length === 0 || value.length > 512
+    || value.includes('\\') || value.includes('\0')
     || value.startsWith('/') || value !== posix.normalize(value)
     || value.split('/').some((part) => part === '..' || part === '.' || part.length === 0)
     || !value.startsWith(`screenshots/${locale}/iphone-6.9/`)) return false;

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, linkSync, readFileSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   parseArguments,
   readAndValidateEvidence,
   validateAppStoreConnectEvidence,
+  validateBuildArtifact,
   validatePhysicalIphoneQa,
   validateScreenshotsManifest,
 } from '../src/index.mjs';
@@ -25,6 +26,25 @@ const bindings = {
   sourceTreeSha256: SOURCE_SHA,
   testFlightProcessedAtMs: Date.parse('2026-08-25T17:30:00.000Z'),
 };
+
+test('build artifact requires the exact reviewed EAS-to-IPA association', () => {
+  const fixture = createEvidenceFixture();
+  assert.doesNotThrow(() => validateBuildArtifact(fixture.buildArtifact, { now: NOW }));
+
+  const mismatched = structuredClone(fixture.buildArtifact);
+  mismatched.easArtifactAssociation.downloadedIpaSha256 = 'e'.repeat(64);
+  assert.throws(
+    () => validateBuildArtifact(mismatched, { now: NOW }),
+    /BUILD_ARTIFACT_EVIDENCE_INVALID/u,
+  );
+
+  const unreviewed = structuredClone(fixture.buildArtifact);
+  unreviewed.easArtifactAssociation.extra = true;
+  assert.throws(
+    () => validateBuildArtifact(unreviewed, { now: NOW }),
+    /BUILD_ARTIFACT_EVIDENCE_INVALID/u,
+  );
+});
 
 test('parses only the exact guard argument contract and fixed candidate', () => {
   const fixture = createEvidenceFixture();
@@ -73,6 +93,17 @@ test('rejects evidence byte drift, noncanonical JSON, unsafe mode, and a stale R
     assert.throws(
       () => readAndValidateEvidence(parseArguments(fixture.args), { now: NOW }),
       /SCREENSHOTS_MANIFEST_FILE_INVALID/u,
+    );
+  }
+  {
+    const fixture = createEvidenceFixture();
+    linkSync(
+      fixture.values['build-artifact-attestation'],
+      `${fixture.values['build-artifact-attestation']}.hardlink`,
+    );
+    assert.throws(
+      () => readAndValidateEvidence(parseArguments(fixture.args), { now: NOW }),
+      /BUILD_ARTIFACT_FILE_INVALID/u,
     );
   }
   {
@@ -183,6 +214,17 @@ test('screenshot evidence is exactly eight scenes in two locales at official 6.9
   ];
   assert.throws(
     () => validateScreenshotsManifest(nonCanonicalCaptureOrder, bindings, { now: NOW }),
+    /SCREENSHOTS_MANIFEST_INVALID/u,
+  );
+
+  const longButValid = structuredClone(validScreenshots());
+  longButValid.captures[0].relativePath = `screenshots/en-US/iphone-6.9/${'a'.repeat(230)}.png`;
+  assert.doesNotThrow(() => validateScreenshotsManifest(longButValid, bindings, { now: NOW }));
+
+  const nullByte = structuredClone(validScreenshots());
+  nullByte.captures[0].relativePath = 'screenshots/en-US/iphone-6.9/01-launch\0.png';
+  assert.throws(
+    () => validateScreenshotsManifest(nullByte, bindings, { now: NOW }),
     /SCREENSHOTS_MANIFEST_INVALID/u,
   );
 });

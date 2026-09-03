@@ -54,7 +54,13 @@ test('the launch route gates the app behind ENTER without persisted onboarding o
   assert.doesNotMatch(entrySource, /removeItem|\.clear\(/u);
 
   assert.match(introSource, /onPress=\{handleEnter\}/u);
-  assert.match(introSource, />LONGEVITY, GROUNDED IN SCIENCE\.<\/Text>/u);
+  assert.match(introSource, /const \{ t \} = useTranslations\(\)/u);
+  assert.match(introSource, /t\('intro\.tagline'\)/u);
+  assert.match(introSource, /t\('intro\.message'\)/u);
+  assert.match(introSource, /t\('intro\.enter'\)/u);
+  assert.match(introSource, /accessibilityLabel=\{t\('intro\.enterLabel'\)\}/u);
+  assert.match(introSource, /accessibilityHint=\{t\('intro\.enterHint'\)\}/u);
+  assert.doesNotMatch(introSource, /LONGEVITY, GROUNDED IN SCIENCE/u);
   assert.doesNotMatch(introSource, /PRECISION LONGEVITY MEDICINE/u);
   assert.doesNotMatch(introSource, /setTimeout|INTRO_AUTO_CONTINUE_MS/u);
 });

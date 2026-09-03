@@ -15,7 +15,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AnimatedMolecules } from '../../components';
 import { introColors, layout } from '../../constants';
-import { useReducedMotion, useTheme } from '../../hooks';
+import { useReducedMotion, useTheme, useTranslations } from '../../hooks';
 import { calculateIntroLayout } from './introLayout';
 import { createIntroContinuation, type IntroContinuation } from './introTiming';
 
@@ -25,6 +25,7 @@ interface IntroScreenProps {
 
 export function IntroScreen({ onComplete }: IntroScreenProps) {
   const { isDark } = useTheme();
+  const { t } = useTranslations();
   const { width, height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
@@ -150,19 +151,19 @@ export function IntroScreen({ onComplete }: IntroScreenProps) {
               end={{ x: 1, y: 0 }}
               style={styles.rule}
             />
-            <Text style={styles.tagline}>LONGEVITY, GROUNDED IN SCIENCE.</Text>
+            <Text style={styles.tagline}>{t('intro.tagline')}</Text>
           </View>
 
           <View style={{ height: introLayout.messageGap }} />
           <View style={styles.messageContainer}>
-            <Text style={styles.message}>One thoughtful place to explore CaboHealth.</Text>
+            <Text style={styles.message}>{t('intro.message')}</Text>
           </View>
 
           <View style={[styles.flexSpacer, { minHeight: introLayout.messageCtaGap }]} />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Enter CaboHealth"
-            accessibilityHint="Opens the CaboHealth apps portal"
+            accessibilityLabel={t('intro.enterLabel')}
+            accessibilityHint={t('intro.enterHint')}
             onPress={handleEnter}
             style={({ pressed }) => [styles.ctaOuter, pressed && styles.ctaPressed]}
           >
@@ -172,7 +173,7 @@ export function IntroScreen({ onComplete }: IntroScreenProps) {
               end={{ x: 1, y: 0.5 }}
               style={styles.ctaGradient}
             >
-              <Text style={styles.ctaLabel}>ENTER CABOHEALTH</Text>
+              <Text style={styles.ctaLabel}>{t('intro.enter')}</Text>
             </LinearGradient>
           </Pressable>
           <View style={{ height: introLayout.bottomPadding }} />

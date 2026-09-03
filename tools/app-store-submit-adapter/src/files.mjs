@@ -25,7 +25,7 @@ export function readBoundFile(path, {
   try {
     if (resolve(path) !== path || realpathSync(path) !== path) reject(code);
     const before = lstatSync(path);
-    if (!before.isFile() || before.isSymbolicLink()) reject(code);
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) reject(code);
     if (typeof process.getuid === 'function' && before.uid !== process.getuid()) reject(code);
     const mode = before.mode & 0o777;
     if (privateFile ? mode !== 0o600 : (mode & 0o022) !== 0) reject(code);
@@ -34,10 +34,11 @@ export function readBoundFile(path, {
     try {
       const opened = fstatSync(descriptor);
       if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino
-        || opened.size !== before.size || opened.mtimeMs !== before.mtimeMs) reject(code);
+        || opened.nlink !== 1 || opened.size !== before.size
+        || opened.mtimeMs !== before.mtimeMs) reject(code);
       const bytes = readFileSync(descriptor);
       const after = fstatSync(descriptor);
-      if (after.size !== opened.size || after.mtimeMs !== opened.mtimeMs
+      if (after.nlink !== 1 || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs
         || (expectedSha256 !== undefined && sha256(bytes) !== expectedSha256)) reject(code);
       return bytes;
     } finally {
