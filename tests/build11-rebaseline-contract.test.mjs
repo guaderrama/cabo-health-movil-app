@@ -67,6 +67,14 @@ const STALE_BUILD_9_AUTHORITY = [
   /\b(?:sole\s+unbuilt|next|current)\s+(?:release\s+)?candidate\s+(?:is\s+)?(?:3\.0\/)?build[- /]?9\b/iu,
   /\bpending\s+(?:exact\s+)?(?:3\.0\/)?build[- /]?9\b/iu,
 ];
+const BUILD_10_REFERENCE = /\bbuild[- /]?10\b|["']buildNumber["']\s*:\s*["']10["']|\bbuild\s+number\s*:\s*`10`/giu;
+const HISTORICAL_BUILD_10_CONTEXT = /\b(?:processed(?:[- ]internal)?[- ]testflight|immutable|histor(?:y|ical)|cannot authorize|built, attested, uploaded, and processed)\b/iu;
+const STALE_BUILD_10_AUTHORITY = [
+  /\bbuild[- /]?10\s+(?:is|remains|will be|input freeze|input-attested)\s+(?:the\s+)?(?:sole\s+unbuilt|next|current|pending)\b/iu,
+  /\b(?:sole\s+unbuilt|next|current)\s+(?:release\s+)?candidate\s+(?:is\s+)?(?:3\.0\/)?build[- /]?10\b/iu,
+  /\bpending\s+(?:exact\s+)?(?:3\.0\/)?build[- /]?10\b/iu,
+];
+const BUILD_11_SDD_ROOT = '/.superpowers/sdd/2026-09-03-cabohealth-build11-app-store-release';
 
 test('the sole current candidate is pre-input 3.0 build 11 with all five authority pins null', () => {
   const app = JSON.parse(readFileSync(join(root, 'app.json'), 'utf8'));
@@ -309,6 +317,66 @@ test('every build-9 reference in current documents is classified as aborted hist
     }
   }
   assert.ok(classifiedReferenceCount > 0, 'allowlist must retain classified build-9 history');
+});
+
+test('build 10 references in current authority are processed immutable history, never pending work', () => {
+  let classifiedReferenceCount = 0;
+  for (const relativePath of CURRENT_DOCUMENT_REVIEW_ALLOWLIST) {
+    const source = readFileSync(join(root, relativePath), 'utf8');
+    const references = [...source.matchAll(BUILD_10_REFERENCE)];
+    if (relativePath === 'release/app-store/3.0/release-manifest.json') {
+      const manifest = JSON.parse(source);
+      const historical = manifest.historicalCandidateEvidence.filter(
+        ({ marketingVersion, buildNumber }) => marketingVersion === '3.0' && buildNumber === '10',
+      );
+      assert.deepEqual(historical, [{
+        marketingVersion: '3.0',
+        buildNumber: '10',
+        status: 'processed-internal-testflight-history',
+        appStoreObserved: true,
+        trackedHistoryRoot: 'release/app-store/3.0/history/build-10',
+        privateHistoryRoot: 'release/private/rc-build-10',
+      }]);
+      classifiedReferenceCount += references.length + 1;
+      continue;
+    }
+    if (relativePath.endsWith('.json')) {
+      assert.equal(references.length, 0, `${relativePath} must not contain build-10 operational authority`);
+      continue;
+    }
+    for (const reference of references) {
+      const paragraphStart = source.lastIndexOf('\n\n', reference.index) + 2;
+      const nextBreak = source.indexOf('\n\n', reference.index);
+      const paragraph = source.slice(paragraphStart, nextBreak === -1 ? source.length : nextBreak);
+      assert.match(
+        paragraph,
+        HISTORICAL_BUILD_10_CONTEXT,
+        `${relativePath}: ${reference[0]} lacks processed-history classification`,
+      );
+      for (const stalePattern of STALE_BUILD_10_AUTHORITY) {
+        assert.doesNotMatch(
+          paragraph,
+          stalePattern,
+          `${relativePath}: ${reference[0]} is stale current/future authority`,
+        );
+      }
+      classifiedReferenceCount += 1;
+    }
+  }
+  assert.ok(classifiedReferenceCount > 0, 'allowlist must retain classified build-10 history');
+});
+
+test('current build-11 evidence writers retain only their exact task-scoped SDD parents', () => {
+  const expectedParents = new Map([
+    ['scripts/release-eas-environment-sanitizer.mjs', `${BUILD_11_SDD_ROOT}/task-3-evidence`],
+    ['scripts/create-build-input-attestation.mjs', `${BUILD_11_SDD_ROOT}/task-3-evidence`],
+    ['scripts/release-eas-submission-sanitizer.mjs', `${BUILD_11_SDD_ROOT}/task-5-evidence`],
+  ]);
+  for (const [relativePath, parent] of expectedParents) {
+    const source = readFileSync(join(root, relativePath), 'utf8');
+    assert.match(source, new RegExp(`const TASK_PARENT = '${parent}';`, 'u'));
+    assert.doesNotMatch(source, /2026-08-31-cabohealth-build10-testflight-release\/task-[0-9]-evidence/u);
+  }
 });
 
 test('current package actions route through the durable runner and separate group guard actions', () => {

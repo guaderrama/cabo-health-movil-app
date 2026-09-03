@@ -15,7 +15,7 @@ The fixed candidate is:
 - App Store app resource / Apple ID: `6758285327`;
 - bundle identifier: `com.cabohealth.app`;
 - marketing version: `3.0`;
-- build number: `10`;
+- build number: `11`;
 - Team ID: `DQ8PH2DZ3R`;
 - Firebase project: `cabohealth-owner-prod`; and
 - associated domain: `applinks:cabohealth.org`.

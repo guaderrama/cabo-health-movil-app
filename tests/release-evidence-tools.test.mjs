@@ -31,13 +31,23 @@ function ownedDirectory(prefix, mode = 0o700) {
 }
 
 function sddEvidenceRoot(task) {
-  const base = ownedDirectory('cabohealth-build10-sdd-');
-  const releaseTaskRoot = task === 'task-4'
-    ? '2026-09-03-cabohealth-build11-app-store-release'
-    : '2026-08-31-cabohealth-build10-testflight-release';
+  const base = ownedDirectory('cabohealth-build11-sdd-');
+  const releaseTaskRoot = '2026-09-03-cabohealth-build11-app-store-release';
   const path = join(
     base,
     `.superpowers/sdd/${releaseTaskRoot}`,
+    `${task}-evidence`,
+  );
+  mkdirSync(path, { recursive: true, mode: 0o700 });
+  chmodSync(path, 0o700);
+  return { base, path: realpathSync(path) };
+}
+
+function staleBuild10SddEvidenceRoot(task) {
+  const base = ownedDirectory('cabohealth-build10-sdd-');
+  const path = join(
+    base,
+    '.superpowers/sdd/2026-08-31-cabohealth-build10-testflight-release',
     `${task}-evidence`,
   );
   mkdirSync(path, { recursive: true, mode: 0o700 });
@@ -192,7 +202,7 @@ const ENV_HIDDEN_CHARACTER_CASES = Object.freeze([
 
 test('environment sanitizer emits only the exact canonical value-free inventory in mode 0600', async (t) => {
   const { sanitizeEasEnvironment } = await import('../scripts/release-eas-environment-sanitizer.mjs');
-  const fixture = sddEvidenceRoot('task-2');
+  const fixture = sddEvidenceRoot('task-3');
   t.after(() => rmSync(fixture.base, { recursive: true, force: true }));
   const easConfig = join(fixture.base, 'eas.json');
   writeFileSync(easConfig, `${JSON.stringify({
@@ -229,11 +239,26 @@ test('environment sanitizer emits only the exact canonical value-free inventory 
   assert.equal(value.providerValuesRetained, false);
   assert.deepEqual(bytes, Buffer.from(`${JSON.stringify(value)}\n`));
   assert.doesNotMatch(bytes.toString(), /provider-id|Aug 3|example-secret/u);
+
+  const stale = staleBuild10SddEvidenceRoot('task-2');
+  t.after(() => rmSync(stale.base, { recursive: true, force: true }));
+  const staleConfig = join(stale.base, 'eas.json');
+  writeFileSync(staleConfig, `${JSON.stringify({
+    build: { production: { environment: 'production', env: { APP_ENV: 'production' } } },
+  })}\n`);
+  const staleOutput = join(stale.path, 'eas-environment.json');
+  assert.throws(() => sanitizeEasEnvironment({
+    stdinBytes: Buffer.from(ENV_LONG),
+    environmentName: 'production',
+    easConfigPath: staleConfig,
+    outputPath: staleOutput,
+  }), /EAS_ENVIRONMENT_SANITIZATION_FAILED/u);
+  assert.equal(existsSync(staleOutput), false);
 });
 
 test('environment sanitizer accepts the current EAS long output with one leading LF', async (t) => {
   const { sanitizeEasEnvironment } = await import('../scripts/release-eas-environment-sanitizer.mjs');
-  const fixture = sddEvidenceRoot('task-2');
+  const fixture = sddEvidenceRoot('task-3');
   t.after(() => rmSync(fixture.base, { recursive: true, force: true }));
   const easConfig = join(fixture.base, 'eas.json');
   writeFileSync(easConfig, `${JSON.stringify({
@@ -258,7 +283,7 @@ test('environment sanitizer accepts the current EAS long output with one leading
 
 test('environment sanitizer accepts no more than one exact leading LF', async (t) => {
   const { sanitizeEasEnvironment } = await import('../scripts/release-eas-environment-sanitizer.mjs');
-  const fixture = sddEvidenceRoot('task-2');
+  const fixture = sddEvidenceRoot('task-3');
   t.after(() => rmSync(fixture.base, { recursive: true, force: true }));
   const easConfig = join(fixture.base, 'eas.json');
   writeFileSync(easConfig, `${JSON.stringify({
@@ -300,7 +325,7 @@ test('environment parser rejects hidden controls and Unicode blanks in every str
 test('environment sanitizer CLI rejects hidden characters with one finite error and no artifact', async (t) => {
   for (const hiddenCharacter of ENV_HIDDEN_CHARACTER_CASES) {
     await t.test(hiddenCharacter.name, (subtest) => {
-      const fixture = sddEvidenceRoot('task-2');
+      const fixture = sddEvidenceRoot('task-3');
       subtest.after(() => rmSync(fixture.base, { recursive: true, force: true }));
       writeFileSync(join(fixture.base, 'eas.json'), JSON.stringify({
         build: { production: { environment: 'production', env: { APP_ENV: 'production' } } },
@@ -353,7 +378,7 @@ test('environment sanitizer rejects value-bearing, duplicate, extra, config-drif
     /EAS_ENVIRONMENT_SANITIZATION_FAILED/u,
   );
 
-  const fixture = sddEvidenceRoot('task-2');
+  const fixture = sddEvidenceRoot('task-3');
   const easConfig = join(fixture.base, 'eas.json');
   writeFileSync(easConfig, `${JSON.stringify({
     build: { production: { environment: 'production', env: { APP_ENV: 'production' } } },
@@ -390,7 +415,7 @@ test('environment sanitizer rejects value-bearing, duplicate, extra, config-drif
 
 test('build status sanitizer validates exact build 11 identity and omits provider URLs and fields', async (t) => {
   const { sanitizeBuildStatus } = await import('../scripts/release-eas-build-status-sanitizer.mjs');
-  const root = ownedDirectory('cabohealth-build10-external-');
+  const root = ownedDirectory('cabohealth-build11-external-');
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const output = join(root, 'build-reconciliation.json');
   sanitizeBuildStatus({
@@ -417,7 +442,7 @@ test('build status sanitizer validates exact build 11 identity and omits provide
 
 test('artifact downloader validates identity before a bounded ZIP download and hashes final bytes', async (t) => {
   const { downloadEasArtifact } = await import('../scripts/release-eas-artifact-downloader.mjs');
-  const privateRoot = ownedDirectory('cabohealth-build10-private-');
+  const privateRoot = ownedDirectory('cabohealth-build11-private-');
   const rcRoot = join(privateRoot, 'rc-build-11');
   mkdirSync(rcRoot, { mode: 0o700 });
   chmodSync(rcRoot, 0o700);
@@ -576,7 +601,7 @@ test('artifact producer binds the canonical association and exact six-file build
 
 test('submission sanitizer emits the exact build-bound read-only status for both allowed purposes', async (t) => {
   const { sanitizeSubmissionStatus } = await import('../scripts/release-eas-submission-sanitizer.mjs');
-  const task = sddEvidenceRoot('task-7');
+  const task = sddEvidenceRoot('task-5');
   const external = ownedDirectory('cabohealth-submission-external-');
   t.after(() => {
     rmSync(task.base, { recursive: true, force: true });
@@ -608,6 +633,19 @@ test('submission sanitizer emits the exact build-bound read-only status for both
   assert.equal(value.appleProcessingStatus, 'not-proven-by-eas-submission');
   assert.equal(value.mutationPerformed, false);
   assert.equal(statSync(taskOutput).mode & 0o777, 0o600);
+
+  const staleTask = staleBuild10SddEvidenceRoot('task-7');
+  t.after(() => rmSync(staleTask.base, { recursive: true, force: true }));
+  const staleTaskOutput = join(staleTask.path, 'eas-submission-status.json');
+  assert.throws(() => sanitizeSubmissionStatus({
+    stdinBytes: Buffer.from(JSON.stringify(submissionView())),
+    submissionId: SUBMISSION_ID,
+    easBuildId: BUILD_ID,
+    purpose: 'task-evidence',
+    outputPath: staleTaskOutput,
+    environment: {},
+  }), /SUBMISSION_STATUS_SANITIZATION_FAILED/u);
+  assert.equal(existsSync(staleTaskOutput), false);
 
   const reconcileOutput = join(external, 'upload-testflight-reconciliation.json');
   sanitizeSubmissionStatus({

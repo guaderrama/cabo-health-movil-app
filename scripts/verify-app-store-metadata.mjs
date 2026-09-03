@@ -581,7 +581,7 @@ function verifyManifest() {
     },
   ];
   if (!equalJson(historicalCandidateEvidence, expectedHistoricalCandidateEvidence)) {
-    errors.push('Historical candidate evidence must retain builds 4 through 8 as obsolete, plus build 9 as input-attested and aborted pre-provider');
+    errors.push('Historical candidate evidence must retain builds 4 through 8 as obsolete, build 9 as input-attested and aborted pre-provider, and build 10 as processed internal-TestFlight history');
   }
   if (!hasExactKeys(ascEvidence, [
     'observedAt',
@@ -1789,7 +1789,7 @@ function verifyHumanChecklists() {
   const completedVersionConfigurationGate = '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 11 after preserving exact build-8 built/uploaded history, hash-binding build 9 as aborted before any provider operation, and preserving build 10 as immutable processed internal-TestFlight history; no current build-11 input attestation, IPA, or TestFlight upload exists yet.';
   const completedBuild5BuildInputAttestationGate = '- [x] Regenerate, freeze, and independently review the build-5 canonical build-input attestation; bind the exact external mode-0600 production plist hash, sanitized resolved Expo config, `cabohealth-owner-prod`, source/lock/manifests/verifiers, recursive clean `node_modules` runtime, and Node executable bytes/version. Retain the build-4 attestation only as obsolete diagnostic evidence. Pin the new authority so `build:prod` can run with `--freeze-credentials` from a unique private snapshot outside Dropbox whose parent `node_modules` resolves every Expo plugin.';
   const completedBuild6BuildInputAttestationGate = '- [x] Generate, independently review, and pin the build-6 canonical build-input attestation against the rebaselined 3.0/build 6 source and exact external mode-0600 production plist before its EAS build; do not reuse either obsolete build-5 attestation.';
-  const pendingBuild10BuildInputAttestationGate = '- [ ] Generate, independently review, and pin the build-11 canonical build-input attestation against the frozen 3.0/build 11 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8, aborted build-9, or processed build-10 authority.';
+  const pendingBuild11BuildInputAttestationGate = '- [ ] Generate, independently review, and pin the build-11 canonical build-input attestation against the frozen 3.0/build 11 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8, aborted build-9, or processed build-10 authority.';
   const required = [
     'apple-review-remediation-2026-08-24.md',
     'testflight-what-to-test.md',
@@ -1841,7 +1841,7 @@ function verifyHumanChecklists() {
       if (!source.includes(completedBuild6BuildInputAttestationGate)) {
         errors.push('submission-gates.md must retain the exact completed build-6 build-input attestation checkbox');
       }
-      if (!source.includes(pendingBuild10BuildInputAttestationGate)) {
+      if (!source.includes(pendingBuild11BuildInputAttestationGate)) {
         errors.push('submission-gates.md must retain the exact pending build-11 build-input attestation checkbox');
       }
       if (!source.includes(pendingPhysicalAppAttestGate)) {

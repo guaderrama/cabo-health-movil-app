@@ -4,9 +4,12 @@ Status: the pre-existing public and protected dynamic control planes are active.
 External-HTTPS source support and its additive Functions/Staff deployment are
 implemented and preserved in immutable build-8 distribution history. Build 9
 was input-attested and then aborted before any provider operation when its
-mandatory post-pin gates exposed phase-stale release tests. Build 10,
-physical-device QA, and current release evidence remain pending. This document
-does not claim those later steps. The sanitized production boundary and exact active pins are recorded in
+mandatory post-pin gates exposed phase-stale release tests. Build 10 was built,
+attested, uploaded, and processed for internal TestFlight; it is immutable
+history and cannot authorize build 11. Build 11 is the sole current candidate;
+its build-input authority, physical-device QA, and current release evidence
+remain pending. This document does not claim those later steps. The sanitized
+production boundary and exact active pins are recorded in
 `dynamic-miniapp-production-activation-2026-08-25.md`.
 
 ## Owner outcome

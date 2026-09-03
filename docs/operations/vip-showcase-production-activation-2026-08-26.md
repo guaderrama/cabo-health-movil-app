@@ -66,8 +66,10 @@ No catalog migration was executed as part of this activation.
   route and an in-app back control, but its EAS `FINISHED` binaries are now
   obsolete-source history. Build 8 added the external-HTTPS miniapps source,
   was built and uploaded, and is now immutable obsolete history. Build 9 was
-  input-attested and then aborted before any provider operation. Build 10
-  carries that behavior plus the WebView subframe fix; neither hands an internal launch to Chrome,
+  input-attested and then aborted before any provider operation. Build 10 was
+  built, attested, uploaded, and processed for internal TestFlight; it is
+  immutable history and cannot authorize build 11. Its build carries the WebView
+  subframe fix; neither hands an internal launch to Chrome,
   Safari, or another external browser.
 - Positive V2 catalog retrieval and complete VIP showcase QA depend on the
   exact signed CaboHealth 3.0 build 11 running on a physical iPhone with its valid App

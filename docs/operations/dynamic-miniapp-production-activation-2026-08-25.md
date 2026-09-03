@@ -93,7 +93,7 @@ candidate; its current build-input, artifact, and RC authorities are absent.
   verification is complete; it is not a substitute for device behavior.
 - A controlled production owner CRUD exercise with a non-sensitive temporary
   entry and cleanup remains separate from the component activation evidence.
-- Build 10 input freeze, EAS build, exact IPA audit, TestFlight processing,
+- Build 11 input freeze, EAS build, exact IPA audit, TestFlight processing,
   two-iPhone QA, screenshots, App Attest valid-flow evidence, final App Store
   metadata, privacy/age answers, rights sign-off, and Apple review remain
   pending.
