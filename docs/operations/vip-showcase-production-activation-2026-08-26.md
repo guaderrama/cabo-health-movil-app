@@ -70,7 +70,7 @@ No catalog migration was executed as part of this activation.
   carries that behavior plus the WebView subframe fix; neither hands an internal launch to Chrome,
   Safari, or another external browser.
 - Positive V2 catalog retrieval and complete VIP showcase QA depend on the
-  exact signed CaboHealth 3.0 build 10 running on a physical iPhone with its valid App
+  exact signed CaboHealth 3.0 build 11 running on a physical iPhone with its valid App
   Check flow.
 - The corresponding Staff Portal release has not yet been promoted.
 - This activation did not submit a build or release to App Review.

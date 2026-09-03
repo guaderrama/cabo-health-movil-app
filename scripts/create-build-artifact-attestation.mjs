@@ -23,9 +23,9 @@ const ARGUMENT = 'BUILD_ARTIFACT_PRODUCER_ARGUMENT_INVALID';
 const ASSOCIATION = 'BUILD_ARTIFACT_PRODUCER_ASSOCIATION_INVALID';
 const FILE = 'BUILD_ARTIFACT_PRODUCER_FILE_INVALID';
 const OUTPUT = 'BUILD_ARTIFACT_PRODUCER_OUTPUT_INVALID';
-const TASK_PARENT = '/.superpowers/sdd/2026-08-31-cabohealth-build10-testflight-release/task-5-evidence';
+const TASK_PARENT = '/.superpowers/sdd/2026-09-03-cabohealth-build11-app-store-release/task-4-evidence';
 const FILES = Object.freeze([
-  'CaboHealth-3.0-build-10.ipa',
+  'CaboHealth-3.0-build-11.ipa',
   'signed-entitlements.plist',
   'privacy-report.json',
   'embedded-GoogleService-Info.plist',
@@ -85,7 +85,7 @@ export function createBuildArtifactAttestation({
   const association = readAssociation(associationPath);
   try {
     if (typeof evidenceDir !== 'string' || !isAbsolute(evidenceDir) || resolve(evidenceDir) !== evidenceDir
-      || !evidenceDir.endsWith('/rc-build-10')) fail(FILE);
+      || !evidenceDir.endsWith('/rc-build-11')) fail(FILE);
     validateOwnedDirectory(evidenceDir, FILE);
     const entries = readdirSync(evidenceDir).sort();
     if (JSON.stringify(entries) !== JSON.stringify([...FILES].sort())) fail(FILE);

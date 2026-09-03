@@ -1,6 +1,6 @@
 # Age-rating questionnaire record
 
-Status: **16+ / LEGACY 17+ RECONFIRMATION REQUIRED.** App Store Connect previously saved 9+, but that result is historical and cannot be reused for build 10. The owner-managed catalog can display third-party HTTPS destinations in an embedded WebView, so the current questionnaire must truthfully declare Unrestricted Web Access.
+Status: **16+ / LEGACY 17+ RECONFIRMATION REQUIRED.** App Store Connect previously saved 9+, but that result is historical and cannot be reused for build 11. The owner-managed catalog can display third-party HTTPS destinations in an embedded WebView, so the current questionnaire must truthfully declare Unrestricted Web Access.
 
 Apple currently defines Unrestricted Web Access as allowing users to navigate to webpages within the app, including embedded browser functionality. Its current global rating table maps that capability to 16+, while the table for operating systems earlier than version 26 maps it to 17+. Sources verified 2026-08-28:
 

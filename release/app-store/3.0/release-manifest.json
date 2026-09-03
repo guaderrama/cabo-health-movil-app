@@ -5,7 +5,7 @@
     "appleId": "6758285327",
     "bundleIdentifier": "com.cabohealth.app",
     "marketingVersion": "3.0",
-    "buildNumber": "10",
+    "buildNumber": "11",
     "status": "pre-build-configured",
     "appJsonUpdated": true,
     "configUpdated": true,
@@ -106,6 +106,14 @@
       "appStoreObserved": false,
       "trackedHistoryRoot": "release/app-store/3.0/history/build-9-aborted",
       "privateHistoryRoot": null
+    },
+    {
+      "marketingVersion": "3.0",
+      "buildNumber": "10",
+      "status": "processed-internal-testflight-history",
+      "appStoreObserved": true,
+      "trackedHistoryRoot": "release/app-store/3.0/history/build-10",
+      "privateHistoryRoot": "release/private/rc-build-10"
     }
   ],
   "ownerSeller": {
@@ -298,7 +306,7 @@
       "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
       "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
       "clientAccessModel": "pending-apple-review-determination",
-      "exactReleaseCandidate": "build-10-pending-build-input-attestation-eas-build-and-qa",
+      "exactReleaseCandidate": "build-11-pending-build-input-attestation-eas-build-and-qa",
       "screenshots": "pending-exact-rc-capture",
       "appStoreConnectSave": "pending-final-save"
     }
@@ -325,8 +333,8 @@
     "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
     "privacyMapping": "pending-final-linkage-category-review-and-save",
     "brandAndContentRights": "pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis",
-    "exactReleaseCandidate": "build-10-pending-build-input-attestation-eas-build-and-qa",
-    "testFlight": "builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-pending-build-upload-selection-and-physical-iphone-qa",
+    "exactReleaseCandidate": "build-11-pending-build-input-attestation-eas-build-and-qa",
+      "testFlight": "builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-pending-build-upload-selection-and-physical-iphone-qa",
     "screenshots": "pending-exact-rc-capture",
     "accessibilityLabels": "pending-exact-rc-evidence",
     "appStoreConnect": "pending-final-save",

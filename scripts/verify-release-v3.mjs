@@ -55,14 +55,22 @@ const EXACT_HISTORICAL_CANDIDATE_EVIDENCE = [
     trackedHistoryRoot: 'release/app-store/3.0/history/build-9-aborted',
     privateHistoryRoot: null,
   },
+  {
+    marketingVersion: '3.0',
+    buildNumber: '10',
+    status: 'processed-internal-testflight-history',
+    appStoreObserved: true,
+    trackedHistoryRoot: 'release/app-store/3.0/history/build-10',
+    privateHistoryRoot: 'release/private/rc-build-10',
+  },
 ];
 const EXACT_ASC_REVIEW_GUIDELINES = ['1.4.1', '2.1', '4.1'];
 const EXACT_AUTHORITY_SHA256 = Object.freeze({
-  'app.json': 'ae0f119c35ca6da99a50c87b7931881d0fafb32af33af9871d58455c31ef86ae',
+  'app.json': '2498a015b7ec5b266ccccbb71d2a6d47cfe17184a85aa0b03d89fe32bd801601',
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
-  'constants/config.ts': '1b95a32a1ea77850fdb12b88037d09dc23afb9d79b83ffe36d02dece869bc30d',
+  'constants/config.ts': 'a2b8453caa2f6be0c065f226bf84edc59e12b9b3a42523321fcb173388ec8a90',
   'constants/publicMiniapps.ts': '7306d82fd7de694b16de85401a8aab431c5408037f5038ce95fc5f79edef9dda',
-  'release/app-store/3.0/release-manifest.json': 'edcfe50ba71597e2c149be24a0c84a249018e38ecc87295efd1ed4856b215530',
+  'release/app-store/3.0/release-manifest.json': '471e227ee6ea5c6db497f4f6cc2bdc6f55e77333277dd0dcabe6f04bf027e28d',
   'release/app-store/3.0/age-rating.json': '2b8de835b2e1ef794c28310a1699e101a7d604652b14945538c70e26df6e1259',
   'release/app-store/3.0/app-privacy.json': 'ea62eeb774718f7378cfb4edbc18dfb8fa8f90afadb3c61d2ef6b214a1da4349',
 });
@@ -147,9 +155,9 @@ export function verifyCapturedReleaseV3(files) {
 
   if (appJson && (
     appJson.expo?.version !== '3.0'
-    || appJson.expo?.ios?.buildNumber !== '10'
+    || appJson.expo?.ios?.buildNumber !== '11'
   )) {
-    errors.push('app.json must remain 3.0/build 10 after the build-10 rebaseline');
+    errors.push('app.json must remain 3.0/build 11 after the build-11 rebaseline');
   }
   const productionProfile = easJson?.build?.production;
   if (!hasExactKeys(productionProfile, ['environment', 'node', 'env', 'ios'])
@@ -162,8 +170,8 @@ export function verifyCapturedReleaseV3(files) {
     errors.push('eas.json production must pin environment production, Node 22.22.3, APP_ENV production, and m-medium');
   }
   if (!/version:\s*['"]3\.0['"]/u.test(config)
-    || !/buildNumber:\s*['"]10['"]/u.test(config)) {
-    errors.push('constants/config.ts must remain 3.0/build 10 after the build-10 rebaseline');
+    || !/buildNumber:\s*['"]11['"]/u.test(config)) {
+    errors.push('constants/config.ts must remain 3.0/build 11 after the build-11 rebaseline');
   }
 
   const sourceSlugs = extractPublicSlugs(publicSource);
@@ -467,8 +475,8 @@ export function verifyCapturedReleaseV3(files) {
       ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
       privacyMapping: 'pending-final-linkage-category-review-and-save',
       brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-      exactReleaseCandidate: 'build-10-pending-build-input-attestation-eas-build-and-qa',
-      testFlight: 'builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-pending-build-upload-selection-and-physical-iphone-qa',
+      exactReleaseCandidate: 'build-11-pending-build-input-attestation-eas-build-and-qa',
+      testFlight: 'builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-pending-build-upload-selection-and-physical-iphone-qa',
       screenshots: 'pending-exact-rc-capture',
       accessibilityLabels: 'pending-exact-rc-evidence',
       appStoreConnect: 'pending-final-save',
@@ -486,13 +494,13 @@ export function verifyCapturedReleaseV3(files) {
     }
 
     if (manifest.candidate?.marketingVersion !== '3.0'
-      || manifest.candidate?.buildNumber !== '10'
+      || manifest.candidate?.buildNumber !== '11'
       || manifest.candidate?.status !== 'pre-build-configured'
       || manifest.candidate?.appJsonUpdated !== true
       || manifest.candidate?.configUpdated !== true
       || manifest.candidate?.rcSourceSha !== null
       || manifest.candidate?.testFlightBuildId !== null) {
-      errors.push('candidate must remain truthful pre-build-configured 3.0/build 10 without premature RC evidence');
+      errors.push('candidate must remain truthful pre-build-configured 3.0/build 11 without premature RC evidence');
     }
     const asc = manifest.ascEvidence;
     if (asc?.observedAt !== '2026-08-27T20:35:04.000Z'
@@ -510,10 +518,10 @@ export function verifyCapturedReleaseV3(files) {
       || asc?.latestReviewDate !== '2026-02-24'
       || !sameArray(asc?.latestReviewGuidelines, EXACT_ASC_REVIEW_GUIDELINES)
       || asc?.informationRequested !== true) {
-      errors.push('dated ASC read-only evidence must retain its exact build-8-era snapshot without becoming current build-10 authority');
+      errors.push('dated ASC read-only evidence must retain its exact build-8-era snapshot without becoming current build-11 authority');
     }
     if (!sameJson(manifest.historicalCandidateEvidence, EXACT_HISTORICAL_CANDIDATE_EVIDENCE)) {
-      errors.push('release history must retain builds 4 through 8 as obsolete-source evidence, build 9 as aborted pre-provider, and build 10 as the sole new candidate');
+      errors.push('release history must retain builds 4 through 8 as obsolete-source evidence, build 9 as aborted pre-provider, build 10 as processed internal-TestFlight history, and build 11 as the sole new candidate');
     }
     if (manifest.reviewRisk?.appleApprovalGuaranteed !== false) {
       errors.push('Apple approval must never be represented as guaranteed');
@@ -1020,7 +1028,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  process.stdout.write('Release 3.0/build 10 verified: pre-build-configured.\n');
+  process.stdout.write('Release 3.0/build 11 verified: pre-build-configured.\n');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

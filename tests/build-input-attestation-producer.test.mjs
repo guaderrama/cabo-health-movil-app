@@ -43,7 +43,7 @@ const easEnvironment = {
   providerValuesRetained: false,
 };
 
-test('build-input producer assembles the exact canonical build 10 authority with inventory digest', () => {
+test('build-input producer assembles the exact canonical build 11 authority with inventory digest', () => {
   const value = assembleBuildInputAttestation({
     reviewedAt: '2026-08-26T07:00:00.000Z',
     sourceCommit,
@@ -65,7 +65,7 @@ test('build-input producer assembles the exact canonical build 10 authority with
   });
 
   assert.deepEqual(value.candidate, BUILD_INPUT_CANDIDATE);
-  assert.equal(value.candidate.buildNumber, '10');
+  assert.equal(value.candidate.buildNumber, '11');
   assert.equal(value.firebaseProjectId, 'cabohealth-owner-prod');
   assert.equal(`${JSON.stringify(value)}\n`.endsWith('\n'), true);
   assert.deepEqual(Object.keys(value), [

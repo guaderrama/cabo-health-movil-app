@@ -93,7 +93,7 @@ harnesses:
 - two-device App Review and Universal Link QA;
 - build 9 remains input-attested, aborted-pre-provider history and cannot
   authorize a release; and
-- the exact signed 3.0/build 10 release-candidate audit, TestFlight processing,
+- the exact signed 3.0/build 11 release-candidate audit, TestFlight processing,
   screenshots, final App Store metadata/privacy reconciliation, and Apple
   review submission.
 

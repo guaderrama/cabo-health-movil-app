@@ -6,7 +6,7 @@ single reviewed candidate below:
 - Apple app resource ID: `6758285327`
 - bundle ID: `com.cabohealth.app`
 - marketing version: `3.0`
-- build number: `10`
+- build number: `11`
 
 The production entry point is `bin/submit.mjs`. It accepts only the exact
 argument sequence produced by `scripts/release-command-guard.mjs`; no key,
@@ -35,7 +35,7 @@ It then requires all of the following cross-bindings:
    ID (currently UUID-shaped); the live selected build must equal that ID.
    These two IDs are intentionally not conflated.
 4. The live App Store Connect app has the exact bundle ID. Exactly one iOS 3.0
-   version exists, its selected build is build 10, processing is `VALID`, the
+   version exists, its selected build is build 11, processing is `VALID`, the
    build is not expired, and the build belongs to the same app.
 5. Before the adapter first mutates Apple state, the live App Store version
    equals the reviewed `PREPARE_FOR_SUBMISSION` or `READY_FOR_REVIEW` state.
@@ -127,7 +127,7 @@ API](https://developer.apple.com/documentation/appstoreconnectapi/creating-api-k
 The adapter uses Apple's current review-submission resources, not the
 deprecated App Store version submission endpoint:
 
-1. Resolve the fixed app, unique iOS 3.0 version, selected build 10, and build's
+1. Resolve the fixed app, unique iOS 3.0 version, selected build 11, and build's
    app relationship.
 2. List active iOS review submissions. Multiple active submissions, a foreign
    item, unresolved issues, cancellation, or completion in progress all stop

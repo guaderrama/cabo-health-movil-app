@@ -22,9 +22,10 @@ attestations. That EAS status proves build completion only, not TestFlight or
 App Store Connect processing. Build 8 was subsequently built, exactly attested,
 uploaded, observed Ready to Submit, and made available to the existing internal
 group; it is immutable obsolete history for the WebView subframe fix and cannot
-authorize build 10. Build 9 was input-attested and then aborted before any
+authorize build 11. Build 9 was input-attested and then aborted before any
 provider operation when mandatory post-pin tests exposed phase-stale release
-gates. CaboHealth 3.0 build 10 is the sole unbuilt next
+gates. Build 10 was built, attested, uploaded, and processed for internal
+TestFlight; its immutable history cannot authorize build 11. CaboHealth 3.0 build 11 is the sole unbuilt next
 candidate; its current build-input, artifact, and RC authorities are absent.
 
 ## Active and verified components

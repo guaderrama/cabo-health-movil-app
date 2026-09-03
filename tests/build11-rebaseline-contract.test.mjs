@@ -68,7 +68,7 @@ const STALE_BUILD_9_AUTHORITY = [
   /\bpending\s+(?:exact\s+)?(?:3\.0\/)?build[- /]?9\b/iu,
 ];
 
-test('the sole current candidate is 3.0 build 10 with one contiguous authority phase', () => {
+test('the sole current candidate is pre-input 3.0 build 11 with all five authority pins null', () => {
   const app = JSON.parse(readFileSync(join(root, 'app.json'), 'utf8'));
   const config = readFileSync(join(root, 'constants/config.ts'), 'utf8');
   const guard = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
@@ -78,9 +78,9 @@ test('the sole current candidate is 3.0 build 10 with one contiguous authority p
   ));
 
   assert.equal(app.expo.version, '3.0');
-  assert.equal(app.expo.ios.buildNumber, '10');
-  assert.match(config, /buildNumber:\s*'10'/u);
-  assert.equal(manifest.candidate.buildNumber, '10');
+  assert.equal(app.expo.ios.buildNumber, '11');
+  assert.match(config, /buildNumber:\s*'11'/u);
+  assert.equal(manifest.candidate.buildNumber, '11');
   const {
     buildInputPin,
     buildArtifactPin,
@@ -88,33 +88,65 @@ test('the sole current candidate is 3.0 build 10 with one contiguous authority p
     easPin,
     adapterPin,
   } = currentAuthorityPins(guard);
-  assert.equal(easPin, null);
-  let sawUnpinnedPhase = false;
-  for (const pin of [buildInputPin, buildArtifactPin, rcPin, adapterPin]) {
-    if (pin === null) sawUnpinnedPhase = true;
-    else assert.equal(sawUnpinnedPhase, false, 'authority phases must be contiguous');
-  }
-  for (const [relativePath, pin, artifactKind] of [
-    ['release/app-store/3.0/build-input-attestation.json', buildInputPin,
-      'cabohealth-ios-build-input-attestation'],
-    ['release/app-store/3.0/build-artifact-attestation.json', buildArtifactPin,
-      'cabohealth-ios-build-artifact-attestation'],
-    ['release/app-store/3.0/rc-attestation.json', rcPin,
-      'cabohealth-ios-exact-rc-attestation'],
-  ]) {
-    const path = join(root, relativePath);
-    assert.equal(existsSync(path), pin !== null);
-    if (pin !== null) {
-      const bytes = readFileSync(path);
-      const attestation = JSON.parse(bytes);
-      assert.equal(sha256(bytes), pin);
-      assert.equal(attestation.artifactKind, artifactKind);
-      assert.equal(attestation.candidate.buildNumber, '10');
-    }
-  }
+  assert.deepEqual(
+    { buildInputPin, buildArtifactPin, rcPin, easPin, adapterPin },
+    { buildInputPin: null, buildArtifactPin: null, rcPin: null, easPin: null, adapterPin: null },
+  );
+  for (const relativePath of [
+    'release/app-store/3.0/build-input-attestation.json',
+    'release/app-store/3.0/build-artifact-attestation.json',
+    'release/app-store/3.0/rc-attestation.json',
+  ]) assert.equal(existsSync(join(root, relativePath)), false, `${relativePath} must be absent pre-input`);
 });
 
-test('build 8 authority is immutable hash-bound history and never current build 10 authority', () => {
+test('build 10 is immutable processed internal-TestFlight history with its exact identities', () => {
+  const history = join(root, 'release/app-store/3.0/history/build-10');
+  const inputBytes = readFileSync(join(history, 'build-input-attestation.json'));
+  const artifactBytes = readFileSync(join(history, 'build-artifact-attestation.json'));
+  const manifestBytes = readFileSync(join(history, 'manifest.json'));
+  const manifest = JSON.parse(manifestBytes);
+
+  assert.equal(sha256(inputBytes), '686b7d470361726d0f5394000db7482192584c227b7413a0b750895f19e55be9');
+  assert.equal(sha256(artifactBytes), '711bdf720abbdba96961f9c4e18d33c6653a70ec61f7b6474a3251df6d6e95d1');
+  assert.deepEqual(manifest, {
+    schemaVersion: 1,
+    candidate: {
+      appleId: '6758285327',
+      bundleIdentifier: 'com.cabohealth.app',
+      marketingVersion: '3.0',
+      buildNumber: '10',
+    },
+    status: 'processed-internal-testflight-history',
+    buildInputAttestation: {
+      relativePath: 'build-input-attestation.json',
+      sha256: sha256(inputBytes),
+    },
+    buildArtifactAttestation: {
+      relativePath: 'build-artifact-attestation.json',
+      sha256: sha256(artifactBytes),
+    },
+    frozenSource: {
+      commit: 'a2fb59e28e3751682275ec8afef586152c800958',
+      sourceTreeSha256: '18b1862bbb5d319da608ae43f5c17f7d7868392a1bea16a0c0d1855ab858507c',
+    },
+    easArtifactAssociation: {
+      buildId: 'd1b93fcd-d54a-449d-b956-d5bd4add6d6b',
+      ipaSha256: '935d3151b26acb331984ee9c5df83e9171afafea0ea05a1816caf4ece4d96839',
+    },
+    easSubmission: {
+      submissionId: 'ba35a1ee-b89a-4a3b-8d2b-914bdaa0bd29',
+    },
+    appleObservation: {
+      buildResourceId: '3d8b98d8-3b1a-47de-8555-4ac36e0ed46a',
+      processingStatus: 'processed-internal-testflight',
+    },
+  });
+  assert.equal(manifestBytes.toString('utf8'), `${JSON.stringify(manifest)}\n`);
+  assert.equal(JSON.parse(inputBytes).candidate.buildNumber, '10');
+  assert.equal(JSON.parse(artifactBytes).candidate.buildNumber, '10');
+});
+
+test('build 8 authority is immutable hash-bound history and never current build 11 authority', () => {
   const history = join(root, 'release/app-store/3.0/history/build-8');
   const inputBytes = readFileSync(join(history, 'build-input-attestation.json'));
   const artifactBytes = readFileSync(join(history, 'build-artifact-attestation.json'));
@@ -181,7 +213,7 @@ test('every build-8 reference in the current-document allowlist is classified as
     if (relativePath === 'release/app-store/3.0/release-manifest.json') {
       assert.equal(references.length, 3, 'release manifest build-8 references drifted');
       const manifest = JSON.parse(source);
-      assert.equal(manifest.candidate.buildNumber, '10');
+      assert.equal(manifest.candidate.buildNumber, '11');
       assert.equal(manifest.ascEvidence.inspectionMode, 'read-only');
       assert.equal(manifest.ascEvidence.observedAt, '2026-08-27T20:35:04.000Z');
       assert.equal(manifest.ascEvidence.nextCandidateBuild, '8');

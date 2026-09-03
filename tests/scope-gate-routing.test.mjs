@@ -18,7 +18,7 @@ test('the canonical scope gate verifies the complete RC v3 package', () => {
   const output = `${result.stdout}${result.stderr}`;
 
   assert.equal(result.status, 0, output);
-  assert.match(output, /Release 3\.0\/build 10 verified: pre-build-configured\./u);
+  assert.match(output, /Release 3\.0\/build 11 verified: pre-build-configured\./u);
   assert.match(output, /App Store pre-build metadata verified; submission remains blocked\./u);
 });
 
