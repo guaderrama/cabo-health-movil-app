@@ -16,6 +16,7 @@ import test from 'node:test';
 
 import {
   APPLE_RELEASE_CANDIDATE,
+  APP_STORE_AGE_RATING_RESULT,
   APP_STORE_METADATA_CHECK_IDS,
   ApplePostBuildEvidenceError,
   PHYSICAL_IPHONE_QA_CHECK_IDS,
@@ -91,6 +92,7 @@ function appStoreConnectEvidence() {
     appStoreVersionState: 'PREPARE_FOR_SUBMISSION',
     buildProcessingState: 'VALID',
     metadataChecks: checks(APP_STORE_METADATA_CHECK_IDS),
+    ageRatingResult: { ...APP_STORE_AGE_RATING_RESULT },
     failures: [],
     evidenceSnapshotSha256: '6'.repeat(64),
   };
@@ -349,17 +351,31 @@ test('physical iPhone evidence requires two distinct devices and all thirteen ro
   );
 });
 
-test('App Store Connect evidence binds the exact resource and twelve saved metadata checks', () => {
+test('App Store Connect evidence binds exact metadata checks and the saved global age result', () => {
   const evidence = appStoreConnectEvidence();
   assert.equal(validateAppStoreConnectEvidence(evidence, {
     testFlightBuildId: TESTFLIGHT_BUILD_ID,
     testFlightProcessedAt: PROCESSED_AT,
   }, { now: NOW }), evidence);
+  assert.deepEqual(evidence.ageRatingResult, {
+    questionnaireMatchedFreezeBaseline: true,
+    unrestrictedWebAccess: true,
+    updatedGlobalRating: '16+',
+    legacyGlobalRating: '17+',
+    regionalResultsStatus: 'not-asserted',
+  });
 
   for (const mutate of [
     (copy) => { copy.buildResourceId = ''; },
     (copy) => { copy.buildResourceId = copy.testFlightBuildId; },
     (copy) => { copy.metadataChecks.privacy = false; },
+    (copy) => { delete copy.ageRatingResult; },
+    (copy) => { copy.ageRatingResult.questionnaireMatchedFreezeBaseline = false; },
+    (copy) => { copy.ageRatingResult.unrestrictedWebAccess = false; },
+    (copy) => { copy.ageRatingResult.updatedGlobalRating = '17+'; },
+    (copy) => { copy.ageRatingResult.legacyGlobalRating = '16+'; },
+    (copy) => { copy.ageRatingResult.regionalResultsStatus = 'asserted'; },
+    (copy) => { copy.ageRatingResult.regionalRatings = { US: '16+' }; },
     (copy) => { copy.appStoreVersionState = 'WAITING_FOR_REVIEW'; },
     (copy) => { copy.unreviewed = true; },
   ]) {
@@ -472,4 +488,20 @@ test('producer writes canonical private evidence once and refuses missing bindin
     ]),
     'APPLE_EVIDENCE_ARGUMENTS_INVALID',
   );
+
+  const appStoreInput = join(root, 'app-store-input.json');
+  const appStoreOutput = join(root, 'app-store-output.json');
+  const appStoreEvidence = appStoreConnectEvidence();
+  writeFileSync(appStoreInput, `${JSON.stringify(appStoreEvidence, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(appStoreInput, 0o600);
+  const appStoreParsed = parseAppleEvidenceCliArguments([
+    'app-store-connect',
+    '--input', appStoreInput,
+    '--output', appStoreOutput,
+    '--testflight-build-id', TESTFLIGHT_BUILD_ID,
+    '--testflight-processed-at', PROCESSED_AT,
+  ]);
+  createApplePostBuildEvidence(appStoreParsed, { now: NOW });
+  assert.deepEqual(readFileSync(appStoreOutput), canonicalAppleEvidenceBytes(appStoreEvidence));
+  assert.equal((statSync(appStoreOutput).mode & 0o777), 0o600);
 });

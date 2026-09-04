@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, linkSync, readFileSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  APP_STORE_AGE_RATING_RESULT,
   parseArguments,
   readAndValidateEvidence,
   validateAppStoreConnectEvidence,
@@ -269,7 +270,14 @@ test('physical-iPhone QA requires two distinct clean/upgrade devices and every o
   );
 });
 
-test('App Store Connect evidence requires all metadata gates and exact live resource IDs', () => {
+test('App Store Connect evidence requires exact metadata gates, resources, and global age result', () => {
+  assert.deepEqual(APP_STORE_AGE_RATING_RESULT, {
+    questionnaireMatchedFreezeBaseline: true,
+    unrestrictedWebAccess: true,
+    updatedGlobalRating: '16+',
+    legacyGlobalRating: '17+',
+    regionalResultsStatus: 'not-asserted',
+  });
   assert.doesNotThrow(() => validateAppStoreConnectEvidence(
     validAppStoreEvidence(), bindings, { now: NOW },
   ));
@@ -291,6 +299,35 @@ test('App Store Connect evidence requires all metadata gates and exact live reso
     () => validateAppStoreConnectEvidence(failure, bindings, { now: NOW }),
     /APP_STORE_CONNECT_EVIDENCE_INVALID/u,
   );
+  for (const [name, tamper] of [
+    ['missing result', (evidence) => { delete evidence.ageRatingResult; }],
+    ['questionnaire mismatch', (evidence) => {
+      evidence.ageRatingResult.questionnaireMatchedFreezeBaseline = false;
+    }],
+    ['unrestricted web access mismatch', (evidence) => {
+      evidence.ageRatingResult.unrestrictedWebAccess = false;
+    }],
+    ['updated global rating mismatch', (evidence) => {
+      evidence.ageRatingResult.updatedGlobalRating = '17+';
+    }],
+    ['legacy global rating mismatch', (evidence) => {
+      evidence.ageRatingResult.legacyGlobalRating = '16+';
+    }],
+    ['regional assertion', (evidence) => {
+      evidence.ageRatingResult.regionalResultsStatus = 'asserted';
+    }],
+    ['invented regional field', (evidence) => {
+      evidence.ageRatingResult.regionalRatings = { US: '16+' };
+    }],
+  ]) {
+    const tampered = structuredClone(validAppStoreEvidence());
+    tamper(tampered);
+    assert.throws(
+      () => validateAppStoreConnectEvidence(tampered, bindings, { now: NOW }),
+      /APP_STORE_CONNECT_EVIDENCE_INVALID/u,
+      name,
+    );
+  }
 });
 
 test('screenshot evidence is exactly eight scenes in two locales at official 6.9-inch sizes', () => {

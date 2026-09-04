@@ -34,6 +34,7 @@ export { AppStoreConnectTransport, FixtureTransport } from './transport.mjs';
 export { createJwt, loadCredentials, CREDENTIAL_ENVIRONMENT_KEYS } from './auth.mjs';
 export { AdapterError, publicErrorCode } from './errors.mjs';
 export {
+  APP_STORE_AGE_RATING_RESULT,
   CANDIDATE,
   METADATA_CHECK_IDS,
   QA_CHECK_IDS,

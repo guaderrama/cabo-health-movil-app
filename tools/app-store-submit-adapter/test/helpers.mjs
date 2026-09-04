@@ -87,6 +87,13 @@ export function validAppStoreEvidence({ state = 'PREPARE_FOR_SUBMISSION' } = {})
     appStoreVersionState: state,
     buildProcessingState: 'VALID',
     metadataChecks: Object.fromEntries(METADATA_CHECK_IDS.map((key) => [key, true])),
+    ageRatingResult: {
+      questionnaireMatchedFreezeBaseline: true,
+      unrestrictedWebAccess: true,
+      updatedGlobalRating: '16+',
+      legacyGlobalRating: '17+',
+      regionalResultsStatus: 'not-asserted',
+    },
     failures: [],
     evidenceSnapshotSha256: '5'.repeat(64),
   };

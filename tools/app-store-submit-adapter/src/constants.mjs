@@ -60,6 +60,14 @@ export const METADATA_CHECK_IDS = Object.freeze([
   'dsa',
 ]);
 
+export const APP_STORE_AGE_RATING_RESULT = Object.freeze({
+  questionnaireMatchedFreezeBaseline: true,
+  unrestrictedWebAccess: true,
+  updatedGlobalRating: '16+',
+  legacyGlobalRating: '17+',
+  regionalResultsStatus: 'not-asserted',
+});
+
 export const SCREENSHOT_LOCALES = Object.freeze(['en-US', 'es-MX']);
 export const SCREENSHOT_SCENE_IDS = Object.freeze([
   '01-launch',

@@ -80,8 +80,9 @@ heading removed.
 
 The age baseline truthfully requires Unrestricted Web Access and projects 16+
 under Apple’s updated system and 17+ for earlier operating systems. A saved
-region-specific result is never written back into tracked baseline files; it is
-bound only in the private App Store Connect evidence.
+global result is bound only in the private App Store Connect evidence. Regional
+values are not asserted there or written into tracked baseline files; Apple
+derives them.
 
 ## Acceptance
 

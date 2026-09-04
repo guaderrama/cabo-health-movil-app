@@ -61,6 +61,14 @@ export const APP_STORE_METADATA_CHECK_IDS = Object.freeze([
   'dsa',
 ]);
 
+export const APP_STORE_AGE_RATING_RESULT = Object.freeze({
+  questionnaireMatchedFreezeBaseline: true,
+  unrestrictedWebAccess: true,
+  updatedGlobalRating: '16+',
+  legacyGlobalRating: '17+',
+  regionalResultsStatus: 'not-asserted',
+});
+
 export const SCREENSHOT_LOCALES = Object.freeze(['en-US', 'es-MX']);
 export const SCREENSHOT_SCENE_IDS = Object.freeze([
   '01-launch',
@@ -124,6 +132,7 @@ const APP_STORE_EVIDENCE_KEYS = Object.freeze([
   'appStoreVersionState',
   'buildProcessingState',
   'metadataChecks',
+  'ageRatingResult',
   'failures',
   'evidenceSnapshotSha256',
 ]);
@@ -448,6 +457,8 @@ export function validateAppStoreConnectEvidence(value, bindings = {}, {
     || !['PREPARE_FOR_SUBMISSION', 'READY_FOR_REVIEW'].includes(value.appStoreVersionState)
     || value.buildProcessingState !== 'VALID'
     || !exactTrueChecks(value.metadataChecks, APP_STORE_METADATA_CHECK_IDS)
+    || !exactKeys(value.ageRatingResult, Object.keys(APP_STORE_AGE_RATING_RESULT))
+    || !isDeepStrictEqual(value.ageRatingResult, APP_STORE_AGE_RATING_RESULT)
     || !Array.isArray(value.failures)
     || value.failures.length !== 0
     || !SHA256_PATTERN.test(value.evidenceSnapshotSha256 ?? '')) reject(code);

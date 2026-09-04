@@ -117,6 +117,12 @@ is true: `localizations`, `privacy`, `ageRating`, `categories`, `availability`,
 `contentRights`, `exportCompliance`, `appReviewInfo`, `reviewNotes`,
 `screenshots`, `buildSelected`, and `dsa`.
 
+`ageRatingResult` is also exact and records the saved global result:
+`questionnaireMatchedFreezeBaseline: true`, `unrestrictedWebAccess: true`,
+`updatedGlobalRating: "16+"`, `legacyGlobalRating: "17+"`, and
+`regionalResultsStatus: "not-asserted"`. This evidence asserts no regional
+rating values; Apple derives any regional results.
+
 ```sh
 node scripts/apple-post-build-evidence.mjs app-store-connect \
   --input /ABS/PRIVATE/observed-app-store-connect.json \

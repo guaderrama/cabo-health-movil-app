@@ -1915,10 +1915,10 @@ function verifyAgeRating() {
     errors.push('Dynamic embedded third-party web access requires unrestrictedWebAccess=true');
   }
   if (age.conditions?.medicalOrTreatmentInformation?.requiredAnswer !== 'NONE') {
-    errors.push('Projected 9+ rating requires medicalOrTreatmentInformation=NONE');
+    errors.push('The 16+/legacy 17+ age-rating baseline requires medicalOrTreatmentInformation=NONE');
   }
   if (age.conditions?.healthOrWellnessTopics?.requiredAnswer !== true) {
-    errors.push('Projected 9+ rating requires healthOrWellnessTopics=true');
+    errors.push('The 16+/legacy 17+ age-rating baseline requires healthOrWellnessTopics=true');
   }
   const ageRatingDraft = readExactReviewedProse('age-rating.md');
   rejectContradictoryCaboHealthEntityClaims(ageRatingDraft, 'age-rating draft');

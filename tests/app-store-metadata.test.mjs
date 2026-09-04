@@ -312,6 +312,13 @@ function writeRcPrivateEvidence(root, { sourceTreeSha256, testFlightBuildId }) {
       'buildSelected',
       'dsa',
     ].map((key) => [key, true])),
+    ageRatingResult: {
+      questionnaireMatchedFreezeBaseline: true,
+      unrestrictedWebAccess: true,
+      updatedGlobalRating: '16+',
+      legacyGlobalRating: '17+',
+      regionalResultsStatus: 'not-asserted',
+    },
     failures: [],
     evidenceSnapshotSha256: '5'.repeat(64),
   };
@@ -2136,15 +2143,15 @@ test('metadata verifier requires the exact projected 16+ and legacy 17+ ratings 
 
 test('metadata verifier rejects extra or contradictory age-rating answers', async (t) => {
   const mutations = [
-    ['UGC changed to yes', (age) => { age.otherSupportedAnswers.userGeneratedContent = true; }],
-    ['medical information changed', (age) => { age.conditions.medicalOrTreatmentInformation.requiredAnswer = 'INFREQUENT'; }],
-    ['health topics changed from presence value', (age) => { age.conditions.healthOrWellnessTopics.requiredAnswer = 'FREQUENT'; }],
-    ['violence changed', (age) => { age.otherSupportedAnswers.violenceRealistic = 'INFREQUENT'; }],
-    ['questionnaire scale changed', (age) => { age.questionnaireReference.frequencyScale = ['NONE', 'FREQUENT']; }],
-    ['kids band enabled', (age) => { age.ageCategoryAndOverride.kidsAgeBand = 'FIVE_AND_UNDER'; }],
-    ['extra condition', (age) => { age.conditions.unexpected = { requiredAnswer: false }; }],
+    ['UGC changed to yes', (age) => { age.otherSupportedAnswers.userGeneratedContent = true; }, null],
+    ['medical information changed', (age) => { age.conditions.medicalOrTreatmentInformation.requiredAnswer = 'INFREQUENT'; }, /16\+\/legacy 17\+ age-rating baseline requires medicalOrTreatmentInformation=NONE/i],
+    ['health topics changed from presence value', (age) => { age.conditions.healthOrWellnessTopics.requiredAnswer = 'FREQUENT'; }, /16\+\/legacy 17\+ age-rating baseline requires healthOrWellnessTopics=true/i],
+    ['violence changed', (age) => { age.otherSupportedAnswers.violenceRealistic = 'INFREQUENT'; }, null],
+    ['questionnaire scale changed', (age) => { age.questionnaireReference.frequencyScale = ['NONE', 'FREQUENT']; }, null],
+    ['kids band enabled', (age) => { age.ageCategoryAndOverride.kidsAgeBand = 'FIVE_AND_UNDER'; }, null],
+    ['extra condition', (age) => { age.conditions.unexpected = { requiredAnswer: false }; }, null],
   ];
-  for (const [name, mutate] of mutations) {
+  for (const [name, mutate, exactDiagnostic] of mutations) {
     await t.test(name, () => withReleaseFixture(
       (root) => mutateJson(root, `${releasePath}/age-rating.json`, mutate),
       (result) => {
@@ -2153,6 +2160,7 @@ test('metadata verifier rejects extra or contradictory age-rating answers', asyn
           result.stderr,
           /age-rating condition and supported-answer schemas must be exact|exact age-rating authority|Age rating must remain|requires (?:medicalOrTreatmentInformation|healthOrWellnessTopics)/i,
         );
+        if (exactDiagnostic) assert.match(result.stderr, exactDiagnostic);
       },
     ));
   }

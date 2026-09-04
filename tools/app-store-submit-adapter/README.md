@@ -84,6 +84,12 @@ evidence-snapshot SHA-256. These exact metadata checks must all be `true`:
 `contentRights`, `exportCompliance`, `appReviewInfo`, `reviewNotes`,
 `screenshots`, `buildSelected`, and `dsa`.
 
+The exact `ageRatingResult` must record
+`questionnaireMatchedFreezeBaseline: true`, `unrestrictedWebAccess: true`,
+`updatedGlobalRating: "16+"`, `legacyGlobalRating: "17+"`, and
+`regionalResultsStatus: "not-asserted"`. This is only the saved global result.
+The adapter does not assert regional rating values; Apple derives them.
+
 ### `screenshots-manifest.json`
 
 The existing schema version 2 becomes

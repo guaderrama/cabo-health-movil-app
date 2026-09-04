@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { posix } from 'node:path';
 import {
+  APP_STORE_AGE_RATING_RESULT,
   APP_STORE_CONNECT_UUID_PATTERN,
   CANDIDATE,
   INITIAL_VERSION_STATES,
@@ -93,6 +94,7 @@ const APP_STORE_EVIDENCE_KEYS = Object.freeze([
   'appStoreVersionState',
   'buildProcessingState',
   'metadataChecks',
+  'ageRatingResult',
   'failures',
   'evidenceSnapshotSha256',
 ]);
@@ -239,6 +241,8 @@ export function validateAppStoreConnectEvidence(value, bindings, { now = Date.no
     || !INITIAL_VERSION_STATES.includes(value.appStoreVersionState)
     || value.buildProcessingState !== 'VALID'
     || !exactBooleanChecks(value.metadataChecks, METADATA_CHECK_IDS)
+    || !exactKeys(value.ageRatingResult, Object.keys(APP_STORE_AGE_RATING_RESULT))
+    || !isDeepStrictEqual(value.ageRatingResult, APP_STORE_AGE_RATING_RESULT)
     || !Array.isArray(value.failures) || value.failures.length !== 0
     || !SHA256_PATTERN.test(value.evidenceSnapshotSha256 ?? '')) reject(code);
   const capturedAt = timestamp(value.capturedAt, code, now);

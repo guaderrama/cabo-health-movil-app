@@ -427,6 +427,13 @@ function exactRcEvidence(root, { sourceTreeSha256, testFlightBuildId }) {
     appStoreVersionState: 'PREPARE_FOR_SUBMISSION',
     buildProcessingState: 'VALID',
     metadataChecks: allPassed(APP_STORE_METADATA_CHECK_IDS),
+    ageRatingResult: {
+      questionnaireMatchedFreezeBaseline: true,
+      unrestrictedWebAccess: true,
+      updatedGlobalRating: '16+',
+      legacyGlobalRating: '17+',
+      regionalResultsStatus: 'not-asserted',
+    },
     failures: [],
     evidenceSnapshotSha256: '5'.repeat(64),
   };
@@ -1869,6 +1876,66 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
   );
   git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
     'commit', '-qm', 'pin exact RC');
+  assert.deepEqual(verifyRcAttestation(root, {
+    buildInputSha256,
+    buildArtifactSha256,
+    rcSha256,
+  }), rcAttestation);
+
+  const inventedRegionalEvidence = JSON.parse(finalEvidence.appStoreConnectEvidence);
+  inventedRegionalEvidence.ageRatingResult.regionalRatings = { US: '16+' };
+  const inventedRegionalBytes = canonicalAppleEvidenceBytes(inventedRegionalEvidence);
+  write(
+    root,
+    'release/private/rc-build-11/app-store-connect-evidence.json',
+    inventedRegionalBytes,
+  );
+  chmodSync(join(root, 'release/private/rc-build-11/app-store-connect-evidence.json'), 0o600);
+  const invalidRcAttestation = {
+    ...rcAttestation,
+    appStoreMetadataEvidenceSha256: hash(inventedRegionalBytes),
+  };
+  const invalidRcBytes = Buffer.from(`${JSON.stringify(invalidRcAttestation)}\n`);
+  const invalidRcSha256 = hash(invalidRcBytes);
+  write(root, 'release/app-store/3.0/rc-attestation.json', invalidRcBytes);
+  write(
+    root,
+    'scripts/release-command-guard.mjs',
+    readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8').replace(
+      `const RC_ATTESTATION_SHA256 = '${rcSha256}';`,
+      `const RC_ATTESTATION_SHA256 = '${invalidRcSha256}';`,
+    ),
+  );
+  git(root, 'add',
+    'release/app-store/3.0/rc-attestation.json',
+    'scripts/release-command-guard.mjs');
+  git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+    'commit', '--amend', '--no-edit', '-qm', 'pin exact RC');
+  assert.throws(() => verifyRcAttestation(root, {
+    buildInputSha256,
+    buildArtifactSha256,
+    rcSha256: invalidRcSha256,
+  }), /EXACT_RC_ATTESTATION_INVALID/u);
+  write(
+    root,
+    'release/private/rc-build-11/app-store-connect-evidence.json',
+    finalEvidence.appStoreConnectEvidence,
+  );
+  chmodSync(join(root, 'release/private/rc-build-11/app-store-connect-evidence.json'), 0o600);
+  write(root, 'release/app-store/3.0/rc-attestation.json', rcBytes);
+  write(
+    root,
+    'scripts/release-command-guard.mjs',
+    readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8').replace(
+      `const RC_ATTESTATION_SHA256 = '${invalidRcSha256}';`,
+      `const RC_ATTESTATION_SHA256 = '${rcSha256}';`,
+    ),
+  );
+  git(root, 'add',
+    'release/app-store/3.0/rc-attestation.json',
+    'scripts/release-command-guard.mjs');
+  git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+    'commit', '--amend', '--no-edit', '-qm', 'pin exact RC');
   assert.deepEqual(verifyRcAttestation(root, {
     buildInputSha256,
     buildArtifactSha256,
