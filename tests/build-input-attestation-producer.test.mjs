@@ -1,9 +1,22 @@
 import assert from 'node:assert/strict';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   BUILD_INPUT_CANDIDATE,
   assembleBuildInputAttestation,
+  createBuildInputAttestation,
 } from '../scripts/create-build-input-attestation.mjs';
 
 const hash = (character) => character.repeat(64);
@@ -42,6 +55,27 @@ const easEnvironment = {
   valuesIncluded: false,
   providerValuesRetained: false,
 };
+
+function canonicalGoogleServicesPlist() {
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0"><dict>',
+    '<key>PROJECT_ID</key><string>cabohealth-owner-prod</string>',
+    '<key>BUNDLE_ID</key><string>com.cabohealth.app</string>',
+    '</dict></plist>',
+    '',
+  ].join('\n');
+}
+
+function writeOwnedCanonicalInventory(path) {
+  mkdirSync(path, { recursive: true, mode: 0o700 });
+  chmodSync(path, 0o700);
+  const inventoryPath = join(path, 'eas-environment.json');
+  writeFileSync(inventoryPath, `${JSON.stringify(easEnvironment)}\n`, { mode: 0o600 });
+  chmodSync(inventoryPath, 0o600);
+  return inventoryPath;
+}
 
 test('build-input producer assembles the exact canonical build 11 authority with inventory digest', () => {
   const value = assembleBuildInputAttestation({
@@ -137,4 +171,52 @@ test('build-input producer rejects a stale candidate, malformed hash, or ambiguo
     ...base,
     reviewedFileSha256: { ...base.reviewedFileSha256, extra: hash('3') },
   }), /BUILD_INPUT_PRODUCER_ARGUMENT_INVALID/u);
+});
+
+test('build-input producer accepts only the current task-3 inventory parent', (context) => {
+  const projectRoot = realpathSync(fileURLToPath(new URL('..', import.meta.url)));
+  const temporaryRoot = realpathSync(mkdtempSync(join(tmpdir(), 'cabohealth-build-input-producer-')));
+  chmodSync(temporaryRoot, 0o700);
+  context.after(() => rmSync(temporaryRoot, { recursive: true, force: true }));
+
+  const currentEvidenceParent = join(
+    temporaryRoot,
+    '.superpowers/sdd/2026-09-03-cabohealth-build11-app-store-release/task-3-evidence',
+  );
+  const obsoleteEvidenceParent = join(
+    temporaryRoot,
+    '.superpowers/sdd/2026-08-31-cabohealth-build10-testflight-release/task-2-evidence',
+  );
+  const currentInventoryPath = writeOwnedCanonicalInventory(currentEvidenceParent);
+  const obsoleteInventoryPath = writeOwnedCanonicalInventory(obsoleteEvidenceParent);
+  const plistPath = join(temporaryRoot, 'GoogleService-Info.plist');
+  writeFileSync(plistPath, canonicalGoogleServicesPlist(), { mode: 0o600 });
+  chmodSync(plistPath, 0o600);
+  const environment = {
+    CABOHEALTH_FIREBASE_PROJECT_ID: 'cabohealth-owner-prod',
+    CABOHEALTH_GOOGLE_SERVICES_PLIST: plistPath,
+  };
+
+  const currentOutputPath = join(currentEvidenceParent, 'build-input-candidate.json');
+  const current = createBuildInputAttestation({
+    root: projectRoot,
+    reviewedAt: '2026-09-03T00:00:00.000Z',
+    sourceCommit,
+    easEnvironmentInventoryPath: currentInventoryPath,
+    outputPath: currentOutputPath,
+    environment,
+  });
+  assert.deepEqual(current.candidate, BUILD_INPUT_CANDIDATE);
+  assert.ok(existsSync(currentOutputPath));
+
+  const obsoleteOutputPath = join(obsoleteEvidenceParent, 'build-input-candidate.json');
+  assert.throws(() => createBuildInputAttestation({
+    root: projectRoot,
+    reviewedAt: '2026-09-03T00:00:00.000Z',
+    sourceCommit,
+    easEnvironmentInventoryPath: obsoleteInventoryPath,
+    outputPath: obsoleteOutputPath,
+    environment,
+  }), /BUILD_INPUT_ENVIRONMENT_INVENTORY_INVALID/u);
+  assert.equal(existsSync(obsoleteOutputPath), false);
 });

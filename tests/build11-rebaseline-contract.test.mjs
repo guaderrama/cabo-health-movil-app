@@ -68,13 +68,47 @@ const STALE_BUILD_9_AUTHORITY = [
   /\bpending\s+(?:exact\s+)?(?:3\.0\/)?build[- /]?9\b/iu,
 ];
 const BUILD_10_REFERENCE = /\bbuild[- /]?10\b|["']buildNumber["']\s*:\s*["']10["']|\bbuild\s+number\s*:\s*`10`/giu;
-const HISTORICAL_BUILD_10_CONTEXT = /\b(?:processed(?:[- ]internal)?[- ]testflight|immutable|histor(?:y|ical)|cannot authorize|built, attested, uploaded, and processed)\b/iu;
+const BUILD_10_PROSE_REFERENCE = /\bBuild 10\b/gu;
+const HISTORICAL_BUILD_10_CONTEXT = /\b(?:processed(?:[- ]internal)?[- ]testflight|immutable|histor(?:y|ical)|cannot authorize|(?:was\s+subsequently\s+)?built,\s+attested,\s+uploaded,\s+and\s+processed)\b/iu;
 const STALE_BUILD_10_AUTHORITY = [
   /\bbuild[- /]?10\s+(?:is|remains|will be|input freeze|input-attested)\s+(?:the\s+)?(?:sole\s+unbuilt|next|current|pending)\b/iu,
   /\b(?:sole\s+unbuilt|next|current)\s+(?:release\s+)?candidate\s+(?:is\s+)?(?:3\.0\/)?build[- /]?10\b/iu,
   /\bpending\s+(?:exact\s+)?(?:3\.0\/)?build[- /]?10\b/iu,
+  /\bbuild[- /]?10\s*,\s*physical-device QA,\s*and current release evidence remain pending\b/iu,
 ];
 const BUILD_11_SDD_ROOT = '/.superpowers/sdd/2026-09-03-cabohealth-build11-app-store-release';
+
+function build10LocalClause(source, referenceIndex) {
+  const clauseStart = Math.max(
+    source.lastIndexOf('.', referenceIndex),
+    source.lastIndexOf(';', referenceIndex),
+  ) + 1;
+  const followingClause = source.slice(referenceIndex).search(/[.;]/u);
+  const clauseEnd = followingClause === -1
+    ? source.length
+    : referenceIndex + followingClause + 1;
+  return source.slice(clauseStart, clauseEnd);
+}
+
+function assertBuild10ProseIsHistorical(relativePath, source) {
+  const references = [...source.matchAll(BUILD_10_PROSE_REFERENCE)];
+  for (const reference of references) {
+    const clause = build10LocalClause(source, reference.index);
+    assert.match(
+      clause,
+      HISTORICAL_BUILD_10_CONTEXT,
+      `${relativePath}: ${reference[0]} lacks processed-history classification in its local clause`,
+    );
+    for (const stalePattern of STALE_BUILD_10_AUTHORITY) {
+      assert.doesNotMatch(
+        clause,
+        stalePattern,
+        `${relativePath}: ${reference[0]} is stale current/future authority in its local clause`,
+      );
+    }
+  }
+  return references.length;
+}
 
 test('the sole current candidate is pre-input 3.0 build 11 with all five authority pins null', () => {
   const app = JSON.parse(readFileSync(join(root, 'app.json'), 'utf8'));
@@ -344,26 +378,38 @@ test('build 10 references in current authority are processed immutable history, 
       assert.equal(references.length, 0, `${relativePath} must not contain build-10 operational authority`);
       continue;
     }
-    for (const reference of references) {
-      const paragraphStart = source.lastIndexOf('\n\n', reference.index) + 2;
-      const nextBreak = source.indexOf('\n\n', reference.index);
-      const paragraph = source.slice(paragraphStart, nextBreak === -1 ? source.length : nextBreak);
-      assert.match(
-        paragraph,
-        HISTORICAL_BUILD_10_CONTEXT,
-        `${relativePath}: ${reference[0]} lacks processed-history classification`,
-      );
-      for (const stalePattern of STALE_BUILD_10_AUTHORITY) {
-        assert.doesNotMatch(
-          paragraph,
-          stalePattern,
-          `${relativePath}: ${reference[0]} is stale current/future authority`,
-        );
-      }
-      classifiedReferenceCount += 1;
-    }
+    classifiedReferenceCount += assertBuild10ProseIsHistorical(relativePath, source);
   }
   assert.ok(classifiedReferenceCount > 0, 'allowlist must retain classified build-10 history');
+});
+
+test('build-10 clause-local classification rejects each stale pre-fix operational passage', () => {
+  const mutations = [
+    {
+      relativePath: 'docs/operations/dynamic-miniapp-catalog.md',
+      current: 'Build 10 was built,\nattested, uploaded, and processed for internal TestFlight; it is immutable\nhistory and cannot authorize build 11. Build 11 is the sole current candidate;\nits build-input authority, physical-device QA, and current release evidence\nremain pending.',
+      stale: 'Build 10,\nphysical-device QA, and current release evidence remain pending.',
+    },
+    {
+      relativePath: 'docs/operations/dynamic-miniapp-production-activation-2026-08-25.md',
+      current: 'Build 11 input freeze, EAS build, exact IPA audit, TestFlight processing,\n  two-iPhone QA, screenshots, App Attest valid-flow evidence, final App Store\n  metadata, privacy/age answers, rights sign-off, and Apple review remain\n  pending.',
+      stale: 'Build 10 input freeze, EAS build, exact IPA audit, TestFlight processing,\n  two-iPhone QA, screenshots, App Attest valid-flow evidence, final App Store\n  metadata, privacy/age answers, rights sign-off, and Apple review remain\n  pending.',
+    },
+    {
+      relativePath: 'docs/operations/vip-showcase-production-activation-2026-08-26.md',
+      current: 'Build 10 was\n  built, attested, uploaded, and processed for internal TestFlight; it is\n  immutable history and cannot authorize build 11. Its build carries the WebView\n  subframe fix; neither hands an internal launch to Chrome,\n  Safari, or another external browser.',
+      stale: 'Build 10\n  carries that behavior plus the WebView subframe fix; neither hands an internal\n  launch to Chrome, Safari, or another external browser.',
+    },
+  ];
+  for (const { relativePath, current, stale } of mutations) {
+    const source = readFileSync(join(root, relativePath), 'utf8');
+    const mutated = source.replace(current, stale);
+    assert.notEqual(mutated, source, `${relativePath}: fixture must target current authority`);
+    assert.throws(
+      () => assertBuild10ProseIsHistorical(relativePath, mutated),
+      /lacks processed-history classification in its local clause/u,
+    );
+  }
 });
 
 test('current build-11 evidence writers retain only their exact task-scoped SDD parents', () => {
