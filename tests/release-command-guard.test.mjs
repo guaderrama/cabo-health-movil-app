@@ -36,6 +36,22 @@ function hash(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+test('trusted Git uses only a root-owned sticky real temporary directory', async (t) => {
+  const { isTrustedGitTemporaryDirectory } = await import(guardPath);
+  const trustedPath = process.platform === 'darwin' ? '/private/tmp' : '/tmp';
+  assert.equal(typeof isTrustedGitTemporaryDirectory, 'function');
+  assert.equal(isTrustedGitTemporaryDirectory(trustedPath), true);
+
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'cabohealth-untrusted-git-temp-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  chmodSync(root, 0o1777);
+  assert.equal(isTrustedGitTemporaryDirectory(root), false, 'user-owned directory');
+
+  const link = join(root, 'temporary-link');
+  symlinkSync(trustedPath, link);
+  assert.equal(isTrustedGitTemporaryDirectory(link), false, 'symbolic link');
+});
+
 test('build artifact review chronology follows terminal evidence and cannot be future-dated', async () => {
   const { validateBuildArtifactReviewChronology } = await import(guardPath);
   assert.doesNotThrow(() => validateBuildArtifactReviewChronology(

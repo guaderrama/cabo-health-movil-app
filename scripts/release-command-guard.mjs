@@ -220,6 +220,7 @@ const PRIVATE_OPERATION_MARKER = '.cabohealth-private-operation';
 const TRUSTED_GIT_EXECUTABLE = '/usr/bin/git';
 const TRUSTED_GIT_EXEC_PATH = '/Library/Developer/CommandLineTools/usr/libexec/git-core';
 const TRUSTED_GIT_VERSION = 'git version 2.39.5 (Apple Git-154)\n';
+const TRUSTED_GIT_TEMP_DIRECTORY = process.platform === 'darwin' ? '/private/tmp' : '/tmp';
 const TRUSTED_GIT_DIRECTORIES = Object.freeze([
   '/',
   '/usr',
@@ -235,6 +236,7 @@ const TRUSTED_GIT_ENVIRONMENT = Object.freeze({
   PATH: '/usr/bin:/bin',
   LANG: 'C',
   LC_ALL: 'C',
+  TMPDIR: TRUSTED_GIT_TEMP_DIRECTORY,
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_CONFIG_SYSTEM: '/dev/null',
   GIT_CONFIG_GLOBAL: '/dev/null',
@@ -279,6 +281,19 @@ function hasExactKeys(value, keys) {
     && typeof value === 'object'
     && !Array.isArray(value)
     && isDeepStrictEqual(Object.keys(value).sort(), [...keys].sort());
+}
+
+export function isTrustedGitTemporaryDirectory(path) {
+  try {
+    if (typeof path !== 'string' || realpathSync(path) !== path) return false;
+    const stat = lstatSync(path);
+    return stat.isDirectory()
+      && !stat.isSymbolicLink()
+      && stat.uid === 0
+      && (stat.mode & 0o7777) === 0o1777;
+  } catch {
+    return false;
+  }
 }
 
 function sha256(bytes) {
@@ -637,6 +652,7 @@ function validateTrustedGit(code) {
   if (trustedGitVerified) return;
   try {
     if (process.platform !== 'darwin') reject(code);
+    if (!isTrustedGitTemporaryDirectory(TRUSTED_GIT_TEMP_DIRECTORY)) reject(code);
     for (const directory of TRUSTED_GIT_DIRECTORIES) {
       const stat = lstatSync(directory);
       if (realpathSync(directory) !== directory
