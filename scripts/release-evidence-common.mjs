@@ -50,6 +50,15 @@ export function isCanonicalUtc(value) {
   return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
 }
 
+export function isValidReviewChronology(terminalReviewedAt, artifactReviewedAt, now = Date.now()) {
+  if (!Number.isFinite(now)
+    || !isCanonicalUtc(terminalReviewedAt)
+    || !isCanonicalUtc(artifactReviewedAt)) return false;
+  const terminalMilliseconds = Date.parse(terminalReviewedAt);
+  const artifactMilliseconds = Date.parse(artifactReviewedAt);
+  return terminalMilliseconds <= artifactMilliseconds && artifactMilliseconds <= now;
+}
+
 export function parseJsonBytes(bytes, code, { canonical = false } = {}) {
   try {
     const text = bytes.toString('utf8');

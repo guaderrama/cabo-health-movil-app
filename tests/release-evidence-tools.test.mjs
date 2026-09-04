@@ -443,6 +443,70 @@ test('build status sanitizer validates exact build 11 identity and omits provide
   assert.doesNotMatch(bytes.toString(), /example\.invalid|provider-id/u);
 });
 
+test('build status sanitizer normalizes an omitted EAS error and rejects malformed non-null errors', async (t) => {
+  const { sanitizeBuildStatus } = await import('../scripts/release-eas-build-status-sanitizer.mjs');
+  const omittedRoot = ownedDirectory('cabohealth-build11-error-omitted-');
+  t.after(() => rmSync(omittedRoot, { recursive: true, force: true }));
+  const omitted = buildView();
+  delete omitted.error;
+  const omittedOutput = join(omittedRoot, 'build-reconciliation.json');
+  const result = sanitizeBuildStatus({
+    stdinBytes: Buffer.from(JSON.stringify(omitted)),
+    buildId: BUILD_ID,
+    outputPath: omittedOutput,
+    environment: { CABOHEALTH_RELEASE_EVIDENCE_ROOT: omittedRoot },
+  });
+  assert.equal(result.errorPresent, false);
+  assert.equal(result.errorCode, null);
+
+  for (const [name, error] of [
+    ['string', 'EAS_BUILD_FAILED'],
+    ['number', 1],
+    ['array', [{ errorCode: 'EAS_BUILD_FAILED' }]],
+    ['empty object', {}],
+    ['missing code', { message: 'Build failed.' }],
+    ['missing message', { errorCode: 'EAS_BUILD_FAILED' }],
+    ['malformed code', { errorCode: 'eas-build-failed', message: 'Build failed.' }],
+    ['non-string message', { errorCode: 'EAS_BUILD_FAILED', message: 1 }],
+  ]) {
+    await t.test(name, () => {
+      const invalidRoot = ownedDirectory(`cabohealth-build11-error-${name.replaceAll(' ', '-')}-`);
+      t.after(() => rmSync(invalidRoot, { recursive: true, force: true }));
+      const output = join(invalidRoot, 'build-reconciliation.json');
+      assert.throws(() => sanitizeBuildStatus({
+        stdinBytes: Buffer.from(JSON.stringify({ ...buildView(), error })),
+        buildId: BUILD_ID,
+        outputPath: output,
+        environment: { CABOHEALTH_RELEASE_EVIDENCE_ROOT: invalidRoot },
+      }), /BUILD_STATUS_SANITIZATION_FAILED/u);
+      assert.equal(existsSync(output), false);
+    });
+  }
+});
+
+test('nonterminal build polling cannot consume the exclusive terminal reconciliation output', async (t) => {
+  const { sanitizeBuildStatus } = await import('../scripts/release-eas-build-status-sanitizer.mjs');
+  const root = ownedDirectory('cabohealth-build11-poll-');
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const output = join(root, 'build-reconciliation.json');
+  assert.throws(() => sanitizeBuildStatus({
+    stdinBytes: Buffer.from(JSON.stringify(buildView({ status: 'IN_PROGRESS' }))),
+    buildId: BUILD_ID,
+    outputPath: output,
+    environment: { CABOHEALTH_RELEASE_EVIDENCE_ROOT: root },
+  }), /BUILD_STATUS_SANITIZATION_FAILED/u);
+  assert.equal(existsSync(output), false);
+
+  const terminal = sanitizeBuildStatus({
+    stdinBytes: Buffer.from(JSON.stringify(buildView())),
+    buildId: BUILD_ID,
+    outputPath: output,
+    environment: { CABOHEALTH_RELEASE_EVIDENCE_ROOT: root },
+  });
+  assert.equal(terminal.status, 'FINISHED');
+  assert.equal(existsSync(output), true);
+});
+
 test('artifact downloader validates identity before a bounded ZIP download and hashes final bytes', async (t) => {
   const { downloadEasArtifact } = await import('../scripts/release-eas-artifact-downloader.mjs');
   const privateRoot = ownedDirectory('cabohealth-build11-private-');
@@ -600,6 +664,46 @@ test('artifact producer binds the canonical association and exact six-file build
   assert.equal(value.candidate.buildNumber, '11');
   assert.equal(value.ipaSha256, association.downloadedIpaSha256);
   assert.equal(statSync(output).mode & 0o777, 0o600);
+
+  for (const [name, associationReviewedAt, artifactReviewedAt, now] of [
+    [
+      'artifact review before terminal association',
+      '2026-08-30T11:10:00.000Z',
+      '2026-08-30T11:09:59.999Z',
+      Date.parse('2026-08-30T12:00:00.000Z'),
+    ],
+    [
+      'future association and artifact reviews',
+      '2026-08-30T12:00:00.001Z',
+      '2026-08-30T12:00:00.002Z',
+      Date.parse('2026-08-30T12:00:00.000Z'),
+    ],
+  ]) {
+    await t.test(name, () => {
+      const invalidFixture = sddEvidenceRoot('task-4');
+      t.after(() => rmSync(invalidFixture.base, { recursive: true, force: true }));
+      const invalidAssociationPath = join(
+        invalidFixture.path,
+        'eas-artifact-association.json',
+      );
+      writeFileSync(invalidAssociationPath, `${JSON.stringify({
+        ...association,
+        reviewedAt: associationReviewedAt,
+      })}\n`, { mode: 0o600 });
+      chmodSync(invalidAssociationPath, 0o600);
+      const invalidOutput = join(invalidFixture.path, 'build-artifact-candidate.json');
+      assert.throws(() => createBuildArtifactAttestation({
+        reviewedAt: artifactReviewedAt,
+        buildInputAttestationSha256: 'a'.repeat(64),
+        sourceTreeSha256: 'b'.repeat(64),
+        associationPath: invalidAssociationPath,
+        evidenceDir,
+        outputPath: invalidOutput,
+        now,
+      }), /BUILD_ARTIFACT_PRODUCER_(?:ARGUMENT|ASSOCIATION)_INVALID/u);
+      assert.equal(existsSync(invalidOutput), false);
+    });
+  }
 });
 
 test('submission sanitizer emits the exact build-bound read-only status for both allowed purposes', async (t) => {

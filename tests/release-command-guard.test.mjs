@@ -36,6 +36,25 @@ function hash(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+test('build artifact review chronology follows terminal evidence and cannot be future-dated', async () => {
+  const { validateBuildArtifactReviewChronology } = await import(guardPath);
+  assert.doesNotThrow(() => validateBuildArtifactReviewChronology(
+    '2026-08-30T11:10:00.000Z',
+    '2026-08-30T11:11:00.000Z',
+    Date.parse('2026-08-30T12:00:00.000Z'),
+  ));
+  assert.throws(() => validateBuildArtifactReviewChronology(
+    '2026-08-30T11:10:00.000Z',
+    '2026-08-30T11:09:59.999Z',
+    Date.parse('2026-08-30T12:00:00.000Z'),
+  ), /EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID/u);
+  assert.throws(() => validateBuildArtifactReviewChronology(
+    '2026-08-30T12:00:00.001Z',
+    '2026-08-30T12:00:00.002Z',
+    Date.parse('2026-08-30T12:00:00.000Z'),
+  ), /EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID/u);
+});
+
 function currentReleasePins() {
   const source = readFileSync(guardPath, 'utf8');
   const optionalPin = (name, pattern, description) => {

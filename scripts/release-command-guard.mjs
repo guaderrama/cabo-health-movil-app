@@ -31,6 +31,7 @@ import {
   validatePhysicalIphoneQaEvidence,
   validateScreenshotsManifest,
 } from './apple-post-build-evidence.mjs';
+import { isValidReviewChronology } from './release-evidence-common.mjs';
 import { markProviderStarted } from './release-attempt-runner.mjs';
 
 export {
@@ -300,6 +301,15 @@ function assertSha256(value, code) {
 
 function assertReviewedAt(value, code) {
   if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) reject(code);
+}
+
+export function validateBuildArtifactReviewChronology(
+  terminalReviewedAt,
+  artifactReviewedAt,
+  now = Date.now(),
+) {
+  const code = 'EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID';
+  if (!isValidReviewChronology(terminalReviewedAt, artifactReviewedAt, now)) reject(code);
 }
 
 function assertCandidate(value, code) {
@@ -1360,6 +1370,10 @@ export function verifyBuildArtifactAttestation(root, {
     'reviewedAt',
   ])) reject(code);
   assertReviewedAt(attestation.easArtifactAssociation.reviewedAt, code);
+  validateBuildArtifactReviewChronology(
+    attestation.easArtifactAssociation.reviewedAt,
+    attestation.reviewedAt,
+  );
   for (const key of BUILD_ARTIFACT_KEYS.filter((key) => key.endsWith('Sha256'))) {
     assertSha256(attestation[key], code);
   }

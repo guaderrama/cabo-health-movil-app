@@ -28,6 +28,7 @@ function parseBuild(bytes, buildId) {
   const value = parseJsonBytes(bytes, CODE);
   const status = value.status;
   const artifactUrl = value.artifacts?.buildUrl;
+  const error = value.error === undefined ? null : value.error;
   if (!UUID_PATTERN.test(buildId ?? '')
     || value.id !== buildId
     || !STATUSES.has(status)
@@ -43,10 +44,17 @@ function parseBuild(bytes, buildId) {
     || (value.completedAt !== null && !isCanonicalUtc(value.completedAt))
     || (TERMINAL.has(status) ? !isCanonicalUtc(value.completedAt) : value.completedAt !== null)
     || (artifactUrl !== undefined && (typeof artifactUrl !== 'string' || !artifactUrl.startsWith('https://')))
-    || (value.error !== null && (value.error === undefined || typeof value.error !== 'object' || Array.isArray(value.error)))) fail();
-  const errorCode = value.error?.errorCode ?? null;
-  if (errorCode !== null && (typeof errorCode !== 'string' || !/^[A-Z0-9_]{1,128}$/u.test(errorCode))) fail();
-  return { value, status, errorCode, artifactAvailable: typeof artifactUrl === 'string' };
+    || (error !== null && (
+      typeof error !== 'object'
+      || Array.isArray(error)
+      || !Object.hasOwn(error, 'errorCode')
+      || !Object.hasOwn(error, 'message')
+      || typeof error.errorCode !== 'string'
+      || !/^[A-Z0-9_]{1,128}$/u.test(error.errorCode)
+      || typeof error.message !== 'string'
+    ))) fail();
+  const errorCode = error === null ? null : error.errorCode;
+  return { value, status, error, errorCode, artifactAvailable: typeof artifactUrl === 'string' };
 }
 
 export function sanitizeBuildStatus({ stdinBytes, buildId, outputPath, environment = process.env }) {
@@ -55,7 +63,10 @@ export function sanitizeBuildStatus({ stdinBytes, buildId, outputPath, environme
     const root = validateOwnedDirectory(environment.CABOHEALTH_RELEASE_EVIDENCE_ROOT, CODE, { outsideDropbox: true });
     if (typeof outputPath !== 'string' || !isAbsolute(outputPath) || resolve(outputPath) !== outputPath
       || outputPath !== join(root, 'build-reconciliation.json') || dirname(outputPath) !== root) fail();
-    const { value, status, errorCode, artifactAvailable } = parseBuild(stdinBytes, buildId);
+    const {
+      value, status, error, errorCode, artifactAvailable,
+    } = parseBuild(stdinBytes, buildId);
+    if (!TERMINAL.has(status)) fail();
     const result = {
       schemaVersion: 1,
       evidenceKind: 'cabohealth-eas-build-read-only-status',
@@ -73,7 +84,7 @@ export function sanitizeBuildStatus({ stdinBytes, buildId, outputPath, environme
       artifactAvailable,
       createdAt: value.createdAt,
       completedAt: value.completedAt,
-      errorPresent: value.error !== null,
+      errorPresent: error !== null,
       errorCode,
       mutationPerformed: false,
       rawProviderResponseRetained: false,

@@ -96,6 +96,35 @@ function submissionReconciliationEvidence(appOverrides = {}, overrides = {}) {
   };
 }
 
+function buildReconciliationEvidence(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    evidenceKind: 'cabohealth-eas-build-read-only-status',
+    easBuildId: BUILD_ID,
+    status: 'FINISHED',
+    terminal: true,
+    platform: 'IOS',
+    distribution: 'STORE',
+    account: 'guaderrama',
+    projectSlug: 'cabohealth',
+    buildProfile: 'production',
+    bundleIdentifier: 'com.cabohealth.app',
+    marketingVersion: '3.0',
+    buildNumber: '11',
+    artifactAvailable: true,
+    createdAt: '2026-08-30T11:00:00.000Z',
+    completedAt: '2026-08-30T11:10:00.000Z',
+    errorPresent: false,
+    errorCode: null,
+    mutationPerformed: false,
+    rawProviderResponseRetained: false,
+    providerUrlsOmitted: true,
+    providerFieldsOmitted: true,
+    credentialFieldsOmitted: true,
+    ...overrides,
+  };
+}
+
 function git(project, args) {
   const result = spawnSync('git', args, {
     cwd: project,
@@ -182,6 +211,8 @@ async function currentLocalIpaAuthority(t, {
   combinedHistory = false,
   laterPhase = null,
   trackedSource = 'frozen build 11 source\n',
+  artifactAssociationReviewedAt = '2026-08-30T10:30:00.000Z',
+  artifactReviewedAt = '2026-08-30T11:00:00.000Z',
 } = {}) {
   const project = root(t);
   git(project, ['init', '--quiet']);
@@ -237,7 +268,7 @@ async function currentLocalIpaAuthority(t, {
       buildStatus: 'FINISHED',
       downloadedIpaSha256: hash(ipaBytes),
       associationGuardProven: false,
-      reviewedAt: '2026-08-30T10:30:00.000Z',
+      reviewedAt: artifactAssociationReviewedAt,
     },
     ipaSha256: hash(ipaBytes),
     signedEntitlementsSha256: 'd'.repeat(64),
@@ -245,7 +276,7 @@ async function currentLocalIpaAuthority(t, {
     embeddedGoogleServicesPlistSha256: 'f'.repeat(64),
     signingCertificateSha256: '0'.repeat(64),
     embeddedProvisioningProfileSha256: '1'.repeat(64),
-    reviewedAt: '2026-08-30T11:00:00.000Z',
+    reviewedAt: artifactReviewedAt,
   };
   const releaseRoot = join(project, 'release/app-store/3.0');
   const privateRoot = join(project, 'release/private/rc-build-11');
@@ -948,8 +979,10 @@ test('guard completion fsyncs and revalidates both open logs before close, hashi
   const events = [];
   let stdoutDescriptor;
   let stderrDescriptor;
+  let effectiveUmask = 0o077;
   const label = (descriptor) => (descriptor === stdoutDescriptor ? 'stdout' : 'stderr');
   const child = (_executable, _args, options) => {
+    assert.equal(effectiveUmask, 0o022);
     stdoutDescriptor = options.stdio[1];
     stderrDescriptor = options.stdio[2];
     markProviderStarted(join(evidenceRoot, 'build-attempt.json'), {
@@ -976,9 +1009,17 @@ test('guard completion fsyncs and revalidates both open logs before close, hashi
       events.push(`close:${label(descriptor)}`);
       closeSync(descriptor);
     },
+    umask: (next) => {
+      const previous = effectiveUmask;
+      effectiveUmask = next;
+      events.push(`umask:${next.toString(8)}`);
+      return previous;
+    },
   });
   assert.deepEqual(events, [
+    'umask:22',
     'child-complete',
+    'umask:77',
     'fsync:stdout', 'fstat:stdout', 'fstat:stdout',
     'fsync:stderr', 'fstat:stderr', 'fstat:stderr',
     'fstat:stdout', 'fstat:stderr',
@@ -988,6 +1029,7 @@ test('guard completion fsyncs and revalidates both open logs before close, hashi
   assert.equal(marker.state, 'terminal_success');
   assert.equal(marker.outcome, 'succeeded');
   assert.match(marker.rawEvidenceSha256, /^[a-f0-9]{64}$/u);
+  assert.equal(effectiveUmask, 0o077);
 });
 
 test('mode-0600 pathname replacement cannot replace either exact fsynced log at publication', async (t) => {
@@ -1192,6 +1234,48 @@ test('read-only reconciliation binds canonical evidence and preserves the raw di
   assert.equal(after.reconciliationEvidenceSha256, hash(bytes));
 });
 
+test('FINISHED build reconciliation requires an available artifact and no provider error', async (t) => {
+  const module = await import('../scripts/release-attempt-runner.mjs');
+  for (const [name, overrides] of [
+    ['missing artifact', { artifactAvailable: false }],
+    ['provider error', { errorPresent: true, errorCode: 'EAS_BUILD_FAILED' }],
+  ]) {
+    await t.test(name, () => {
+      const evidenceRoot = root(t);
+      module.armAttempt({
+        evidenceRoot,
+        action: 'build',
+        sourceCommit: SOURCE_COMMIT,
+        runnerPid: 616161,
+        startedAt: NOW,
+      });
+      module.createAttemptLogs({ evidenceRoot, action: 'build', attemptNumber: 1 });
+      module.markProviderStarted(join(evidenceRoot, 'build-attempt.json'), {
+        action: 'build', sourceCommit: SOURCE_COMMIT,
+      });
+      writeFileSync(
+        join(evidenceRoot, 'build-attempt-1.stdout.log'),
+        `https://expo.dev/accounts/guaderrama/projects/cabohealth/builds/${BUILD_ID}\n`,
+      );
+      module.finalizeObservedAttempt({ evidenceRoot, action: 'build', exitStatus: 1 });
+      const evidencePath = join(evidenceRoot, 'build-reconciliation.json');
+      const bytes = Buffer.from(`${JSON.stringify(buildReconciliationEvidence(overrides))}\n`);
+      writeFileSync(evidencePath, bytes, { mode: 0o600 });
+      chmodSync(evidencePath, 0o600);
+      assert.throws(() => module.reconcileAttempt({
+        evidenceRoot,
+        action: 'build',
+        providerOperationId: BUILD_ID,
+        terminalStatus: 'FINISHED',
+        evidencePath,
+        evidenceSha256: hash(bytes),
+        terminalAt: '2026-08-30T12:20:00.000Z',
+      }), /RELEASE_ATTEMPT_RECONCILIATION_INVALID/u);
+      assert.equal(module.readAttemptMarker(evidenceRoot, 'build').state, 'unknown');
+    });
+  }
+});
+
 test('local-IPA submission reconciliation accepts provider submittedBuild null only with exact current authority', async (t) => {
   const module = await import('../scripts/release-attempt-runner.mjs');
   const authority = await currentLocalIpaAuthority(t);
@@ -1204,6 +1288,32 @@ test('local-IPA submission reconciliation accepts provider submittedBuild null o
   assert.equal(marker.state, 'terminal_success');
   assert.equal(marker.providerOperationId, SUBMISSION_ID);
   assert.match(marker.reconciliationEvidenceSha256, /^[a-f0-9]{64}$/u);
+});
+
+test('local-IPA authority rejects artifact review chronology before terminal evidence or in the future', async (t) => {
+  const module = await import('../scripts/release-attempt-runner.mjs');
+  const cases = [
+    ['artifact before association', {
+      artifactAssociationReviewedAt: '2026-08-30T11:00:00.000Z',
+      artifactReviewedAt: '2026-08-30T10:59:59.999Z',
+    }],
+    ['future reviews', {
+      artifactAssociationReviewedAt: '2999-08-30T11:00:00.000Z',
+      artifactReviewedAt: '2999-08-30T11:01:00.000Z',
+    }],
+  ];
+  for (const [name, options] of cases) {
+    await t.test(name, async () => {
+      const authority = await currentLocalIpaAuthority(t, options);
+      const evidenceRoot = root(t);
+      prepareUnknownUploadAttempt(module, evidenceRoot, { sourceCommit: authority.sourceCommit });
+      assert.throws(() => reconcileUpload(module, {
+        evidenceRoot,
+        projectRoot: authority.projectRoot,
+      }), /RELEASE_ATTEMPT_RECONCILIATION_INVALID/u);
+      assert.equal(module.readAttemptMarker(evidenceRoot, 'upload-testflight').state, 'unknown');
+    });
+  }
 });
 
 test('local-IPA reconciliation accepts exact later RC and submit-tool phase histories', async (t) => {
@@ -1533,7 +1643,7 @@ test('provider-present submission identity retains exact candidate and EAS build
   assert.equal(module.readAttemptMarker(evidenceRoot, 'upload-testflight').state, 'terminal_success');
 });
 
-test('provider-started crash reconciliation preserves a null raw digest and rejects forged sanitizer fields', async (t) => {
+test('provider-started crash reconciliation requires the exact logged operation and rejects forged fields', async (t) => {
   const {
     armAttempt,
     createAttemptLogs,
@@ -1586,7 +1696,7 @@ test('provider-started crash reconciliation preserves a null raw digest and reje
   const evidenceBytes = Buffer.from(`${JSON.stringify(exactEvidence())}\n`);
   writeFileSync(evidencePath, evidenceBytes, { mode: 0o600 });
   chmodSync(evidencePath, 0o600);
-  reconcileAttempt({
+  assert.throws(() => reconcileAttempt({
     evidenceRoot: crashedRoot,
     action: 'build',
     providerOperationId: BUILD_ID,
@@ -1594,8 +1704,38 @@ test('provider-started crash reconciliation preserves a null raw digest and reje
     evidencePath,
     evidenceSha256: hash(evidenceBytes),
     terminalAt: '2026-08-30T12:20:00.000Z',
+  }), /RELEASE_ATTEMPT_RECONCILIATION_INVALID/u);
+  assert.equal(readAttemptMarker(crashedRoot, 'build').state, 'provider_started');
+
+  const anchoredRoot = root(t);
+  armAttempt({
+    evidenceRoot: anchoredRoot,
+    action: 'build',
+    sourceCommit: SOURCE_COMMIT,
+    runnerPid: 125,
+    startedAt: NOW,
   });
-  const recovered = readAttemptMarker(crashedRoot, 'build');
+  createAttemptLogs({ evidenceRoot: anchoredRoot, action: 'build', attemptNumber: 1 });
+  markProviderStarted(join(anchoredRoot, 'build-attempt.json'), {
+    action: 'build', sourceCommit: SOURCE_COMMIT,
+  });
+  writeFileSync(
+    join(anchoredRoot, 'build-attempt-1.stdout.log'),
+    `https://expo.dev/accounts/guaderrama/projects/cabohealth/builds/${BUILD_ID}\n`,
+  );
+  const anchoredEvidencePath = join(anchoredRoot, 'build-reconciliation.json');
+  writeFileSync(anchoredEvidencePath, evidenceBytes, { mode: 0o600 });
+  chmodSync(anchoredEvidencePath, 0o600);
+  reconcileAttempt({
+    evidenceRoot: anchoredRoot,
+    action: 'build',
+    providerOperationId: BUILD_ID,
+    terminalStatus: 'FINISHED',
+    evidencePath: anchoredEvidencePath,
+    evidenceSha256: hash(evidenceBytes),
+    terminalAt: '2026-08-30T12:20:00.000Z',
+  });
+  const recovered = readAttemptMarker(anchoredRoot, 'build');
   assert.equal(recovered.state, 'terminal_success');
   assert.equal(recovered.rawEvidenceSha256, null);
   assert.equal(recovered.reconciliationEvidenceSha256, hash(evidenceBytes));

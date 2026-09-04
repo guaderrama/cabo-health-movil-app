@@ -12,6 +12,7 @@ import {
   UUID_PATTERN,
   hasExactKeys,
   isCanonicalUtc,
+  isValidReviewChronology,
   parseJsonBytes,
   readSecureFile,
   sha256,
@@ -79,10 +80,12 @@ export function createBuildArtifactAttestation({
   associationPath,
   evidenceDir,
   outputPath,
+  now = Date.now(),
 }) {
   if (!isCanonicalUtc(reviewedAt) || !SHA256_PATTERN.test(buildInputAttestationSha256 ?? '')
-    || !SHA256_PATTERN.test(sourceTreeSha256 ?? '')) fail(ARGUMENT);
+    || !SHA256_PATTERN.test(sourceTreeSha256 ?? '') || !Number.isFinite(now)) fail(ARGUMENT);
   const association = readAssociation(associationPath);
+  if (!isValidReviewChronology(association.reviewedAt, reviewedAt, now)) fail(ASSOCIATION);
   try {
     if (typeof evidenceDir !== 'string' || !isAbsolute(evidenceDir) || resolve(evidenceDir) !== evidenceDir
       || !evidenceDir.endsWith('/rc-build-11')) fail(FILE);

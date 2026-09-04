@@ -28,6 +28,7 @@ import {
   canonicalJsonBytes,
   hasExactKeys,
   isCanonicalUtc,
+  isValidReviewChronology,
   isWithin,
   parseJsonBytes,
   readSecureFile,
@@ -569,8 +570,10 @@ function validateCurrentLocalIpaAuthority(projectRoot, marker) {
     || artifact.easArtifactAssociation.buildStatus !== 'FINISHED'
     || artifact.easArtifactAssociation.downloadedIpaSha256 !== artifact.ipaSha256
     || artifact.easArtifactAssociation.associationGuardProven !== false
-    || !isCanonicalUtc(artifact.easArtifactAssociation.reviewedAt)
-    || !isCanonicalUtc(artifact.reviewedAt)
+    || !isValidReviewChronology(
+      artifact.easArtifactAssociation.reviewedAt,
+      artifact.reviewedAt,
+    )
     || BUILD_ARTIFACT_AUTHORITY_KEYS.filter((key) => key.endsWith('Sha256'))
       .some((key) => !SHA256_PATTERN.test(artifact[key] ?? ''))
     || artifact.ipaSha256 !== hashCurrentIpa(projectRoot)) fail(RECONCILIATION);
@@ -647,7 +650,7 @@ function revalidateAttemptLog(log) {
   }
 }
 
-function openSubmissionAttemptAnchor(root, marker) {
+function openAttemptAnchor(root, marker) {
   if (marker.state !== 'provider_started' || marker.providerOperationId !== null
     || marker.rawEvidenceSha256 !== null) fail(RECONCILIATION);
   const logs = [];
@@ -669,7 +672,7 @@ function openSubmissionAttemptAnchor(root, marker) {
   }
 }
 
-function closeSubmissionAttemptAnchor(anchor) {
+function closeAttemptAnchor(anchor) {
   if (anchor === null) return;
   for (const log of anchor.logs) closeSync(log.descriptor);
 }
@@ -702,7 +705,9 @@ function validateReconciliationEvidence(
       || value.bundleIdentifier !== CANDIDATE.bundleIdentifier
       || value.marketingVersion !== CANDIDATE.marketingVersion
       || value.buildNumber !== CANDIDATE.buildNumber
-      || typeof value.artifactAvailable !== 'boolean') fail(RECONCILIATION);
+      || typeof value.artifactAvailable !== 'boolean'
+      || (terminalStatus === 'FINISHED'
+        && (value.artifactAvailable !== true || value.errorPresent !== false))) fail(RECONCILIATION);
   } else {
     if (!hasExactKeys(value, SUBMISSION_RECONCILIATION_KEYS)
       || value.evidenceKind !== 'cabohealth-eas-submission-read-only-status'
@@ -766,11 +771,11 @@ export function reconcileAttempt({
     );
     if (sha256(bytes) !== evidenceSha256) fail(RECONCILIATION);
     const value = parseJsonBytes(bytes, RECONCILIATION, { canonical: true });
-    if (action === 'upload-testflight'
-      && value?.app?.submittedBuildIdentityAvailable === false
-      && marker.providerOperationId === null) {
-      anchor = openSubmissionAttemptAnchor(root, marker);
-    }
+    if (marker.providerOperationId === null) anchor = openAttemptAnchor(root, marker);
+    const attemptedProviderOperationId = marker.providerOperationId
+      ?? anchor?.providerOperationId
+      ?? null;
+    if (attemptedProviderOperationId !== providerOperationId) fail(RECONCILIATION);
     validateReconciliationEvidence(
       action,
       value,
@@ -778,7 +783,7 @@ export function reconcileAttempt({
       terminalStatus,
       marker,
       projectRoot,
-      marker.providerOperationId ?? anchor?.providerOperationId ?? null,
+      attemptedProviderOperationId,
     );
     if (anchor !== null) {
       for (const log of anchor.logs) revalidateAttemptLog(log);
@@ -796,7 +801,7 @@ export function reconcileAttempt({
     if (error?.message === RECONCILIATION) throw error;
     fail(RECONCILIATION);
   } finally {
-    closeSubmissionAttemptAnchor(anchor);
+    closeAttemptAnchor(anchor);
   }
 }
 
@@ -910,9 +915,11 @@ export function runGuard(projectRoot, evidenceRoot, action, attemptNumber, {
   fsync = fsyncSync,
   fstat = fstatSync,
   close = closeSync,
+  umask = process.umask,
 } = {}) {
   if (typeof spawn !== 'function' || typeof fsync !== 'function'
-    || typeof fstat !== 'function' || typeof close !== 'function') fail(MARKER);
+    || typeof fstat !== 'function' || typeof close !== 'function'
+    || typeof umask !== 'function') fail(MARKER);
   const stdoutPath = join(evidenceRoot, logName(action, attemptNumber, 'stdout'));
   const stderrPath = join(evidenceRoot, logName(action, attemptNumber, 'stderr'));
   const stdout = openLogForChild(stdoutPath);
@@ -921,16 +928,27 @@ export function runGuard(projectRoot, evidenceRoot, action, attemptNumber, {
   let final;
   try {
     stderr = openLogForChild(stderrPath);
-    result = spawn(process.execPath, [
-      join(projectRoot, 'scripts/release-command-guard.mjs'), action,
-    ], {
-      cwd: projectRoot,
-      env: {
-        ...process.env,
-        CABOHEALTH_RELEASE_ATTEMPT_STATE: join(evidenceRoot, markerName(action)),
-      },
-      stdio: ['ignore', stdout.descriptor, stderr.descriptor],
-    });
+    let previousUmask;
+    try {
+      if (action === 'build') {
+        previousUmask = umask(0o022);
+        if (!Number.isInteger(previousUmask) || previousUmask < 0 || previousUmask > 0o777) {
+          fail(MARKER);
+        }
+      }
+      result = spawn(process.execPath, [
+        join(projectRoot, 'scripts/release-command-guard.mjs'), action,
+      ], {
+        cwd: projectRoot,
+        env: {
+          ...process.env,
+          CABOHEALTH_RELEASE_ATTEMPT_STATE: join(evidenceRoot, markerName(action)),
+        },
+        stdio: ['ignore', stdout.descriptor, stderr.descriptor],
+      });
+    } finally {
+      if (previousUmask !== undefined) umask(previousUmask);
+    }
     const stdoutBytes = syncAndReadLog(stdout, { fsync, fstat });
     const stderrBytes = syncAndReadLog(stderr, { fsync, fstat });
     revalidateRunLogPath(stdout, { fstat });
