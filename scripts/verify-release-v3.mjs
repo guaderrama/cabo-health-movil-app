@@ -78,7 +78,7 @@ const EXACT_AUTHORITY_SHA256 = Object.freeze({
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
   'constants/config.ts': 'a2b8453caa2f6be0c065f226bf84edc59e12b9b3a42523321fcb173388ec8a90',
   'constants/publicMiniapps.ts': '7306d82fd7de694b16de85401a8aab431c5408037f5038ce95fc5f79edef9dda',
-  'release/app-store/3.0/release-manifest.json': '24d7169d66dc274ea7e0f361e52972034b98671c2be18116e1a5295e268612c0',
+  'release/app-store/3.0/release-manifest.json': 'f5abe072b01178e3e1301b197c5b08adb2466098339ed41c66de8f3699c4d0e5',
   'release/app-store/3.0/age-rating.json': '2b8de835b2e1ef794c28310a1699e101a7d604652b14945538c70e26df6e1259',
   'release/app-store/3.0/app-privacy.json': 'ea62eeb774718f7378cfb4edbc18dfb8fa8f90afadb3c61d2ef6b214a1da4349',
 });
@@ -153,7 +153,7 @@ export function verifyCapturedReleaseV3(files) {
         : path.startsWith('constants/')
         ? `${path} must retain the exact reviewed bytes`
         : path.endsWith('release-manifest.json')
-          ? 'release manifest must retain the exact v3 pre-build semantics'
+          ? 'release manifest must retain the exact v3 phase-neutral authority semantics'
           : path.endsWith('age-rating.json')
             ? 'age rating must retain the exact age-rating authority'
             : 'privacy must retain the exact privacy authority';
@@ -213,8 +213,7 @@ export function verifyCapturedReleaseV3(files) {
         'status',
         'appJsonUpdated',
         'configUpdated',
-        'rcSourceSha',
-        'testFlightBuildId',
+        'liveAuthorityPhaseSource',
       ])
       && hasExactKeys(manifest.ascEvidence, [
         'observedAt',
@@ -484,8 +483,8 @@ export function verifyCapturedReleaseV3(files) {
       ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
       privacyMapping: 'pending-final-linkage-category-review-and-save',
       brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-      exactReleaseCandidate: 'build-11-pending-build-input-attestation-eas-build-and-qa',
-      testFlight: 'builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-pending-build-upload-selection-and-physical-iphone-qa',
+      exactReleaseCandidate: 'build-11-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
+      testFlight: 'builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
       screenshots: 'pending-exact-rc-capture',
       accessibilityLabels: 'pending-exact-rc-evidence',
       appStoreConnect: 'pending-final-save',
@@ -504,12 +503,11 @@ export function verifyCapturedReleaseV3(files) {
 
     if (manifest.candidate?.marketingVersion !== '3.0'
       || manifest.candidate?.buildNumber !== '11'
-      || manifest.candidate?.status !== 'pre-build-configured'
+      || manifest.candidate?.status !== 'authority-sequence-configured'
       || manifest.candidate?.appJsonUpdated !== true
       || manifest.candidate?.configUpdated !== true
-      || manifest.candidate?.rcSourceSha !== null
-      || manifest.candidate?.testFlightBuildId !== null) {
-      errors.push('candidate must remain truthful pre-build-configured 3.0/build 11 without premature RC evidence');
+      || manifest.candidate?.liveAuthorityPhaseSource !== 'release-command-guard-pins-and-required-attestation-bytes') {
+      errors.push('candidate must retain the phase-neutral 3.0/build 11 identity and live authority source');
     }
     const asc = manifest.ascEvidence;
     if (asc?.observedAt !== '2026-08-27T20:35:04.000Z'
@@ -1043,7 +1041,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  process.stdout.write('Release 3.0/build 11 verified: pre-build-configured.\n');
+  process.stdout.write('Release 3.0/build 11 verified: phase-neutral authority sequence configured.\n');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

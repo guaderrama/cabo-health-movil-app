@@ -42,7 +42,7 @@ and both are obsolete for the external-HTTPS source. Build 8 was then built,
 exactly attested, uploaded, observed Ready to Submit, and made available to the
 existing internal group; it is immutable obsolete history for the WebView
 subframe fix and cannot authorize build 11. Build 10 was subsequently built,
-attested, uploaded, and processed for internal TestFlight; it is immutable history and cannot authorize build 11. Build 11 input attempt 1 was invalidated by tracked source drift before any provider operation and remains separately archived historical input authority only. CaboHealth 3.0 build 11 remains the sole unbuilt candidate; no current build-11 input attestation, IPA, or TestFlight upload is claimed by this document.
+attested, uploaded, and processed for internal TestFlight; it is immutable history and cannot authorize build 11. Build 11 input attempt 1 was invalidated by tracked source drift before any provider operation and remains separately archived historical input authority only. CaboHealth 3.0 build 11 is the current candidate. Its live authority phase—pre-input, input, artifact, RC, or submit-tool—must be determined from the exact current pins and required attestation bytes. This document does not assert a particular live phase or infer any provider result, physical-device QA, submission, or Apple approval.
 
 ## Resolution mapping for the new candidate
 

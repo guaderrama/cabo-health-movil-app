@@ -60,10 +60,10 @@ function withFixture(mutate, assertion) {
   }
 }
 
-test('release v3 verifier accepts the truthful pre-build-configured 3.0/build 11 package', () => {
+test('release v3 verifier accepts the phase-neutral 3.0/build 11 authority package', () => {
   const result = runVerifier();
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /Release 3\.0\/build 11 verified: pre-build-configured\./u);
+  assert.match(result.stdout, /Release 3\.0\/build 11 verified: phase-neutral authority sequence configured\./u);
 });
 
 test('release v3 verifier rejects a non-array ASC build list without throwing', () => {
@@ -926,7 +926,7 @@ test('captured release verifier rejects semantic drift across every release auth
       (root) => mutateJson(root, relativePath, mutate),
       (result) => {
         assert.equal(result.status, 1, `${name} semantic drift bypassed captured authority`);
-        assert.match(result.stderr, /exact v3 pre-build semantics|exact privacy authority|exact age-rating authority/iu);
+        assert.match(result.stderr, /exact v3 phase-neutral authority semantics|exact privacy authority|exact age-rating authority/iu);
       },
     ));
   }

@@ -6,9 +6,11 @@ implemented and preserved in immutable build-8 distribution history. Build 9
 was input-attested and then aborted before any provider operation when its
 mandatory post-pin gates exposed phase-stale release tests. Build 10 was built,
 attested, uploaded, and processed for internal TestFlight; it is immutable
-history and cannot authorize build 11. Build 11 is the sole current candidate;
-its build-input authority, physical-device QA, and current release evidence
-remain pending. This document does not claim those later steps. The sanitized
+history and cannot authorize build 11. Build 11 is the current candidate. Its
+live authority phase—pre-input, input, artifact, RC, or submit-tool—must be
+determined from the exact current pins and required attestation bytes. This
+document does not assert a particular live phase or infer any provider result,
+physical-device QA, submission, or Apple approval. The sanitized
 production boundary and exact active pins are recorded in
 `dynamic-miniapp-production-activation-2026-08-25.md`.
 
@@ -269,12 +271,13 @@ updated Staff artifact, or the successor iOS presentation has been deployed.
 7. **Completed:** Promote and verify the new AASA at origin and Apple's CDN.
 8. **Pending:** Verify public create/edit/deactivate/delete and one-code client expansion in
    production using non-sensitive test entries, then remove the test entries.
-9. **Build 8 complete and immutable; build 9 aborted; build 10 processed history; build 11 pending:** Build 8 was built,
+9. **Build 8 complete and immutable; build 9 aborted; build 10 processed history; build 11 phase-controlled:** Build 8 was built,
    attested, uploaded, and made available internally before becoming obsolete
    for the WebView subframe fix. Build 9 was input-attested and then aborted
-   before any EAS build or other provider operation. Build 10 was built, attested, uploaded, and processed for internal TestFlight; it is immutable history and cannot authorize build 11. Freeze CaboHealth 3.0 build 11, create the new
-   iOS build, inspect the exact IPA, upload it to
-   TestFlight, and complete physical-device QA before selecting it for review.
+   before any EAS build or other provider operation. Build 10 was built, attested, uploaded, and processed for internal TestFlight; it is immutable history and cannot authorize build 11. Advance CaboHealth 3.0 build 11 only through the live
+   authority sequence: input, artifact, RC, and submit-tool pins must remain
+   contiguous and bind their required exact evidence. Never infer a later phase
+   or provider outcome from this catalog record.
 
 ## External-HTTPS rollback
 

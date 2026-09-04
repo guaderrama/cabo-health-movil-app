@@ -926,10 +926,10 @@ test('compliance facts preserve owner-confirmed facts while build-11 age review 
   }
 });
 
-test('release v3 verification accepts reconciled owner facts while keeping the configured pre-build scope blocked', () => {
+test('release v3 verification accepts reconciled owner facts while keeping unresolved scope blocked', () => {
   const result = spawnSync(process.execPath, [verifierPath, projectRoot], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stdout || result.stderr);
-  assert.match(result.stdout, /verified.*pre-build-configured/iu);
+  assert.match(result.stdout, /verified.*phase-neutral authority sequence configured/iu);
 });
 
 test('operational and inventory drafts identify unverified controls without claiming completion', () => {

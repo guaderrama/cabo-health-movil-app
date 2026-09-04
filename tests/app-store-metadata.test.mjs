@@ -187,10 +187,10 @@ function withReleaseFixture(mutate, assertion) {
   }
 }
 
-test('versioned App Store metadata is a valid pre-build-configured 3.0 build 11 candidate', () => {
+test('versioned App Store metadata has a valid phase-neutral 3.0 build 11 authority contract', () => {
   const result = verify(projectRoot);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /pre-build metadata verified; submission remains blocked/i);
+  assert.match(result.stdout, /metadata authority verified; submission remains blocked/i);
 });
 
 test('metadata verifier rejects malformed build-11 input-attempt authority history', async (t) => {
@@ -239,13 +239,13 @@ test('metadata verifier rejects stale or contradictory live ASC evidence', async
   }
 });
 
-test('metadata verifier keeps the candidate configured but unbuilt', async (t) => {
+test('metadata verifier keeps the candidate identity and phase-source schema exact', async (t) => {
   const mutations = [
     ['phase rollback', (candidate) => { candidate.status = 'draft-blocked'; }],
     ['app config rollback', (candidate) => { candidate.appJsonUpdated = false; }],
     ['visible config rollback', (candidate) => { candidate.configUpdated = false; }],
-    ['premature source attestation', (candidate) => { candidate.rcSourceSha = '0'.repeat(64); }],
-    ['premature TestFlight binding', (candidate) => { candidate.testFlightBuildId = 'not-built'; }],
+    ['wrong live phase source', (candidate) => { candidate.liveAuthorityPhaseSource = 'manifest-static-status'; }],
+    ['missing live phase source', (candidate) => { delete candidate.liveAuthorityPhaseSource; }],
   ];
 
   for (const [name, mutate] of mutations) {
@@ -253,7 +253,7 @@ test('metadata verifier keeps the candidate configured but unbuilt', async (t) =
       (root) => mutateJson(root, `${releasePath}/release-manifest.json`, (manifest) => mutate(manifest.candidate)),
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed candidate phase validation`);
-        assert.match(result.stderr, /unbuilt pre-build-configured 3\.0 build 11 authority/i);
+        assert.match(result.stderr, /phase-neutral 3\.0 build 11 candidate configuration/i);
       },
     ));
   }
@@ -799,19 +799,19 @@ test('metadata verifier accepts the five owner confirmations without releasing u
     recordOwnerConfirmations,
     (result) => {
       assert.equal(result.status, 0, result.stderr || result.stdout);
-      assert.match(result.stdout, /pre-build metadata verified; submission remains blocked/i);
+      assert.match(result.stdout, /metadata authority verified; submission remains blocked/i);
     },
   );
 });
 
-test('metadata verifier keeps the live-reconciled pre-build configuration gate completed', () => {
+test('metadata verifier keeps the live-reconciled version configuration gate completed', () => {
   withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 11 after preserving exact build-8 built/uploaded history, hash-binding build 9 as aborted before any provider operation, and preserving build 10 as immutable processed internal-TestFlight history; no current build-11 input attestation, IPA, or TestFlight upload exists yet.',
-        '- [ ] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 11 after preserving exact build-8 built/uploaded history, hash-binding build 9 as aborted before any provider operation, and preserving build 10 as immutable processed internal-TestFlight history; no current build-11 input attestation, IPA, or TestFlight upload exists yet.',
+        '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 11 after preserving exact build-8 built/uploaded history, hash-binding build 9 as aborted before any provider operation, and preserving build 10 as immutable processed internal-TestFlight history; this completed configuration gate neither asserts nor negates a later live build-11 authority phase.',
+        '- [ ] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 11 after preserving exact build-8 built/uploaded history, hash-binding build 9 as aborted before any provider operation, and preserving build 10 as immutable processed internal-TestFlight history; this completed configuration gate neither asserts nor negates a later live build-11 authority phase.',
       ));
     },
     (result) => {
@@ -855,19 +855,19 @@ test('metadata verifier keeps the build-6 build-input attestation gate completed
   );
 });
 
-test('metadata verifier keeps build-8, aborted build-9, and processed build-10 evidence historical while the build-11 build-input attestation gate remains pending', () => {
+test('metadata verifier keeps the phase-neutral build-11 authority sequence completed', () => {
   withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [ ] Generate, independently review, and pin the replacement build-11 canonical build-input attestation against the refrozen 3.0/build 11 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8, aborted build-9, immutable processed build-10 history, or invalidated build-11 attempt-1 authority.',
-        '- [x] Generate, independently review, and pin the replacement build-11 canonical build-input attestation against the refrozen 3.0/build 11 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8, aborted build-9, immutable processed build-10 history, or invalidated build-11 attempt-1 authority.',
+        '- [x] Establish the fail-closed build-11 authority sequence: replacement canonical build-input attestation, build artifact, RC, and submit tool. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no obsolete build-8, aborted build-9, immutable processed build-10, or invalidated build-11 attempt-1 authority may be reused.',
+        '- [ ] Establish the fail-closed build-11 authority sequence: replacement canonical build-input attestation, build artifact, RC, and submit tool. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no obsolete build-8, aborted build-9, immutable processed build-10, or invalidated build-11 attempt-1 authority may be reused.',
       ));
     },
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /must retain the exact pending build-11 build-input attestation checkbox/i);
+      assert.match(result.stderr, /must retain the exact completed phase-neutral build-11 authority-sequence checkbox/i);
     },
   );
 });
@@ -1392,7 +1392,7 @@ test('metadata verifier rejects an ownership declaration that claims a registere
   );
 });
 
-test('metadata verifier reconciles authoritative Task 7 facts and configured pre-build app state', async (t) => {
+test('metadata verifier reconciles authoritative Task 7 facts and configured app identity', async (t) => {
   const mutations = [
     ['changed legal sign-off', (root) => mutateJson(root, 'release/compliance-facts.json', (facts) => {
       facts.legalEntity.legalSignOffStatus = 'verified';
@@ -1433,7 +1433,8 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured pre
 test('current release instructions retain the current build-11 candidate and its invalidated input history', () => {
   const dataInventory = readFileSync(join(projectRoot, 'release/data-inventory.md'), 'utf8');
   assert.match(dataInventory, /exact signed 3\.0\/build 11 RC must independently confirm/iu);
-  assert.match(dataInventory, /exact 3\.0\/build 11 signed RC.*still pending/iu);
+  assert.match(dataInventory, /Final Apple App Privacy answers must be reconciled against the exact 3\.0\/build 11 signed RC/iu);
+  assert.match(dataInventory, /live authority phase—pre-input, input, artifact, RC, or submit-tool—must be determined from the exact current pins and required attestation bytes/iu);
   assert.match(dataInventory, /Build 10 is immutable processed internal-TestFlight history and cannot authorize build 11/iu);
   assert.match(dataInventory, /Build 11 input attempt 1 is separately archived invalidated-pre-provider source-drift history and cannot authorize a build or make build 11 historical/iu);
   assert.doesNotMatch(dataInventory, /exact signed 3\.0\/build [67] RC must/iu);
@@ -1443,7 +1444,8 @@ test('current release instructions retain the current build-11 candidate and its
     join(projectRoot, 'docs/operations/dynamic-miniapp-production-activation-2026-08-25.md'),
     'utf8',
   );
-  assert.match(activation, /CaboHealth 3\.0 build 11 is the sole unbuilt next\s+candidate/iu);
+  assert.match(activation, /CaboHealth 3\.0 build 11 is the current\s+candidate/iu);
+  assert.match(activation, /live authority phase—pre-input, input, artifact, RC, or submit-tool—must be determined\s+from the exact current pins and required attestation bytes/iu);
   assert.match(activation, /Build 9 was input-attested and then aborted before any\s+provider operation/iu);
   assert.match(activation, /Build 10 was built, attested, uploaded, and processed for internal\s+TestFlight; its immutable history cannot authorize build 11/iu);
   assert.doesNotMatch(activation, /build [67] is the next candidate/iu);
@@ -1472,15 +1474,15 @@ test('metadata verifier rejects build 6 or 7 as the next exact RC authority', as
     ['build 6 in reconciliation gate', (root) => {
       const path = join(root, 'release/data-inventory.md');
       writeFileSync(path, readFileSync(path, 'utf8').replace(
-        'exact 3.0/build 11 signed RC',
-        'exact 3.0/build 6 signed RC',
+        'against the exact 3.0/build 11 signed RC',
+        'against the exact 3.0/build 6 signed RC',
       ));
     }],
   ];
   for (const [name, mutate] of mutations) {
     await t.test(name, () => withReleaseFixture(mutate, (result) => {
       assert.equal(result.status, 1, `${name} bypassed exact-RC validation`);
-      assert.match(result.stderr, /must name build 11, with build 8 immutable, build 9 aborted pre-provider, and build 10 processed internal-TestFlight history, as the next exact RC/iu);
+      assert.match(result.stderr, /must name build 11 as the phase-neutral exact RC, with build 8 immutable, build 9 aborted pre-provider, build 10 processed internal-TestFlight history, and build 11 input attempt 1 separately invalidated/iu);
     }));
   }
 });

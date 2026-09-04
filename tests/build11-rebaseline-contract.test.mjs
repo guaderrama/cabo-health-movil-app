@@ -127,6 +127,25 @@ const STALE_BUILD_10_AUTHORITY = [
 ];
 const BUILD_11_SDD_ROOT = '/.superpowers/sdd/2026-09-03-cabohealth-build11-app-store-release';
 const BUILD_11_RECOVERY_SDD_ROOT = '/.superpowers/sdd/2026-09-04-cabohealth-build11-input-authority-recovery';
+const BUILD_11_PHASE_TRUTH_PATHS = Object.freeze([
+  'release/app-store/3.0/submission-gates.md',
+  'release/app-store/3.0/apple-review-remediation-2026-08-24.md',
+  'release/data-inventory.md',
+  'docs/operations/prior-apple-review-resolution.md',
+  'docs/operations/dynamic-miniapp-catalog.md',
+  'docs/operations/dynamic-miniapp-production-activation-2026-08-25.md',
+]);
+const BUILD_11_PHASE_NEUTRAL_CONTEXT = /live authority phase(?:\s|&mdash;|—|-)*pre-input,\s+input,\s+artifact,\s+RC,\s+or\s+submit-tool(?:\s|&mdash;|—|-)*must\s+be\s+determined\s+from\s+the\s+exact\s+current\s+pins\s+and\s+required\s+attestation\s+bytes/iu;
+const STALE_BUILD_11_PHASE_ASSERTIONS = Object.freeze([
+  /\bbuild[- /]?11\b[^.]{0,120}\bsole unbuilt\b/iu,
+  /\bsole unbuilt\b[^.]{0,120}\bbuild[- /]?11\b/iu,
+  /\bcurrent build-?11\b[^.]{0,100}\b(?:authority|attestation|IPA|TestFlight upload)\b[^.]{0,80}\b(?:absent|does not exist)\b/iu,
+  /\bno current build-?11\b[^.]{0,100}\b(?:authority|attestation|IPA|TestFlight upload)\b/iu,
+  /\bbuild[- /]?11\b[^.]{0,100}\bbuild-input authority\b[^.]{0,80}\bremain(?:s)? pending\b/iu,
+  /\bexact 3\.0\/build 11 signed RC\b[^.]{0,180}\bstill pending\b/iu,
+  /\bbuild 11 input freeze\b[^.]{0,240}\bremain pending\b/iu,
+  /\[[ ]\][^\n]*\bbuild-11 canonical build-input attestation\b/iu,
+]);
 
 function build10LocalClause(source, referenceIndex) {
   const clauseStart = Math.max(
@@ -173,6 +192,28 @@ test('the refrozen current candidate has one valid contiguous phase while the in
   assert.equal(app.expo.ios.buildNumber, '11');
   assert.match(config, /buildNumber:\s*'11'/u);
   assert.equal(manifest.candidate.buildNumber, '11');
+  assert.deepEqual(manifest.candidate, {
+    appleId: '6758285327',
+    bundleIdentifier: 'com.cabohealth.app',
+    marketingVersion: '3.0',
+    buildNumber: '11',
+    status: 'authority-sequence-configured',
+    appJsonUpdated: true,
+    configUpdated: true,
+    liveAuthorityPhaseSource: 'release-command-guard-pins-and-required-attestation-bytes',
+  });
+  assert.equal(
+    manifest.gates.exactReleaseCandidate,
+    'build-11-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
+  );
+  assert.equal(
+    manifest.gates.testFlight,
+    'builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
+  );
+  assert.equal(
+    manifest.appStoreDraft.unresolvedExternalGates.exactReleaseCandidate,
+    'build-11-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
+  );
   const inputPath = join(root, 'release/app-store/3.0/build-input-attestation.json');
   const artifactPath = join(root, 'release/app-store/3.0/build-artifact-attestation.json');
   const rcPath = join(root, 'release/app-store/3.0/rc-attestation.json');
@@ -243,6 +284,46 @@ test('build 11 authority accepts every contiguous phase and rejects partial or m
     guard: withAuthorityPin(guard, 'PINNED_EAS_CLI', "'QQ=='"),
     attestations: { input: null, artifact: null, rc: null },
   }), /legacy EAS CLI pin/u);
+});
+
+test('current build 11 prose stays truthful in synthetic input and artifact phases', () => {
+  const guard = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
+  const input = Buffer.from('{"phase":"input"}\n');
+  const artifact = Buffer.from('{"phase":"artifact"}\n');
+  const inputGuard = withAuthorityPin(
+    guard,
+    'BUILD_INPUT_ATTESTATION_SHA256',
+    `'${sha256(input)}'`,
+  );
+  const artifactGuard = withAuthorityPin(
+    inputGuard,
+    'BUILD_ARTIFACT_ATTESTATION_SHA256',
+    `'${sha256(artifact)}'`,
+  );
+  assert.equal(assertBuild11AuthorityPhase({
+    guard: inputGuard,
+    attestations: { input, artifact: null, rc: null },
+  }), 'input');
+  assert.equal(assertBuild11AuthorityPhase({
+    guard: artifactGuard,
+    attestations: { input, artifact, rc: null },
+  }), 'artifact');
+
+  for (const relativePath of BUILD_11_PHASE_TRUTH_PATHS) {
+    const source = readFileSync(join(root, relativePath), 'utf8');
+    assert.match(
+      source,
+      BUILD_11_PHASE_NEUTRAL_CONTEXT,
+      `${relativePath}: current build-11 prose must defer its phase to live authority`,
+    );
+    for (const stalePattern of STALE_BUILD_11_PHASE_ASSERTIONS) {
+      assert.doesNotMatch(
+        source,
+        stalePattern,
+        `${relativePath}: current build-11 prose is stale after input or artifact authority`,
+      );
+    }
+  }
 });
 
 test('build 10 is immutable processed internal-TestFlight history with its exact identities', () => {
@@ -531,13 +612,13 @@ test('build-10 clause-local classification rejects each stale pre-fix operationa
   const mutations = [
     {
       relativePath: 'docs/operations/dynamic-miniapp-catalog.md',
-      current: 'Build 10 was built,\nattested, uploaded, and processed for internal TestFlight; it is immutable\nhistory and cannot authorize build 11. Build 11 is the sole current candidate;\nits build-input authority, physical-device QA, and current release evidence\nremain pending.',
+      current: 'Build 10 was built,\nattested, uploaded, and processed for internal TestFlight; it is immutable\nhistory and cannot authorize build 11.',
       stale: 'Build 10,\nphysical-device QA, and current release evidence remain pending.',
     },
     {
       relativePath: 'docs/operations/dynamic-miniapp-production-activation-2026-08-25.md',
-      current: 'Build 11 input freeze, EAS build, exact IPA audit, TestFlight processing,\n  two-iPhone QA, screenshots, App Attest valid-flow evidence, final App Store\n  metadata, privacy/age answers, rights sign-off, and Apple review remain\n  pending.',
-      stale: 'Build 10 input freeze, EAS build, exact IPA audit, TestFlight processing,\n  two-iPhone QA, screenshots, App Attest valid-flow evidence, final App Store\n  metadata, privacy/age answers, rights sign-off, and Apple review remain\n  pending.',
+      current: 'Build 10 was built, attested, uploaded, and processed for internal\nTestFlight; its immutable history cannot authorize build 11.',
+      stale: 'Build 10 input freeze, EAS build, exact IPA audit, and TestFlight\nprocessing remain pending.',
     },
     {
       relativePath: 'docs/operations/vip-showcase-production-activation-2026-08-26.md',

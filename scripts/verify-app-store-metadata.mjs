@@ -72,8 +72,8 @@ const expectedGateStates = Object.freeze({
   ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
   privacyMapping: 'pending-final-linkage-category-review-and-save',
   brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-  exactReleaseCandidate: 'build-11-pending-build-input-attestation-eas-build-and-qa',
-  testFlight: 'builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-pending-build-upload-selection-and-physical-iphone-qa',
+  exactReleaseCandidate: 'build-11-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
+  testFlight: 'builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
   accessibilityLabels: 'pending-exact-rc-evidence',
   screenshots: 'pending-exact-rc-capture',
   appStoreConnect: 'pending-final-save',
@@ -117,7 +117,7 @@ const expectedUnresolvedExternalGates = Object.freeze({
   appReviewCredential: 'pending-credential-valid-flow-and-device-e2e',
   staffReviewAccess: 'owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested',
   clientAccessModel: 'pending-apple-review-determination',
-  exactReleaseCandidate: 'build-11-pending-build-input-attestation-eas-build-and-qa',
+  exactReleaseCandidate: 'build-11-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
   screenshots: 'pending-exact-rc-capture',
   appStoreConnectSave: 'pending-final-save',
 });
@@ -527,23 +527,21 @@ function verifyManifest() {
     'status',
     'appJsonUpdated',
     'configUpdated',
-    'rcSourceSha',
-    'testFlightBuildId',
+    'liveAuthorityPhaseSource',
   ])) {
-    errors.push('Candidate must retain the exact pre-build authority schema');
+    errors.push('Candidate must retain the exact phase-neutral authority schema');
   }
   if (
     candidate?.appleId !== '6758285327'
     || candidate?.bundleIdentifier !== 'com.cabohealth.app'
     || candidate?.marketingVersion !== '3.0'
     || candidate?.buildNumber !== '11'
-    || candidate?.status !== 'pre-build-configured'
+    || candidate?.status !== 'authority-sequence-configured'
     || candidate?.appJsonUpdated !== true
     || candidate?.configUpdated !== true
-    || candidate?.rcSourceSha !== null
-    || candidate?.testFlightBuildId !== null
+    || candidate?.liveAuthorityPhaseSource !== 'release-command-guard-pins-and-required-attestation-bytes'
   ) {
-    errors.push('Candidate must remain an unbuilt pre-build-configured 3.0 build 11 authority');
+    errors.push('Candidate must retain the phase-neutral 3.0 build 11 candidate configuration');
   }
   const expectedHistoricalCandidateEvidence = [
     { marketingVersion: '3.0', buildNumber: '4', status: 'testflight-ready-to-submit-obsolete-source', appStoreObserved: true },
@@ -1096,11 +1094,12 @@ function verifyAuthoritativeProjectState() {
   }
   const inventory = readProject('release/data-inventory.md');
   if (!/exact signed 3\.0\/build 11 RC must independently confirm/iu.test(inventory)
-    || !/exact 3\.0\/build 11 signed RC[\s\S]{0,160}still pending/iu.test(inventory)
+    || !/Final Apple App Privacy answers must be reconciled against the exact 3\.0\/build 11 signed RC[\s\S]{0,180}does not assert whether the RC authority phase has been reached/iu.test(inventory)
     || !/Build 10 is immutable processed internal-TestFlight history and cannot authorize build 11/iu.test(inventory)
+    || !/Build 11 input attempt 1 is separately archived invalidated-pre-provider source-drift history and cannot authorize a build or make build 11 historical/iu.test(inventory)
     || /exact signed 3\.0\/build [67] RC must/iu.test(inventory)
     || /exact 3\.0\/build [67] signed RC[\s\S]{0,160}still pending/iu.test(inventory)) {
-    errors.push('Authoritative data inventory must name build 11, with build 8 immutable, build 9 aborted pre-provider, and build 10 processed internal-TestFlight history, as the next exact RC');
+    errors.push('Authoritative data inventory must name build 11 as the phase-neutral exact RC, with build 8 immutable, build 9 aborted pre-provider, build 10 processed internal-TestFlight history, and build 11 input attempt 1 separately invalidated');
   }
   if (!/fixed `actorLabel: Staff`/u.test(inventory)
     || !/no actor UID, codes, client names, or resource URLs/iu.test(inventory)) {
@@ -1845,10 +1844,10 @@ function verifyHumanChecklists() {
     '- [x] Promote and origin-verify the revised Healthy Recipes and Clinic Guide citation bytes plus the updated Privacy disclosure, then regenerate the exact public-release evidence. Marketing, Terms, Support, Report Content, and AASA remained byte-identical to the preceding 17-file release.',
     '- [x] Verify the revised two-miniapp/Privacy payload is exact and no WordPress or unrelated file changes occurred during promotion. The preceding release remains retained as rollback.',
   ];
-  const completedVersionConfigurationGate = '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 11 after preserving exact build-8 built/uploaded history, hash-binding build 9 as aborted before any provider operation, and preserving build 10 as immutable processed internal-TestFlight history; no current build-11 input attestation, IPA, or TestFlight upload exists yet.';
+  const completedVersionConfigurationGate = '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 11 after preserving exact build-8 built/uploaded history, hash-binding build 9 as aborted before any provider operation, and preserving build 10 as immutable processed internal-TestFlight history; this completed configuration gate neither asserts nor negates a later live build-11 authority phase.';
   const completedBuild5BuildInputAttestationGate = '- [x] Regenerate, freeze, and independently review the build-5 canonical build-input attestation; bind the exact external mode-0600 production plist hash, sanitized resolved Expo config, `cabohealth-owner-prod`, source/lock/manifests/verifiers, recursive clean `node_modules` runtime, and Node executable bytes/version. Retain the build-4 attestation only as obsolete diagnostic evidence. Pin the new authority so `build:prod` can run with `--freeze-credentials` from a unique private snapshot outside Dropbox whose parent `node_modules` resolves every Expo plugin.';
   const completedBuild6BuildInputAttestationGate = '- [x] Generate, independently review, and pin the build-6 canonical build-input attestation against the rebaselined 3.0/build 6 source and exact external mode-0600 production plist before its EAS build; do not reuse either obsolete build-5 attestation.';
-  const pendingBuild11BuildInputAttestationGate = '- [ ] Generate, independently review, and pin the replacement build-11 canonical build-input attestation against the refrozen 3.0/build 11 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8, aborted build-9, immutable processed build-10 history, or invalidated build-11 attempt-1 authority.';
+  const completedBuild11AuthoritySequenceGate = '- [x] Establish the fail-closed build-11 authority sequence: replacement canonical build-input attestation, build artifact, RC, and submit tool. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no obsolete build-8, aborted build-9, immutable processed build-10, or invalidated build-11 attempt-1 authority may be reused.';
   const required = [
     'apple-review-remediation-2026-08-24.md',
     'testflight-what-to-test.md',
@@ -1900,8 +1899,8 @@ function verifyHumanChecklists() {
       if (!source.includes(completedBuild6BuildInputAttestationGate)) {
         errors.push('submission-gates.md must retain the exact completed build-6 build-input attestation checkbox');
       }
-      if (!source.includes(pendingBuild11BuildInputAttestationGate)) {
-        errors.push('submission-gates.md must retain the exact pending build-11 build-input attestation checkbox');
+      if (!source.includes(completedBuild11AuthoritySequenceGate)) {
+        errors.push('submission-gates.md must retain the exact completed phase-neutral build-11 authority-sequence checkbox');
       }
       if (!source.includes(pendingPhysicalAppAttestGate)) {
         errors.push('submission-gates.md must retain the exact pending physical App Attest valid-flow checkbox');
@@ -1915,6 +1914,7 @@ function verifyHumanChecklists() {
         completedVersionConfigurationGate,
         completedBuild5BuildInputAttestationGate,
         completedBuild6BuildInputAttestationGate,
+        completedBuild11AuthoritySequenceGate,
       ]
         .reduce((remaining, completedGate) => remaining.replace(completedGate, ''), source);
     }
@@ -1959,7 +1959,7 @@ function verifyHumanChecklists() {
   const remediation = read('apple-review-remediation-2026-08-24.md');
   requireText(
     remediation,
-    /Build 4 was subsequently produced and inspected as diagnostic evidence, but it\s+predates the completed dynamic-catalog source and is obsolete for release\.\s+Build 5 was subsequently built, pinned by the exact build-input and build-artifact attestations, and processed in TestFlight as Ready to Submit, but it is obsolete for the rebaselined VIP source\.\s+Build 6 was subsequently built, exactly attested, processed, and activated for the internal TestFlight group, but it is obsolete for the full-screen VIP navigation source\.\s+Build 7 produced two FINISHED EAS builds; one is exactly attested and both are obsolete for the external-HTTPS miniapps source, with no App Store Connect processing inferred\.\s+Build 8 was built and attested, uploaded to TestFlight, observed as Ready to Submit, and available to the existing internal group, but is obsolete for the WebView subframe fix\.\s+Build 9 was input-attested, then aborted before any provider operation when mandatory post-pin tests exposed phase-stale release gates\.\s+Build 10 was built, attested, uploaded, and processed for internal TestFlight; its immutable history cannot authorize build 11\.\s+Build 11 input attempt 1 was invalidated by a tracked source drift before any provider operation, is separately archived as historical input authority only, and cannot authorize a build\.\s+CaboHealth 3\.0 build 11 remains the sole unbuilt candidate\./iu,
+    /Build 4 was subsequently produced and inspected as diagnostic evidence, but it\s+predates the completed dynamic-catalog source and is obsolete for release\.\s+Build 5 was subsequently built, pinned by the exact build-input and build-artifact attestations, and processed in TestFlight as Ready to Submit, but it is obsolete for the rebaselined VIP source\.\s+Build 6 was subsequently built, exactly attested, processed, and activated for the internal TestFlight group, but it is obsolete for the full-screen VIP navigation source\.\s+Build 7 produced two FINISHED EAS builds; one is exactly attested and both are obsolete for the external-HTTPS miniapps source, with no App Store Connect processing inferred\.\s+Build 8 was built and attested, uploaded to TestFlight, observed as Ready to Submit, and available to the existing internal group, but is obsolete for the WebView subframe fix\.\s+Build 9 was input-attested, then aborted before any provider operation when mandatory post-pin tests exposed phase-stale release gates\.\s+Build 10 was built, attested, uploaded, and processed for internal TestFlight; its immutable history cannot authorize build 11\.\s+Build 11 input attempt 1 was invalidated by a tracked source drift before any provider operation, is separately archived as historical input authority only, and cannot authorize a build\.\s+CaboHealth 3\.0 build 11 is the current candidate\.\s+Its live authority phase—pre-input, input, artifact, RC, or submit-tool—must be determined from the exact current pins and required attestation bytes\.\s+This document does not assert a particular live phase or infer any provider result, physical-device QA, submission, or Apple approval\./iu,
     'Apple remediation record must retain obsolete builds 4 through 8, aborted build 9, processed build 10, and separate invalidated build 11 input history',
   );
   requireText(remediation, /Guideline 2\.1/iu, 'Apple remediation record missing the completeness and stability response');
@@ -1993,5 +1993,5 @@ if (errors.length > 0) {
   for (const error of errors) process.stderr.write(`- ${error}\n`);
   process.exitCode = 1;
 } else {
-  process.stdout.write('App Store pre-build metadata verified; submission remains blocked.\n');
+  process.stdout.write('App Store metadata authority verified; submission remains blocked.\n');
 }
