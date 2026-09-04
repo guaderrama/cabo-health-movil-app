@@ -67,9 +67,13 @@ const STALE_BUILD_9_AUTHORITY = [
   /\b(?:sole\s+unbuilt|next|current)\s+(?:release\s+)?candidate\s+(?:is\s+)?(?:3\.0\/)?build[- /]?9\b/iu,
   /\bpending\s+(?:exact\s+)?(?:3\.0\/)?build[- /]?9\b/iu,
 ];
-const BUILD_10_REFERENCE = /\bbuild[- /]?10\b|["']buildNumber["']\s*:\s*["']10["']|\bbuild\s+number\s*:\s*`10`/giu;
-const BUILD_10_PROSE_REFERENCE = /\bBuild 10\b/gu;
-const HISTORICAL_BUILD_10_CONTEXT = /\b(?:processed(?:[- ]internal)?[- ]testflight|immutable|histor(?:y|ical)|cannot authorize|(?:was\s+subsequently\s+)?built,\s+attested,\s+uploaded,\s+and\s+processed)\b/iu;
+const BUILD_10_PROSE_REFERENCE = /\bbuild[- /]?10\b/giu;
+const BUILD_10_STRUCTURED_REFERENCE = /["']buildNumber["']\s*:\s*["']10["']|\bbuild\s+number\s*:\s*`10`/giu;
+const BUILD_10_REFERENCE = new RegExp(
+  `${BUILD_10_PROSE_REFERENCE.source}|${BUILD_10_STRUCTURED_REFERENCE.source}`,
+  'giu',
+);
+const HISTORICAL_BUILD_10_CONTEXT = /\b(?:processed(?:[- ]internal)?[- ]testflight|processed\s+build[- /]?10\s+authority|immutable|histor(?:y|ical)|cannot authorize|(?:was\s+subsequently\s+)?built,\s+attested,\s+uploaded,\s+and\s+processed)\b/iu;
 const STALE_BUILD_10_AUTHORITY = [
   /\bbuild[- /]?10\s+(?:is|remains|will be|input freeze|input-attested)\s+(?:the\s+)?(?:sole\s+unbuilt|next|current|pending)\b/iu,
   /\b(?:sole\s+unbuilt|next|current)\s+(?:release\s+)?candidate\s+(?:is\s+)?(?:3\.0\/)?build[- /]?10\b/iu,
@@ -408,6 +412,26 @@ test('build-10 clause-local classification rejects each stale pre-fix operationa
     assert.throws(
       () => assertBuild10ProseIsHistorical(relativePath, mutated),
       /lacks processed-history classification in its local clause/u,
+    );
+  }
+});
+
+test('build-10 clause-local classification covers lower-case, hyphen, and slash prose forms', () => {
+  const historical = [
+    'build 10 was built, attested, uploaded, and processed for internal TestFlight.',
+    'build-10 is immutable processed internal-TestFlight history.',
+    '3.0/build 10 is processed internal-TestFlight history and cannot authorize build 11.',
+  ].join('\n\n');
+  assert.equal(assertBuild10ProseIsHistorical('fixture.md', historical), 3);
+
+  for (const stale of [
+    'build 10 remains the current candidate.',
+    'build-10 remains the current candidate.',
+    '3.0/build 10 remains pending.',
+  ]) {
+    assert.throws(
+      () => assertBuild10ProseIsHistorical('fixture.md', stale),
+      /local clause/u,
     );
   }
 });
