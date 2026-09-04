@@ -1,5 +1,7 @@
 # UNSIGNED DRAFT — Cabo Health ownership declaration
 
+Authority: **IMMUTABLE FREEZE-TIME BASELINE.** This Git draft is never edited to simulate a signature or final status. The genuine signed private attachment and saved Content Rights state are represented only by RC-bound App Store Connect evidence.
+
 Status: **UNSIGNED DRAFT FOR IVAN GUADERRAMA TO INSPECT.** This source is not a signed declaration and is not an Apple-ready attachment. Do not generate or claim a signed PDF from this draft.
 
 I, Ivan Guaderrama, declare that Cabo Health is a trade brand owned and operated by me. Cabo Health is not a separate legal entity or registered organization. I submit the iOS app as Ivan Guaderrama, an individual Apple Developer Program member. D-U-N-S is not applicable to this individual seller relationship.

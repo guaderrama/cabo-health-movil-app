@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   cpSync,
   mkdtempSync,
@@ -13,9 +14,198 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import {
+  captureReleaseV3,
+  inspectReleasePhaseTruth,
+  privacyAuthorityForSemanticValidation,
+} from '../scripts/verify-release-v3.mjs';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 const verifierPath = join(projectRoot, 'scripts/verify-release-v3.mjs');
+
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+const pendingReviewNotesWrapper = '# App Review Notes — CaboHealth 3.0 (build 11)\n\nFreeze role: **PHASE-CONTROLLED PENDING FORM — DO NOT PASTE YET.** This wrapper is the exact pending baseline for pre-input/input and the pre-finalization artifact phase. The final two-file metadata transition removes this wrapper and the heading below without changing one byte of the build-11 body. Final live completion comes only from the RC-bound App Store Connect evidence and `reviewNotesSha256`, never from this pending wording.\n\n## Paste-ready body after all gates are resolved\n\n';
+
+function pendingPrivacyBytes(authorityBytes) {
+  const privacy = JSON.parse(authorityBytes.toString('utf8'));
+  const form = Object.hasOwn(privacy, 'finalAppleDisclosure') ? 'final' : 'pending';
+  return Buffer.from(`${JSON.stringify(privacyAuthorityForSemanticValidation(privacy, form), null, 2)}\n`);
+}
+
+function reviewNotesBodyFromBytes(authorityBytes) {
+  const source = authorityBytes.toString('utf8');
+  const marker = '## Paste-ready body after all gates are resolved\n\n';
+  const body = (source.includes(marker) ? source.split(marker)[1] : source).replace(/\n+$/u, '');
+  assert.equal([...body].length, 4000, 'Review Notes authority must retain the exact 4,000-character body');
+  return body;
+}
+
+function pendingReviewNotesBytes(authorityBytes) {
+  return Buffer.from(`${pendingReviewNotesWrapper}${reviewNotesBodyFromBytes(authorityBytes)}\n`);
+}
+
+function pendingScreenshotsBytes(authorityBytes) {
+  const screenshots = JSON.parse(authorityBytes.toString('utf8'));
+  screenshots.status = 'pending-exact-rc-capture';
+  screenshots.captures = [];
+  screenshots.requiredEvidence = {
+    testFlightBuildId: null,
+    sourceSha: null,
+    imageHashes: null,
+    ocrExcludedScopeCheck: null,
+    humanVisualSignOff: null,
+  };
+  return Buffer.from(`${JSON.stringify(screenshots, null, 2)}\n`);
+}
+
+function currentSemanticPrivacyAuthority() {
+  const files = captureReleaseV3(projectRoot);
+  const phaseTruth = inspectReleasePhaseTruth(files);
+  const privacy = JSON.parse(files.get('release/app-store/3.0/app-privacy.json').toString('utf8'));
+  return privacyAuthorityForSemanticValidation(privacy, phaseTruth.metadataForm);
+}
+
+function withGuardPin(source, name, value) {
+  const declaration = new RegExp(`^const ${name} = [^\r\n]*;$`, 'mu');
+  assert.match(source, declaration, `${name} fixture must target one declaration`);
+  return source.replace(declaration, `const ${name} = ${value};`);
+}
+
+function finalizedPrivacyBytes(pendingBytes) {
+  const privacy = JSON.parse(pendingBytes.toString('utf8'));
+  privacy.status = 'final-apple-disclosure-mapped';
+  privacy.architectureStatus = 'production-architecture-reconciled-for-final-apple-mapping';
+  privacy.clientAccount.status = 'final-apple-linkage-mapped';
+  privacy.thirdPartyNetworkRequests.finalAppleMappingStatus = 'independent-destination-processing-disclosed-separately';
+  privacy.cloudRunRequestLogs.linkedToIdentity = true;
+  privacy.reviewSandbox.status = 'included-in-final-apple-disclosure-mapping';
+  privacy.hostedTechnicalRequestLogs.linkedToIdentity = true;
+  delete privacy.conditionalRecommendation;
+  privacy.finalAppleDisclosure = {
+    collectionAnswer: 'Yes, we collect data from this app',
+    tracking: false,
+    dataUsedForTracking: [],
+    linkedData: [
+      { dataType: 'User ID', purposes: ['App Functionality'], tracking: false },
+      { dataType: 'Device ID', purposes: ['App Functionality'], tracking: false },
+      { dataType: 'Product Interaction', purposes: ['App Functionality'], tracking: false },
+      { dataType: 'Coarse Location', purposes: ['App Functionality'], tracking: false },
+      { dataType: 'Performance Data', purposes: ['App Functionality'], tracking: false },
+      { dataType: 'Other Diagnostic Data', purposes: ['App Functionality', 'Analytics'], tracking: false },
+    ],
+    sourceSpecificFacts: [
+      {
+        dataType: 'Other Diagnostic Data',
+        purposes: ['Analytics'],
+        source: 'FirebaseAuth signed privacy manifest',
+        linkage: 'not linked',
+        appLevelAnswer: 'linked',
+        tracking: false,
+      },
+    ],
+  };
+  return Buffer.from(`${JSON.stringify(privacy, null, 2)}\n`);
+}
+
+function finalizedReviewNotesBytes(pendingBytes) {
+  return Buffer.from(`${reviewNotesBodyFromBytes(pendingBytes)}\n`);
+}
+
+function finalizedScreenshotsBytes(pendingBytes) {
+  const screenshots = JSON.parse(pendingBytes.toString('utf8'));
+  screenshots.status = 'exact-rc-captured-and-approved';
+  const testFlightBuildId = '987654321';
+  const sourceSha = 'a'.repeat(64);
+  screenshots.captures = screenshots.locales.flatMap((locale) => (
+    screenshots.sceneIds.map((sceneId) => ({
+      locale,
+      sceneId,
+      relativePath: `screenshots/${locale}/iphone-6.9/${sceneId}.png`,
+      sha256: sha256(Buffer.from(`${locale}:${sceneId}`)),
+      width: 1320,
+      height: 2868,
+      format: 'png',
+      capturedAt: '2026-08-25T17:00:00.000Z',
+      testFlightBuildId,
+    }))
+  ));
+  screenshots.requiredEvidence = {
+    testFlightBuildId,
+    sourceSha,
+    imageHashes: screenshots.captures.map((capture) => capture.sha256),
+    ocrExcludedScopeCheck: true,
+    humanVisualSignOff: true,
+  };
+  return Buffer.from(`${JSON.stringify(screenshots, null, 2)}\n`);
+}
+
+function phaseFiles(baseFiles, phase, {
+  metadata = 'pending',
+  screenshots = ['rc', 'submit-tool'].includes(phase) ? 'final' : 'pending',
+  rcMetadataBindings = 'current',
+} = {}) {
+  const files = new Map(baseFiles);
+  const privacyPath = 'release/app-store/3.0/app-privacy.json';
+  const notesPath = 'release/app-store/3.0/review-notes.md';
+  const screenshotsPath = 'release/app-store/3.0/screenshots-manifest.json';
+  files.set(privacyPath, pendingPrivacyBytes(files.get(privacyPath)));
+  files.set(notesPath, pendingReviewNotesBytes(files.get(notesPath)));
+  files.set(screenshotsPath, pendingScreenshotsBytes(files.get(screenshotsPath)));
+  for (const path of [
+    'release/app-store/3.0/build-input-attestation.json',
+    'release/app-store/3.0/build-artifact-attestation.json',
+    'release/app-store/3.0/rc-attestation.json',
+  ]) files.delete(path);
+  let guard = files.get('scripts/release-command-guard.mjs').toString('utf8');
+  for (const name of [
+    'BUILD_INPUT_ATTESTATION_SHA256',
+    'BUILD_ARTIFACT_ATTESTATION_SHA256',
+    'RC_ATTESTATION_SHA256',
+    'PINNED_EAS_CLI',
+    'PINNED_APP_STORE_SUBMIT_ADAPTER',
+  ]) guard = withGuardPin(guard, name, 'null');
+  const input = Buffer.from('{"phase":"input"}\n');
+  const artifact = Buffer.from('{"phase":"artifact","sourceTreeSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n');
+  if (metadata === 'final' || metadata === 'mixed-privacy') {
+    files.set(privacyPath, finalizedPrivacyBytes(files.get(privacyPath)));
+  }
+  if (metadata === 'final' || metadata === 'mixed-notes') {
+    files.set(notesPath, finalizedReviewNotesBytes(files.get(notesPath)));
+  }
+  if (screenshots === 'final') {
+    files.set(screenshotsPath, finalizedScreenshotsBytes(files.get(screenshotsPath)));
+  }
+  if (phase !== 'pre-input') {
+    guard = withGuardPin(guard, 'BUILD_INPUT_ATTESTATION_SHA256', `'${sha256(input)}'`);
+    files.set('release/app-store/3.0/build-input-attestation.json', input);
+  }
+  if (['artifact', 'rc', 'submit-tool'].includes(phase)) {
+    guard = withGuardPin(guard, 'BUILD_ARTIFACT_ATTESTATION_SHA256', `'${sha256(artifact)}'`);
+    files.set('release/app-store/3.0/build-artifact-attestation.json', artifact);
+  }
+  if (['rc', 'submit-tool'].includes(phase)) {
+    const currentPrivacySha256 = sha256(files.get(privacyPath));
+    const currentNotesSha256 = sha256(files.get(notesPath));
+    const rc = Buffer.from(`${JSON.stringify({
+      schemaVersion: 1,
+      artifactKind: 'cabohealth-ios-exact-rc-attestation',
+      sourceTreeSha256: 'a'.repeat(64),
+      testFlightBuildId: '987654321',
+      testFlightProcessedAt: '2026-08-25T16:00:00.000Z',
+      screenshotsManifestSha256: sha256(files.get(screenshotsPath)),
+      appPrivacySha256: rcMetadataBindings === 'current' ? currentPrivacySha256 : 'b'.repeat(64),
+      reviewNotesSha256: rcMetadataBindings === 'current' ? currentNotesSha256 : 'c'.repeat(64),
+    })}\n`);
+    guard = withGuardPin(guard, 'RC_ATTESTATION_SHA256', `'${sha256(rc)}'`);
+    files.set('release/app-store/3.0/rc-attestation.json', rc);
+  }
+  if (phase === 'submit-tool') {
+    guard = withGuardPin(guard, 'PINNED_APP_STORE_SUBMIT_ADAPTER', "'QQ=='");
+  }
+  files.set('scripts/release-command-guard.mjs', Buffer.from(guard));
+  return files;
+}
 
 function runVerifier(root = projectRoot) {
   return spawnSync(process.execPath, [verifierPath, root], {
@@ -33,6 +223,7 @@ function makeFixture() {
     'context',
     'features',
     'release',
+    'scripts',
     'web-hosting',
   ]) {
     cpSync(join(projectRoot, path), join(root, path), { recursive: true });
@@ -40,6 +231,15 @@ function makeFixture() {
   for (const path of ['app.json', 'eas.json', 'package.json', 'firebase.json', 'firestore.rules']) {
     cpSync(join(projectRoot, path), join(root, path));
   }
+  const pendingFiles = phaseFiles(captureReleaseV3(root), 'pre-input');
+  for (const [relativePath, bytes] of pendingFiles) {
+    writeFileSync(join(root, relativePath), bytes);
+  }
+  for (const relativePath of [
+    'release/app-store/3.0/build-input-attestation.json',
+    'release/app-store/3.0/build-artifact-attestation.json',
+    'release/app-store/3.0/rc-attestation.json',
+  ]) rmSync(join(root, relativePath), { force: true });
   return root;
 }
 
@@ -66,6 +266,93 @@ test('release v3 verifier accepts the phase-neutral 3.0/build 11 authority packa
   assert.match(result.stdout, /Release 3\.0\/build 11 verified: phase-neutral authority sequence configured\./u);
 });
 
+test('captured release verifier enforces the exact phase-aware metadata transition tuple', async () => {
+  const { captureReleaseV3, verifyCapturedReleaseV3 } = await import('../scripts/verify-release-v3.mjs');
+  const baseline = captureReleaseV3(projectRoot);
+  baseline.set(
+    'release/app-store/3.0/review-notes.md',
+    readFileSync(join(projectRoot, 'release/app-store/3.0/review-notes.md')),
+  );
+
+  for (const phase of ['pre-input', 'input']) {
+    assert.deepEqual(
+      verifyCapturedReleaseV3(phaseFiles(baseline, phase)),
+      [],
+      `${phase} must accept the exact pending metadata baseline`,
+    );
+    assert.match(
+      verifyCapturedReleaseV3(phaseFiles(baseline, phase, { metadata: 'final' })).join('\n'),
+      /pre-input and input phases require the exact pending metadata baseline/iu,
+    );
+  }
+
+  assert.deepEqual(
+    verifyCapturedReleaseV3(phaseFiles(baseline, 'artifact')),
+    [],
+    'artifact phase must accept pending screenshots with the pending metadata pair',
+  );
+  assert.deepEqual(
+    verifyCapturedReleaseV3(phaseFiles(baseline, 'artifact', { screenshots: 'final' })),
+    [],
+    'artifact phase must accept final screenshots with the pending metadata pair',
+  );
+  assert.deepEqual(
+    verifyCapturedReleaseV3(phaseFiles(baseline, 'artifact', {
+      screenshots: 'final',
+      metadata: 'final',
+    })),
+    [],
+    'artifact phase must accept final screenshots with the exact final metadata pair',
+  );
+  assert.match(
+    verifyCapturedReleaseV3(phaseFiles(baseline, 'artifact', { metadata: 'final' })).join('\n'),
+    /finalized metadata requires the exact finalized screenshot authority/iu,
+  );
+  for (const metadata of ['mixed-privacy', 'mixed-notes']) {
+    assert.match(
+      verifyCapturedReleaseV3(phaseFiles(baseline, 'artifact', {
+        screenshots: 'final',
+        metadata,
+      })).join('\n'),
+      /App Privacy and Review Notes must transition as one exact pair/iu,
+    );
+  }
+
+  assert.match(
+    verifyCapturedReleaseV3(phaseFiles(baseline, 'rc')).join('\n'),
+    /RC and submit-tool phases require the exact finalized metadata pair/iu,
+  );
+  for (const phase of ['rc', 'submit-tool']) {
+    assert.deepEqual(
+      verifyCapturedReleaseV3(phaseFiles(baseline, phase, { metadata: 'final' })),
+      [],
+      `${phase} must accept finalized metadata bound by the RC`,
+    );
+  }
+  assert.match(
+    verifyCapturedReleaseV3(phaseFiles(baseline, 'rc', {
+      metadata: 'final',
+      rcMetadataBindings: 'stale',
+    })).join('\n'),
+    /RC metadata hashes must bind the exact finalized App Privacy and Review Notes bytes/iu,
+  );
+});
+
+test('captured release verifier derives phases only from contiguous pins and matching attestation bytes', async () => {
+  const { captureReleaseV3, verifyCapturedReleaseV3 } = await import('../scripts/verify-release-v3.mjs');
+  const baseline = captureReleaseV3(projectRoot);
+  baseline.set(
+    'release/app-store/3.0/review-notes.md',
+    readFileSync(join(projectRoot, 'release/app-store/3.0/review-notes.md')),
+  );
+  const files = phaseFiles(baseline, 'input');
+  files.delete('release/app-store/3.0/build-input-attestation.json');
+  assert.match(
+    verifyCapturedReleaseV3(files).join('\n'),
+    /input pin requires matching current build-input attestation bytes/iu,
+  );
+});
+
 test('release v3 verifier rejects a non-array ASC build list without throwing', () => {
   withFixture(
     (root) => mutateJson(root, 'release/app-store/3.0/release-manifest.json', (manifest) => {
@@ -88,6 +375,9 @@ test('release v3 capture rejects a symbolic link for every pinned authority', as
     'release/app-store/3.0/release-manifest.json',
     'release/app-store/3.0/age-rating.json',
     'release/app-store/3.0/app-privacy.json',
+    'release/app-store/3.0/review-notes.md',
+    'release/app-store/3.0/screenshots-manifest.json',
+    'scripts/release-command-guard.mjs',
   ]) {
     await t.test(relativePath, () => withFixture(
       (root) => {
@@ -107,7 +397,7 @@ test('release v3 capture rejects a symbolic link for every pinned authority', as
 
 test('release v3 authorities record the complete age, sanitized audit, and App Review contracts', () => {
   const age = JSON.parse(readFileSync(join(projectRoot, 'release/app-store/3.0/age-rating.json'), 'utf8'));
-  const privacy = JSON.parse(readFileSync(join(projectRoot, 'release/app-store/3.0/app-privacy.json'), 'utf8'));
+  const privacy = currentSemanticPrivacyAuthority();
   const manifest = JSON.parse(readFileSync(join(projectRoot, 'release/app-store/3.0/release-manifest.json'), 'utf8'));
 
   assert.equal(privacy.schemaVersion, 6);
@@ -577,7 +867,7 @@ test('release v3 verifier requires the exact production account-deletion contrac
 
 test('captured release verifier rejects every structured App Privacy lifecycle drift', async (t) => {
   const { captureReleaseV3, verifyCapturedReleaseV3 } = await import('../scripts/verify-release-v3.mjs');
-  const baseFiles = captureReleaseV3(projectRoot);
+  const baseFiles = phaseFiles(captureReleaseV3(projectRoot), 'pre-input');
   const mutations = [
     ['schema version', (privacy) => { privacy.schemaVersion = 3; }],
     ['production deletion mechanism', (privacy) => { privacy.deletion.mechanism = 'best effort'; }],
@@ -687,7 +977,7 @@ test('captured release verifier rejects every structured App Privacy lifecycle d
 
 test('captured release verifier rejects unknown keys in every new App Privacy object', async (t) => {
   const { captureReleaseV3, verifyCapturedReleaseV3 } = await import('../scripts/verify-release-v3.mjs');
-  const baseFiles = captureReleaseV3(projectRoot);
+  const baseFiles = phaseFiles(captureReleaseV3(projectRoot), 'pre-input');
   for (const objectName of [
     'cloudFunctionRequestSecurity',
     'cloudRunRequestLogs',
@@ -718,7 +1008,7 @@ test('captured release verifier keeps the App Privacy raw-byte pin independent f
   files.set(path, Buffer.from(JSON.stringify(JSON.parse(files.get(path).toString('utf8')))));
 
   const errors = verifyCapturedReleaseV3(files).join('\n');
-  assert.match(errors, /privacy must retain the exact privacy authority/iu);
+  assert.match(errors, /privacy must retain one exact phase-aware App Privacy authority form/iu);
   assert.doesNotMatch(errors, /privacy must retain the exact authority schema/iu);
   assert.doesNotMatch(errors, /privacy architecture must retain/iu);
 });
@@ -839,7 +1129,7 @@ test('release v3 verifier requires the ordered dynamic-catalog AASA authority', 
 
 test('captured release verifier allows reviewed client imports but rejects a third public slug', async () => {
   const { verifyCapturedReleaseV3 } = await import('../scripts/verify-release-v3.mjs');
-  const files = new Map([
+  const files = phaseFiles(new Map([
     ['app.json', Buffer.from(readFileSync(join(projectRoot, 'app.json')))],
     ['eas.json', Buffer.from(readFileSync(join(projectRoot, 'eas.json')))],
     ['constants/config.ts', Buffer.from(readFileSync(join(projectRoot, 'constants/config.ts')))],
@@ -847,8 +1137,11 @@ test('captured release verifier allows reviewed client imports but rejects a thi
     ['release/app-store/3.0/release-manifest.json', Buffer.from(readFileSync(join(projectRoot, 'release/app-store/3.0/release-manifest.json')))],
     ['release/app-store/3.0/age-rating.json', Buffer.from(readFileSync(join(projectRoot, 'release/app-store/3.0/age-rating.json')))],
     ['release/app-store/3.0/app-privacy.json', Buffer.from(readFileSync(join(projectRoot, 'release/app-store/3.0/app-privacy.json')))],
+    ['release/app-store/3.0/review-notes.md', Buffer.from(readFileSync(join(projectRoot, 'release/app-store/3.0/review-notes.md')))],
+    ['release/app-store/3.0/screenshots-manifest.json', Buffer.from(readFileSync(join(projectRoot, 'release/app-store/3.0/screenshots-manifest.json')))],
+    ['scripts/release-command-guard.mjs', Buffer.from(readFileSync(join(projectRoot, 'scripts/release-command-guard.mjs')))],
     ['features/clientAccess/clientAccessRuntime.native.ts', Buffer.from("import '@react-native-firebase/auth';\nimport * as SecureStore from 'expo-secure-store';\n")],
-  ]);
+  ]), 'pre-input');
 
   assert.deepEqual(verifyCapturedReleaseV3(files), []);
   files.set(
@@ -926,7 +1219,7 @@ test('captured release verifier rejects semantic drift across every release auth
       (root) => mutateJson(root, relativePath, mutate),
       (result) => {
         assert.equal(result.status, 1, `${name} semantic drift bypassed captured authority`);
-        assert.match(result.stderr, /exact v3 phase-neutral authority semantics|exact privacy authority|exact age-rating authority/iu);
+        assert.match(result.stderr, /exact v3 phase-neutral authority semantics|exact phase-aware App Privacy authority|exact age-rating authority/iu);
       },
     ));
   }

@@ -1,6 +1,6 @@
 # App Review Notes — CaboHealth 3.0 (build 11)
 
-Status: **DRAFT — DO NOT PASTE YET.** Submission remains blocked until the exact RC, controlled owner catalog E2E, physical App Attest and valid-credential broker flows, App Review credential, proof that the owner-only Staff Portal is absent from the consumer binary, recalculated age rating, privacy answers, signed rights evidence, screenshots, TestFlight checks, and App Store Connect saves are verified.
+Freeze role: **PHASE-CONTROLLED PENDING FORM — DO NOT PASTE YET.** This wrapper is the exact pending baseline for pre-input/input and the pre-finalization artifact phase. The final two-file metadata transition removes this wrapper and the heading below without changing one byte of the build-11 body. Final live completion comes only from the RC-bound App Store Connect evidence and `reviewNotesSha256`, never from this pending wording.
 
 ## Paste-ready body after all gates are resolved
 

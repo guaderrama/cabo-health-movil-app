@@ -1,5 +1,10 @@
 {
   "schemaVersion": 3,
+  "authoritySemantics": {
+    "documentRole": "immutable-freeze-baseline",
+    "finalSavedResultSource": "rc-attestation.appStoreMetadataEvidenceSha256",
+    "postInputMutationAllowed": false
+  },
   "status": "reconfirmation-required",
   "previousSavedRating": "9+",
   "calculatedRating": null,

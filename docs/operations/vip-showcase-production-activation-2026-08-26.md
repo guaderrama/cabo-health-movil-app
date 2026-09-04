@@ -59,6 +59,13 @@ No catalog migration was executed as part of this activation.
 
 ## Deliberately pending
 
+CaboHealth 3.0/build 11 is the current candidate. Its live authority
+phase—pre-input, input, artifact, RC, or submit-tool—must be determined from the
+exact current pins and required attestation bytes. The rows below are immutable
+freeze-time RC evidence requirements, not mutable phase claims; final
+completion is authoritative only through the RC attestation and its bound
+private evidence.
+
 - Build 6 was built, exactly attested, processed, and activated for the internal
   TestFlight group. Its protected-resource launch used the prior native
   `pageSheet` presentation and is retained only as obsolete-source evidence.
@@ -71,9 +78,8 @@ No catalog migration was executed as part of this activation.
   immutable history and cannot authorize build 11. Its build carries the WebView
   subframe fix; neither hands an internal launch to Chrome,
   Safari, or another external browser.
-- Positive V2 catalog retrieval and complete VIP showcase QA depend on the
-  exact signed CaboHealth 3.0 build 11 running on a physical iPhone with its valid App
-  Check flow.
+- Positive V2 catalog retrieval and complete VIP showcase QA require the exact
+  signed candidate on a physical iPhone with its valid App Check flow.
 - The corresponding Staff Portal release has not yet been promoted.
 - This activation did not submit a build or release to App Review.
 

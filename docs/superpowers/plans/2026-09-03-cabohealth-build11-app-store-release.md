@@ -175,13 +175,19 @@ EAS CLI 22.2.0, Firebase, Hostinger, App Store Connect.
 
 - [ ] Select build 11, replace the three obsolete screenshots, and verify both localizations.
 - [ ] Change App Privacy from `Data Not Collected` to the exact reviewed data-type/purpose/linkage answers; publish only after owner confirmation.
-- [ ] Confirm category, 9+ age result, USA/Mexico availability, free price,
+- [ ] Confirm category, truthful Unrestricted Web Access and Apple’s saved result
+  against the 16+ updated / 17+ earlier-OS baseline, USA/Mexico availability, free price,
   individual seller/trade-brand rights, DSA status, export answer, phone, and email.
 - [ ] Generate one App Review sandbox credential after action-time confirmation;
   test it on the physical devices and transmit it only into App Store Connect.
-- [ ] Replace stale build-4 notes with final build-11 notes and save all metadata.
+- [ ] Commit final screenshots first; then replace stale build-4 notes and the
+  pending privacy baseline in one exact two-file transition and save all metadata.
 - [ ] Capture canonical App Store evidence, produce the RC attestation, pin it,
   package/review the exact submit adapter closure, and pin that closure.
+- [ ] Bind final `app-privacy.json` and `review-notes.md` bytes separately in RC
+  schema v1 as `appPrivacySha256` and `reviewNotesSha256`. Do not edit the
+  manifest, age baseline, rights/accessibility checklists, or any other tracked
+  metadata after the input pin.
 
 ### Task 8: Guarded final submission
 

@@ -15,6 +15,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import {
+  captureReleaseV3,
+  inspectReleasePhaseTruth,
+  privacyAuthorityForSemanticValidation,
+} from '../scripts/verify-release-v3.mjs';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 const verifierPath = join(projectRoot, 'scripts/verify-app-store-metadata.mjs');
@@ -35,6 +40,14 @@ const authorityPaths = Object.freeze([
   'client-resources-private/content/es-MX.json',
   'constants/config.ts',
   'constants/publicMiniapps.ts',
+  'docs/operations/apple-post-build-evidence.md',
+  'docs/operations/dynamic-miniapp-catalog.md',
+  'docs/operations/dynamic-miniapp-production-activation-2026-08-25.md',
+  'docs/operations/exact-ios-ipa-audit.md',
+  'docs/operations/native-firebase-runtime.md',
+  'docs/operations/prior-apple-review-resolution.md',
+  'docs/operations/protected-overlay-dynamic-activation-2026-08-26.md',
+  'docs/operations/vip-showcase-production-activation-2026-08-26.md',
   'content/clinic-guide.json',
   'content/recipes.json',
   'features/onboarding/IntroScreen.tsx',
@@ -52,8 +65,11 @@ const authorityPaths = Object.freeze([
   'release/content-rights.md',
   'release/data-inventory.md',
   'release/public-contact-facts.json',
+  'scripts/release-command-guard.mjs',
   'staff-portal/public/favicon.svg',
   'staff-portal/src/i18n/messages.ts',
+  'tools/app-store-submit-adapter/README.md',
+  'tools/app-store-submit-adapter/package.json',
   'web-hosting/cabohealth.org/app/index.html',
   'web-hosting/cabohealth.org/app/privacy/index.html',
   'web-hosting/cabohealth.org/app/report-content/index.html',
@@ -73,6 +89,13 @@ const screenshotSceneIds = Object.freeze([
   '08-settings-and-legal',
 ]);
 
+function currentSemanticPrivacyAuthority() {
+  const files = captureReleaseV3(projectRoot);
+  const phaseTruth = inspectReleasePhaseTruth(files);
+  const privacy = JSON.parse(files.get(`${releasePath}/app-privacy.json`).toString('utf8'));
+  return privacyAuthorityForSemanticValidation(privacy, phaseTruth.metadataForm);
+}
+
 function screenshotPng(width, height, suffix) {
   const bytes = Buffer.alloc(24 + Buffer.byteLength(suffix));
   Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes, 0);
@@ -82,6 +105,83 @@ function screenshotPng(width, height, suffix) {
   bytes.writeUInt32BE(height, 20);
   bytes.write(suffix, 24, 'utf8');
   return bytes;
+}
+
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+function withGuardPin(source, name, value) {
+  const declaration = new RegExp(`^const ${name} = [^\r\n]*;$`, 'mu');
+  assert.match(source, declaration, `${name} fixture must target one declaration`);
+  return source.replace(declaration, `const ${name} = ${value};`);
+}
+
+function pendingPrivacyAuthority() {
+  return currentSemanticPrivacyAuthority();
+}
+
+function finalizedPrivacyAuthority() {
+  const privacy = pendingPrivacyAuthority();
+  privacy.status = 'final-apple-disclosure-mapped';
+  privacy.architectureStatus = 'production-architecture-reconciled-for-final-apple-mapping';
+  privacy.clientAccount.status = 'final-apple-linkage-mapped';
+  privacy.thirdPartyNetworkRequests.finalAppleMappingStatus = 'independent-destination-processing-disclosed-separately';
+  privacy.cloudRunRequestLogs.linkedToIdentity = true;
+  privacy.reviewSandbox.status = 'included-in-final-apple-disclosure-mapping';
+  privacy.hostedTechnicalRequestLogs.linkedToIdentity = true;
+  delete privacy.conditionalRecommendation;
+  privacy.finalAppleDisclosure = {
+    collectionAnswer: 'Yes, we collect data from this app',
+    tracking: false,
+    dataUsedForTracking: [],
+    linkedData: [
+      { dataType: 'User ID', purposes: ['App Functionality'], tracking: false },
+      { dataType: 'Device ID', purposes: ['App Functionality'], tracking: false },
+      { dataType: 'Product Interaction', purposes: ['App Functionality'], tracking: false },
+      { dataType: 'Coarse Location', purposes: ['App Functionality'], tracking: false },
+      { dataType: 'Performance Data', purposes: ['App Functionality'], tracking: false },
+      { dataType: 'Other Diagnostic Data', purposes: ['App Functionality', 'Analytics'], tracking: false },
+    ],
+    sourceSpecificFacts: [{
+      dataType: 'Other Diagnostic Data',
+      purposes: ['Analytics'],
+      source: 'FirebaseAuth signed privacy manifest',
+      linkage: 'not linked',
+      appLevelAnswer: 'linked',
+      tracking: false,
+    }],
+  };
+  return privacy;
+}
+
+function reviewNotesBody() {
+  const notes = readFileSync(join(projectRoot, releasePath, 'review-notes.md'), 'utf8');
+  const marker = '## Paste-ready body after all gates are resolved\n\n';
+  return (notes.includes(marker) ? notes.split(marker)[1] : notes).replace(/\n+$/u, '');
+}
+
+function pendingReviewNotesAuthority() {
+  const wrapper = '# App Review Notes — CaboHealth 3.0 (build 11)\n\nFreeze role: **PHASE-CONTROLLED PENDING FORM — DO NOT PASTE YET.** This wrapper is the exact pending baseline for pre-input/input and the pre-finalization artifact phase. The final two-file metadata transition removes this wrapper and the heading below without changing one byte of the build-11 body. Final live completion comes only from the RC-bound App Store Connect evidence and `reviewNotesSha256`, never from this pending wording.\n\n## Paste-ready body after all gates are resolved\n\n';
+  return `${wrapper}${reviewNotesBody()}\n`;
+}
+
+function pendingScreenshotsAuthority() {
+  return {
+    schemaVersion: 2,
+    status: 'pending-exact-rc-capture',
+    marketingVersion: '3.0',
+    buildNumber: '11',
+    deviceClass: 'iPhone 6.9-inch',
+    locales: [...screenshotLocales],
+    sceneIds: [...screenshotSceneIds],
+    captures: [],
+    requiredEvidence: {
+      testFlightBuildId: null,
+      sourceSha: null,
+      imageHashes: null,
+      ocrExcludedScopeCheck: null,
+      humanVisualSignOff: null,
+    },
+  };
 }
 
 function writeFinalScreenshotAuthority(root) {
@@ -128,25 +228,185 @@ function writeFinalScreenshotAuthority(root) {
   };
   const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   writeFileSync(join(root, releasePath, 'screenshots-manifest.json'), manifestBytes);
-  writeFileSync(join(root, releasePath, 'rc-attestation.json'), `${JSON.stringify({
+  return { captures, manifestBytes, sourceTreeSha256, testFlightBuildId };
+}
+
+function writeRcPrivateEvidence(root, { sourceTreeSha256, testFlightBuildId }) {
+  const candidate = {
+    appleId: '6758285327',
+    bundleIdentifier: 'com.cabohealth.app',
+    marketingVersion: '3.0',
+    buildNumber: '11',
+  };
+  const physical = {
     schemaVersion: 1,
-    artifactKind: 'cabohealth-ios-exact-rc-attestation',
-    candidate: {
-      appleId: '6758285327',
-      bundleIdentifier: 'com.cabohealth.app',
-      marketingVersion: '3.0',
-      buildNumber: '11',
-    },
-    buildArtifactAttestationSha256: 'b'.repeat(64),
-    sourceTreeSha256,
+    artifactKind: 'cabohealth-physical-iphone-qa',
+    candidate,
     testFlightBuildId,
-    testFlightProcessedAt: '2026-08-25T16:00:00.000Z',
-    physicalIphoneQaSha256: 'c'.repeat(64),
-    screenshotsManifestSha256: createHash('sha256').update(manifestBytes).digest('hex'),
-    appStoreMetadataEvidenceSha256: 'd'.repeat(64),
-    reviewedAt: '2026-08-25T18:00:00.000Z',
+    sourceTreeSha256,
+    status: 'passed',
+    performedAt: '2026-08-25T16:30:00.000Z',
+    reviewedAt: '2026-08-25T17:30:00.000Z',
+    devices: [
+      {
+        opaqueId: '1'.repeat(64),
+        model: 'iPhone 16 Pro Max',
+        osVersion: '26.0',
+        installation: 'clean',
+        locales: [...screenshotLocales],
+        result: 'passed',
+        evidenceSha256: '2'.repeat(64),
+      },
+      {
+        opaqueId: '3'.repeat(64),
+        model: 'iPhone 15 Pro Max',
+        osVersion: '18.6',
+        installation: 'upgrade',
+        locales: [...screenshotLocales],
+        result: 'passed',
+        evidenceSha256: '4'.repeat(64),
+      },
+    ],
+    checks: Object.fromEntries([
+      'firstLaunch',
+      'homeCatalogAndSaved',
+      'nativeToolsClinicalSafety',
+      'publicHosting',
+      'productionClientAccess',
+      'appReviewAccess',
+      'protectedWebView',
+      'externalWebView',
+      'ownerPortalExclusion',
+      'universalLinks',
+      'localizationAppearanceAccessibility',
+      'platformSecurityAndPrivacy',
+      'scopeAudit',
+    ].map((key) => [key, true])),
+    failures: [],
+    humanSignOff: true,
+  };
+  const appStore = {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-app-store-connect-evidence',
+    candidate,
+    testFlightBuildId,
+    status: 'ready-for-review',
+    capturedAt: '2026-08-25T17:00:00.000Z',
+    reviewedAt: '2026-08-25T17:45:00.000Z',
+    appResourceId: '6758285327',
+    appStoreVersionId: 'version-11',
+    buildResourceId: '11111111-1111-4111-8111-111111111111',
+    appStoreVersionState: 'READY_FOR_REVIEW',
+    buildProcessingState: 'VALID',
+    metadataChecks: Object.fromEntries([
+      'localizations',
+      'privacy',
+      'ageRating',
+      'categories',
+      'availability',
+      'contentRights',
+      'exportCompliance',
+      'appReviewInfo',
+      'reviewNotes',
+      'screenshots',
+      'buildSelected',
+      'dsa',
+    ].map((key) => [key, true])),
+    failures: [],
+    evidenceSnapshotSha256: '5'.repeat(64),
+  };
+  const privateRoot = join(root, 'release/private/rc-build-11');
+  mkdirSync(privateRoot, { recursive: true, mode: 0o700 });
+  const physicalBytes = Buffer.from(`${JSON.stringify(physical, null, 2)}\n`);
+  const appStoreBytes = Buffer.from(`${JSON.stringify(appStore, null, 2)}\n`);
+  writeFileSync(join(privateRoot, 'physical-iphone-qa.json'), physicalBytes, { mode: 0o600 });
+  writeFileSync(join(privateRoot, 'app-store-connect-evidence.json'), appStoreBytes, { mode: 0o600 });
+  return { physicalBytes, appStoreBytes };
+}
+
+function writePhaseAuthority(root, phase, {
+  screenshots = ['rc', 'submit-tool'].includes(phase) ? 'final' : 'pending',
+  metadata = ['rc', 'submit-tool'].includes(phase) ? 'final' : 'pending',
+  staleRcMetadata = false,
+} = {}) {
+  for (const name of [
+    'build-input-attestation.json',
+    'build-artifact-attestation.json',
+    'rc-attestation.json',
+  ]) rmSync(join(root, releasePath, name), { force: true });
+
+  writeFileSync(
+    join(root, releasePath, 'app-privacy.json'),
+    `${JSON.stringify(metadata === 'final' || metadata === 'mixed-privacy'
+      ? finalizedPrivacyAuthority()
+      : pendingPrivacyAuthority(), null, 2)}\n`,
+  );
+  writeFileSync(
+    join(root, releasePath, 'review-notes.md'),
+    metadata === 'final' || metadata === 'mixed-notes'
+      ? `${reviewNotesBody()}\n`
+      : pendingReviewNotesAuthority(),
+  );
+  writeFileSync(
+    join(root, releasePath, 'screenshots-manifest.json'),
+    `${JSON.stringify(pendingScreenshotsAuthority(), null, 2)}\n`,
+  );
+
+  let finalScreenshot;
+  if (screenshots === 'final') finalScreenshot = writeFinalScreenshotAuthority(root);
+  const sourceTreeSha256 = finalScreenshot?.sourceTreeSha256 ?? 'a'.repeat(64);
+  const testFlightBuildId = finalScreenshot?.testFlightBuildId ?? '987654321';
+  const inputBytes = Buffer.from('{"phase":"input"}\n');
+  const artifactBytes = Buffer.from(`${JSON.stringify({
+    phase: 'artifact',
+    sourceTreeSha256,
   })}\n`);
-  return captures;
+
+  let guard = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
+  for (const name of [
+    'BUILD_INPUT_ATTESTATION_SHA256',
+    'BUILD_ARTIFACT_ATTESTATION_SHA256',
+    'RC_ATTESTATION_SHA256',
+    'PINNED_EAS_CLI',
+    'PINNED_APP_STORE_SUBMIT_ADAPTER',
+  ]) guard = withGuardPin(guard, name, 'null');
+
+  if (phase !== 'pre-input') {
+    writeFileSync(join(root, releasePath, 'build-input-attestation.json'), inputBytes);
+    guard = withGuardPin(guard, 'BUILD_INPUT_ATTESTATION_SHA256', `'${sha256(inputBytes)}'`);
+  }
+  if (['artifact', 'rc', 'submit-tool'].includes(phase)) {
+    writeFileSync(join(root, releasePath, 'build-artifact-attestation.json'), artifactBytes);
+    guard = withGuardPin(guard, 'BUILD_ARTIFACT_ATTESTATION_SHA256', `'${sha256(artifactBytes)}'`);
+  }
+  if (['rc', 'submit-tool'].includes(phase)) {
+    const { physicalBytes, appStoreBytes } = writeRcPrivateEvidence(root, {
+      sourceTreeSha256,
+      testFlightBuildId,
+    });
+    const privacyBytes = readFileSync(join(root, releasePath, 'app-privacy.json'));
+    const notesBytes = readFileSync(join(root, releasePath, 'review-notes.md'));
+    const rcBytes = Buffer.from(`${JSON.stringify({
+      schemaVersion: 1,
+      artifactKind: 'cabohealth-ios-exact-rc-attestation',
+      sourceTreeSha256,
+      testFlightBuildId,
+      testFlightProcessedAt: '2026-08-25T16:00:00.000Z',
+      physicalIphoneQaSha256: sha256(physicalBytes),
+      screenshotsManifestSha256: sha256(finalScreenshot.manifestBytes),
+      appStoreMetadataEvidenceSha256: sha256(appStoreBytes),
+      appPrivacySha256: staleRcMetadata ? '6'.repeat(64) : sha256(privacyBytes),
+      reviewNotesSha256: staleRcMetadata ? '7'.repeat(64) : sha256(notesBytes),
+      reviewedAt: '2026-08-25T18:00:00.000Z',
+    }, null, 2)}\n`);
+    writeFileSync(join(root, releasePath, 'rc-attestation.json'), rcBytes);
+    guard = withGuardPin(guard, 'RC_ATTESTATION_SHA256', `'${sha256(rcBytes)}'`);
+  }
+  if (phase === 'submit-tool') {
+    guard = withGuardPin(guard, 'PINNED_APP_STORE_SUBMIT_ADAPTER', "'QQ=='");
+  }
+  writeFileSync(join(root, 'scripts/release-command-guard.mjs'), guard);
+  return { finalScreenshot };
 }
 
 function verify(root) {
@@ -180,6 +440,10 @@ function withReleaseFixture(mutate, assertion) {
       mkdirSync(dirname(destination), { recursive: true });
       cpSync(join(projectRoot, relativePath), destination);
     }
+    // Every mutation fixture starts from the immutable freeze-time baseline so
+    // this same suite remains valid after the tracked metadata pair is
+    // deterministically finalized later in the artifact phase.
+    writePhaseAuthority(root, 'pre-input');
     mutate(root);
     assertion(verify(root));
   } finally {
@@ -391,9 +655,15 @@ test('metadata verifier rejects null JSON authorities instead of skipping them',
 
 test('Review Notes retain the prior-review resolution, current privacy facts, and manual-entry behavior', () => {
   const notes = readFileSync(join(projectRoot, releasePath, 'review-notes.md'), 'utf8');
-  const pasteReadyBody = notes.split('## Paste-ready body after all gates are resolved')[1]?.trim() ?? '';
+  const pasteReadyBody = reviewNotesBody();
+  const finalReviewNotesBytes = Buffer.from(`${pasteReadyBody}\n`);
 
-  assert.ok([...pasteReadyBody].length <= 4000, 'paste-ready Review Notes must fit Apple’s 4,000-character limit');
+  assert.equal([...pasteReadyBody].length, 4000, 'paste-ready Review Notes must contain exactly 4,000 characters');
+  assert.equal(
+    sha256(finalReviewNotesBytes),
+    '81d663d0a3bde107e90de96ed32d2a851af7a1339658195d2a9189c7de0823d7',
+    'final Review Notes must retain the exact 4,000-character body plus one newline',
+  );
   assert.match(pasteReadyBody, /two public wellness\/editorial resources plus protected Client Resources/i);
   assert.match(
     pasteReadyBody,
@@ -432,6 +702,30 @@ test('Review Notes retain the prior-review resolution, current privacy facts, an
   assert.match(notes, /rights verification is required before activation/i);
   assert.match(notes, /destination host independently receives normal network data/i);
   assert.doesNotMatch(notes, /eightsleep\.com/i);
+});
+
+test('the deterministic final App Privacy form is phase-neutral, conservative, and exact', () => {
+  const privacy = finalizedPrivacyAuthority();
+  const bytes = Buffer.from(`${JSON.stringify(privacy, null, 2)}\n`);
+
+  assert.equal(sha256(bytes), '51287eb24455e64ce605bcd0b896d025f236f53cd1c2e2c27014a079e1192862');
+  assert.equal(privacy.status, 'final-apple-disclosure-mapped');
+  assert.doesNotMatch(JSON.stringify(privacy), /exact-rc|app-store-saved/iu);
+  assert.equal(privacy.finalAppleDisclosure.tracking, false);
+  assert.deepEqual(
+    privacy.finalAppleDisclosure.linkedData.map(({ dataType }) => dataType),
+    ['User ID', 'Device ID', 'Product Interaction', 'Coarse Location', 'Performance Data', 'Other Diagnostic Data'],
+  );
+  assert.equal(privacy.cloudRunRequestLogs.linkedToIdentity, true);
+  assert.equal(privacy.hostedTechnicalRequestLogs.linkedToIdentity, true);
+  assert.deepEqual(privacy.finalAppleDisclosure.sourceSpecificFacts, [{
+    dataType: 'Other Diagnostic Data',
+    purposes: ['Analytics'],
+    source: 'FirebaseAuth signed privacy manifest',
+    linkage: 'not linked',
+    appLevelAnswer: 'linked',
+    tracking: false,
+  }]);
 });
 
 test('metadata verifier rejects Review Notes regressions in hosting facts or entry behavior', async (t) => {
@@ -616,7 +910,7 @@ test('metadata verifier rejects Review Notes regressions in hosting facts or ent
 });
 
 test('App Privacy preserves observed logs separately from the owner-authorized disclosure record', () => {
-  const privacy = JSON.parse(readFileSync(join(projectRoot, releasePath, 'app-privacy.json'), 'utf8'));
+  const privacy = currentSemanticPrivacyAuthority();
   const compliance = JSON.parse(readFileSync(join(projectRoot, 'release/compliance-facts.json'), 'utf8'));
 
   assert.equal(privacy.schemaVersion, 6);
@@ -861,8 +1155,8 @@ test('metadata verifier keeps the phase-neutral build-11 authority sequence comp
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [x] Establish the fail-closed build-11 authority sequence: replacement canonical build-input attestation, build artifact, RC, and submit tool. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no obsolete build-8, aborted build-9, immutable processed build-10, or invalidated build-11 attempt-1 authority may be reused.',
-        '- [ ] Establish the fail-closed build-11 authority sequence: replacement canonical build-input attestation, build artifact, RC, and submit tool. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no obsolete build-8, aborted build-9, immutable processed build-10, or invalidated build-11 attempt-1 authority may be reused.',
+        '- [x] Establish and verify the fail-closed build-11 authority-sequence design and guards. This checked row records the pre-build contract only; it does not claim that the replacement input, build artifact, RC, or submit-tool authority exists. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no obsolete build-8, aborted build-9, immutable processed build-10, or invalidated build-11 attempt-1 authority may be reused.',
+        '- [ ] Establish and verify the fail-closed build-11 authority-sequence design and guards. This checked row records the pre-build contract only; it does not claim that the replacement input, build artifact, RC, or submit-tool authority exists. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no obsolete build-8, aborted build-9, immutable processed build-10, or invalidated build-11 attempt-1 authority may be reused.',
       ));
     },
     (result) => {
@@ -1346,7 +1640,7 @@ test('metadata verifier rejects contradictory Cabo Health entity claims while re
   }
 });
 
-test('metadata verifier permits ordinary Apple Developer Program and third-party organization references', () => {
+test('metadata verifier distinguishes ordinary third-party organization wording from an authority-byte change', () => {
   withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'review-notes.md');
@@ -1356,7 +1650,11 @@ test('metadata verifier permits ordinary Apple Developer Program and third-party
         'Apple is a third-party organization.\n\n## Paste-ready body after all gates are resolved',
       ));
     },
-    (result) => assert.equal(result.status, 0, result.stderr || result.stdout),
+    (result) => {
+      assert.equal(result.status, 1, 'changed Review Notes bypassed exact phase-aware authority');
+      assert.match(result.stderr, /Review Notes must retain one exact phase-aware authority form/iu);
+      assert.doesNotMatch(result.stderr, /contradicts.*legal entity, company, or organization/iu);
+    },
   );
 });
 
@@ -1456,7 +1754,7 @@ test('current release instructions retain the current build-11 candidate and its
     'docs/operations/vip-showcase-production-activation-2026-08-26.md',
   ]) {
     const source = readFileSync(join(projectRoot, relativePath), 'utf8');
-    assert.match(source, /3\.0(?:\/build | build )11/iu, relativePath);
+    assert.match(source, /3\.0(?:\/build\s+|\s+build\s+)11/iu, relativePath);
     assert.match(source, /build 9[^.]*aborted(?:-pre-provider| before any provider operation)/iu, relativePath);
     assert.doesNotMatch(source, /exact signed 3\.0\/build [67]|source for CaboHealth 3\.0 build [67]/iu, relativePath);
   }
@@ -1782,7 +2080,7 @@ test('metadata verifier rejects unapproved App Privacy purposes and schema keys'
       (root) => mutateJson(root, `${releasePath}/app-privacy.json`, mutate),
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed verifier:\n${result.stdout}${result.stderr}`);
-        assert.match(result.stderr, /App Privacy schemas and hosting purposes must be exact|App Privacy client-access architecture|conditional App Privacy mapping|exact privacy authority/iu);
+        assert.match(result.stderr, /App Privacy schemas and hosting purposes must be exact|App Privacy client-access architecture|conditional App Privacy mapping|exact (?:phase-aware App )?privacy authority/iu);
       },
     ));
   }
@@ -1888,25 +2186,67 @@ test('metadata verifier rejects screenshot schema and evidence-authority drift',
   }
 });
 
-test('metadata verifier accepts the exact file-backed screenshot RC phase and rejects byte drift', async (t) => {
+test('metadata verifier accepts the ordered artifact metadata transition and exact RC/submit phases', async (t) => {
+  for (const [name, options] of [
+    ['artifact pending screenshots and pending metadata', {}],
+    ['artifact final screenshots and pending metadata', { screenshots: 'final' }],
+    ['artifact final screenshots and final metadata', { screenshots: 'final', metadata: 'final' }],
+  ]) {
+    await t.test(name, () => withReleaseFixture(
+      (root) => writePhaseAuthority(root, 'artifact', options),
+      (result) => assert.equal(result.status, 0, result.stderr || result.stdout),
+    ));
+  }
+  await t.test('artifact rejects final metadata before final screenshots', () => withReleaseFixture(
+    (root) => writePhaseAuthority(root, 'artifact', { metadata: 'final' }),
+    (result) => {
+      assert.equal(result.status, 1, 'final metadata with pending screenshots bypassed verifier');
+      assert.match(result.stderr, /finalized metadata requires the exact finalized screenshot authority/iu);
+    },
+  ));
+  for (const metadata of ['mixed-privacy', 'mixed-notes']) {
+    await t.test(`artifact rejects ${metadata}`, () => withReleaseFixture(
+      (root) => writePhaseAuthority(root, 'artifact', { screenshots: 'final', metadata }),
+      (result) => {
+        assert.equal(result.status, 1, `${metadata} bypassed verifier`);
+        assert.match(result.stderr, /App Privacy and Review Notes must transition as one exact pair/iu);
+      },
+    ));
+  }
+  for (const phase of ['rc', 'submit-tool']) {
+    await t.test(`exact ${phase}`, () => withReleaseFixture(
+      (root) => writePhaseAuthority(root, phase),
+      (result) => assert.equal(result.status, 0, result.stderr || result.stdout),
+    ));
+  }
+  await t.test('RC rejects stale metadata hash bindings', () => withReleaseFixture(
+    (root) => writePhaseAuthority(root, 'rc', { staleRcMetadata: true }),
+    (result) => {
+      assert.equal(result.status, 1, 'stale RC metadata hashes bypassed verifier');
+      assert.match(result.stderr, /RC metadata hashes must bind the exact finalized App Privacy and Review Notes bytes/iu);
+    },
+  ));
+});
+
+test('metadata verifier accepts exact file-backed screenshot evidence and rejects byte drift', async (t) => {
   await t.test('exact final RC', () => withReleaseFixture(
-    (root) => writeFinalScreenshotAuthority(root),
+    (root) => writePhaseAuthority(root, 'rc'),
     (result) => {
       assert.equal(result.status, 0, result.stderr || result.stdout);
     },
   ));
   await t.test('image byte drift', () => withReleaseFixture(
     (root) => {
-      const captures = writeFinalScreenshotAuthority(root);
+      const { finalScreenshot } = writePhaseAuthority(root, 'rc');
       writeFileSync(
-        join(root, 'release/private/rc-build-11', captures[0].relativePath),
+        join(root, 'release/private/rc-build-11', finalScreenshot.captures[0].relativePath),
         screenshotPng(1320, 2868, 'drifted'),
         { mode: 0o600 },
       );
     },
     (result) => {
       assert.equal(result.status, 1, 'file-backed screenshot byte drift bypassed verifier');
-      assert.match(result.stderr, /exact file-backed RC authority/iu);
+      assert.match(result.stderr, /exact file-backed artifact\/RC authority/iu);
     },
   ));
 });

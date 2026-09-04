@@ -1,13 +1,23 @@
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
-import { captureReleaseV3, verifyCapturedReleaseV3 } from './verify-release-v3.mjs';
-import { validateScreenshotsManifest } from './apple-post-build-evidence.mjs';
+import {
+  captureReleaseV3,
+  inspectReleasePhaseTruth,
+  privacyAuthorityForSemanticValidation,
+  verifyCapturedReleaseV3,
+} from './verify-release-v3.mjs';
+import {
+  validateAppStoreConnectEvidence,
+  validatePhysicalIphoneQaEvidence,
+  validateScreenshotsManifest,
+} from './apple-post-build-evidence.mjs';
 import { AASA_COMPONENTS } from './generate-aasa.mjs';
 
 const root = resolve(process.argv[2] ?? process.cwd());
 const releaseRoot = join(root, 'release/app-store/3.0');
 const errors = [];
+let releasePhaseTruth = null;
 
 const approvedMiniapps = Object.freeze([
   Object.freeze({
@@ -125,10 +135,49 @@ const expectedUnresolvedExternalGates = Object.freeze({
 const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmetic Scan)\b/iu;
 
 const EXACT_REVIEWED_PROSE_SHA256 = Object.freeze({
-  'age-rating.md': '224f8d029d614bdd78914b63417c1748aacd4fd8b91cb6c3bab4b60450d40a84',
-  'app-privacy.md': 'c8d06485114d771de9a544ff63d860596097bae2a7f9352513eda195895dec52',
-  'content-rights-inventory.md': '676d78a42c5a9a590c4c53a5deeeb30a9e64bf9669221c397428e461a8a501f4',
+  'age-rating.md': 'cc774368f2709e2cbe6b3ba49c16845711f35155d00f0b75a22ef550c9330848',
+  'app-privacy.md': '656698d204defc0d2f55189f964f937f6860c925ccb38e18d4c3ca9ccacb8a7e',
+  'content-rights-inventory.md': '3de2d0317c9929fa49657678192606dbe5eaf0d6fe612c62358173f9d72dc019',
 });
+
+const CURRENT_OPERATIONAL_PHASE_TRUTH_ALLOWLIST = Object.freeze([
+  'release/app-store/3.0/release-manifest.json',
+  'release/app-store/3.0/en-US.md',
+  'release/app-store/3.0/es-MX.md',
+  'release/app-store/3.0/review-notes.md',
+  'release/app-store/3.0/testflight-what-to-test.md',
+  'release/app-store/3.0/submission-gates.md',
+  'release/app-store/3.0/screenshots-manifest.json',
+  'release/app-store/3.0/screenshots/storyboard.md',
+  'release/app-store/3.0/apple-review-remediation-2026-08-24.md',
+  'release/app-store/3.0/age-rating.md',
+  'release/app-store/3.0/app-privacy.md',
+  'release/app-store/3.0/accessibility-nutrition-label-evidence.md',
+  'release/app-store/3.0/content-rights-inventory.md',
+  'release/data-inventory.md',
+  'release/compliance-facts.json',
+  'docs/operations/apple-post-build-evidence.md',
+  'docs/operations/exact-ios-ipa-audit.md',
+  'docs/operations/prior-apple-review-resolution.md',
+  'docs/operations/native-firebase-runtime.md',
+  'docs/operations/dynamic-miniapp-catalog.md',
+  'docs/operations/dynamic-miniapp-production-activation-2026-08-25.md',
+  'docs/operations/protected-overlay-dynamic-activation-2026-08-26.md',
+  'docs/operations/vip-showcase-production-activation-2026-08-26.md',
+  'tools/app-store-submit-adapter/README.md',
+  'tools/app-store-submit-adapter/package.json',
+]);
+
+const STALE_BUILD_11_PHASE_ASSERTIONS = Object.freeze([
+  /\bbuild[- /]?11\b[^.]{0,120}\bsole unbuilt\b/iu,
+  /\bsole unbuilt\b[^.]{0,120}\bbuild[- /]?11\b/iu,
+  /\bcurrent build-?11\b[^.]{0,100}\b(?:authority|attestation|IPA|TestFlight upload)\b[^.]{0,80}\b(?:absent|does not exist)\b/iu,
+  /\bno current build-?11\b[^.]{0,100}\b(?:authority|attestation|IPA|TestFlight upload)\b/iu,
+  /\bbuild[- /]?11\b[^.]{0,100}\bbuild-input authority\b[^.]{0,80}\bremain(?:s)? pending\b/iu,
+  /\bexact 3\.0\/build 11 signed RC\b[^.]{0,180}\bstill pending\b/iu,
+  /\bbuild 11 input freeze\b[^.]{0,240}\bremain pending\b/iu,
+  /\[[ ]\][^\n]*\bbuild-11 canonical build-input attestation\b/iu,
+]);
 
 const CONTENT_RIGHTS_SOURCE_GROUPS = Object.freeze([
   Object.freeze({
@@ -305,6 +354,31 @@ function readProjectJson(relativePath) {
     return value;
   } catch (error) {
     errors.push(`Invalid JSON in authoritative ${relativePath}: ${error.message}`);
+    return undefined;
+  }
+}
+
+function readPrivateEvidenceJson(relativePath) {
+  const absolutePath = join(root, relativePath);
+  if (!existsSync(absolutePath)) {
+    errors.push(`Missing RC-bound private evidence: ${relativePath}`);
+    return undefined;
+  }
+  const stat = lstatSync(absolutePath);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    errors.push(`RC-bound private evidence must be a regular non-symbolic-link file: ${relativePath}`);
+    return undefined;
+  }
+  const bytes = readFileSync(absolutePath);
+  try {
+    const value = JSON.parse(bytes.toString('utf8'));
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      errors.push(`RC-bound private evidence must be a JSON object: ${relativePath}`);
+      return undefined;
+    }
+    return { bytes, value };
+  } catch (error) {
+    errors.push(`Invalid JSON in RC-bound private evidence ${relativePath}: ${error.message}`);
     return undefined;
   }
 }
@@ -500,6 +574,7 @@ function verifyManifest() {
   if (!hasExactKeys(manifest, [
     'schemaVersion',
     'artifactKind',
+    'authoritySemantics',
     'candidate',
     'historicalCandidateEvidence',
     'historicalInputAuthorityEvidence',
@@ -518,6 +593,21 @@ function verifyManifest() {
   }
   if (manifest.schemaVersion !== 3 || manifest.artifactKind !== 'app-store-metadata-candidate') {
     errors.push('Release manifest schema or artifact kind is invalid');
+  }
+  if (!equalJson(manifest.authoritySemantics, {
+    documentRole: 'immutable-freeze-baseline',
+    livePhaseSource: 'release-command-guard-pins-and-required-attestation-bytes',
+    finalReleaseStateSource: 'rc-attestation-and-bound-private-evidence',
+    requiredRcHashBindings: [
+      'physicalIphoneQaSha256',
+      'screenshotsManifestSha256',
+      'appStoreMetadataEvidenceSha256',
+      'appPrivacySha256',
+      'reviewNotesSha256',
+    ],
+    postInputMutationAllowed: false,
+  })) {
+    errors.push('Release manifest must remain an immutable freeze baseline whose final state is RC-bound evidence');
   }
   if (!hasExactKeys(candidate, [
     'appleId',
@@ -1168,12 +1258,27 @@ function verifyReviewNotes() {
   const notes = read('review-notes.md');
   if (!notes) return;
   const marker = '## Paste-ready body after all gates are resolved';
-  const markerIndex = notes.indexOf(marker);
-  if (markerIndex === -1) {
-    errors.push('Review Notes are missing the gated paste-ready body');
-    return;
+  const isFinal = releasePhaseTruth?.metadataForm === 'final';
+  let body;
+  if (isFinal) {
+    body = notes.replace(/\n+$/u, '');
+    if (notes.includes(marker) || /DRAFT|DO NOT PASTE/iu.test(notes)) {
+      errors.push('Final Review Notes must contain only the exact paste-ready body');
+    }
+    if (countCharacters(body) !== 4000 || notes !== `${body}\n`) {
+      errors.push('Final Review Notes must be exactly the 4,000-character build-11 body plus one terminal newline');
+    }
+  } else {
+    const markerIndex = notes.indexOf(marker);
+    if (markerIndex === -1) {
+      errors.push('Pending Review Notes are missing the gated paste-ready body');
+      return;
+    }
+    body = notes.slice(markerIndex + marker.length).trim();
+    if (!/PHASE-CONTROLLED PENDING FORM — DO NOT PASTE YET/iu.test(notes)) {
+      errors.push('Pending Review Notes must retain the exact freeze-time wrapper');
+    }
   }
-  const body = notes.slice(markerIndex + marker.length).trim();
   if (countCharacters(body) > 4000) errors.push('Review Notes paste-ready body exceeds 4,000 characters');
   rejectUnapprovedHostedResourceUrls(body, 'Review Notes');
   const resourceList = body.match(/GUIDELINE 4\.7 — HOSTED RESOURCES\n([\s\S]*?)\n\nAt the time of submission, only these Universal Links enter\./u)?.[1]?.trim();
@@ -1268,8 +1373,12 @@ function verifyReviewNotes() {
 }
 
 function verifyPrivacy() {
-  const privacy = readJson('app-privacy.json');
-  if (!privacy) return;
+  const privacyAuthority = readJson('app-privacy.json');
+  if (!privacyAuthority) return;
+  const privacy = privacyAuthorityForSemanticValidation(
+    privacyAuthority,
+    releasePhaseTruth?.metadataForm,
+  );
   const nativeBehavior = privacy.nativeBehavior;
   const logs = privacy.hostedTechnicalRequestLogs;
   const cloudRunLogs = privacy.cloudRunRequestLogs;
@@ -1277,6 +1386,7 @@ function verifyPrivacy() {
   const schemaAndPurposesAreExact = (
     hasExactKeys(privacy, [
       'schemaVersion',
+      'authoritySemantics',
       'status',
       'architectureStatus',
       'recommendedAppPrivacyAnswer',
@@ -1296,6 +1406,13 @@ function verifyPrivacy() {
       'reviewSandbox',
       'hostedTechnicalRequestLogs',
       'conditionalRecommendation',
+    ])
+    && hasExactKeys(privacy.authoritySemantics, [
+      'documentRole',
+      'pendingFormPhases',
+      'finalFormPhases',
+      'transitionRequiresFinalScreenshots',
+      'finalStateBinding',
     ])
     && hasExactKeys(nativeBehavior, [
       'account',
@@ -1473,6 +1590,13 @@ function verifyPrivacy() {
   }
   if (
     privacy.schemaVersion !== 6
+    || !equalJson(privacy.authoritySemantics, {
+      documentRole: 'phase-controlled-app-store-privacy-authority',
+      pendingFormPhases: ['pre-input', 'input', 'artifact'],
+      finalFormPhases: ['artifact', 'rc', 'submit-tool'],
+      transitionRequiresFinalScreenshots: true,
+      finalStateBinding: 'rc-attestation.appPrivacySha256',
+    })
     || privacy.status !== 'pending-final-linkage-category-review-and-save'
     || privacy.architectureStatus !== 'core-infrastructure-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e'
     || privacy.recommendedAppPrivacyAnswer !== 'Yes, we collect data from this app'
@@ -1723,6 +1847,7 @@ function verifyAgeRating() {
   if (
     !hasExactKeys(age, [
       'schemaVersion',
+      'authoritySemantics',
       'status',
       'previousSavedRating',
       'calculatedRating',
@@ -1736,6 +1861,11 @@ function verifyAgeRating() {
       'ownerConfirmationRequired',
       'appStoreCalculationRequired',
     ])
+    || !equalJson(age.authoritySemantics, {
+      documentRole: 'immutable-freeze-baseline',
+      finalSavedResultSource: 'rc-attestation.appStoreMetadataEvidenceSha256',
+      postInputMutationAllowed: false,
+    })
     || !hasExactKeys(age.questionnaireReference, [
       'provider',
       'url',
@@ -1799,37 +1929,94 @@ function verifyScreenshots() {
   if (!screenshots) return;
   try {
     if (screenshots.status === 'exact-rc-captured-and-approved') {
-      const rc = readJson('rc-attestation.json');
-      if (!rc
-        || rc.schemaVersion !== 1
-        || rc.artifactKind !== 'cabohealth-ios-exact-rc-attestation'
-        || typeof rc.testFlightBuildId !== 'string'
-        || typeof rc.sourceTreeSha256 !== 'string'
-        || typeof rc.testFlightProcessedAt !== 'string'
-        || typeof rc.screenshotsManifestSha256 !== 'string') {
-        throw new Error('SCREENSHOTS_FINAL_RC_BINDING_INVALID');
+      const evidenceRoot = join(root, 'release/private/rc-build-11');
+      if (releasePhaseTruth?.phase === 'artifact') {
+        const artifact = readJson('build-artifact-attestation.json');
+        if (!artifact || typeof artifact.sourceTreeSha256 !== 'string') {
+          throw new Error('SCREENSHOTS_FINAL_ARTIFACT_BINDING_INVALID');
+        }
+        validateScreenshotsManifest(screenshots, {
+          phase: 'final',
+          sourceTreeSha256: artifact.sourceTreeSha256,
+          evidenceRoot,
+          requireFiles: true,
+        });
+      } else if (releasePhaseTruth?.phase === 'rc' || releasePhaseTruth?.phase === 'submit-tool') {
+        const rc = readJson('rc-attestation.json');
+        if (!rc
+          || rc.schemaVersion !== 1
+          || rc.artifactKind !== 'cabohealth-ios-exact-rc-attestation'
+          || typeof rc.testFlightBuildId !== 'string'
+          || typeof rc.sourceTreeSha256 !== 'string'
+          || typeof rc.testFlightProcessedAt !== 'string'
+          || typeof rc.screenshotsManifestSha256 !== 'string') {
+          throw new Error('SCREENSHOTS_FINAL_RC_BINDING_INVALID');
+        }
+        const manifestBytes = readFileSync(join(releaseRoot, 'screenshots-manifest.json'));
+        const manifestSha256 = createHash('sha256').update(manifestBytes).digest('hex');
+        if (manifestSha256 !== rc.screenshotsManifestSha256) {
+          throw new Error('SCREENSHOTS_FINAL_RC_BINDING_INVALID');
+        }
+        validateScreenshotsManifest(screenshots, {
+          phase: 'final',
+          testFlightBuildId: rc.testFlightBuildId,
+          sourceTreeSha256: rc.sourceTreeSha256,
+          testFlightProcessedAt: rc.testFlightProcessedAt,
+          evidenceRoot,
+          requireFiles: true,
+        });
+      } else {
+        throw new Error('SCREENSHOTS_FINAL_PHASE_INVALID');
       }
-      const manifestBytes = readFileSync(join(releaseRoot, 'screenshots-manifest.json'));
-      const manifestSha256 = createHash('sha256').update(manifestBytes).digest('hex');
-      if (manifestSha256 !== rc.screenshotsManifestSha256) {
-        throw new Error('SCREENSHOTS_FINAL_RC_BINDING_INVALID');
-      }
-      validateScreenshotsManifest(screenshots, {
-        phase: 'final',
-        testFlightBuildId: rc.testFlightBuildId,
-        sourceTreeSha256: rc.sourceTreeSha256,
-        testFlightProcessedAt: rc.testFlightProcessedAt,
-        evidenceRoot: join(root, 'release/private/rc-build-11'),
-        requireFiles: true,
-      });
     } else {
       validateScreenshotsManifest(screenshots, { phase: 'pending' });
     }
   } catch {
-    errors.push('Screenshot manifest must target 3.0 build 11 on the 6.9-inch iPhone class. Screenshot manifest must retain the exact authority schema and be either the exact empty pending authority or the exact file-backed RC authority bound to its RC attestation');
+    errors.push('Screenshot manifest must target 3.0 build 11 on the 6.9-inch iPhone class. Screenshot manifest must retain the exact authority schema and be either the exact empty pending authority or the exact file-backed artifact/RC authority bound to its live phase');
   }
   const screenshotStoryboard = read('screenshots/storyboard.md');
   rejectContradictoryCaboHealthEntityClaims(screenshotStoryboard, 'screenshot storyboard');
+}
+
+function verifyRcBoundPrivateEvidence() {
+  if (releasePhaseTruth?.phase !== 'rc' && releasePhaseTruth?.phase !== 'submit-tool') return;
+  const rc = readJson('rc-attestation.json');
+  if (!rc) return;
+  const physicalPath = 'release/private/rc-build-11/physical-iphone-qa.json';
+  const appStorePath = 'release/private/rc-build-11/app-store-connect-evidence.json';
+  const physical = readPrivateEvidenceJson(physicalPath);
+  const appStore = readPrivateEvidenceJson(appStorePath);
+  if (!physical || !appStore) return;
+  const physicalSha256 = createHash('sha256').update(physical.bytes).digest('hex');
+  const appStoreSha256 = createHash('sha256').update(appStore.bytes).digest('hex');
+  if (rc.physicalIphoneQaSha256 !== physicalSha256
+    || rc.appStoreMetadataEvidenceSha256 !== appStoreSha256) {
+    errors.push('RC must hash-bind the exact completed physical-iPhone QA and App Store Connect evidence bytes');
+    return;
+  }
+  try {
+    const bindings = {
+      testFlightBuildId: rc.testFlightBuildId,
+      sourceTreeSha256: rc.sourceTreeSha256,
+      testFlightProcessedAt: rc.testFlightProcessedAt,
+    };
+    validatePhysicalIphoneQaEvidence(physical.value, bindings);
+    validateAppStoreConnectEvidence(appStore.value, bindings);
+  } catch {
+    errors.push('RC-bound physical-iPhone QA and App Store Connect evidence must be complete, passed, current, and exact for build 11');
+  }
+}
+
+function verifyOperationalPhaseTruth() {
+  for (const relativePath of CURRENT_OPERATIONAL_PHASE_TRUTH_ALLOWLIST) {
+    const source = readProject(relativePath);
+    if (!source || !/build[- /]?11/iu.test(source)) continue;
+    for (const pattern of STALE_BUILD_11_PHASE_ASSERTIONS) {
+      if (pattern.test(source)) {
+        errors.push(`${relativePath} contains a stale build-11 phase assertion`);
+      }
+    }
+  }
 }
 
 function verifyHumanChecklists() {
@@ -1847,7 +2034,7 @@ function verifyHumanChecklists() {
   const completedVersionConfigurationGate = '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 11 after preserving exact build-8 built/uploaded history, hash-binding build 9 as aborted before any provider operation, and preserving build 10 as immutable processed internal-TestFlight history; this completed configuration gate neither asserts nor negates a later live build-11 authority phase.';
   const completedBuild5BuildInputAttestationGate = '- [x] Regenerate, freeze, and independently review the build-5 canonical build-input attestation; bind the exact external mode-0600 production plist hash, sanitized resolved Expo config, `cabohealth-owner-prod`, source/lock/manifests/verifiers, recursive clean `node_modules` runtime, and Node executable bytes/version. Retain the build-4 attestation only as obsolete diagnostic evidence. Pin the new authority so `build:prod` can run with `--freeze-credentials` from a unique private snapshot outside Dropbox whose parent `node_modules` resolves every Expo plugin.';
   const completedBuild6BuildInputAttestationGate = '- [x] Generate, independently review, and pin the build-6 canonical build-input attestation against the rebaselined 3.0/build 6 source and exact external mode-0600 production plist before its EAS build; do not reuse either obsolete build-5 attestation.';
-  const completedBuild11AuthoritySequenceGate = '- [x] Establish the fail-closed build-11 authority sequence: replacement canonical build-input attestation, build artifact, RC, and submit tool. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no obsolete build-8, aborted build-9, immutable processed build-10, or invalidated build-11 attempt-1 authority may be reused.';
+  const completedBuild11AuthoritySequenceGate = '- [x] Establish and verify the fail-closed build-11 authority-sequence design and guards. This checked row records the pre-build contract only; it does not claim that the replacement input, build artifact, RC, or submit-tool authority exists. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no obsolete build-8, aborted build-9, immutable processed build-10, or invalidated build-11 attempt-1 authority may be reused.';
   const required = [
     'apple-review-remediation-2026-08-24.md',
     'testflight-what-to-test.md',
@@ -1970,7 +2157,9 @@ function verifyHumanChecklists() {
 
 function verifyReleaseV3Package() {
   try {
-    errors.push(...verifyCapturedReleaseV3(captureReleaseV3(root)));
+    const captured = captureReleaseV3(root);
+    releasePhaseTruth = inspectReleasePhaseTruth(captured);
+    errors.push(...verifyCapturedReleaseV3(captured));
   } catch (error) {
     errors.push(`Release v3 authority could not be captured: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -1986,6 +2175,8 @@ verifyReviewNotes();
 verifyPrivacy();
 verifyAgeRating();
 verifyScreenshots();
+verifyRcBoundPrivateEvidence();
+verifyOperationalPhaseTruth();
 verifyHumanChecklists();
 verifyContentRightsInventory();
 

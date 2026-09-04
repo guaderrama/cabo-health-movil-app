@@ -1,8 +1,9 @@
-import { lstatSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AASA_COMPONENTS } from './generate-aasa.mjs';
+import { validateScreenshotsManifest } from './apple-post-build-evidence.mjs';
 
 const REQUIRED_CAPTURE_PATHS = [
   'app.json',
@@ -12,7 +13,16 @@ const REQUIRED_CAPTURE_PATHS = [
   'release/app-store/3.0/release-manifest.json',
   'release/app-store/3.0/age-rating.json',
   'release/app-store/3.0/app-privacy.json',
+  'release/app-store/3.0/review-notes.md',
+  'release/app-store/3.0/screenshots-manifest.json',
+  'scripts/release-command-guard.mjs',
 ];
+
+const OPTIONAL_PHASE_ATTESTATION_PATHS = Object.freeze([
+  'release/app-store/3.0/build-input-attestation.json',
+  'release/app-store/3.0/build-artifact-attestation.json',
+  'release/app-store/3.0/rc-attestation.json',
+]);
 
 const EXACT_PUBLIC_SLUGS = ['healthy-recipes', 'clinic-guide'];
 const EXACT_PUBLIC_URLS = EXACT_PUBLIC_SLUGS.map(
@@ -78,10 +88,32 @@ const EXACT_AUTHORITY_SHA256 = Object.freeze({
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
   'constants/config.ts': 'a2b8453caa2f6be0c065f226bf84edc59e12b9b3a42523321fcb173388ec8a90',
   'constants/publicMiniapps.ts': '7306d82fd7de694b16de85401a8aab431c5408037f5038ce95fc5f79edef9dda',
-  'release/app-store/3.0/release-manifest.json': 'f5abe072b01178e3e1301b197c5b08adb2466098339ed41c66de8f3699c4d0e5',
-  'release/app-store/3.0/age-rating.json': '2b8de835b2e1ef794c28310a1699e101a7d604652b14945538c70e26df6e1259',
-  'release/app-store/3.0/app-privacy.json': 'ea62eeb774718f7378cfb4edbc18dfb8fa8f90afadb3c61d2ef6b214a1da4349',
+  'release/app-store/3.0/release-manifest.json': 'dc3bf3a4a3cef10c50ad7756883d3d2bb27905ae41954d8baf4687893d2b6c67',
+  'release/app-store/3.0/age-rating.json': '2e0b8345d7f223dc28b97539c31470eaa5e57101dc564948b31b73211bf15a89',
 });
+const PENDING_APP_PRIVACY_SHA256 = '87ea881af75bebeb27945f6fd1bc35daec189597b81510ec498aeacddce1ab30';
+const FINAL_APP_PRIVACY_SHA256 = '51287eb24455e64ce605bcd0b896d025f236f53cd1c2e2c27014a079e1192862';
+const PENDING_REVIEW_NOTES_SHA256 = 'f7c7e2eb20b017351772102ed94994645919e9e8c8ce009893fcbc9cd0d1ab43';
+const FINAL_REVIEW_NOTES_SHA256 = '81d663d0a3bde107e90de96ed32d2a851af7a1339658195d2a9189c7de0823d7';
+const PENDING_SCREENSHOTS_MANIFEST_SHA256 = '8a74d7a7dcaa5951de0b1c8094aaa6ac24e0c697732bb9c10300a3a3e41f6de5';
+
+const PHASE_PIN_RULES = Object.freeze([
+  Object.freeze({
+    name: 'BUILD_INPUT_ATTESTATION_SHA256',
+    path: 'release/app-store/3.0/build-input-attestation.json',
+    label: 'input',
+  }),
+  Object.freeze({
+    name: 'BUILD_ARTIFACT_ATTESTATION_SHA256',
+    path: 'release/app-store/3.0/build-artifact-attestation.json',
+    label: 'artifact',
+  }),
+  Object.freeze({
+    name: 'RC_ATTESTATION_SHA256',
+    path: 'release/app-store/3.0/rc-attestation.json',
+    label: 'RC',
+  }),
+]);
 
 function parseJson(files, path, errors) {
   const bytes = files.get(path);
@@ -129,8 +161,212 @@ function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+function parsePinnedLiteral(source, name, errors) {
+  const pattern = new RegExp(`^const ${name} = (null|'[^']*');$`, 'gmu');
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    errors.push(`release command guard must contain one exact ${name} declaration`);
+    return undefined;
+  }
+  const literal = matches[0][1];
+  if (literal === 'null') return null;
+  const value = literal.slice(1, -1);
+  const expectedPattern = name.endsWith('_SHA256')
+    ? /^[a-f0-9]{64}$/u
+    : /^[A-Za-z0-9+/]+={0,2}$/u;
+  if (!expectedPattern.test(value)) {
+    errors.push(`release command guard ${name} pin has an invalid exact value`);
+    return undefined;
+  }
+  return value;
+}
+
+export function deriveReleaseAuthorityPhase(files) {
+  const errors = [];
+  const guardBytes = files.get('scripts/release-command-guard.mjs');
+  if (!Buffer.isBuffer(guardBytes)) {
+    return {
+      phase: null,
+      errors: ['scripts/release-command-guard.mjs is required to derive the live release phase'],
+    };
+  }
+  const guard = guardBytes.toString('utf8');
+  const pins = Object.fromEntries([
+    ...PHASE_PIN_RULES.map(({ name }) => [name, parsePinnedLiteral(guard, name, errors)]),
+    ['PINNED_EAS_CLI', parsePinnedLiteral(guard, 'PINNED_EAS_CLI', errors)],
+    [
+      'PINNED_APP_STORE_SUBMIT_ADAPTER',
+      parsePinnedLiteral(guard, 'PINNED_APP_STORE_SUBMIT_ADAPTER', errors),
+    ],
+  ]);
+  if (pins.PINNED_EAS_CLI !== null) {
+    errors.push('legacy PINNED_EAS_CLI must remain null in every build-11 phase');
+  }
+
+  let sawNull = false;
+  let completed = 0;
+  for (const rule of PHASE_PIN_RULES) {
+    const pin = pins[rule.name];
+    if (pin === null) {
+      sawNull = true;
+      if (Buffer.isBuffer(files.get(rule.path))) {
+        errors.push(`unpinned current ${rule.label} attestation bytes are forbidden`);
+      }
+      continue;
+    }
+    if (typeof pin !== 'string') continue;
+    if (sawNull) {
+      errors.push('release authority phase pins must be contiguous in input, artifact, RC order');
+    }
+    completed += 1;
+    const bytes = files.get(rule.path);
+    if (!Buffer.isBuffer(bytes) || sha256(bytes) !== pin) {
+      const authorityLabel = rule.label === 'RC' ? 'RC' : `build-${rule.label}`;
+      errors.push(`${rule.label} pin requires matching current ${authorityLabel} attestation bytes`);
+    }
+  }
+
+  const submitPin = pins.PINNED_APP_STORE_SUBMIT_ADAPTER;
+  if (typeof submitPin === 'string' && completed !== PHASE_PIN_RULES.length) {
+    errors.push('submit-tool pin requires contiguous input, artifact, and RC authority pins');
+  }
+  if (errors.length > 0) return { phase: null, errors };
+  if (typeof submitPin === 'string') return { phase: 'submit-tool', errors };
+  return { phase: ['pre-input', 'input', 'artifact', 'rc'][completed], errors };
+}
+
+export function privacyAuthorityForSemanticValidation(privacyAuthority, form) {
+  if (form !== 'final') return privacyAuthority;
+  const finalPrivacy = privacyAuthority;
+  const privacy = structuredClone(finalPrivacy);
+  privacy.status = 'pending-final-linkage-category-review-and-save';
+  privacy.architectureStatus = 'core-infrastructure-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e';
+  privacy.clientAccount.status = 'pending-final-apple-linkage-mapping';
+  privacy.thirdPartyNetworkRequests.finalAppleMappingStatus = 'pending-final-destination-provider-and-category-review';
+  privacy.cloudRunRequestLogs.linkedToIdentity = null;
+  privacy.reviewSandbox.status = 'infrastructure-deployed-pending-credential-valid-flow-and-device-e2e';
+  privacy.hostedTechnicalRequestLogs.linkedToIdentity = null;
+  delete privacy.finalAppleDisclosure;
+  privacy.conditionalRecommendation = {
+    dataNotCollectedPath: 'Not applicable to this v3 architecture: pseudonymous identifiers and provider request records are retained off device beyond real-time request servicing.',
+    dataCollectedPath: 'Required. Map the final verified production data types, purposes, linkage, and retention in App Store Connect after the exact RC and hosting configuration are tested.',
+    provisionalPurpose: ['App Functionality', 'Analytics'],
+    provisionalCategoryMapping: [
+      'User ID — linked to the user; App Functionality; not used for tracking (exact signed FirebaseAuth privacy manifest)',
+      'Other Diagnostic Data — not linked to the user; Analytics; not used for tracking (exact signed FirebaseAuth privacy manifest)',
+      'Device ID, if the app-installation identifier is retained off device and disclosure is required',
+      'Coarse Location, Device ID, or Other Diagnostic Data as required by Apple\'s final mapping of retained IP addresses',
+      'Product Interaction, if retained requested-resource activity is in disclosure scope',
+      'Performance Data, if retained latency or response-byte measurements are in disclosure scope',
+      'Other Diagnostic Data, if retained HTTP method, user-agent, or technical-error records are in disclosure scope',
+      'Other Data Types, only if a retained field cannot be accurately mapped to another Apple data type',
+    ],
+  };
+  return privacy;
+}
+
+function metadataAuthorityForm(files, errors) {
+  const privacyBytes = files.get('release/app-store/3.0/app-privacy.json');
+  const notesBytes = files.get('release/app-store/3.0/review-notes.md');
+  const privacyHash = Buffer.isBuffer(privacyBytes) ? sha256(privacyBytes) : null;
+  const notesHash = Buffer.isBuffer(notesBytes) ? sha256(notesBytes) : null;
+  const privacyForm = privacyHash === PENDING_APP_PRIVACY_SHA256
+    ? 'pending'
+    : privacyHash === FINAL_APP_PRIVACY_SHA256
+      ? 'final'
+      : 'invalid';
+  const notesForm = notesHash === PENDING_REVIEW_NOTES_SHA256
+    ? 'pending'
+    : notesHash === FINAL_REVIEW_NOTES_SHA256
+      ? 'final'
+      : 'invalid';
+  if (privacyForm === 'invalid') errors.push('privacy must retain one exact phase-aware App Privacy authority form');
+  if (notesForm === 'invalid') errors.push('Review Notes must retain one exact phase-aware authority form');
+  if (privacyForm !== 'invalid' && notesForm !== 'invalid' && privacyForm !== notesForm) {
+    errors.push('App Privacy and Review Notes must transition as one exact pair');
+  }
+  return {
+    form: privacyForm === notesForm ? privacyForm : 'mixed',
+    privacyHash,
+    notesHash,
+  };
+}
+
+function screenshotAuthorityForm(files, errors) {
+  const bytes = files.get('release/app-store/3.0/screenshots-manifest.json');
+  if (!Buffer.isBuffer(bytes)) {
+    errors.push('release/app-store/3.0/screenshots-manifest.json is required');
+    return 'invalid';
+  }
+  if (sha256(bytes) === PENDING_SCREENSHOTS_MANIFEST_SHA256) return 'pending';
+  const screenshots = parseJson(files, 'release/app-store/3.0/screenshots-manifest.json', errors);
+  if (screenshots?.status === 'exact-rc-captured-and-approved') return 'final';
+  errors.push('Screenshot manifest must retain the exact pending authority or an exact finalized authority');
+  return 'invalid';
+}
+
+export function inspectReleasePhaseTruth(files) {
+  const errors = [];
+  const phaseAuthority = deriveReleaseAuthorityPhase(files);
+  errors.push(...phaseAuthority.errors);
+  const metadata = metadataAuthorityForm(files, errors);
+  const screenshotsForm = screenshotAuthorityForm(files, errors);
+  return {
+    phase: phaseAuthority.phase,
+    metadataForm: metadata.form,
+    screenshotsForm,
+    appPrivacySha256: metadata.privacyHash,
+    reviewNotesSha256: metadata.notesHash,
+    errors,
+  };
+}
+
+function verifyFinalScreenshotPhaseBinding(files, phaseTruth, errors) {
+  if (phaseTruth.screenshotsForm !== 'final') return;
+  const screenshots = parseJson(files, 'release/app-store/3.0/screenshots-manifest.json', errors);
+  if (!screenshots) return;
+  try {
+    if (phaseTruth.phase === 'artifact') {
+      const artifact = parseJson(
+        files,
+        'release/app-store/3.0/build-artifact-attestation.json',
+        errors,
+      );
+      if (!artifact || typeof artifact.sourceTreeSha256 !== 'string') {
+        throw new Error('SCREENSHOTS_FINAL_ARTIFACT_BINDING_INVALID');
+      }
+      validateScreenshotsManifest(screenshots, {
+        phase: 'final',
+        sourceTreeSha256: artifact.sourceTreeSha256,
+      });
+      return;
+    }
+    if (phaseTruth.phase === 'rc' || phaseTruth.phase === 'submit-tool') {
+      const rc = parseJson(files, 'release/app-store/3.0/rc-attestation.json', errors);
+      const manifestBytes = files.get('release/app-store/3.0/screenshots-manifest.json');
+      if (!rc
+        || !Buffer.isBuffer(manifestBytes)
+        || rc.screenshotsManifestSha256 !== sha256(manifestBytes)) {
+        throw new Error('SCREENSHOTS_FINAL_RC_BINDING_INVALID');
+      }
+      validateScreenshotsManifest(screenshots, {
+        phase: 'final',
+        testFlightBuildId: rc.testFlightBuildId,
+        sourceTreeSha256: rc.sourceTreeSha256,
+        testFlightProcessedAt: rc.testFlightProcessedAt,
+      });
+      return;
+    }
+    throw new Error('SCREENSHOTS_FINAL_PHASE_INVALID');
+  } catch {
+    errors.push('Final screenshot authority must contain the exact 16-capture build-11 schema and bind the live artifact or RC phase');
+  }
+}
+
 export function verifyCapturedReleaseV3(files) {
   const errors = [];
+  const phaseTruth = inspectReleasePhaseTruth(files);
+  errors.push(...phaseTruth.errors);
   const appJson = parseJson(files, 'app.json', errors);
   const easJson = parseJson(files, 'eas.json', errors);
   const manifest = parseJson(
@@ -139,9 +375,34 @@ export function verifyCapturedReleaseV3(files) {
     errors,
   );
   const age = parseJson(files, 'release/app-store/3.0/age-rating.json', errors);
-  const privacy = parseJson(files, 'release/app-store/3.0/app-privacy.json', errors);
+  const parsedPrivacy = parseJson(files, 'release/app-store/3.0/app-privacy.json', errors);
+  const privacy = parsedPrivacy
+    ? privacyAuthorityForSemanticValidation(parsedPrivacy, phaseTruth.metadataForm)
+    : parsedPrivacy;
   const config = files.get('constants/config.ts')?.toString('utf8') ?? '';
   const publicSource = files.get('constants/publicMiniapps.ts')?.toString('utf8') ?? '';
+
+  if (phaseTruth.phase === 'pre-input' || phaseTruth.phase === 'input') {
+    if (phaseTruth.screenshotsForm !== 'pending' || phaseTruth.metadataForm !== 'pending') {
+      errors.push('pre-input and input phases require the exact pending metadata baseline and pending screenshot authority');
+    }
+  } else if (phaseTruth.phase === 'artifact') {
+    if (phaseTruth.metadataForm === 'final' && phaseTruth.screenshotsForm !== 'final') {
+      errors.push('finalized metadata requires the exact finalized screenshot authority');
+    }
+  } else if (phaseTruth.phase === 'rc' || phaseTruth.phase === 'submit-tool') {
+    if (phaseTruth.screenshotsForm !== 'final' || phaseTruth.metadataForm !== 'final') {
+      errors.push('RC and submit-tool phases require the exact finalized metadata pair and finalized screenshot authority');
+    }
+    const rc = parseJson(files, 'release/app-store/3.0/rc-attestation.json', errors);
+    if (rc && (
+      rc.appPrivacySha256 !== phaseTruth.appPrivacySha256
+      || rc.reviewNotesSha256 !== phaseTruth.reviewNotesSha256
+    )) {
+      errors.push('RC metadata hashes must bind the exact finalized App Privacy and Review Notes bytes');
+    }
+  }
+  verifyFinalScreenshotPhaseBinding(files, phaseTruth, errors);
 
   for (const [path, expected] of Object.entries(EXACT_AUTHORITY_SHA256)) {
     const bytes = files.get(path);
@@ -191,6 +452,7 @@ export function verifyCapturedReleaseV3(files) {
     const manifestSchemaIsExact = hasExactKeys(manifest, [
       'schemaVersion',
       'artifactKind',
+      'authoritySemantics',
       'candidate',
       'ascEvidence',
       'historicalCandidateEvidence',
@@ -205,6 +467,13 @@ export function verifyCapturedReleaseV3(files) {
       'gates',
       'reviewRisk',
     ])
+      && hasExactKeys(manifest.authoritySemantics, [
+        'documentRole',
+        'livePhaseSource',
+        'finalReleaseStateSource',
+        'requiredRcHashBindings',
+        'postInputMutationAllowed',
+      ])
       && hasExactKeys(manifest.candidate, [
         'appleId',
         'bundleIdentifier',
@@ -340,7 +609,20 @@ export function verifyCapturedReleaseV3(files) {
       ]);
     if (!manifestSchemaIsExact
       || manifest.schemaVersion !== 3
-      || manifest.artifactKind !== 'app-store-metadata-candidate') {
+      || manifest.artifactKind !== 'app-store-metadata-candidate'
+      || !sameJson(manifest.authoritySemantics, {
+        documentRole: 'immutable-freeze-baseline',
+        livePhaseSource: 'release-command-guard-pins-and-required-attestation-bytes',
+        finalReleaseStateSource: 'rc-attestation-and-bound-private-evidence',
+        requiredRcHashBindings: [
+          'physicalIphoneQaSha256',
+          'screenshotsManifestSha256',
+          'appStoreMetadataEvidenceSha256',
+          'appPrivacySha256',
+          'reviewNotesSha256',
+        ],
+        postInputMutationAllowed: false,
+      })) {
       errors.push('release manifest must retain the exact authority schema');
     }
     if (!sameArray(manifest.ownerSeller?.releaseTerritories, ['MEX', 'USA'])) {
@@ -544,6 +826,7 @@ export function verifyCapturedReleaseV3(files) {
   if (age) {
     const ageSchemaIsExact = hasExactKeys(age, [
       'schemaVersion',
+      'authoritySemantics',
       'status',
       'previousSavedRating',
       'calculatedRating',
@@ -557,6 +840,11 @@ export function verifyCapturedReleaseV3(files) {
       'ownerConfirmationRequired',
       'appStoreCalculationRequired',
     ])
+      && hasExactKeys(age.authoritySemantics, [
+        'documentRole',
+        'finalSavedResultSource',
+        'postInputMutationAllowed',
+      ])
       && hasExactKeys(age.questionnaireReference, [
         'provider',
         'url',
@@ -627,6 +915,11 @@ export function verifyCapturedReleaseV3(files) {
     if (!ageSchemaIsExact) errors.push('age rating must retain the exact authority schema');
     if (
       age.schemaVersion !== 3
+      || !sameJson(age.authoritySemantics, {
+        documentRole: 'immutable-freeze-baseline',
+        finalSavedResultSource: 'rc-attestation.appStoreMetadataEvidenceSha256',
+        postInputMutationAllowed: false,
+      })
       || age.status !== 'reconfirmation-required'
       || age.previousSavedRating !== '9+'
       || age.calculatedRating !== null
@@ -655,6 +948,7 @@ export function verifyCapturedReleaseV3(files) {
   if (privacy) {
     const privacySchemaIsExact = hasExactKeys(privacy, [
       'schemaVersion',
+      'authoritySemantics',
       'status',
       'architectureStatus',
       'recommendedAppPrivacyAnswer',
@@ -675,6 +969,13 @@ export function verifyCapturedReleaseV3(files) {
       'hostedTechnicalRequestLogs',
       'conditionalRecommendation',
     ])
+      && hasExactKeys(privacy.authoritySemantics, [
+        'documentRole',
+        'pendingFormPhases',
+        'finalFormPhases',
+        'transitionRequiresFinalScreenshots',
+        'finalStateBinding',
+      ])
       && hasExactKeys(privacy.nativeBehavior, [
         'account',
         'healthInformationRequested',
@@ -847,6 +1148,13 @@ export function verifyCapturedReleaseV3(files) {
     if (!privacySchemaIsExact) errors.push('privacy must retain the exact authority schema');
     if (
       privacy.schemaVersion !== 6
+      || !sameJson(privacy.authoritySemantics, {
+        documentRole: 'phase-controlled-app-store-privacy-authority',
+        pendingFormPhases: ['pre-input', 'input', 'artifact'],
+        finalFormPhases: ['artifact', 'rc', 'submit-tool'],
+        transitionRequiresFinalScreenshots: true,
+        finalStateBinding: 'rc-attestation.appPrivacySha256',
+      })
       || privacy.status !== 'pending-final-linkage-category-review-and-save'
       || privacy.architectureStatus !== 'core-infrastructure-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e'
       || privacy.recommendedAppPrivacyAnswer !== 'Yes, we collect data from this app'
@@ -1015,7 +1323,7 @@ export function verifyCapturedReleaseV3(files) {
 }
 
 export function captureReleaseV3(root) {
-  return new Map(REQUIRED_CAPTURE_PATHS.map((path) => {
+  const files = new Map(REQUIRED_CAPTURE_PATHS.map((path) => {
     const absolutePath = join(root, path);
     const stat = lstatSync(absolutePath);
     if (stat.isSymbolicLink() || !stat.isFile()) {
@@ -1023,6 +1331,16 @@ export function captureReleaseV3(root) {
     }
     return [path, Buffer.from(readFileSync(absolutePath))];
   }));
+  for (const path of OPTIONAL_PHASE_ATTESTATION_PATHS) {
+    const absolutePath = join(root, path);
+    if (!existsSync(absolutePath)) continue;
+    const stat = lstatSync(absolutePath);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new Error(`${path} must be a regular non-symbolic-link file`);
+    }
+    files.set(path, Buffer.from(readFileSync(absolutePath)));
+  }
+  return files;
 }
 
 function main() {

@@ -34,3 +34,27 @@ Binding design:
 
 - Run every post-pin gate without any later tracked edit. Stop before the first
   EAS build if identity is ambiguous or any authority check fails.
+
+## Frozen continuation after Task 2
+
+- Keep the release manifest, age baseline, accessibility/rights/declaration
+  checklists, and submission gates unchanged after the replacement input pin;
+  their final live state belongs only to RC-bound private evidence.
+- After the artifact is pinned and TestFlight is processed, transition
+  screenshots first. Then change exactly `app-privacy.json` and
+  `review-notes.md` together from their exact pending forms to their predefined
+  final forms. Never allow final metadata while screenshots are pending or one
+  metadata file without the other.
+- The exact final privacy mapping is Data Collected = Yes, tracking = No, with
+  User ID, Device ID, Product Interaction, Coarse Location, Performance Data,
+  and Other Diagnostic Data conservatively linked. Preserve the signed
+  FirebaseAuth-specific unlinked Other Diagnostic Data/Analytics fact as a
+  source-specific fact, not as an under-disclosed app-level answer.
+- Save the truthful Unrestricted Web Access questionnaire and accept Apple’s
+  recalculated result from the 16+ updated / 17+ legacy baseline; never restore
+  the stale 9+ expectation or edit the tracked age baseline.
+- Create RC schema v1 only after all final evidence exists. Bind both final
+  tracked files with `appPrivacySha256` and `reviewNotesSha256`, plus the
+  screenshot, physical-QA, and App Store Connect evidence hashes. No tracked
+  edit is permitted after the metadata pair except the reviewed RC pin commit
+  and later reviewed submit-adapter pin commit.

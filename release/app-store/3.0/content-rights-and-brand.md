@@ -1,5 +1,7 @@
 # Content rights and Cabo Health trade-brand ownership checklist
 
+Authority: **IMMUTABLE FREEZE-TIME BASELINE.** Empty boxes define the evidence required at release; they are never toggled after the input pin. Signed private rights material and the final App Store Content Rights save are authoritative only through the RC-bound App Store Connect evidence, not through edits to this checklist.
+
 Status: **BLOCKED — the itemized inventory was revised after the prior scope confirmation; owner reconfirmation, per-family basis, signed declaration, and Apple-ready private evidence remain pending.** Cabo Health is a trade brand owned and operated by Ivan Guaderrama. It is not represented as a separate legal entity or registered organization. This file contains no private attachment.
 
 Apple previously questioned the individual developer account’s relationship to the Cabo Health brand. Ivan’s self-declaration and domain-control proof materially answer the Guideline 4.1 relationship question, but they do not guarantee acceptance and do not replace trademark registration.

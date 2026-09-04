@@ -134,8 +134,10 @@ const BUILD_11_PHASE_TRUTH_PATHS = Object.freeze([
   'docs/operations/prior-apple-review-resolution.md',
   'docs/operations/dynamic-miniapp-catalog.md',
   'docs/operations/dynamic-miniapp-production-activation-2026-08-25.md',
+  'docs/operations/protected-overlay-dynamic-activation-2026-08-26.md',
+  'docs/operations/vip-showcase-production-activation-2026-08-26.md',
 ]);
-const BUILD_11_PHASE_NEUTRAL_CONTEXT = /live authority phase(?:\s|&mdash;|—|-)*pre-input,\s+input,\s+artifact,\s+RC,\s+or\s+submit-tool(?:\s|&mdash;|—|-)*must\s+be\s+determined\s+from\s+the\s+exact\s+current\s+pins\s+and\s+required\s+attestation\s+bytes/iu;
+const BUILD_11_PHASE_NEUTRAL_CONTEXT = /live\s+authority\s+phase(?:\s|&mdash;|—|-)*pre-input,\s+input,\s+artifact,\s+RC,\s+or\s+submit-tool(?:\s|&mdash;|—|-)*must\s+be\s+determined\s+from\s+the\s+exact\s+current\s+pins\s+and\s+required\s+attestation\s+bytes/iu;
 const STALE_BUILD_11_PHASE_ASSERTIONS = Object.freeze([
   /\bbuild[- /]?11\b[^.]{0,120}\bsole unbuilt\b/iu,
   /\bsole unbuilt\b[^.]{0,120}\bbuild[- /]?11\b/iu,
@@ -323,6 +325,56 @@ test('current build 11 prose stays truthful in synthetic input and artifact phas
         `${relativePath}: current build-11 prose is stale after input or artifact authority`,
       );
     }
+  }
+
+  for (const relativePath of CURRENT_DOCUMENT_REVIEW_ALLOWLIST) {
+    const source = readFileSync(join(root, relativePath), 'utf8');
+    if (!/build[- /]?11/iu.test(source)) continue;
+    for (const stalePattern of STALE_BUILD_11_PHASE_ASSERTIONS) {
+      assert.doesNotMatch(
+        source,
+        stalePattern,
+        `${relativePath}: operational allowlist contains a stale build-11 phase claim`,
+      );
+    }
+  }
+});
+
+test('freeze-time metadata documents delegate final live state to RC-bound evidence', () => {
+  const manifest = JSON.parse(readFileSync(
+    join(root, 'release/app-store/3.0/release-manifest.json'),
+    'utf8',
+  ));
+  const age = JSON.parse(readFileSync(join(root, 'release/app-store/3.0/age-rating.json'), 'utf8'));
+  assert.deepEqual(manifest.authoritySemantics, {
+    documentRole: 'immutable-freeze-baseline',
+    livePhaseSource: 'release-command-guard-pins-and-required-attestation-bytes',
+    finalReleaseStateSource: 'rc-attestation-and-bound-private-evidence',
+    requiredRcHashBindings: [
+      'physicalIphoneQaSha256',
+      'screenshotsManifestSha256',
+      'appStoreMetadataEvidenceSha256',
+      'appPrivacySha256',
+      'reviewNotesSha256',
+    ],
+    postInputMutationAllowed: false,
+  });
+  assert.deepEqual(age.authoritySemantics, {
+    documentRole: 'immutable-freeze-baseline',
+    finalSavedResultSource: 'rc-attestation.appStoreMetadataEvidenceSha256',
+    postInputMutationAllowed: false,
+  });
+  for (const relativePath of [
+    'release/app-store/3.0/age-rating.md',
+    'release/app-store/3.0/accessibility-nutrition-label-evidence.md',
+    'release/app-store/3.0/content-rights-and-brand.md',
+    'release/app-store/3.0/content-rights-inventory.md',
+    'release/app-store/3.0/declarations.md',
+    'release/app-store/3.0/submission-gates.md',
+  ]) {
+    const source = readFileSync(join(root, relativePath), 'utf8');
+    assert.match(source, /immutable freeze(?:-time)? baseline/iu, `${relativePath} lacks freeze-baseline semantics`);
+    assert.match(source, /RC-bound|RC attestation/iu, `${relativePath} lacks final evidence authority`);
   }
 });
 

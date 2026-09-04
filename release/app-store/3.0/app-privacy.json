@@ -1,5 +1,20 @@
 {
   "schemaVersion": 6,
+  "authoritySemantics": {
+    "documentRole": "phase-controlled-app-store-privacy-authority",
+    "pendingFormPhases": [
+      "pre-input",
+      "input",
+      "artifact"
+    ],
+    "finalFormPhases": [
+      "artifact",
+      "rc",
+      "submit-tool"
+    ],
+    "transitionRequiresFinalScreenshots": true,
+    "finalStateBinding": "rc-attestation.appPrivacySha256"
+  },
   "status": "pending-final-linkage-category-review-and-save",
   "architectureStatus": "core-infrastructure-deployed-pending-app-attest-valid-flow-and-exact-rc-e2e",
   "recommendedAppPrivacyAnswer": "Yes, we collect data from this app",

@@ -42,6 +42,47 @@ identities. It is historical evidence only and cannot authorize a build.
    and change only the normalized input-pin literal.
 7. No tracked change may follow that pin before the build provider operation.
 
+## Phase-aware post-artifact metadata transition
+
+The refreeze also defines every later metadata state before a replacement input
+pin exists. The live phase is derived only from the exact guard pins and the
+matching current attestation bytes; prose and mutable-looking checklist rows are
+never phase authority.
+
+- Pre-input and input accept only the exact pending screenshot, App Privacy,
+  and Review Notes baselines.
+- Artifact accepts these ordered tuples only: all three pending; final
+  screenshots with pending App Privacy and Review Notes; or final screenshots
+  with the exact finalized App Privacy and Review Notes pair. Final metadata
+  cannot precede final screenshots, and App Privacy/Review Notes never
+  transition separately.
+- RC and submit-tool require all three final forms. RC schema v1 binds the
+  tracked final metadata bytes independently as `appPrivacySha256` and
+  `reviewNotesSha256`, in addition to the screenshot, physical-QA, and App Store
+  Connect evidence hashes.
+
+The release manifest, age questionnaire, accessibility checklist, rights
+inventory/checklist, declarations, and submission gates are immutable
+freeze-time baselines. Their live completion is represented only by RC-bound
+private evidence. The one permitted post-artifact metadata commit changes
+exactly `app-privacy.json` and `review-notes.md`; no tracked metadata or baseline
+edit may follow it before the RC authority commit.
+
+The exact final privacy form uses `Yes, we collect data from this app`, no
+tracking, and linked answers for User ID, Device ID, Product Interaction,
+Coarse Location, Performance Data, and Other Diagnostic Data. Other Diagnostic
+Data uses App Functionality plus Apple’s Analytics purpose. The signed
+FirebaseAuth-specific unlinked Other Diagnostic Data/Analytics fact remains
+separately recorded, while the app-level category stays conservatively linked
+because provider request logs may be re-linkable. Final Review Notes are the
+exact existing build-11 body with only the pending wrapper and transition
+heading removed.
+
+The age baseline truthfully requires Unrestricted Web Access and projects 16+
+under Apple’s updated system and 17+ for earlier operating systems. A saved
+region-specific result is never written back into tracked baseline files; it is
+bound only in the private App Store Connect evidence.
+
 ## Acceptance
 
 - Attempt 1 SHA-256 remains
@@ -55,3 +96,5 @@ identities. It is historical evidence only and cannot authorize a build.
   runtime/config bytes.
 - The replacement pin commit contains exactly one added attestation and one
   normalized guard-pin change, and all post-pin gates pass without source edits.
+- Every pre-input through submit-tool fixture accepts only its ordered metadata
+  tuple, and the final RC binds both tracked metadata hashes with no later edit.

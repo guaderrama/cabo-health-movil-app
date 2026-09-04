@@ -1,6 +1,19 @@
 {
   "schemaVersion": 3,
   "artifactKind": "app-store-metadata-candidate",
+  "authoritySemantics": {
+    "documentRole": "immutable-freeze-baseline",
+    "livePhaseSource": "release-command-guard-pins-and-required-attestation-bytes",
+    "finalReleaseStateSource": "rc-attestation-and-bound-private-evidence",
+    "requiredRcHashBindings": [
+      "physicalIphoneQaSha256",
+      "screenshotsManifestSha256",
+      "appStoreMetadataEvidenceSha256",
+      "appPrivacySha256",
+      "reviewNotesSha256"
+    ],
+    "postInputMutationAllowed": false
+  },
   "candidate": {
     "appleId": "6758285327",
     "bundleIdentifier": "com.cabohealth.app",

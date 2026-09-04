@@ -1628,6 +1628,11 @@ def capture_assembly_snapshot(root_path: str) -> bytes:
         compliance_files: list[dict[str, Any]] = []
         compliance_files.append(captured_file("app.json", read_fixed_file(root_fd, "app.json")))
         compliance_files.append(captured_file("eas.json", read_fixed_file(root_fd, "eas.json")))
+        for path in (
+            "release/app-store/3.0/review-notes.md",
+            "scripts/release-command-guard.mjs",
+        ):
+            compliance_files.append(captured_file(path, read_fixed_file(root_fd, path)))
         for directory in ("app", "components", "constants", "context", "hooks", "features"):
             compliance_files.extend(capture_tree_files(root_fd, directory, lambda _path: True))
         compliance_files.extend(capture_tree_files(root_fd, "release", lambda path: path.endswith(".json")))

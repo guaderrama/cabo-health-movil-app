@@ -87,10 +87,14 @@ accessibility, and owner-portal exclusion.
    commit.
 5. Upload only that attested IPA to internal TestFlight and wait for Apple to
    report it processed.
-6. Complete physical QA, screenshots, App Store metadata evidence, and the exact
-   RC attestation.
-7. Select build 11, replace obsolete screenshots, publish corrected privacy
-   answers, enter review access, and save final notes.
+6. Complete physical QA, select build 11, replace obsolete screenshots, publish
+   the predefined privacy answers, enter review access, save final notes, and
+   capture App Store metadata evidence.
+7. Commit the screenshots first, then the exact two-file App Privacy/Review
+   Notes transition. Produce the exact RC attestation only after those tracked
+   final bytes exist; RC schema v1 binds `appPrivacySha256` and
+   `reviewNotesSha256` separately. No other tracked metadata file changes after
+   the input pin.
 8. Run the pinned submission adapter only after a fresh, explicit owner
    confirmation of the final Apple submission.
 
@@ -105,4 +109,7 @@ accessibility, and owner-portal exclusion.
 - App Store Connect shows build 11 selected, accurate privacy disclosures, new
   screenshots, complete review contact/access information, and no stale build-4
   notes or rejected functions.
+- The age questionnaire retains truthful Unrestricted Web Access and the saved
+  result is reconciled against the 16+ updated / 17+ earlier-OS baseline, never
+  the stale 9+ value. The tracked age baseline remains unchanged after input.
 - Submission is never described as guaranteeing Apple approval.

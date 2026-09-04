@@ -1,5 +1,7 @@
 # CaboHealth 3.0 content-rights inventory
 
+Authority: **IMMUTABLE FREEZE-TIME BASELINE.** This exact source-and-requirement inventory is frozen before the build. It is never rewritten to claim later completion; the genuine private rights evidence and saved Content Rights answer become live authority only through RC-bound App Store Connect evidence.
+
 Status: **REVISED ITEMIZED DRAFT — OWNER RECONFIRMATION, PER-FAMILY BASIS, SIGNED DECLARATION, AND PRIVATE EVIDENCE PENDING.** On 2026-08-22 Ivan Guaderrama confirmed the earlier itemized scope for app, website, App Store metadata, screenshots, distribution, and updates in Mexico and the United States. The 2026-08-24 revision removes unsupported original-authorship wording, updates editorial citations, and adds previously omitted exact source families. Ivan has not yet reconfirmed these revised bytes. This inventory is not a signed declaration, trademark registration, licence, assignment, or proof that a third party granted rights.
 
 Release scope: Apple ID `6758285327`; bundle ID `com.cabohealth.app`; marketing version `3.0`; build `11`; initial territories Mexico and United States.

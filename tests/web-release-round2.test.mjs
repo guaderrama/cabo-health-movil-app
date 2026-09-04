@@ -1319,8 +1319,18 @@ test('bound assembly snapshot ignores a transient root exchange and returns orig
   mkdirSync(alternate, { mode: 0o755 });
   mkdirSync(join(root, 'release'));
   mkdirSync(join(alternate, 'release'));
+  mkdirSync(join(root, 'release/app-store/3.0'), { recursive: true });
+  mkdirSync(join(root, 'scripts'));
   copyFileSync(join(projectRoot, 'app.json'), join(root, 'app.json'));
   copyFileSync(join(projectRoot, 'eas.json'), join(root, 'eas.json'));
+  copyFileSync(
+    join(projectRoot, 'release/app-store/3.0/review-notes.md'),
+    join(root, 'release/app-store/3.0/review-notes.md'),
+  );
+  copyFileSync(
+    join(projectRoot, 'scripts/release-command-guard.mjs'),
+    join(root, 'scripts/release-command-guard.mjs'),
+  );
   writeFileSync(join(root, 'release/compliance-facts.json'), '{"source":"original-pending"}\n', { flag: 'wx' });
   writeFileSync(join(alternate, 'release/compliance-facts.json'), '{"source":"alternate-ready"}\n', { flag: 'wx' });
   for (const [path] of inputPolicy.slice(1)) {
@@ -1332,8 +1342,22 @@ test('bound assembly snapshot ignores a transient root exchange and returns orig
   const snapshot = captureBoundAssemblySnapshot(root, 'assembly-transient-root-exchange');
   const captured = snapshot.complianceFiles.find(({ path }) => path === 'release/compliance-facts.json');
   const capturedEas = snapshot.complianceFiles.find(({ path }) => path === 'eas.json');
+  const capturedReviewNotes = snapshot.complianceFiles.find(
+    ({ path }) => path === 'release/app-store/3.0/review-notes.md',
+  );
+  const capturedGuard = snapshot.complianceFiles.find(
+    ({ path }) => path === 'scripts/release-command-guard.mjs',
+  );
   assert.equal(Buffer.from(captured.bytesBase64, 'base64').toString('utf8'), '{"source":"original-pending"}\n');
   assert.deepEqual(Buffer.from(capturedEas.bytesBase64, 'base64'), readFileSync(join(projectRoot, 'eas.json')));
+  assert.deepEqual(
+    Buffer.from(capturedReviewNotes.bytesBase64, 'base64'),
+    readFileSync(join(projectRoot, 'release/app-store/3.0/review-notes.md')),
+  );
+  assert.deepEqual(
+    Buffer.from(capturedGuard.bytesBase64, 'base64'),
+    readFileSync(join(projectRoot, 'scripts/release-command-guard.mjs')),
+  );
   assert.equal(readFileSync(join(root, 'release/compliance-facts.json'), 'utf8'), '{"source":"original-pending"}\n');
   assert.equal(readFileSync(join(alternate, 'release/compliance-facts.json'), 'utf8'), '{"source":"alternate-ready"}\n');
   assert.equal(existsSync(join(root, 'release/web-bundles')), false);

@@ -80,11 +80,14 @@ double-hyphen ID rejection (`400`), and invalid production/App Review nonces
 content-type, and frame protections were present. Unauthorized and malformed
 requests disclosed no private content.
 
-## Remaining Apple-release gates
+## Build-11 freeze requirements
 
-This hosting activation is not an Apple-submission pass. The following remain
-pending and must not be inferred from the negative live probes or PHP
-harnesses:
+This hosting activation is not an Apple-submission pass. CaboHealth 3.0/build
+11 is the current candidate. Its live authority phase—pre-input, input,
+artifact, RC, or submit-tool—must be determined from the exact current pins and
+required attestation bytes. The following are immutable freeze-time RC evidence
+requirements, not mutable status claims, and must not be inferred from the
+negative live probes or PHP harnesses:
 
 - valid-credential launch and introspection on physical iPhones with App
   Attest/App Check;
@@ -93,9 +96,12 @@ harnesses:
 - two-device App Review and Universal Link QA;
 - build 9 remains input-attested, aborted-pre-provider history and cannot
   authorize a release; and
-- the exact signed 3.0/build 11 release-candidate audit, TestFlight processing,
-  screenshots, final App Store metadata/privacy reconciliation, and Apple
-  review submission.
+- exact signed-candidate audit, TestFlight processing, screenshots, final App
+  Store metadata/privacy reconciliation, and Apple review submission.
+
+Completion is authoritative only through the RC attestation and its bound
+private evidence; this activation record is never edited to announce a later
+phase.
 
 An immediate owner confirmation remains required before any future
 **Submit for Review** action.

@@ -1,5 +1,7 @@
 # App Store declarations — owner confirmations recorded
 
+Authority: **IMMUTABLE FREEZE-TIME BASELINE.** These answers and verification requirements are not updated after the input pin. Their final saved live status comes only from the RC-bound App Store Connect evidence; this file cannot by itself claim an App Store Connect save.
+
 Status: Draft only. Ivan Guaderrama recorded the medical-scope and encryption confirmations below on 2026-08-17. Exact-RC inspection, App Store Connect answers, and submission remain pending; nothing here records an ASC save.
 
 ## Regulated medical device

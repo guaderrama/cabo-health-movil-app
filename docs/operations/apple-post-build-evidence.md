@@ -171,6 +171,37 @@ Connect, and screenshot artifacts before the submit adapter may consume them.
 Passing these contracts does not itself authorize `Submit for Review`; the
 separate, short-lived owner confirmation remains the final control.
 
+## Ordered metadata finalization and RC hash bindings
+
+The release manifest, age questionnaire, accessibility and rights checklists,
+declarations, and submission gates are immutable freeze-time baselines. Final
+live completion is recorded only in the private App Store Connect evidence
+bound by the RC; never toggle or rewrite those tracked baselines after the input
+pin.
+
+The only tracked post-artifact metadata progression is:
+
+1. pending screenshots + pending App Privacy + pending Review Notes;
+2. final screenshots + pending App Privacy + pending Review Notes; and
+3. final screenshots + final App Privacy + final Review Notes.
+
+App Privacy and Review Notes change together in one exact two-file commit.
+Final metadata with pending screenshots and mixed pending/final metadata pairs
+are invalid. The final Review Notes bytes preserve the exact build-11 body and
+remove only the pending wrapper and transition heading. The final App Privacy
+bytes contain the deterministic Data Collected/linked/no-tracking mapping fixed
+before the build.
+
+RC schema v1 adds two independent lowercase SHA-256 fields:
+`appPrivacySha256` binds
+`release/app-store/3.0/app-privacy.json`, and `reviewNotesSha256` binds
+`release/app-store/3.0/review-notes.md`. RC/submit-tool phases require final
+screenshots, both final metadata forms, and exact equality with those two RC
+hashes plus the already required physical-QA and App Store Connect evidence.
+No later tracked edit is allowed between metadata finalization and RC except
+the exact reviewed RC authority commit, or between RC and submission except the
+exact reviewed submit-adapter pin commit.
+
 ## Focused verification
 
 ```sh
