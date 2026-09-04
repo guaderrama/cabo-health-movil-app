@@ -328,12 +328,16 @@ export function validateRcEvidenceChronology({
     appStoreConnectEvidence?.reviewedAt,
     ...screenshotsManifest.captures.map((capture) => capture?.capturedAt),
   ];
+  const predecessorMilliseconds = [];
   for (const predecessor of predecessors) {
     const milliseconds = Date.parse(predecessor);
     if (!Number.isFinite(milliseconds)
       || new Date(milliseconds).toISOString() !== predecessor
       || milliseconds > rcReviewedAt) reject(code);
+    predecessorMilliseconds.push(milliseconds);
   }
+  const [buildArtifactReviewedAt, testFlightProcessedAt] = predecessorMilliseconds;
+  if (buildArtifactReviewedAt > testFlightProcessedAt) reject(code);
   return rcAttestation;
 }
 

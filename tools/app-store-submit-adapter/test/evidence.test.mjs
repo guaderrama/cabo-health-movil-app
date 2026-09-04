@@ -138,6 +138,13 @@ test('adapter requires RC review after build, QA, metadata, and screenshot evide
     );
   }
 
+  const artifactAfterProcessing = structuredClone(evidence);
+  artifactAfterProcessing.buildArtifact.reviewedAt = '2026-08-25T17:30:00.001Z';
+  assert.throws(
+    () => validateRcEvidenceChronology(artifactAfterProcessing, { now: NOW }),
+    /RC_EVIDENCE_CHRONOLOGY_INVALID/u,
+  );
+
   const future = structuredClone(evidence);
   future.rcAttestation.reviewedAt = new Date(NOW + 5 * 60 * 1000 + 1).toISOString();
   assert.throws(

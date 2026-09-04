@@ -347,7 +347,11 @@ export function validateRcReviewChronology(value, now = Date.now()) {
     value.appStoreConnectReviewedAt,
     ...value.screenshotCapturedAts,
   ];
-  if (predecessors.some((predecessor) => (
+  if (!isValidReviewChronology(
+    value.buildArtifactReviewedAt,
+    value.testFlightProcessedAt,
+    now,
+  ) || predecessors.some((predecessor) => (
     !isValidReviewChronology(predecessor, value.rcReviewedAt, now)
   ))) reject(code);
 }

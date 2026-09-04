@@ -18,18 +18,23 @@ supplying the exact evidence hashes.
 ## What it proves before mutation
 
 The adapter reopens every evidence file without following symlinks, requires
-the current local user to own it, checks its mode and SHA-256, and accepts only
-canonical compact UTF-8 JSON. Attestations preserve schema key order; the
-post-build evidence and dry-run fixtures recursively sort object keys. Private
-QA and App Store Connect evidence must be mode `0600`; tracked attestations and
-the screenshot manifest must not be writable by group or other users.
+the current local user to own it, and checks its mode and SHA-256. Evidence it
+parses—the two attestations, physical QA, App Store Connect evidence, and the
+screenshot manifest—must be canonical compact UTF-8 JSON. Attestations preserve
+schema key order; parsed post-build evidence and dry-run fixtures recursively
+sort object keys. `app-privacy.json` and `review-notes.md` are instead treated
+as opaque exact bytes: both the command-line hash and RC-bound hash must match
+those reopened bytes. Private QA and App Store Connect evidence must be mode
+`0600`; tracked attestations, the screenshot manifest, App Privacy answers, and
+Review Notes must not be writable by group or other users.
 
 It then requires all of the following cross-bindings:
 
 1. Both attestations describe only the fixed candidate above, use the exact
    schemas expected by the release guard, and share one source-tree SHA-256.
 2. The RC hash-binds the build artifact, physical-iPhone QA, App Store Connect
-   evidence, and screenshot manifest passed on the command line.
+   evidence, screenshot manifest, App Privacy answers, and Review Notes passed
+   on the command line.
 3. Every post-build artifact uses the same numeric TestFlight build ID. App
    Store Connect evidence separately records Apple's opaque build resource
    ID (currently UUID-shaped); the live selected build must equal that ID.
@@ -98,6 +103,15 @@ the sixteen image hashes in capture order, and set both the OCR excluded-scope
 check and human visual sign-off to `true`. Image alpha is verified by the
 upstream screenshot producer because the adapter intentionally receives only
 the manifest, not an image-root authority.
+
+### `app-privacy.json` and `review-notes.md`
+
+These two post-build metadata files are byte-bound rather than parsed by the
+adapter. `app-privacy.json` contains the final JSON App Privacy answers, while
+`review-notes.md` is Markdown. The adapter treats each as an exact byte artifact,
+reopens it with the same regular-file and ownership protections, verifies its
+command-line SHA-256, and requires the RC attestation to contain that identical
+hash. Any byte change after RC review therefore stops submission.
 
 ## App Store Connect credentials
 

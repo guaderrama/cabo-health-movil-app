@@ -93,6 +93,11 @@ test('RC review chronology follows every reviewed evidence source and cannot be 
 
   assert.throws(() => validateRcReviewChronology({
     ...chronology,
+    buildArtifactReviewedAt: '2026-08-30T11:05:00.001Z',
+  }, now), /EXACT_RC_ATTESTATION_INVALID/u);
+
+  assert.throws(() => validateRcReviewChronology({
+    ...chronology,
     rcReviewedAt: '2026-08-30T12:00:00.001Z',
   }, now), /EXACT_RC_ATTESTATION_INVALID/u);
 });
