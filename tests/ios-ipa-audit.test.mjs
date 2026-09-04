@@ -113,19 +113,25 @@ function createFixtureTree(root, {
   binary = Buffer.from('synthetic signed executable without protected APIs'),
   embeddedGoogleServices = googleServicesPlist(),
   infoOverrides = {},
+  omittedInfoKeys = [],
   includeRootPrivacyManifest = true,
 } = {}) {
   const app = join(root, 'Payload', 'CaboHealth.app');
   mkdirSync(join(app, 'Frameworks', 'Synthetic.framework'), { recursive: true, mode: 0o700 });
   mkdirSync(join(app, 'FirebaseAuth_Privacy.bundle'), { recursive: true, mode: 0o700 });
-  writeFileSync(join(app, 'Info.plist'), plist({
+  const info = {
     CFBundleExecutable: 'CaboHealth',
     CFBundleIdentifier: EXPECTED.bundleIdentifier,
     CFBundleShortVersionString: EXPECTED.marketingVersion,
     CFBundleVersion: EXPECTED.buildNumber,
+    ITSAppUsesNonExemptEncryption: false,
+    MinimumOSVersion: '15.1',
+    UIDeviceFamily: [1],
     WKAppBoundDomains: ['cabohealth.org'],
     ...infoOverrides,
-  }), { mode: 0o600 });
+  };
+  for (const key of omittedInfoKeys) delete info[key];
+  writeFileSync(join(app, 'Info.plist'), plist(info), { mode: 0o600 });
   writeFileSync(join(app, 'CaboHealth'), binary, { mode: 0o700 });
   writeFileSync(join(app, 'GoogleService-Info.plist'), embeddedGoogleServices, { mode: 0o600 });
   writeFileSync(join(app, 'embedded.mobileprovision'), Buffer.from('synthetic cms'), {
@@ -378,6 +384,23 @@ test('signature identities, App Attest, and associated domains fail closed', () 
       }),
     }), /IPA_PROVISIONING_PROFILE_MISMATCH/u);
   });
+});
+
+test('deployment target, device family, and export encryption fail closed', () => {
+  for (const [options, code] of [
+    [{ infoOverrides: { MinimumOSVersion: '15.0' } }, 'IPA_MINIMUM_OS_VERSION_MISMATCH'],
+    [{ omittedInfoKeys: ['MinimumOSVersion'] }, 'IPA_MINIMUM_OS_VERSION_MISMATCH'],
+    [{ infoOverrides: { UIDeviceFamily: [1, 2] } }, 'IPA_DEVICE_FAMILY_MISMATCH'],
+    [{ omittedInfoKeys: ['UIDeviceFamily'] }, 'IPA_DEVICE_FAMILY_MISMATCH'],
+    [{ infoOverrides: { ITSAppUsesNonExemptEncryption: true } }, 'IPA_NON_EXEMPT_ENCRYPTION_MISMATCH'],
+    [{ omittedInfoKeys: ['ITSAppUsesNonExemptEncryption'] }, 'IPA_NON_EXEMPT_ENCRYPTION_MISMATCH'],
+  ]) {
+    withFixture(options, (root) => {
+      assert.throws(() => auditFixture(root), (error) => (
+        error instanceof IpaAuditError && error.message === code
+      ), code);
+    });
+  }
 });
 
 test('purpose strings and protected-resource references are independently rejected', () => {

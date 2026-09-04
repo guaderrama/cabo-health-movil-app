@@ -46,6 +46,8 @@ const MAX_SCANNED_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const PRIVATE_FILE_MODE = 0o600;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const TEMPORARY_PREFIX = 'cabohealth-ipa-audit.';
+const EXPECTED_MINIMUM_OS_VERSION = '15.1';
+const EXPECTED_DEVICE_FAMILY = Object.freeze([1]);
 
 const EXACT_SIGNED_ENTITLEMENT_KEYS = Object.freeze([
   'application-identifier',
@@ -511,6 +513,15 @@ function validateBundleInfo(info, expected) {
     || typeof info.CFBundleExecutable !== 'string'
     || info.CFBundleExecutable.length === 0) {
     reject('IPA_BUNDLE_IDENTITY_MISMATCH');
+  }
+  if (info.MinimumOSVersion !== EXPECTED_MINIMUM_OS_VERSION) {
+    reject('IPA_MINIMUM_OS_VERSION_MISMATCH');
+  }
+  if (!isDeepStrictEqual(info.UIDeviceFamily, EXPECTED_DEVICE_FAMILY)) {
+    reject('IPA_DEVICE_FAMILY_MISMATCH');
+  }
+  if (info.ITSAppUsesNonExemptEncryption !== false) {
+    reject('IPA_NON_EXEMPT_ENCRYPTION_MISMATCH');
   }
   for (const key of FORBIDDEN_INFO_PLIST_KEYS) {
     if (Object.hasOwn(info, key)) reject('IPA_PROTECTED_RESOURCE_PURPOSE_STRING_PRESENT');

@@ -35,6 +35,9 @@ The audit fails unless all of the following are true:
 - the signed identifier and Team ID match the expected App Store identity and
   the leaf signing authority is an Apple distribution identity;
 - `CFBundleIdentifier`, marketing version, build number, and executable match;
+- the signed app is iPhone-only (`UIDeviceFamily=[1]`), has
+  `MinimumOSVersion=15.1`, and declares
+  `ITSAppUsesNonExemptEncryption=false` exactly;
 - the signed entitlements are the exact production set: application and Team
   identifiers, one approved associated domain, production App Attest,
   `get-task-allow=false`, and `beta-reports-active=true`;
@@ -99,7 +102,9 @@ supplied by the audited build/evidence workflow. The auditor never calls
 timestamp produce identical canonical JSON bytes.
 
 The report uses the exact `cabohealth-ipa-privacy-report` v1 contract consumed
-by the post-build verifier. In addition to the signature and Firebase hashes,
+by the post-build verifier. The platform, deployment-target, and export-encryption
+checks gate that report without changing its canonical schema. In addition to
+the signature and Firebase hashes,
 it contains the complete sorted inventory of regular files inside the `.app`
 (relative path, byte size, and SHA-256), the sorted privacy-manifest inventory,
 five explicit `false` sensitive-permission values, `tracking:false`, empty
