@@ -181,7 +181,7 @@ function assertBuild10ProseIsHistorical(relativePath, source) {
   return references.length;
 }
 
-test('the refrozen current candidate has one valid contiguous phase while the invalidated attempt is separate history', () => {
+test('the refrozen current candidate has one valid contiguous phase while invalidated attempts are separate history', () => {
   const app = JSON.parse(readFileSync(join(root, 'app.json'), 'utf8'));
   const config = readFileSync(join(root, 'constants/config.ts'), 'utf8');
   const guard = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
@@ -230,12 +230,20 @@ test('the refrozen current candidate has one valid contiguous phase while the in
       rc: readOptionalAttestation(rcPath),
     },
   }), /^(?:pre-input|input|artifact|rc|submit-tool)$/u);
-  assert.deepEqual(manifest.historicalInputAuthorityEvidence, [{
-    attempt: 1,
-    status: 'input-attested-invalidated-pre-provider-source-drift',
-    trackedHistoryRoot: 'release/app-store/3.0/history/build-11-input-attempt-1-aborted',
-    providerOperationInitiated: false,
-  }]);
+  assert.deepEqual(manifest.historicalInputAuthorityEvidence, [
+    {
+      attempt: 1,
+      status: 'input-attested-invalidated-pre-provider-source-drift',
+      trackedHistoryRoot: 'release/app-store/3.0/history/build-11-input-attempt-1-aborted',
+      providerOperationInitiated: false,
+    },
+    {
+      attempt: 2,
+      status: 'input-attested-invalidated-pre-provider-post-pin-gate-failure',
+      trackedHistoryRoot: 'release/app-store/3.0/history/build-11-input-attempt-2-aborted',
+      providerOperationInitiated: false,
+    },
+  ]);
 });
 
 test('build 11 authority accepts every contiguous phase and rejects partial or mismatched evidence', () => {
@@ -527,6 +535,49 @@ test('build 11 attempt 1 is exact invalidated pre-provider input authority histo
     invalidation: {
       commit: 'aac7e5fdc4eb234e3eb7d02ae8c7f2d0da1c398b',
       changedPaths: ['tests/build11-rebaseline-contract.test.mjs'],
+    },
+    providerOperationInitiated: false,
+    easBuildId: null,
+    ipaSha256: null,
+    easSubmissionId: null,
+    appleUploadStatus: null,
+  });
+  assert.equal(manifestBytes.toString('utf8'), `${JSON.stringify(manifest)}\n`);
+});
+
+test('build 11 attempt 2 is exact invalidated pre-provider input authority history', () => {
+  const history = join(root, 'release/app-store/3.0/history/build-11-input-attempt-2-aborted');
+  const inputBytes = readFileSync(join(history, 'build-input-attestation.json'));
+  const manifestBytes = readFileSync(join(history, 'manifest.json'));
+  const manifest = JSON.parse(manifestBytes);
+
+  assert.equal(sha256(inputBytes), 'f8db7a38cab23030329102d3a2093d01afa416043fd27ce1266ae1b0a9fe15cc');
+  assert.deepEqual(manifest, {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-ios-build-input-authority-history',
+    attempt: 2,
+    candidate: {
+      appleId: '6758285327',
+      bundleIdentifier: 'com.cabohealth.app',
+      marketingVersion: '3.0',
+      buildNumber: '11',
+    },
+    status: 'input-attested-invalidated-pre-provider-post-pin-gate-failure',
+    frozenSource: {
+      commit: '96db06242c418c49b99094bed5eef778d9e63e53',
+      sha256: 'c150b516891a83795b22247b98f16ef54427165811ad7baf2c96893919a24842',
+    },
+    buildInputAuthority: {
+      commit: '279c49bfc5d5f4c9d45b3953a93f1bf86453d718',
+      relativePath: 'build-input-attestation.json',
+      sha256: sha256(inputBytes),
+    },
+    invalidation: {
+      commit: '71c0a98a36e7ce86aab016cc4be05f0e29e708f7',
+      changedPaths: [
+        'tests/build11-rebaseline-contract.test.mjs',
+        'tests/release-command-guard.test.mjs',
+      ],
     },
     providerOperationInitiated: false,
     easBuildId: null,

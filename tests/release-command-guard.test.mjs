@@ -626,22 +626,37 @@ test('historical input attempts remain immutable while build 11 follows its live
     assert.equal(JSON.parse(bytes).candidate.buildNumber, '7');
   }
   const currentRoot = join(projectRoot, 'release/app-store/3.0');
-  const invalidatedAttemptRoot = join(
-    currentRoot,
-    'history/build-11-input-attempt-1-aborted',
-  );
-  const invalidatedAttempt = JSON.parse(readFileSync(
-    join(invalidatedAttemptRoot, 'manifest.json'),
-    'utf8',
-  ));
-  const invalidatedInput = readFileSync(join(invalidatedAttemptRoot, 'build-input-attestation.json'));
-  assert.equal(hash(invalidatedInput), 'e0b888bada5ce1f0d39b408307f3a107562a7007f891bd541d08bb2b4528b4fd');
-  assert.equal(invalidatedAttempt.status, 'input-attested-invalidated-pre-provider-source-drift');
-  assert.equal(invalidatedAttempt.providerOperationInitiated, false);
-  assert.equal(invalidatedAttempt.easBuildId, null);
-  assert.equal(invalidatedAttempt.ipaSha256, null);
-  assert.equal(invalidatedAttempt.easSubmissionId, null);
-  assert.equal(invalidatedAttempt.appleUploadStatus, null);
+  for (const [relativeRoot, expectedAttempt, expectedStatus, expectedSha256] of [
+    [
+      'history/build-11-input-attempt-1-aborted',
+      1,
+      'input-attested-invalidated-pre-provider-source-drift',
+      'e0b888bada5ce1f0d39b408307f3a107562a7007f891bd541d08bb2b4528b4fd',
+    ],
+    [
+      'history/build-11-input-attempt-2-aborted',
+      2,
+      'input-attested-invalidated-pre-provider-post-pin-gate-failure',
+      'f8db7a38cab23030329102d3a2093d01afa416043fd27ce1266ae1b0a9fe15cc',
+    ],
+  ]) {
+    const invalidatedAttemptRoot = join(currentRoot, relativeRoot);
+    const invalidatedAttempt = JSON.parse(readFileSync(
+      join(invalidatedAttemptRoot, 'manifest.json'),
+      'utf8',
+    ));
+    const invalidatedInput = readFileSync(
+      join(invalidatedAttemptRoot, 'build-input-attestation.json'),
+    );
+    assert.equal(hash(invalidatedInput), expectedSha256);
+    assert.equal(invalidatedAttempt.attempt, expectedAttempt);
+    assert.equal(invalidatedAttempt.status, expectedStatus);
+    assert.equal(invalidatedAttempt.providerOperationInitiated, false);
+    assert.equal(invalidatedAttempt.easBuildId, null);
+    assert.equal(invalidatedAttempt.ipaSha256, null);
+    assert.equal(invalidatedAttempt.easSubmissionId, null);
+    assert.equal(invalidatedAttempt.appleUploadStatus, null);
+  }
   const buildInputPath = join(currentRoot, 'build-input-attestation.json');
   const buildArtifactPath = join(currentRoot, 'build-artifact-attestation.json');
   const rcPath = join(currentRoot, 'rc-attestation.json');
@@ -668,6 +683,7 @@ test('historical input attempts remain immutable while build 11 follows its live
     'f4ee8c3da75be23d300b816495649c414f2900efaef9e88294bdc52824c3ed8e',
     '6e75a41633948ebeb3a8d25fb871d2ac23da0872c7709a2fb9035190fefb2215',
     'e0b888bada5ce1f0d39b408307f3a107562a7007f891bd541d08bb2b4528b4fd',
+    'f8db7a38cab23030329102d3a2093d01afa416043fd27ce1266ae1b0a9fe15cc',
   ]) {
     assert.throws(
       () => verifyBuildInputAttestation(projectRoot, obsoleteInputSha256),

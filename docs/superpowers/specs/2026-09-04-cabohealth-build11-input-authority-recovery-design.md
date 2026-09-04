@@ -24,16 +24,26 @@ Its canonical manifest binds the exact candidate, frozen source, authority
 commit, invalidating commit and changed path, and explicit null provider
 identities. It is historical evidence only and cannot authorize a build.
 
+The replacement input authority was later pinned in commit `279c49b` against
+source `96db062` and digest
+`c150b516891a83795b22247b98f16ef54427165811ad7baf2c96893919a24842`.
+Mandatory post-pin gates then exposed two phase-stale test fixtures. Commit
+`71c0a98` corrects only those fixtures, deliberately invalidating that input
+authority before any EAS build or upload. Git history is again preserved: the
+exact replacement bytes move to
+`release/app-store/3.0/history/build-11-input-attempt-2-aborted/`, and its
+canonical manifest records the post-pin gate failure and null provider facts.
+
 ## Recovery authority model
 
-1. Archive attempt 1 and reset the current input pin to `null` while every
+1. Archive invalidated attempts and reset the current input pin to `null` while every
    later pin remains `null`.
 2. Make every required test, verifier, metadata, documentation, and evidence
    routing change before the replacement freeze commit.
 3. Generalize the build-11 phase contract so valid contiguous pre-input,
    input, artifact, RC, and submit-tool states do not require later tracked
    fixes. The EAS CLI legacy pin remains `null`.
-4. Freeze and independently review the new all-null source epoch.
+4. Freeze and independently review each new all-null source epoch.
 5. Use a fresh external mode-`0700` Task 3 recovery evidence directory. Read
    the live production EAS inventory without retaining values, rediscover the
    one valid external mode-`0600` Firebase plist without exposing its path, and
@@ -88,7 +98,9 @@ derives them.
 
 - Attempt 1 SHA-256 remains
   `e0b888bada5ce1f0d39b408307f3a107562a7007f891bd541d08bb2b4528b4fd`.
-- Its history manifest is canonical one-line JSON and says
+- Attempt 2 SHA-256 remains
+  `f8db7a38cab23030329102d3a2093d01afa416043fd27ce1266ae1b0a9fe15cc`.
+- Both history manifests are canonical one-line JSON and say
   `providerOperationInitiated: false` with all provider identities `null`.
 - The refreeze has five `null` pins, no current attestations, and full green
   tests, typecheck, lint, scope, adapter, and diff checks.

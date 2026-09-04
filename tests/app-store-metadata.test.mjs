@@ -465,17 +465,19 @@ test('versioned App Store metadata has a valid phase-neutral 3.0 build 11 author
 });
 
 test('metadata verifier rejects malformed build-11 input-attempt authority history', async (t) => {
-  await t.test('archive drift', () => withReleaseFixture(
-    (root) => mutateJson(
-      root,
-      `${releasePath}/history/build-11-input-attempt-1-aborted/manifest.json`,
-      (manifest) => { manifest.invalidation.changedPaths = []; },
-    ),
-    (result) => {
-      assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /invalidated input authority history must retain the exact canonical archive/i);
-    },
-  ));
+  for (const attempt of [1, 2]) {
+    await t.test(`attempt ${attempt} archive drift`, () => withReleaseFixture(
+      (root) => mutateJson(
+        root,
+        `${releasePath}/history/build-11-input-attempt-${attempt}-aborted/manifest.json`,
+        (manifest) => { manifest.invalidation.changedPaths = []; },
+      ),
+      (result) => {
+        assert.equal(result.status, 1, result.stdout || result.stderr);
+        assert.match(result.stderr, /invalidated input authority history must retain the exact canonical archive/i);
+      },
+    ));
+  }
 });
 
 test('metadata verifier rejects stale or contradictory live ASC evidence', async (t) => {
@@ -1741,7 +1743,7 @@ test('current release instructions retain the current build-11 candidate and its
   assert.match(dataInventory, /Final Apple App Privacy answers must be reconciled against the exact 3\.0\/build 11 signed RC/iu);
   assert.match(dataInventory, /live authority phase—pre-input, input, artifact, RC, or submit-tool—must be determined from the exact current pins and required attestation bytes/iu);
   assert.match(dataInventory, /Build 10 is immutable processed internal-TestFlight history and cannot authorize build 11/iu);
-  assert.match(dataInventory, /Build 11 input attempt 1 is separately archived invalidated-pre-provider source-drift history and cannot authorize a build or make build 11 historical/iu);
+  assert.match(dataInventory, /Build 11 input attempts 1 and 2 are separately archived invalidated-pre-provider authority history:[\s\S]{0,220}Neither attempt contacted EAS, can authorize a build, or makes build 11 historical/iu);
   assert.doesNotMatch(dataInventory, /exact signed 3\.0\/build [67] RC must/iu);
   assert.doesNotMatch(dataInventory, /exact 3\.0\/build [67] signed RC.*still pending/iu);
 
@@ -1787,7 +1789,7 @@ test('metadata verifier rejects build 6 or 7 as the next exact RC authority', as
   for (const [name, mutate] of mutations) {
     await t.test(name, () => withReleaseFixture(mutate, (result) => {
       assert.equal(result.status, 1, `${name} bypassed exact-RC validation`);
-      assert.match(result.stderr, /must name build 11 as the phase-neutral exact RC, with build 8 immutable, build 9 aborted pre-provider, build 10 processed internal-TestFlight history, and build 11 input attempt 1 separately invalidated/iu);
+      assert.match(result.stderr, /must name build 11 as the phase-neutral exact RC, with build 8 immutable, build 9 aborted pre-provider, build 10 processed internal-TestFlight history, and build 11 input attempts 1 and 2 separately invalidated/iu);
     }));
   }
 });

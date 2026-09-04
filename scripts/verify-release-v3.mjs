@@ -81,6 +81,12 @@ const EXACT_HISTORICAL_INPUT_AUTHORITY_EVIDENCE = [
     trackedHistoryRoot: 'release/app-store/3.0/history/build-11-input-attempt-1-aborted',
     providerOperationInitiated: false,
   },
+  {
+    attempt: 2,
+    status: 'input-attested-invalidated-pre-provider-post-pin-gate-failure',
+    trackedHistoryRoot: 'release/app-store/3.0/history/build-11-input-attempt-2-aborted',
+    providerOperationInitiated: false,
+  },
 ];
 const EXACT_ASC_REVIEW_GUIDELINES = ['1.4.1', '2.1', '4.1'];
 const EXACT_AUTHORITY_SHA256 = Object.freeze({
@@ -88,7 +94,7 @@ const EXACT_AUTHORITY_SHA256 = Object.freeze({
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
   'constants/config.ts': 'a2b8453caa2f6be0c065f226bf84edc59e12b9b3a42523321fcb173388ec8a90',
   'constants/publicMiniapps.ts': '7306d82fd7de694b16de85401a8aab431c5408037f5038ce95fc5f79edef9dda',
-  'release/app-store/3.0/release-manifest.json': 'dc3bf3a4a3cef10c50ad7756883d3d2bb27905ae41954d8baf4687893d2b6c67',
+  'release/app-store/3.0/release-manifest.json': 'd30632d8738b734aa2499b07d845a4fa637f09817decbbd69e2e1050becf813a',
   'release/app-store/3.0/age-rating.json': '2e0b8345d7f223dc28b97539c31470eaa5e57101dc564948b31b73211bf15a89',
 });
 const PENDING_APP_PRIVACY_SHA256 = '87ea881af75bebeb27945f6fd1bc35daec189597b81510ec498aeacddce1ab30';

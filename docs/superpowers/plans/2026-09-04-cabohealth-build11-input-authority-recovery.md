@@ -35,6 +35,24 @@ Binding design:
 - Run every post-pin gate without any later tracked edit. Stop before the first
   EAS build if identity is ambiguous or any authority check fails.
 
+## Task 2A: Recover the replacement post-pin gate failure
+
+- Preserve the correct replacement pin commit `279c49b` and the test-only
+  invalidation commit `71c0a98`; do not reset or amend Git history.
+- Archive the exact replacement attestation under
+  `history/build-11-input-attempt-2-aborted/` with a canonical manifest that
+  records the mandatory post-pin gate failure, both changed test paths, and
+  explicit null provider identities.
+- Reset only the current input pin, remove the current attestation, and add
+  attempt 2 to the separate historical input-authority evidence list.
+- Make synthetic authority fixtures start from five explicit null pins and
+  make live-state tests accept only a valid contiguous current phase.
+- Update both verifiers, negative tests, and release records for the two exact
+  invalidated attempts; run all gates and independently review the refreeze.
+- Produce a fresh candidate from the new source epoch, pin it in another exact
+  two-path commit, and require every post-pin gate to pass before the sole EAS
+  build is started.
+
 ## Frozen continuation after Task 2
 
 - Keep the release manifest, age baseline, accessibility/rights/declaration

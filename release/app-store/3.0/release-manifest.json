@@ -134,6 +134,12 @@
       "status": "input-attested-invalidated-pre-provider-source-drift",
       "trackedHistoryRoot": "release/app-store/3.0/history/build-11-input-attempt-1-aborted",
       "providerOperationInitiated": false
+    },
+    {
+      "attempt": 2,
+      "status": "input-attested-invalidated-pre-provider-post-pin-gate-failure",
+      "trackedHistoryRoot": "release/app-store/3.0/history/build-11-input-attempt-2-aborted",
+      "providerOperationInitiated": false
     }
   ],
   "ownerSeller": {
