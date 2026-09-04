@@ -40,10 +40,10 @@ function assertBuild11AuthorityPhase({ guard, attestations }) {
     adapterPin,
   } = currentAuthorityPins(guard);
   const phases = [
-    ['input', buildInputPin, attestations.input],
-    ['artifact', buildArtifactPin, attestations.artifact],
-    ['rc', rcPin, attestations.rc],
-    ['submit-tool', adapterPin, null],
+    ['input', buildInputPin, attestations.input, true],
+    ['artifact', buildArtifactPin, attestations.artifact, true],
+    ['rc', rcPin, attestations.rc, true],
+    ['submit-tool', adapterPin, null, false],
   ];
   assert.equal(easPin, null, 'the legacy EAS CLI pin must remain null in every phase');
 
@@ -55,10 +55,13 @@ function assertBuild11AuthorityPhase({ guard, attestations }) {
     }
   }
   for (let index = 0; index < phases.length; index += 1) {
-    const [phase, pin, bytes] = phases[index];
+    const [phase, pin, bytes, requiresAttestation] = phases[index];
     if (index < firstPending) {
       assert.notEqual(pin, null, `${phase} requires its reviewed pin`);
-      if (bytes !== null) assert.equal(sha256(bytes), pin, `${phase} pin must bind exact bytes`);
+      if (requiresAttestation) {
+        assert.notEqual(bytes, null, `${phase} requires its attestation bytes`);
+        assert.equal(sha256(bytes), pin, `${phase} pin must bind exact bytes`);
+      }
     } else {
       assert.equal(pin, null, `${phase} and every later phase must remain unpinned`);
       if (bytes !== null) assert.fail(`${phase} evidence cannot precede its reviewed pin`);
@@ -220,6 +223,18 @@ test('build 11 authority accepts every contiguous phase and rejects partial or m
     guard: inputGuard,
     attestations: { input: artifact, artifact: null, rc: null },
   }), /input pin must bind exact bytes/u);
+  assert.throws(() => assertBuild11AuthorityPhase({
+    guard: inputGuard,
+    attestations: { input: null, artifact: null, rc: null },
+  }), /input requires its attestation bytes/u);
+  assert.throws(() => assertBuild11AuthorityPhase({
+    guard: artifactGuard,
+    attestations: { input, artifact: null, rc: null },
+  }), /artifact requires its attestation bytes/u);
+  assert.throws(() => assertBuild11AuthorityPhase({
+    guard: rcGuard,
+    attestations: { input, artifact, rc: null },
+  }), /rc requires its attestation bytes/u);
   assert.throws(() => assertBuild11AuthorityPhase({
     guard: withAuthorityPin(guard, 'PINNED_EAS_CLI', "'QQ=='"),
     attestations: { input: null, artifact: null, rc: null },
