@@ -45,6 +45,7 @@ function fail() {
 function validateBuild(bytes, buildId) {
   const value = parseJsonBytes(bytes, CODE);
   const locator = value.artifacts?.buildUrl;
+  const error = value.error === undefined ? null : value.error;
   let url;
   try {
     url = new URL(locator);
@@ -60,6 +61,7 @@ function validateBuild(bytes, buildId) {
     || value.app?.slug !== EAS_PROJECT_SLUG
     || value.app?.ownerAccount?.name !== EAS_ACCOUNT
     || !isCanonicalUtc(value.completedAt)
+    || error !== null
     || url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.hash !== '') fail();
   return { locator: url.href, reviewedAt: value.completedAt };
 }

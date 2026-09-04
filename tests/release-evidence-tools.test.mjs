@@ -598,6 +598,68 @@ test('artifact downloader validates identity before a bounded ZIP download and h
   assert.equal(readFileSync(invalidZipOutput, 'utf8'), 'preserve-existing-ipa');
 });
 
+test('artifact downloader accepts omitted EAS error but rejects every non-null error before fetch', async (t) => {
+  const { downloadEasArtifact } = await import('../scripts/release-eas-artifact-downloader.mjs');
+  const ipaBytes = Buffer.from('504b030414000000', 'hex');
+
+  const fixture = (prefix) => {
+    const privateRoot = ownedDirectory(`cabohealth-build11-${prefix}-private-`);
+    const rcRoot = join(privateRoot, 'rc-build-11');
+    mkdirSync(rcRoot, { mode: 0o700 });
+    chmodSync(rcRoot, 0o700);
+    const evidence = sddEvidenceRoot('task-4');
+    t.after(() => {
+      rmSync(privateRoot, { recursive: true, force: true });
+      rmSync(evidence.base, { recursive: true, force: true });
+    });
+    return {
+      outputPath: join(rcRoot, 'CaboHealth-3.0-build-11.ipa'),
+      associationOutputPath: join(evidence.path, 'eas-artifact-association.json'),
+    };
+  };
+
+  const omittedBuild = buildView();
+  delete omittedBuild.error;
+  const omitted = fixture('error-omitted');
+  let omittedFetchCount = 0;
+  await downloadEasArtifact({
+    stdinBytes: Buffer.from(JSON.stringify(omittedBuild)),
+    buildId: BUILD_ID,
+    ...omitted,
+    now: () => NOW,
+    fetchImpl: async () => {
+      omittedFetchCount += 1;
+      return new Response(ipaBytes, { status: 200 });
+    },
+  });
+  assert.equal(omittedFetchCount, 1);
+  assert.equal(existsSync(omitted.outputPath), true);
+  assert.equal(existsSync(omitted.associationOutputPath), true);
+
+  for (const [name, error] of [
+    ['provider error', { errorCode: 'EAS_BUILD_FAILED', message: 'Build failed.' }],
+    ['malformed provider error', { message: 'Build failed.' }],
+    ['non-object provider error', 'EAS_BUILD_FAILED'],
+  ]) {
+    await t.test(name, async () => {
+      const invalid = fixture(name.replaceAll(' ', '-'));
+      let fetchCount = 0;
+      await assert.rejects(downloadEasArtifact({
+        stdinBytes: Buffer.from(JSON.stringify({ ...buildView(), error })),
+        buildId: BUILD_ID,
+        ...invalid,
+        fetchImpl: async () => {
+          fetchCount += 1;
+          return new Response(ipaBytes, { status: 200 });
+        },
+      }), /EAS_ARTIFACT_DOWNLOAD_FAILED/u);
+      assert.equal(fetchCount, 0);
+      assert.equal(existsSync(invalid.outputPath), false);
+      assert.equal(existsSync(invalid.associationOutputPath), false);
+    });
+  }
+});
+
 test('artifact producer binds the canonical association and exact six-file build 11 inventory', async (t) => {
   const { createBuildArtifactAttestation } = await import('../scripts/create-build-artifact-attestation.mjs');
   const privateRoot = ownedDirectory('cabohealth-artifact-private-');
