@@ -160,7 +160,7 @@ function assertBuild10ProseIsHistorical(relativePath, source) {
   return references.length;
 }
 
-test('the refrozen current candidate is pre-input while the invalidated attempt is separate history', () => {
+test('the refrozen current candidate has one valid contiguous phase while the invalidated attempt is separate history', () => {
   const app = JSON.parse(readFileSync(join(root, 'app.json'), 'utf8'));
   const config = readFileSync(join(root, 'constants/config.ts'), 'utf8');
   const guard = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
@@ -176,13 +176,17 @@ test('the refrozen current candidate is pre-input while the invalidated attempt 
   const inputPath = join(root, 'release/app-store/3.0/build-input-attestation.json');
   const artifactPath = join(root, 'release/app-store/3.0/build-artifact-attestation.json');
   const rcPath = join(root, 'release/app-store/3.0/rc-attestation.json');
-  assert.equal(assertBuild11AuthorityPhase({
+  const readOptionalAttestation = (path) => (
+    existsSync(path) ? readFileSync(path) : null
+  );
+  assert.match(assertBuild11AuthorityPhase({
     guard,
-    attestations: { input: null, artifact: null, rc: null },
-  }), 'pre-input');
-  assert.equal(existsSync(inputPath), false, 'the current input attestation must be absent');
-  assert.equal(existsSync(artifactPath), false, 'the current artifact attestation must be absent');
-  assert.equal(existsSync(rcPath), false, 'the current RC attestation must be absent');
+    attestations: {
+      input: readOptionalAttestation(inputPath),
+      artifact: readOptionalAttestation(artifactPath),
+      rc: readOptionalAttestation(rcPath),
+    },
+  }), /^(?:pre-input|input|artifact|rc|submit-tool)$/u);
   assert.deepEqual(manifest.historicalInputAuthorityEvidence, [{
     attempt: 1,
     status: 'input-attested-invalidated-pre-provider-source-drift',
