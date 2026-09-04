@@ -575,7 +575,7 @@ test('artifact verification compares complete plist content across XML and binar
   assert.equal(googleServicesPlistsHaveSameContent(xml, Buffer.from('not-a-plist')), false);
 });
 
-test('historical input attempts remain immutable while build 11 refreezes with no live authority', async () => {
+test('historical input attempts remain immutable while build 11 follows its live authority phase', async () => {
   const {
     verifyBuildInputAttestation,
   } = await import(guardPath);
@@ -587,10 +587,6 @@ test('historical input attempts remain immutable while build 11 refreezes with n
     adapterPin,
   } = currentReleasePins();
   assert.equal(easPin, null);
-  assert.deepEqual(
-    { buildInputPin, buildArtifactPin, rcPin, easPin, adapterPin },
-    { buildInputPin: null, buildArtifactPin: null, rcPin: null, easPin: null, adapterPin: null },
-  );
   let sawUnpinnedPhase = false;
   for (const pin of [buildInputPin, buildArtifactPin, rcPin, adapterPin]) {
     if (pin === null) sawUnpinnedPhase = true;

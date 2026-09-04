@@ -243,9 +243,18 @@ test('build 11 authority accepts every contiguous phase and rejects partial or m
   const input = Buffer.from('{"phase":"input"}\n');
   const artifact = Buffer.from('{"phase":"artifact"}\n');
   const rc = Buffer.from('{"phase":"rc"}\n');
-  const pin = (name, bytes) => withAuthorityPin(guard, name, `'${sha256(bytes)}'`);
-  const preInputGuard = withAuthorityPin(guard, 'BUILD_INPUT_ATTESTATION_SHA256', 'null');
-  const inputGuard = pin('BUILD_INPUT_ATTESTATION_SHA256', input);
+  const preInputGuard = [
+    'BUILD_INPUT_ATTESTATION_SHA256',
+    'BUILD_ARTIFACT_ATTESTATION_SHA256',
+    'RC_ATTESTATION_SHA256',
+    'PINNED_EAS_CLI',
+    'PINNED_APP_STORE_SUBMIT_ADAPTER',
+  ].reduce((source, name) => withAuthorityPin(source, name, 'null'), guard);
+  const inputGuard = withAuthorityPin(
+    preInputGuard,
+    'BUILD_INPUT_ATTESTATION_SHA256',
+    `'${sha256(input)}'`,
+  );
   const artifactGuard = withAuthorityPin(
     inputGuard,
     'BUILD_ARTIFACT_ATTESTATION_SHA256',
@@ -263,7 +272,11 @@ test('build 11 authority accepts every contiguous phase and rejects partial or m
     assert.equal(assertBuild11AuthorityPhase({ guard: phaseGuard, attestations }), expected);
   }
   assert.throws(() => assertBuild11AuthorityPhase({
-    guard: withAuthorityPin(guard, 'BUILD_ARTIFACT_ATTESTATION_SHA256', `'${sha256(artifact)}'`),
+    guard: withAuthorityPin(
+      preInputGuard,
+      'BUILD_ARTIFACT_ATTESTATION_SHA256',
+      `'${sha256(artifact)}'`,
+    ),
     attestations: { input: null, artifact, rc: null },
   }), /every later phase must remain unpinned/u);
   assert.throws(() => assertBuild11AuthorityPhase({
