@@ -31,7 +31,7 @@ const { stringify: stringifyPlist } = require('simple-plist');
 const EXPECTED = Object.freeze({
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '11',
+  buildNumber: '12',
   teamIdentifier: 'DQ8PH2DZ3R',
   firebaseProjectId: 'cabohealth-owner-prod',
   appAttestEnvironment: 'production',

@@ -1,10 +1,10 @@
-# App Review Notes — CaboHealth 3.0 (build 11)
+# App Review Notes — CaboHealth 3.0 (build 12)
 
-Freeze role: **PHASE-CONTROLLED PENDING FORM — DO NOT PASTE YET.** This wrapper is the exact pending baseline for pre-input/input and the pre-finalization artifact phase. The final two-file metadata transition removes this wrapper and the heading below without changing one byte of the build-11 body. Final live completion comes only from the RC-bound App Store Connect evidence and `reviewNotesSha256`, never from this pending wording.
+Freeze role: **PHASE-CONTROLLED PENDING FORM — DO NOT PASTE YET.** This wrapper is the exact pending baseline for pre-input/input and the pre-finalization artifact phase. The final two-file metadata transition removes this wrapper and the heading below without changing one byte of the build-12 body. Final live completion comes only from the RC-bound App Store Connect evidence and `reviewNotesSha256`, never from this pending wording.
 
 ## Paste-ready body after all gates are resolved
 
-CaboHealth 3.0 (build 11): two public wellness/editorial resources plus protected Client Resources.
+CaboHealth 3.0 (build 12): two public wellness/editorial resources plus protected Client Resources.
 
 This app is submitted by Ivan Guaderrama, an individual Apple Developer Program member. Cabo Health is a trade brand owned and operated by Ivan Guaderrama and is not represented as a separate legal entity.
 

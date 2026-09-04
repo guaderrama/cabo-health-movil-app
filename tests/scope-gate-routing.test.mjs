@@ -18,7 +18,7 @@ test('the canonical scope gate verifies the complete RC v3 package', () => {
   const output = `${result.stdout}${result.stderr}`;
 
   assert.equal(result.status, 0, output);
-  assert.match(output, /Release 3\.0\/build 11 verified: phase-neutral authority sequence configured\./u);
+  assert.match(output, /Release 3\.0\/build 12 verified: phase-neutral authority sequence configured\./u);
   assert.match(output, /App Store metadata authority verified; submission remains blocked\./u);
 });
 

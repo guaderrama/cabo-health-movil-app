@@ -41,12 +41,20 @@ exactly attested, but neither has claimed App Store Connect processing evidence
 and both are obsolete for the external-HTTPS source. Build 8 was then built,
 exactly attested, uploaded, observed Ready to Submit, and made available to the
 existing internal group; it is immutable obsolete history for the WebView
-subframe fix and cannot authorize build 11. Build 10 was subsequently built,
-attested, uploaded, and processed for internal TestFlight; it is immutable history and cannot authorize build 11. Build 11 input attempt 1 was invalidated by tracked source drift and attempt 2 by mandatory post-pin gate failures in phase-stale tests; both occurred before any provider operation and remain separately archived historical input authority only. CaboHealth 3.0 build 11 is the current candidate. Its live authority phase—pre-input, input, artifact, RC, or submit-tool—must be determined from the exact current pins and required attestation bytes. This document does not assert a particular live phase or infer any provider result, physical-device QA, submission, or Apple approval.
+subframe fix. Build 10 was subsequently built, attested, uploaded, and processed
+for internal TestFlight. Build 11 input attempts 1 and 2 remain separately
+archived invalidated-pre-provider authority history. Its final source was then
+built and exactly attested in EAS, but a mandatory post-artifact-pin gate exposed
+a phase-stale synthetic test fixture before upload. Build 11 is immutable
+non-uploaded history and cannot authorize build 12. CaboHealth 3.0 build 12 is
+the current candidate. Its live authority phase—pre-input, input, artifact, RC,
+or submit-tool—must be determined from the exact current pins and required
+attestation bytes. This document does not assert a particular live phase or
+infer any provider result, physical-device QA, submission, or Apple approval.
 
 ## Resolution mapping for the new candidate
 
-| Prior issue | New 3.0/build 11 candidate response | Remaining proof before resubmission |
+| Prior issue | New 3.0/build 12 candidate response | Remaining proof before resubmission |
 | --- | --- | --- |
 | Brand relationship / Guideline 4.1 | Truthfully identifies Ivan Guaderrama as the Individual seller and Cabo Health as his owner-operated trade brand. | Ivan signs the scoped ownership declaration and attaches current domain/content-rights evidence. |
 | Advisory resource failed to open | The legacy advisory resource is excluded from the release binary. The initial catalog contains Healthy Recipes, CaboHealth Clinic Guide, and protected Client Resources; the validated owner-managed catalog may also publish independently reviewed third-party HTTPS entries under the documented Guideline 4.7 policy. | Clean-install and update-path physical-device QA; verify every active reviewed destination from Mexico and the United States. |

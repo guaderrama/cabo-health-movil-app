@@ -2,7 +2,7 @@
 
 Authority: **IMMUTABLE FREEZE-TIME BASELINE.** The answers and conservative 16+ / legacy 17+ projection below are build-input requirements, not a mutable live-completion checklist. This file and `age-rating.json` are never edited after the input pin. The final saved Apple result is authoritative only through the RC-bound private App Store Connect evidence referenced by `rc-attestation.json`; region-specific Apple results may vary.
 
-Status: **16+ / LEGACY 17+ RECONFIRMATION REQUIRED.** App Store Connect previously saved 9+, but that result is historical and cannot be reused for build 11. The owner-managed catalog can display third-party HTTPS destinations in an embedded WebView, so the current questionnaire must truthfully declare Unrestricted Web Access.
+Status: **16+ / LEGACY 17+ RECONFIRMATION REQUIRED.** App Store Connect previously saved 9+, but that result is historical and cannot be reused for build 12. The owner-managed catalog can display third-party HTTPS destinations in an embedded WebView, so the current questionnaire must truthfully declare Unrestricted Web Access.
 
 Apple currently defines Unrestricted Web Access as allowing users to navigate to webpages within the app, including embedded browser functionality. Its current global rating table maps that capability to 16+, while the table for operating systems earlier than version 26 maps it to 17+. Sources verified 2026-08-28:
 

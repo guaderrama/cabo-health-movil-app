@@ -73,6 +73,14 @@ const EXACT_HISTORICAL_CANDIDATE_EVIDENCE = [
     trackedHistoryRoot: 'release/app-store/3.0/history/build-10',
     privateHistoryRoot: 'release/private/rc-build-10',
   },
+  {
+    marketingVersion: '3.0',
+    buildNumber: '11',
+    status: 'eas-finished-attested-not-uploaded-invalidated-by-post-pin-gate-failure',
+    appStoreObserved: false,
+    trackedHistoryRoot: 'release/app-store/3.0/history/build-11',
+    privateHistoryRoot: 'release/private/rc-build-11',
+  },
 ];
 const EXACT_HISTORICAL_INPUT_AUTHORITY_EVIDENCE = [
   {
@@ -90,18 +98,18 @@ const EXACT_HISTORICAL_INPUT_AUTHORITY_EVIDENCE = [
 ];
 const EXACT_ASC_REVIEW_GUIDELINES = ['1.4.1', '2.1', '4.1'];
 const EXACT_AUTHORITY_SHA256 = Object.freeze({
-  'app.json': '2498a015b7ec5b266ccccbb71d2a6d47cfe17184a85aa0b03d89fe32bd801601',
+  'app.json': '24b1e958d8867f66158af415369eefb4e168f378c40ca56c22924a9a9a21369c',
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
-  'constants/config.ts': 'a2b8453caa2f6be0c065f226bf84edc59e12b9b3a42523321fcb173388ec8a90',
+  'constants/config.ts': '5e5e48764adff924880b5b4811419570ad0a7b28c9b03bd10774c498750c1d65',
   'constants/publicMiniapps.ts': '7306d82fd7de694b16de85401a8aab431c5408037f5038ce95fc5f79edef9dda',
-  'release/app-store/3.0/release-manifest.json': 'd30632d8738b734aa2499b07d845a4fa637f09817decbbd69e2e1050becf813a',
+  'release/app-store/3.0/release-manifest.json': '45d9795648f41f3f73edc1fa42c855aba8301e392692f64624d95df093cc59b2',
   'release/app-store/3.0/age-rating.json': '2e0b8345d7f223dc28b97539c31470eaa5e57101dc564948b31b73211bf15a89',
 });
 const PENDING_APP_PRIVACY_SHA256 = '87ea881af75bebeb27945f6fd1bc35daec189597b81510ec498aeacddce1ab30';
 const FINAL_APP_PRIVACY_SHA256 = '51287eb24455e64ce605bcd0b896d025f236f53cd1c2e2c27014a079e1192862';
-const PENDING_REVIEW_NOTES_SHA256 = 'f7c7e2eb20b017351772102ed94994645919e9e8c8ce009893fcbc9cd0d1ab43';
-const FINAL_REVIEW_NOTES_SHA256 = '81d663d0a3bde107e90de96ed32d2a851af7a1339658195d2a9189c7de0823d7';
-const PENDING_SCREENSHOTS_MANIFEST_SHA256 = '8a74d7a7dcaa5951de0b1c8094aaa6ac24e0c697732bb9c10300a3a3e41f6de5';
+const PENDING_REVIEW_NOTES_SHA256 = '13ef12a3b661275975cfaa612d0d2205787b88b5d7beab0bfebe6bdc6b7d7692';
+const FINAL_REVIEW_NOTES_SHA256 = 'f40830ac93e2a5a302e357a160ebe37776eeb1b604113df4a8c808a1d85523de';
+const PENDING_SCREENSHOTS_MANIFEST_SHA256 = '3536da50da96c4e45e016b36afac98ef7eff47814e9af4b8c22d97b1b07c9e28';
 
 const PHASE_PIN_RULES = Object.freeze([
   Object.freeze({
@@ -206,7 +214,7 @@ export function deriveReleaseAuthorityPhase(files) {
     ],
   ]);
   if (pins.PINNED_EAS_CLI !== null) {
-    errors.push('legacy PINNED_EAS_CLI must remain null in every build-11 phase');
+    errors.push('legacy PINNED_EAS_CLI must remain null in every build-12 phase');
   }
 
   let sawNull = false;
@@ -365,7 +373,7 @@ function verifyFinalScreenshotPhaseBinding(files, phaseTruth, errors) {
     }
     throw new Error('SCREENSHOTS_FINAL_PHASE_INVALID');
   } catch {
-    errors.push('Final screenshot authority must contain the exact 16-capture build-11 schema and bind the live artifact or RC phase');
+    errors.push('Final screenshot authority must contain the exact 16-capture build-12 schema and bind the live artifact or RC phase');
   }
 }
 
@@ -430,9 +438,9 @@ export function verifyCapturedReleaseV3(files) {
 
   if (appJson && (
     appJson.expo?.version !== '3.0'
-    || appJson.expo?.ios?.buildNumber !== '11'
+    || appJson.expo?.ios?.buildNumber !== '12'
   )) {
-    errors.push('app.json must remain 3.0/build 11 after the build-11 rebaseline');
+    errors.push('app.json must remain 3.0/build 12 after the build-12 rebaseline');
   }
   const productionProfile = easJson?.build?.production;
   if (!hasExactKeys(productionProfile, ['environment', 'node', 'env', 'ios'])
@@ -445,8 +453,8 @@ export function verifyCapturedReleaseV3(files) {
     errors.push('eas.json production must pin environment production, Node 22.22.3, APP_ENV production, and m-medium');
   }
   if (!/version:\s*['"]3\.0['"]/u.test(config)
-    || !/buildNumber:\s*['"]11['"]/u.test(config)) {
-    errors.push('constants/config.ts must remain 3.0/build 11 after the build-11 rebaseline');
+    || !/buildNumber:\s*['"]12['"]/u.test(config)) {
+    errors.push('constants/config.ts must remain 3.0/build 12 after the build-12 rebaseline');
   }
 
   const sourceSlugs = extractPublicSlugs(publicSource);
@@ -771,8 +779,8 @@ export function verifyCapturedReleaseV3(files) {
       ageRating: 'pending-owner-reconfirmation-and-app-store-recalculation',
       privacyMapping: 'pending-final-linkage-category-review-and-save',
       brandAndContentRights: 'pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis',
-      exactReleaseCandidate: 'build-11-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
-      testFlight: 'builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
+      exactReleaseCandidate: 'build-12-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
+      testFlight: 'builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-eas-finished-attested-not-uploaded-history-build-12-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
       screenshots: 'pending-exact-rc-capture',
       accessibilityLabels: 'pending-exact-rc-evidence',
       appStoreConnect: 'pending-final-save',
@@ -790,12 +798,12 @@ export function verifyCapturedReleaseV3(files) {
     }
 
     if (manifest.candidate?.marketingVersion !== '3.0'
-      || manifest.candidate?.buildNumber !== '11'
+      || manifest.candidate?.buildNumber !== '12'
       || manifest.candidate?.status !== 'authority-sequence-configured'
       || manifest.candidate?.appJsonUpdated !== true
       || manifest.candidate?.configUpdated !== true
       || manifest.candidate?.liveAuthorityPhaseSource !== 'release-command-guard-pins-and-required-attestation-bytes') {
-      errors.push('candidate must retain the phase-neutral 3.0/build 11 identity and live authority source');
+      errors.push('candidate must retain the phase-neutral 3.0/build 12 identity and live authority source');
     }
     const asc = manifest.ascEvidence;
     if (asc?.observedAt !== '2026-08-27T20:35:04.000Z'
@@ -813,10 +821,10 @@ export function verifyCapturedReleaseV3(files) {
       || asc?.latestReviewDate !== '2026-02-24'
       || !sameArray(asc?.latestReviewGuidelines, EXACT_ASC_REVIEW_GUIDELINES)
       || asc?.informationRequested !== true) {
-      errors.push('dated ASC read-only evidence must retain its exact build-8-era snapshot without becoming current build-11 authority');
+      errors.push('dated ASC read-only evidence must retain its exact build-8-era snapshot without becoming current build-12 authority');
     }
     if (!sameJson(manifest.historicalCandidateEvidence, EXACT_HISTORICAL_CANDIDATE_EVIDENCE)) {
-      errors.push('release history must retain builds 4 through 8 as obsolete-source evidence, build 9 as aborted pre-provider, build 10 as processed internal-TestFlight history, and build 11 as the sole new candidate');
+      errors.push('release history must retain builds 4 through 8 as obsolete-source evidence, build 9 as aborted pre-provider, build 10 as processed internal-TestFlight history, and build 11 as EAS-finished attested non-uploaded history');
     }
     if (!sameJson(
       manifest.historicalInputAuthorityEvidence,
@@ -1365,7 +1373,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  process.stdout.write('Release 3.0/build 11 verified: phase-neutral authority sequence configured.\n');
+  process.stdout.write('Release 3.0/build 12 verified: phase-neutral authority sequence configured.\n');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

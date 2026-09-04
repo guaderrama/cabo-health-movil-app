@@ -110,7 +110,7 @@ function buildReconciliationEvidence(overrides = {}) {
     buildProfile: 'production',
     bundleIdentifier: 'com.cabohealth.app',
     marketingVersion: '3.0',
-    buildNumber: '11',
+    buildNumber: '12',
     artifactAvailable: true,
     createdAt: '2026-08-30T11:00:00.000Z',
     completedAt: '2026-08-30T11:10:00.000Z',
@@ -193,7 +193,7 @@ function copyAuthorityWorkingFiles(source, destination) {
     'scripts/release-command-guard.mjs',
     'release/app-store/3.0/build-input-attestation.json',
     'release/app-store/3.0/build-artifact-attestation.json',
-    'release/private/rc-build-11/CaboHealth-3.0-build-11.ipa',
+    'release/private/rc-build-12/CaboHealth-3.0-build-12.ipa',
   ]) {
     writeFileSync(
       join(destination.projectRoot, relativePath),
@@ -201,7 +201,7 @@ function copyAuthorityWorkingFiles(source, destination) {
     );
   }
   chmodSync(
-    join(destination.projectRoot, 'release/private/rc-build-11/CaboHealth-3.0-build-11.ipa'),
+    join(destination.projectRoot, 'release/private/rc-build-12/CaboHealth-3.0-build-12.ipa'),
     0o600,
   );
 }
@@ -210,7 +210,7 @@ async function currentLocalIpaAuthority(t, {
   sourceTreeSha256,
   combinedHistory = false,
   laterPhase = null,
-  trackedSource = 'frozen build 11 source\n',
+  trackedSource = 'frozen build 12 source\n',
   artifactAssociationReviewedAt = '2026-08-30T10:30:00.000Z',
   artifactReviewedAt = '2026-08-30T11:00:00.000Z',
 } = {}) {
@@ -227,7 +227,7 @@ async function currentLocalIpaAuthority(t, {
   writeFileSync(join(releaseRoot, 'screenshots-manifest.json'), '{"status":"pending"}\n');
   writeFileSync(join(releaseRoot, 'app-privacy.json'), '{"status":"pending"}\n');
   writeFileSync(join(releaseRoot, 'review-notes.md'), 'Pending review notes.\n');
-  commitAll(project, 'freeze build 11 source');
+  commitAll(project, 'freeze build 12 source');
   const sourceCommit = git(project, ['rev-parse', 'HEAD']);
   const { computeTrackedSourceSha256 } = await import('../scripts/release-command-guard.mjs');
   const exactSourceTreeSha256 = computeTrackedSourceSha256(project);
@@ -236,7 +236,7 @@ async function currentLocalIpaAuthority(t, {
     artifactKind: 'cabohealth-ios-build-input-attestation',
     candidate: {
       appleId: '6758285327', bundleIdentifier: 'com.cabohealth.app',
-      marketingVersion: '3.0', buildNumber: '11',
+      marketingVersion: '3.0', buildNumber: '12',
     },
     sourceCommit,
     sourceTreeSha256: sourceTreeSha256 ?? exactSourceTreeSha256,
@@ -283,7 +283,7 @@ async function currentLocalIpaAuthority(t, {
     embeddedProvisioningProfileSha256: '1'.repeat(64),
     reviewedAt: artifactReviewedAt,
   };
-  const privateRoot = join(project, 'release/private/rc-build-11');
+  const privateRoot = join(project, 'release/private/rc-build-12');
   mkdirSync(privateRoot, { recursive: true, mode: 0o700 });
   const inputBytes = Buffer.from(`${JSON.stringify(input)}\n`);
   const inputSha256 = hash(inputBytes);
@@ -292,12 +292,12 @@ async function currentLocalIpaAuthority(t, {
   }
   writeFileSync(join(releaseRoot, 'build-input-attestation.json'), inputBytes, { mode: 0o600 });
   writeFileSync(join(project, 'scripts/release-command-guard.mjs'), authorityGuard({ inputSha256 }));
-  if (!combinedHistory) commitAll(project, 'pin build 11 input authority');
+  if (!combinedHistory) commitAll(project, 'pin build 12 input authority');
 
   const artifactBytes = Buffer.from(`${JSON.stringify(artifact)}\n`);
   const artifactSha256 = hash(artifactBytes);
   writeFileSync(join(releaseRoot, 'build-artifact-attestation.json'), artifactBytes, { mode: 0o600 });
-  const ipaPath = join(privateRoot, 'CaboHealth-3.0-build-11.ipa');
+  const ipaPath = join(privateRoot, 'CaboHealth-3.0-build-12.ipa');
   writeFileSync(ipaPath, ipaBytes, { mode: 0o600 });
   chmodSync(ipaPath, 0o600);
   writeFileSync(join(project, 'scripts/release-command-guard.mjs'), authorityGuard({
@@ -305,7 +305,7 @@ async function currentLocalIpaAuthority(t, {
     artifactSha256,
   }));
   commitAll(project, combinedHistory
-    ? 'forged combined build authority' : 'pin build 11 artifact authority');
+    ? 'forged combined build authority' : 'pin build 12 artifact authority');
   let rcSha256 = null;
   let submitAdapterPin = null;
   if (['rc', 'submit-tool', 'gap-submit'].includes(laterPhase)) {
@@ -324,7 +324,7 @@ async function currentLocalIpaAuthority(t, {
       artifactSha256,
       rcSha256,
     }));
-    commitAll(project, 'pin build 11 rc authority');
+    commitAll(project, 'pin build 12 rc authority');
   }
   if (laterPhase === 'submit-tool' || laterPhase === 'gap-submit') {
     submitAdapterPin = Buffer.from('{"entry":"reviewed-submit-adapter"}').toString('base64');
@@ -334,7 +334,7 @@ async function currentLocalIpaAuthority(t, {
       rcSha256,
       submitAdapterPin,
     }));
-    commitAll(project, 'pin build 11 submit adapter authority');
+    commitAll(project, 'pin build 12 submit adapter authority');
   }
   return {
     projectRoot: project,
@@ -465,7 +465,7 @@ function forgeWorkingAuthority(authority, options) {
     artifactBytes,
   );
   writeFileSync(
-    join(authority.projectRoot, 'release/private/rc-build-11/CaboHealth-3.0-build-11.ipa'),
+    join(authority.projectRoot, 'release/private/rc-build-12/CaboHealth-3.0-build-12.ipa'),
     ipaBytes,
   );
   writeFileSync(
@@ -744,7 +744,7 @@ test('attempt markers and logs are explicit mode 0600 and raw evidence uses leng
   ]);
   assert.deepEqual(marker.candidate, {
     bundleIdentifier: 'com.cabohealth.app', marketingVersion: '3.0',
-    buildNumber: '11', sourceCommit: SOURCE_COMMIT,
+    buildNumber: '12', sourceCommit: SOURCE_COMMIT,
   });
   assert.equal(marker.state, 'armed');
   assert.notEqual(rawEvidenceSha256(Buffer.from('ab'), Buffer.from('c')),
@@ -1216,7 +1216,7 @@ test('read-only reconciliation binds canonical evidence and preserves the raw di
     buildProfile: 'production',
     bundleIdentifier: 'com.cabohealth.app',
     marketingVersion: '3.0',
-    buildNumber: '11',
+    buildNumber: '12',
     artifactAvailable: false,
     createdAt: '2026-08-30T11:00:00.000Z',
     completedAt: '2026-08-30T11:10:00.000Z',
@@ -1345,7 +1345,7 @@ test('hostile Git environment cannot synthesize committed null-identity authorit
   const module = await import('../scripts/release-attempt-runner.mjs');
   const actual = await currentLocalIpaAuthority(t);
   const malicious = await currentLocalIpaAuthority(t, {
-    trackedSource: 'forged alternate build 11 source\n',
+    trackedSource: 'forged alternate build 12 source\n',
   });
   copyAuthorityWorkingFiles(malicious, actual);
   const evidenceRoot = root(t);
@@ -1454,7 +1454,7 @@ test('null submittedBuild reconciliation rejects uncommitted or forged phase aut
     ['forged ignored local IPA', async () => {
       const authority = await currentLocalIpaAuthority(t);
       writeFileSync(
-        join(authority.projectRoot, 'release/private/rc-build-11/CaboHealth-3.0-build-11.ipa'),
+        join(authority.projectRoot, 'release/private/rc-build-12/CaboHealth-3.0-build-12.ipa'),
         'forged ignored IPA bytes\n',
       );
       return authority;
@@ -1598,7 +1598,7 @@ test('submission reconciliation enforces consistent null and present identity fi
       submittedBuildIdentityAvailable: true,
       bundleIdentifier: 'com.cabohealth.app',
       marketingVersion: '3.0',
-      buildNumber: '11',
+      buildNumber: '12',
       easBuildId: SUBMISSION_ID,
     }],
   ];
@@ -1633,7 +1633,7 @@ test('provider-present submission identity retains exact candidate and EAS build
     submittedBuildIdentityAvailable: true,
     bundleIdentifier: 'com.cabohealth.app',
     marketingVersion: '3.0',
-    buildNumber: '11',
+    buildNumber: '12',
     easBuildId: BUILD_ID,
   });
   const evidencePath = join(evidenceRoot, 'upload-testflight-reconciliation.json');
@@ -1676,7 +1676,7 @@ test('provider-started crash reconciliation requires the exact logged operation 
     buildProfile: 'production',
     bundleIdentifier: 'com.cabohealth.app',
     marketingVersion: '3.0',
-    buildNumber: '11',
+    buildNumber: '12',
     artifactAvailable: true,
     createdAt: '2026-08-30T11:00:00.000Z',
     completedAt: '2026-08-30T11:10:00.000Z',

@@ -25,7 +25,7 @@ const verifierPath = join(projectRoot, 'scripts/verify-release-v3.mjs');
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
-const pendingReviewNotesWrapper = '# App Review Notes — CaboHealth 3.0 (build 11)\n\nFreeze role: **PHASE-CONTROLLED PENDING FORM — DO NOT PASTE YET.** This wrapper is the exact pending baseline for pre-input/input and the pre-finalization artifact phase. The final two-file metadata transition removes this wrapper and the heading below without changing one byte of the build-11 body. Final live completion comes only from the RC-bound App Store Connect evidence and `reviewNotesSha256`, never from this pending wording.\n\n## Paste-ready body after all gates are resolved\n\n';
+const pendingReviewNotesWrapper = '# App Review Notes — CaboHealth 3.0 (build 12)\n\nFreeze role: **PHASE-CONTROLLED PENDING FORM — DO NOT PASTE YET.** This wrapper is the exact pending baseline for pre-input/input and the pre-finalization artifact phase. The final two-file metadata transition removes this wrapper and the heading below without changing one byte of the build-12 body. Final live completion comes only from the RC-bound App Store Connect evidence and `reviewNotesSha256`, never from this pending wording.\n\n## Paste-ready body after all gates are resolved\n\n';
 
 function pendingPrivacyBytes(authorityBytes) {
   const privacy = JSON.parse(authorityBytes.toString('utf8'));
@@ -260,10 +260,10 @@ function withFixture(mutate, assertion) {
   }
 }
 
-test('release v3 verifier accepts the phase-neutral 3.0/build 11 authority package', () => {
+test('release v3 verifier accepts the phase-neutral 3.0/build 12 authority package', () => {
   const result = runVerifier();
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /Release 3\.0\/build 11 verified: phase-neutral authority sequence configured\./u);
+  assert.match(result.stdout, /Release 3\.0\/build 12 verified: phase-neutral authority sequence configured\./u);
 });
 
 test('captured release verifier enforces the exact phase-aware metadata transition tuple', async () => {
@@ -638,7 +638,7 @@ test('release v3 verifier rejects rollback from the ASC-confirmed native version
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /app\.json must remain 3\.0\/build 11/iu);
+      assert.match(result.stderr, /app\.json must remain 3\.0\/build 12/iu);
     },
   );
 });
@@ -677,10 +677,10 @@ test('release v3 verifier rejects executable config drift hidden behind stale co
       const path = join(root, 'constants/config.ts');
       const source = readFileSync(path, 'utf8')
         .replace("version: '3.0',", "version: '3.0.0',")
-        .replace("buildNumber: '11',", "buildNumber: '11',");
+        .replace("buildNumber: '12',", "buildNumber: '12',");
       writeFileSync(
         path,
-        `${source}\n// Stale reviewed values: version: '3.0'; buildNumber: '11'\n`,
+        `${source}\n// Stale reviewed values: version: '3.0'; buildNumber: '12'\n`,
       );
     },
     (result) => {

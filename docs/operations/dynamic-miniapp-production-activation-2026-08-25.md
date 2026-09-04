@@ -21,11 +21,10 @@ external-HTTPS source; one has preserved historical build-input and artifact
 attestations. That EAS status proves build completion only, not TestFlight or
 App Store Connect processing. Build 8 was subsequently built, exactly attested,
 uploaded, observed Ready to Submit, and made available to the existing internal
-group; it is immutable obsolete history for the WebView subframe fix and cannot
-authorize build 11. Build 9 was input-attested and then aborted before any
+group; it is immutable obsolete history for the WebView subframe fix. Build 9 was input-attested and then aborted before any
 provider operation when mandatory post-pin tests exposed phase-stale release
 gates. Build 10 was built, attested, uploaded, and processed for internal
-TestFlight; its immutable history cannot authorize build 11. CaboHealth 3.0 build 11 is the current
+TestFlight. Build 11 was built and exactly attested in EAS, but mandatory post-artifact-pin gates exposed a phase-stale synthetic test fixture before upload; it is immutable non-uploaded history and cannot authorize build 12. CaboHealth 3.0 build 12 is the current
 candidate. Its live authority phase—pre-input, input, artifact, RC, or submit-tool—must be determined
 from the exact current pins and required attestation bytes. This document does not assert a particular
 live phase or infer any provider result, physical-device QA, submission, or Apple approval.
@@ -95,7 +94,7 @@ live phase or infer any provider result, physical-device QA, submission, or Appl
   verification is complete; it is not a substitute for device behavior.
 - A controlled production owner CRUD exercise with a non-sensitive temporary
   entry and cleanup remains separate from the component activation evidence.
-- Build 11 may advance only through the live fail-closed authority sequence.
+- Build 12 may advance only through the live fail-closed authority sequence.
   Exact pins and required attestation bytes identify the completed phase; no
   later build, IPA audit, TestFlight, QA, screenshot, metadata, privacy/age,
   rights, or Apple-review outcome may be inferred from this component record.

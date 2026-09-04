@@ -1,10 +1,12 @@
 # Apple post-build evidence contracts
 
 This runbook defines the only post-build evidence accepted for CaboHealth
-3.0/build 11. The signed build 4 diagnostic evidence and exact builds 5–8
+3.0/build 12. The signed build 4 diagnostic evidence and exact builds 5–8
 attestations are retained only as obsolete historical records and cannot satisfy
-this contract. Build 9 is input-attested, aborted-pre-provider history and also
-cannot authorize build 11. The evidence tools validate and canonicalize observations that
+this contract. Build 9 is input-attested, aborted-pre-provider history. Build 10
+is processed internal-TestFlight history. Build 11 is EAS-finished, exactly
+attested, non-uploaded history after a mandatory post-pin test-fixture failure;
+none can authorize build 12. The evidence tools validate and canonicalize observations that
 already exist. They do not run a test, take a screenshot, query App Store
 Connect, approve a result, or infer a missing value. A placeholder, omitted
 field, extra field, false check, failed check, stale timestamp, mismatched
@@ -15,7 +17,7 @@ The fixed candidate is:
 - App Store app resource / Apple ID: `6758285327`;
 - bundle identifier: `com.cabohealth.app`;
 - marketing version: `3.0`;
-- build number: `11`;
+- build number: `12`;
 - Team ID: `DQ8PH2DZ3R`;
 - Firebase project: `cabohealth-owner-prod`; and
 - associated domain: `applinks:cabohealth.org`.
@@ -53,7 +55,7 @@ If canonicalization is independently repeated, every binding is mandatory:
 ```sh
 node scripts/apple-post-build-evidence.mjs privacy-report \
   --input /ABS/PRIVATE/draft-privacy-report.json \
-  --output /ABS/PRIVATE/rc-build-11/privacy-report.json \
+  --output /ABS/PRIVATE/rc-build-12/privacy-report.json \
   --ipa-sha256 <64-lowercase-hex> \
   --signed-entitlements-sha256 <64-lowercase-hex> \
   --signing-certificate-sha256 <64-lowercase-hex> \
@@ -90,7 +92,7 @@ with all RC bindings:
 ```sh
 node scripts/apple-post-build-evidence.mjs physical-iphone-qa \
   --input /ABS/PRIVATE/observed-physical-iphone-qa.json \
-  --output /ABS/PRIVATE/rc-build-11/physical-iphone-qa.json \
+  --output /ABS/PRIVATE/rc-build-12/physical-iphone-qa.json \
   --testflight-build-id <numeric-testflight-build-id> \
   --source-tree-sha256 <64-lowercase-hex> \
   --testflight-processed-at <canonical-millisecond-ISO-timestamp>
@@ -126,7 +128,7 @@ rating values; Apple derives any regional results.
 ```sh
 node scripts/apple-post-build-evidence.mjs app-store-connect \
   --input /ABS/PRIVATE/observed-app-store-connect.json \
-  --output /ABS/PRIVATE/rc-build-11/app-store-connect-evidence.json \
+  --output /ABS/PRIVATE/rc-build-12/app-store-connect-evidence.json \
   --testflight-build-id <numeric-testflight-build-id> \
   --testflight-processed-at <canonical-millisecond-ISO-timestamp>
 ```
@@ -166,7 +168,7 @@ node scripts/apple-post-build-evidence.mjs screenshots \
   --testflight-build-id <numeric-testflight-build-id> \
   --source-tree-sha256 <64-lowercase-hex> \
   --testflight-processed-at <canonical-millisecond-ISO-timestamp> \
-  --evidence-root /ABS/PRIVATE/rc-build-11
+  --evidence-root /ABS/PRIVATE/rc-build-12
 ```
 
 The metadata verifier accepts only the exact current pending form or the exact
@@ -193,7 +195,7 @@ The only tracked post-artifact metadata progression is:
 
 App Privacy and Review Notes change together in one exact two-file commit.
 Final metadata with pending screenshots and mixed pending/final metadata pairs
-are invalid. The final Review Notes bytes preserve the exact build-11 body and
+are invalid. The final Review Notes bytes preserve the exact build-12 body and
 remove only the pending wrapper and transition heading. The final App Privacy
 bytes contain the deterministic Data Collected/linked/no-tracking mapping fixed
 before the build.

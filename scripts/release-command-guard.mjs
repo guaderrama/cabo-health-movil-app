@@ -57,14 +57,14 @@ const SCREENSHOTS_MANIFEST_PATH = 'release/app-store/3.0/screenshots-manifest.js
 const APP_PRIVACY_PATH = 'release/app-store/3.0/app-privacy.json';
 const REVIEW_NOTES_PATH = 'release/app-store/3.0/review-notes.md';
 const PRIVATE_EVIDENCE_PATHS = Object.freeze({
-  ipa: 'release/private/rc-build-11/CaboHealth-3.0-build-11.ipa',
-  signedEntitlements: 'release/private/rc-build-11/signed-entitlements.plist',
-  privacyReport: 'release/private/rc-build-11/privacy-report.json',
-  embeddedGoogleServicesPlist: 'release/private/rc-build-11/embedded-GoogleService-Info.plist',
-  signingCertificate: 'release/private/rc-build-11/signing-certificate.der',
-  embeddedProvisioningProfile: 'release/private/rc-build-11/embedded.mobileprovision',
-  physicalIphoneQa: 'release/private/rc-build-11/physical-iphone-qa.json',
-  appStoreConnectEvidence: 'release/private/rc-build-11/app-store-connect-evidence.json',
+  ipa: 'release/private/rc-build-12/CaboHealth-3.0-build-12.ipa',
+  signedEntitlements: 'release/private/rc-build-12/signed-entitlements.plist',
+  privacyReport: 'release/private/rc-build-12/privacy-report.json',
+  embeddedGoogleServicesPlist: 'release/private/rc-build-12/embedded-GoogleService-Info.plist',
+  signingCertificate: 'release/private/rc-build-12/signing-certificate.der',
+  embeddedProvisioningProfile: 'release/private/rc-build-12/embedded.mobileprovision',
+  physicalIphoneQa: 'release/private/rc-build-12/physical-iphone-qa.json',
+  appStoreConnectEvidence: 'release/private/rc-build-12/app-store-connect-evidence.json',
 });
 
 // Each phase pin starts null and becomes authoritative only after that phase
@@ -73,8 +73,8 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
 // values, so advancing a reviewed pin is not circular while every executable
 // guard behavior remains part of the reviewed source. An unpinned checked-in
 // attestation is historical evidence only and cannot satisfy a current phase.
-const BUILD_INPUT_ATTESTATION_SHA256 = 'ff59dcaa8082be48fa6bf36100d9f95126e2975336fbe054f9a4c120a5862551';
-const BUILD_ARTIFACT_ATTESTATION_SHA256 = 'f563d773a66d086325117257141801731b743f289471232a606219413c2c6e1f';
+const BUILD_INPUT_ATTESTATION_SHA256 = null;
+const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;
 const RC_ATTESTATION_SHA256 = null;
 const PINNED_EAS_CLI = null;
 const PINNED_APP_STORE_SUBMIT_ADAPTER = null;
@@ -102,7 +102,7 @@ const CANDIDATE = Object.freeze({
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '11',
+  buildNumber: '12',
 });
 const PRODUCTION_FIREBASE_PROJECT_ID = 'cabohealth-owner-prod';
 const PRIVATE_GOOGLE_SERVICES_PLIST_MARKER = '<PRIVATE_GOOGLE_SERVICES_PLIST>';
@@ -1620,7 +1620,7 @@ export function verifyRcAttestation(root, {
       phase: 'final',
       ...bindings,
       now,
-      evidenceRoot: join(root, 'release/private/rc-build-11'),
+      evidenceRoot: join(root, 'release/private/rc-build-12'),
       requireFiles: true,
     });
     validateRcReviewChronology({

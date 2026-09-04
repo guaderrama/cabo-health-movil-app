@@ -2,7 +2,7 @@
 
 Authority: **IMMUTABLE FREEZE-TIME BASELINE.** Empty boxes below define exact-RC evidence requirements; they are not mutable status fields and are never checked in this file after the input pin. Final live completion exists only in the physical-iPhone and App Store Connect evidence hashes bound by the RC attestation.
 
-Status: **NO ACCESSIBILITY SUPPORT CLAIM IS APPROVED YET.** Source review identifies candidates; App Store accessibility labels require successful tests on the exact processed 3.0 (build 11) RC, in both localizations and in native plus hosted surfaces.
+Status: **NO ACCESSIBILITY SUPPORT CLAIM IS APPROVED YET.** Source review identifies candidates; App Store accessibility labels require successful tests on the exact processed 3.0 (build 12) RC, in both localizations and in native plus hosted surfaces.
 
 For every checked claim, attach a private evidence reference with TestFlight build ID, source SHA, device, iOS, locale, date, steps, result, and reviewer. A source-code reference alone is not sufficient.
 

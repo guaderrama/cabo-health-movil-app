@@ -35,8 +35,8 @@ import {
 const CODE = 'EAS_ARTIFACT_DOWNLOAD_FAILED';
 const MAX_INPUT_BYTES = 4 * 1024 * 1024;
 const MAX_IPA_BYTES = 1024 * 1024 * 1024;
-const TASK_PARENT = '/.superpowers/sdd/2026-09-03-cabohealth-build11-app-store-release/task-4-evidence';
-const IPA_NAME = 'CaboHealth-3.0-build-11.ipa';
+const TASK_PARENT = '/.superpowers/sdd/2026-09-04-cabohealth-build12-post-artifact-recovery/task-4-evidence';
+const IPA_NAME = 'CaboHealth-3.0-build-12.ipa';
 
 function fail() {
   throw new Error(CODE);
@@ -180,7 +180,7 @@ export async function downloadEasArtifact({
     if (!Buffer.isBuffer(stdinBytes) || stdinBytes.length === 0 || stdinBytes.length > MAX_INPUT_BYTES
       || typeof now !== 'function' || typeof fetchImpl !== 'function'
       || typeof outputPath !== 'string' || !isAbsolute(outputPath) || resolve(outputPath) !== outputPath
-      || basename(outputPath) !== IPA_NAME || !dirname(outputPath).endsWith('/rc-build-11')
+      || basename(outputPath) !== IPA_NAME || !dirname(outputPath).endsWith('/rc-build-12')
       || typeof associationOutputPath !== 'string' || !isAbsolute(associationOutputPath)
       || resolve(associationOutputPath) !== associationOutputPath
       || associationOutputPath !== join(dirname(associationOutputPath), 'eas-artifact-association.json')

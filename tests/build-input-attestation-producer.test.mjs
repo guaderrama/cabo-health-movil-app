@@ -77,7 +77,7 @@ function writeOwnedCanonicalInventory(path) {
   return inventoryPath;
 }
 
-test('build-input producer assembles the exact canonical build 11 authority with inventory digest', () => {
+test('build-input producer assembles the exact canonical build 12 authority with inventory digest', () => {
   const value = assembleBuildInputAttestation({
     reviewedAt: '2026-08-26T07:00:00.000Z',
     sourceCommit,
@@ -99,7 +99,7 @@ test('build-input producer assembles the exact canonical build 11 authority with
   });
 
   assert.deepEqual(value.candidate, BUILD_INPUT_CANDIDATE);
-  assert.equal(value.candidate.buildNumber, '11');
+  assert.equal(value.candidate.buildNumber, '12');
   assert.equal(value.firebaseProjectId, 'cabohealth-owner-prod');
   assert.equal(`${JSON.stringify(value)}\n`.endsWith('\n'), true);
   assert.deepEqual(Object.keys(value), [
@@ -173,7 +173,7 @@ test('build-input producer rejects a stale candidate, malformed hash, or ambiguo
   }), /BUILD_INPUT_PRODUCER_ARGUMENT_INVALID/u);
 });
 
-test('build-input producer accepts only the current task-3 inventory parent', (context) => {
+test('build-input producer accepts only the current task-2 inventory parent', (context) => {
   const projectRoot = realpathSync(fileURLToPath(new URL('..', import.meta.url)));
   const temporaryRoot = realpathSync(mkdtempSync(join(tmpdir(), 'cabohealth-build-input-producer-')));
   chmodSync(temporaryRoot, 0o700);
@@ -181,7 +181,7 @@ test('build-input producer accepts only the current task-3 inventory parent', (c
 
   const currentEvidenceParent = join(
     temporaryRoot,
-    '.superpowers/sdd/2026-09-04-cabohealth-build11-input-authority-recovery/task-3-recovery-evidence',
+    '.superpowers/sdd/2026-09-04-cabohealth-build12-post-artifact-recovery/task-2-evidence',
   );
   const obsoleteEvidenceParent = join(
     temporaryRoot,
