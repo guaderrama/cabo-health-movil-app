@@ -181,7 +181,7 @@ test('build-input producer accepts only the current task-3 inventory parent', (c
 
   const currentEvidenceParent = join(
     temporaryRoot,
-    '.superpowers/sdd/2026-09-03-cabohealth-build11-app-store-release/task-3-evidence',
+    '.superpowers/sdd/2026-09-04-cabohealth-build11-input-authority-recovery/task-3-recovery-evidence',
   );
   const obsoleteEvidenceParent = join(
     temporaryRoot,

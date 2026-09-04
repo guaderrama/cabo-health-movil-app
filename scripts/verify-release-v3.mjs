@@ -64,13 +64,21 @@ const EXACT_HISTORICAL_CANDIDATE_EVIDENCE = [
     privateHistoryRoot: 'release/private/rc-build-10',
   },
 ];
+const EXACT_HISTORICAL_INPUT_AUTHORITY_EVIDENCE = [
+  {
+    attempt: 1,
+    status: 'input-attested-invalidated-pre-provider-source-drift',
+    trackedHistoryRoot: 'release/app-store/3.0/history/build-11-input-attempt-1-aborted',
+    providerOperationInitiated: false,
+  },
+];
 const EXACT_ASC_REVIEW_GUIDELINES = ['1.4.1', '2.1', '4.1'];
 const EXACT_AUTHORITY_SHA256 = Object.freeze({
   'app.json': '2498a015b7ec5b266ccccbb71d2a6d47cfe17184a85aa0b03d89fe32bd801601',
   'eas.json': '834e82554d40114ae3e0ea754d9e174bf1cce821150819b9a91dd56401692ac2',
   'constants/config.ts': 'a2b8453caa2f6be0c065f226bf84edc59e12b9b3a42523321fcb173388ec8a90',
   'constants/publicMiniapps.ts': '7306d82fd7de694b16de85401a8aab431c5408037f5038ce95fc5f79edef9dda',
-  'release/app-store/3.0/release-manifest.json': '2383eca5258ee3bb9886aaa996625b710331e0d847d8611afd1179fd6531c809',
+  'release/app-store/3.0/release-manifest.json': '24d7169d66dc274ea7e0f361e52972034b98671c2be18116e1a5295e268612c0',
   'release/app-store/3.0/age-rating.json': '2b8de835b2e1ef794c28310a1699e101a7d604652b14945538c70e26df6e1259',
   'release/app-store/3.0/app-privacy.json': 'ea62eeb774718f7378cfb4edbc18dfb8fa8f90afadb3c61d2ef6b214a1da4349',
 });
@@ -186,6 +194,7 @@ export function verifyCapturedReleaseV3(files) {
       'candidate',
       'ascEvidence',
       'historicalCandidateEvidence',
+      'historicalInputAuthorityEvidence',
       'ownerSeller',
       'scope',
       'reviewCredential',
@@ -522,6 +531,12 @@ export function verifyCapturedReleaseV3(files) {
     }
     if (!sameJson(manifest.historicalCandidateEvidence, EXACT_HISTORICAL_CANDIDATE_EVIDENCE)) {
       errors.push('release history must retain builds 4 through 8 as obsolete-source evidence, build 9 as aborted pre-provider, build 10 as processed internal-TestFlight history, and build 11 as the sole new candidate');
+    }
+    if (!sameJson(
+      manifest.historicalInputAuthorityEvidence,
+      EXACT_HISTORICAL_INPUT_AUTHORITY_EVIDENCE,
+    )) {
+      errors.push('build 11 invalidated input authority must remain separate pre-provider history, not a historical candidate');
     }
     if (manifest.reviewRisk?.appleApprovalGuaranteed !== false) {
       errors.push('Apple approval must never be represented as guaranteed');

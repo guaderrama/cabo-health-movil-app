@@ -486,7 +486,7 @@ test('artifact verification compares complete plist content across XML and binar
   assert.equal(googleServicesPlistsHaveSameContent(xml, Buffer.from('not-a-plist')), false);
 });
 
-test('build-7 through build-9 remain immutable while build-11 authority follows its exact phase', async () => {
+test('historical input attempts remain immutable while build 11 refreezes with no live authority', async () => {
   const {
     verifyBuildInputAttestation,
   } = await import(guardPath);
@@ -498,6 +498,10 @@ test('build-7 through build-9 remain immutable while build-11 authority follows 
     adapterPin,
   } = currentReleasePins();
   assert.equal(easPin, null);
+  assert.deepEqual(
+    { buildInputPin, buildArtifactPin, rcPin, easPin, adapterPin },
+    { buildInputPin: null, buildArtifactPin: null, rcPin: null, easPin: null, adapterPin: null },
+  );
   let sawUnpinnedPhase = false;
   for (const pin of [buildInputPin, buildArtifactPin, rcPin, adapterPin]) {
     if (pin === null) sawUnpinnedPhase = true;
@@ -537,6 +541,22 @@ test('build-7 through build-9 remain immutable while build-11 authority follows 
     assert.equal(JSON.parse(bytes).candidate.buildNumber, '7');
   }
   const currentRoot = join(projectRoot, 'release/app-store/3.0');
+  const invalidatedAttemptRoot = join(
+    currentRoot,
+    'history/build-11-input-attempt-1-aborted',
+  );
+  const invalidatedAttempt = JSON.parse(readFileSync(
+    join(invalidatedAttemptRoot, 'manifest.json'),
+    'utf8',
+  ));
+  const invalidatedInput = readFileSync(join(invalidatedAttemptRoot, 'build-input-attestation.json'));
+  assert.equal(hash(invalidatedInput), 'e0b888bada5ce1f0d39b408307f3a107562a7007f891bd541d08bb2b4528b4fd');
+  assert.equal(invalidatedAttempt.status, 'input-attested-invalidated-pre-provider-source-drift');
+  assert.equal(invalidatedAttempt.providerOperationInitiated, false);
+  assert.equal(invalidatedAttempt.easBuildId, null);
+  assert.equal(invalidatedAttempt.ipaSha256, null);
+  assert.equal(invalidatedAttempt.easSubmissionId, null);
+  assert.equal(invalidatedAttempt.appleUploadStatus, null);
   const buildInputPath = join(currentRoot, 'build-input-attestation.json');
   const buildArtifactPath = join(currentRoot, 'build-artifact-attestation.json');
   const rcPath = join(currentRoot, 'rc-attestation.json');
@@ -562,6 +582,7 @@ test('build-7 through build-9 remain immutable while build-11 authority follows 
   for (const obsoleteInputSha256 of [
     'f4ee8c3da75be23d300b816495649c414f2900efaef9e88294bdc52824c3ed8e',
     '6e75a41633948ebeb3a8d25fb871d2ac23da0872c7709a2fb9035190fefb2215',
+    'e0b888bada5ce1f0d39b408307f3a107562a7007f891bd541d08bb2b4528b4fd',
   ]) {
     assert.throws(
       () => verifyBuildInputAttestation(projectRoot, obsoleteInputSha256),

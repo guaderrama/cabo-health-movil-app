@@ -25,20 +25,13 @@ function currentAuthorityPins(guard) {
   };
 }
 
-const BUILD_11_INPUT_ATTESTATION_SHA256 = 'e0b888bada5ce1f0d39b408307f3a107562a7007f891bd541d08bb2b4528b4fd';
-
 function withAuthorityPin(guard, name, value) {
   const declaration = new RegExp(`^const ${name} = [^\r\n]*;$`, 'mu');
   assert.match(guard, declaration, `${name} fixture must target one declaration`);
   return guard.replace(declaration, `const ${name} = ${value};`);
 }
 
-function assertBuild11InputPhase({
-  guard,
-  buildInputBytes,
-  buildArtifactExists = false,
-  rcExists = false,
-}) {
+function assertBuild11AuthorityPhase({ guard, attestations }) {
   const {
     buildInputPin,
     buildArtifactPin,
@@ -46,30 +39,32 @@ function assertBuild11InputPhase({
     easPin,
     adapterPin,
   } = currentAuthorityPins(guard);
-  assert.deepEqual(
-    { buildArtifactPin, rcPin, easPin, adapterPin },
-    { buildArtifactPin: null, rcPin: null, easPin: null, adapterPin: null },
-    'only the input authority may advance in the build-input phase',
-  );
-  assert.equal(buildArtifactExists, false, 'artifact attestation must be absent in the input phase');
-  assert.equal(rcExists, false, 'RC attestation must be absent in the input phase');
+  const phases = [
+    ['input', buildInputPin, attestations.input],
+    ['artifact', buildArtifactPin, attestations.artifact],
+    ['rc', rcPin, attestations.rc],
+    ['submit-tool', adapterPin, null],
+  ];
+  assert.equal(easPin, null, 'the legacy EAS CLI pin must remain null in every phase');
 
-  if (buildInputBytes === null) {
-    assert.equal(buildInputPin, null, 'an absent input attestation requires a null input pin');
-    return 'pre-input';
+  let firstPending = phases.length;
+  for (let index = 0; index < phases.length; index += 1) {
+    if (phases[index][1] === null) {
+      firstPending = index;
+      break;
+    }
   }
-
-  assert.equal(buildInputPin, BUILD_11_INPUT_ATTESTATION_SHA256);
-  assert.equal(sha256(buildInputBytes), BUILD_11_INPUT_ATTESTATION_SHA256);
-  const attestation = JSON.parse(buildInputBytes);
-  assert.equal(buildInputBytes.toString('utf8'), `${JSON.stringify(attestation)}\n`);
-  assert.deepEqual(attestation.candidate, {
-    appleId: '6758285327',
-    bundleIdentifier: 'com.cabohealth.app',
-    marketingVersion: '3.0',
-    buildNumber: '11',
-  });
-  return 'input-pinned';
+  for (let index = 0; index < phases.length; index += 1) {
+    const [phase, pin, bytes] = phases[index];
+    if (index < firstPending) {
+      assert.notEqual(pin, null, `${phase} requires its reviewed pin`);
+      if (bytes !== null) assert.equal(sha256(bytes), pin, `${phase} pin must bind exact bytes`);
+    } else {
+      assert.equal(pin, null, `${phase} and every later phase must remain unpinned`);
+      if (bytes !== null) assert.fail(`${phase} evidence cannot precede its reviewed pin`);
+    }
+  }
+  return phases[firstPending - 1]?.[0] ?? 'pre-input';
 }
 
 const CURRENT_DOCUMENT_REVIEW_ALLOWLIST = Object.freeze([
@@ -128,6 +123,7 @@ const STALE_BUILD_10_AUTHORITY = [
   /\bbuild[- /]?10\s*,\s*physical-device QA,\s*and current release evidence remain pending\b/iu,
 ];
 const BUILD_11_SDD_ROOT = '/.superpowers/sdd/2026-09-03-cabohealth-build11-app-store-release';
+const BUILD_11_RECOVERY_SDD_ROOT = '/.superpowers/sdd/2026-09-04-cabohealth-build11-input-authority-recovery';
 
 function build10LocalClause(source, referenceIndex) {
   const clauseStart = Math.max(
@@ -161,7 +157,7 @@ function assertBuild10ProseIsHistorical(relativePath, source) {
   return references.length;
 }
 
-test('the sole current candidate accepts only contiguous pre-input or input-pinned 3.0 build 11 authority', () => {
+test('the refrozen current candidate is pre-input while the invalidated attempt is separate history', () => {
   const app = JSON.parse(readFileSync(join(root, 'app.json'), 'utf8'));
   const config = readFileSync(join(root, 'constants/config.ts'), 'utf8');
   const guard = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
@@ -177,56 +173,57 @@ test('the sole current candidate accepts only contiguous pre-input or input-pinn
   const inputPath = join(root, 'release/app-store/3.0/build-input-attestation.json');
   const artifactPath = join(root, 'release/app-store/3.0/build-artifact-attestation.json');
   const rcPath = join(root, 'release/app-store/3.0/rc-attestation.json');
-  assert.equal(assertBuild11InputPhase({
+  assert.equal(assertBuild11AuthorityPhase({
     guard,
-    buildInputBytes: readFileSync(inputPath),
-    buildArtifactExists: existsSync(artifactPath),
-    rcExists: existsSync(rcPath),
-  }), 'input-pinned');
-
-  assert.equal(assertBuild11InputPhase({
-    guard: withAuthorityPin(guard, 'BUILD_INPUT_ATTESTATION_SHA256', 'null'),
-    buildInputBytes: null,
+    attestations: { input: null, artifact: null, rc: null },
   }), 'pre-input');
+  assert.equal(existsSync(inputPath), false, 'the current input attestation must be absent');
+  assert.equal(existsSync(artifactPath), false, 'the current artifact attestation must be absent');
+  assert.equal(existsSync(rcPath), false, 'the current RC attestation must be absent');
+  assert.deepEqual(manifest.historicalInputAuthorityEvidence, [{
+    attempt: 1,
+    status: 'input-attested-invalidated-pre-provider-source-drift',
+    trackedHistoryRoot: 'release/app-store/3.0/history/build-11-input-attempt-1-aborted',
+    providerOperationInitiated: false,
+  }]);
 });
 
-test('build 11 input phase rejects partial, mismatched, and later-authority states', () => {
+test('build 11 authority accepts every contiguous phase and rejects partial or mismatched evidence', () => {
   const guard = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
-  const inputBytes = readFileSync(join(
-    root,
-    'release/app-store/3.0/build-input-attestation.json',
-  ));
-  const reject = (options, expected) => assert.throws(
-    () => assertBuild11InputPhase(options),
-    expected,
+  const input = Buffer.from('{"phase":"input"}\n');
+  const artifact = Buffer.from('{"phase":"artifact"}\n');
+  const rc = Buffer.from('{"phase":"rc"}\n');
+  const pin = (name, bytes) => withAuthorityPin(guard, name, `'${sha256(bytes)}'`);
+  const preInputGuard = withAuthorityPin(guard, 'BUILD_INPUT_ATTESTATION_SHA256', 'null');
+  const inputGuard = pin('BUILD_INPUT_ATTESTATION_SHA256', input);
+  const artifactGuard = withAuthorityPin(
+    inputGuard,
+    'BUILD_ARTIFACT_ATTESTATION_SHA256',
+    `'${sha256(artifact)}'`,
   );
-
-  reject({ guard, buildInputBytes: null }, /absent input attestation/u);
-  reject({
-    guard: withAuthorityPin(guard, 'BUILD_INPUT_ATTESTATION_SHA256', 'null'),
-    buildInputBytes: inputBytes,
-  }, /Expected values to be strictly equal/u);
-  reject({
-    guard: withAuthorityPin(
-      guard,
-      'BUILD_INPUT_ATTESTATION_SHA256',
-      `'${'a'.repeat(64)}'`,
-    ),
-    buildInputBytes: inputBytes,
-  }, /Expected values to be strictly equal/u);
-  reject({ guard, buildInputBytes: inputBytes, buildArtifactExists: true }, /artifact attestation/u);
-  reject({ guard, buildInputBytes: inputBytes, rcExists: true }, /RC attestation/u);
-  for (const [name, value] of [
-    ['BUILD_ARTIFACT_ATTESTATION_SHA256', `'${'b'.repeat(64)}'`],
-    ['RC_ATTESTATION_SHA256', `'${'c'.repeat(64)}'`],
-    ['PINNED_EAS_CLI', "'QQ=='"],
-    ['PINNED_APP_STORE_SUBMIT_ADAPTER', "'QQ=='"],
+  const rcGuard = withAuthorityPin(artifactGuard, 'RC_ATTESTATION_SHA256', `'${sha256(rc)}'`);
+  const submitGuard = withAuthorityPin(rcGuard, 'PINNED_APP_STORE_SUBMIT_ADAPTER', "'QQ=='");
+  for (const [expected, phaseGuard, attestations] of [
+    ['pre-input', preInputGuard, { input: null, artifact: null, rc: null }],
+    ['input', inputGuard, { input, artifact: null, rc: null }],
+    ['artifact', artifactGuard, { input, artifact, rc: null }],
+    ['rc', rcGuard, { input, artifact, rc }],
+    ['submit-tool', submitGuard, { input, artifact, rc }],
   ]) {
-    reject({
-      guard: withAuthorityPin(guard, name, value),
-      buildInputBytes: inputBytes,
-    }, /only the input authority may advance/u);
+    assert.equal(assertBuild11AuthorityPhase({ guard: phaseGuard, attestations }), expected);
   }
+  assert.throws(() => assertBuild11AuthorityPhase({
+    guard: withAuthorityPin(guard, 'BUILD_ARTIFACT_ATTESTATION_SHA256', `'${sha256(artifact)}'`),
+    attestations: { input: null, artifact, rc: null },
+  }), /every later phase must remain unpinned/u);
+  assert.throws(() => assertBuild11AuthorityPhase({
+    guard: inputGuard,
+    attestations: { input: artifact, artifact: null, rc: null },
+  }), /input pin must bind exact bytes/u);
+  assert.throws(() => assertBuild11AuthorityPhase({
+    guard: withAuthorityPin(guard, 'PINNED_EAS_CLI', "'QQ=='"),
+    attestations: { input: null, artifact: null, rc: null },
+  }), /legacy EAS CLI pin/u);
 });
 
 test('build 10 is immutable processed internal-TestFlight history with its exact identities', () => {
@@ -333,6 +330,46 @@ test('build 9 input authority is immutable aborted-pre-provider history', () => 
     appleUploadStatus: null,
   });
   assert.equal(JSON.parse(inputBytes).candidate.buildNumber, '9');
+});
+
+test('build 11 attempt 1 is exact invalidated pre-provider input authority history', () => {
+  const history = join(root, 'release/app-store/3.0/history/build-11-input-attempt-1-aborted');
+  const inputBytes = readFileSync(join(history, 'build-input-attestation.json'));
+  const manifestBytes = readFileSync(join(history, 'manifest.json'));
+  const manifest = JSON.parse(manifestBytes);
+
+  assert.equal(sha256(inputBytes), 'e0b888bada5ce1f0d39b408307f3a107562a7007f891bd541d08bb2b4528b4fd');
+  assert.deepEqual(manifest, {
+    schemaVersion: 1,
+    artifactKind: 'cabohealth-ios-build-input-authority-history',
+    attempt: 1,
+    candidate: {
+      appleId: '6758285327',
+      bundleIdentifier: 'com.cabohealth.app',
+      marketingVersion: '3.0',
+      buildNumber: '11',
+    },
+    status: 'input-attested-invalidated-pre-provider-source-drift',
+    frozenSource: {
+      commit: '3f61e31c3276870b4825b73e038903afdd9ef400',
+      sha256: 'a2f3270ddea31b8a8ce7b55b021a6ba68244579e7e368e68834b19458da7b56d',
+    },
+    buildInputAuthority: {
+      commit: '7350fe3df896c8f6391d6d691734df065414b146',
+      relativePath: 'build-input-attestation.json',
+      sha256: sha256(inputBytes),
+    },
+    invalidation: {
+      commit: 'aac7e5fdc4eb234e3eb7d02ae8c7f2d0da1c398b',
+      changedPaths: ['tests/build11-rebaseline-contract.test.mjs'],
+    },
+    providerOperationInitiated: false,
+    easBuildId: null,
+    ipaSha256: null,
+    easSubmissionId: null,
+    appleUploadStatus: null,
+  });
+  assert.equal(manifestBytes.toString('utf8'), `${JSON.stringify(manifest)}\n`);
 });
 
 test('every build-8 reference in the current-document allowlist is classified as history', () => {
@@ -522,8 +559,8 @@ test('build-10 clause-local classification covers lower-case, hyphen, and slash 
 
 test('current build-11 evidence writers retain only their exact task-scoped SDD parents', () => {
   const expectedParents = new Map([
-    ['scripts/release-eas-environment-sanitizer.mjs', `${BUILD_11_SDD_ROOT}/task-3-evidence`],
-    ['scripts/create-build-input-attestation.mjs', `${BUILD_11_SDD_ROOT}/task-3-evidence`],
+    ['scripts/release-eas-environment-sanitizer.mjs', `${BUILD_11_RECOVERY_SDD_ROOT}/task-3-recovery-evidence`],
+    ['scripts/create-build-input-attestation.mjs', `${BUILD_11_RECOVERY_SDD_ROOT}/task-3-recovery-evidence`],
     ['scripts/release-eas-submission-sanitizer.mjs', `${BUILD_11_SDD_ROOT}/task-5-evidence`],
   ]);
   for (const [relativePath, parent] of expectedParents) {

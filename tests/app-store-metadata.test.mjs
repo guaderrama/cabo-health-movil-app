@@ -193,6 +193,20 @@ test('versioned App Store metadata is a valid pre-build-configured 3.0 build 11 
   assert.match(result.stdout, /pre-build metadata verified; submission remains blocked/i);
 });
 
+test('metadata verifier rejects malformed build-11 input-attempt authority history', async (t) => {
+  await t.test('archive drift', () => withReleaseFixture(
+    (root) => mutateJson(
+      root,
+      `${releasePath}/history/build-11-input-attempt-1-aborted/manifest.json`,
+      (manifest) => { manifest.invalidation.changedPaths = []; },
+    ),
+    (result) => {
+      assert.equal(result.status, 1, result.stdout || result.stderr);
+      assert.match(result.stderr, /invalidated input authority history must retain the exact canonical archive/i);
+    },
+  ));
+});
+
 test('metadata verifier rejects stale or contradictory live ASC evidence', async (t) => {
   const mutations = [
     ['missing observation time', (manifest) => { delete manifest.ascEvidence.observedAt; }],
@@ -847,8 +861,8 @@ test('metadata verifier keeps build-8, aborted build-9, and processed build-10 e
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [ ] Generate, independently review, and pin the build-11 canonical build-input attestation against the frozen 3.0/build 11 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8, aborted build-9, or processed build-10 authority.',
-        '- [x] Generate, independently review, and pin the build-11 canonical build-input attestation against the frozen 3.0/build 11 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8, aborted build-9, or processed build-10 authority.',
+        '- [ ] Generate, independently review, and pin the replacement build-11 canonical build-input attestation against the refrozen 3.0/build 11 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8, aborted build-9, immutable processed build-10 history, or invalidated build-11 attempt-1 authority.',
+        '- [x] Generate, independently review, and pin the replacement build-11 canonical build-input attestation against the refrozen 3.0/build 11 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8, aborted build-9, immutable processed build-10 history, or invalidated build-11 attempt-1 authority.',
       ));
     },
     (result) => {
@@ -1416,11 +1430,12 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured pre
   }
 });
 
-test('current release instructions name build 11 and classify builds 9 and 10 as historical', () => {
+test('current release instructions retain the current build-11 candidate and its invalidated input history', () => {
   const dataInventory = readFileSync(join(projectRoot, 'release/data-inventory.md'), 'utf8');
   assert.match(dataInventory, /exact signed 3\.0\/build 11 RC must independently confirm/iu);
   assert.match(dataInventory, /exact 3\.0\/build 11 signed RC.*still pending/iu);
   assert.match(dataInventory, /Build 10 is immutable processed internal-TestFlight history and cannot authorize build 11/iu);
+  assert.match(dataInventory, /Build 11 input attempt 1 is separately archived invalidated-pre-provider source-drift history and cannot authorize a build or make build 11 historical/iu);
   assert.doesNotMatch(dataInventory, /exact signed 3\.0\/build [67] RC must/iu);
   assert.doesNotMatch(dataInventory, /exact 3\.0\/build [67] signed RC.*still pending/iu);
 

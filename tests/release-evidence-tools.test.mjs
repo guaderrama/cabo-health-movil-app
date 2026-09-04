@@ -32,11 +32,14 @@ function ownedDirectory(prefix, mode = 0o700) {
 
 function sddEvidenceRoot(task) {
   const base = ownedDirectory('cabohealth-build11-sdd-');
-  const releaseTaskRoot = '2026-09-03-cabohealth-build11-app-store-release';
+  const recoveryTask = task === 'task-3';
+  const releaseTaskRoot = recoveryTask
+    ? '2026-09-04-cabohealth-build11-input-authority-recovery'
+    : '2026-09-03-cabohealth-build11-app-store-release';
   const path = join(
     base,
     `.superpowers/sdd/${releaseTaskRoot}`,
-    `${task}-evidence`,
+    recoveryTask ? 'task-3-recovery-evidence' : `${task}-evidence`,
   );
   mkdirSync(path, { recursive: true, mode: 0o700 });
   chmodSync(path, 0o700);

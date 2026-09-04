@@ -126,7 +126,7 @@ const excludedNamedScope = /\b(?:Sleep Lab|Service Hub|Health Advisor|AI Cosmeti
 
 const EXACT_REVIEWED_PROSE_SHA256 = Object.freeze({
   'age-rating.md': '224f8d029d614bdd78914b63417c1748aacd4fd8b91cb6c3bab4b60450d40a84',
-  'app-privacy.md': '70f01ba188dbbad646ca32e936a3e617a4b403f2798e3fd020ab1a754e7bad6e',
+  'app-privacy.md': 'c8d06485114d771de9a544ff63d860596097bae2a7f9352513eda195895dec52',
   'content-rights-inventory.md': '676d78a42c5a9a590c4c53a5deeeb30a9e64bf9669221c397428e461a8a501f4',
 });
 
@@ -485,6 +485,7 @@ function verifyManifest() {
   const {
     candidate,
     historicalCandidateEvidence,
+    historicalInputAuthorityEvidence,
     ascEvidence,
     ownerSeller,
     reviewRisk,
@@ -501,6 +502,7 @@ function verifyManifest() {
     'artifactKind',
     'candidate',
     'historicalCandidateEvidence',
+    'historicalInputAuthorityEvidence',
     'ascEvidence',
     'ownerSeller',
     'scope',
@@ -582,6 +584,63 @@ function verifyManifest() {
   ];
   if (!equalJson(historicalCandidateEvidence, expectedHistoricalCandidateEvidence)) {
     errors.push('Historical candidate evidence must retain builds 4 through 8 as obsolete, build 9 as input-attested and aborted pre-provider, and build 10 as processed internal-TestFlight history');
+  }
+  const expectedHistoricalInputAuthorityEvidence = [{
+    attempt: 1,
+    status: 'input-attested-invalidated-pre-provider-source-drift',
+    trackedHistoryRoot: 'release/app-store/3.0/history/build-11-input-attempt-1-aborted',
+    providerOperationInitiated: false,
+  }];
+  if (!equalJson(historicalInputAuthorityEvidence, expectedHistoricalInputAuthorityEvidence)) {
+    errors.push('Build 11 invalidated input authority must remain separate pre-provider history, not a historical candidate');
+  }
+  const abortedInputHistoryRoot = join(releaseRoot, 'history/build-11-input-attempt-1-aborted');
+  const abortedInputAttestationPath = join(abortedInputHistoryRoot, 'build-input-attestation.json');
+  const abortedInputManifestPath = join(abortedInputHistoryRoot, 'manifest.json');
+  try {
+    const attestation = readFileSync(abortedInputAttestationPath);
+    const historyManifestBytes = readFileSync(abortedInputManifestPath);
+    const historyManifest = JSON.parse(historyManifestBytes.toString('utf8'));
+    const exactHistoryManifest = {
+      schemaVersion: 1,
+      artifactKind: 'cabohealth-ios-build-input-authority-history',
+      attempt: 1,
+      candidate: {
+        appleId: '6758285327',
+        bundleIdentifier: 'com.cabohealth.app',
+        marketingVersion: '3.0',
+        buildNumber: '11',
+      },
+      status: 'input-attested-invalidated-pre-provider-source-drift',
+      frozenSource: {
+        commit: '3f61e31c3276870b4825b73e038903afdd9ef400',
+        sha256: 'a2f3270ddea31b8a8ce7b55b021a6ba68244579e7e368e68834b19458da7b56d',
+      },
+      buildInputAuthority: {
+        commit: '7350fe3df896c8f6391d6d691734df065414b146',
+        relativePath: 'build-input-attestation.json',
+        sha256: 'e0b888bada5ce1f0d39b408307f3a107562a7007f891bd541d08bb2b4528b4fd',
+      },
+      invalidation: {
+        commit: 'aac7e5fdc4eb234e3eb7d02ae8c7f2d0da1c398b',
+        changedPaths: ['tests/build11-rebaseline-contract.test.mjs'],
+      },
+      providerOperationInitiated: false,
+      easBuildId: null,
+      ipaSha256: null,
+      easSubmissionId: null,
+      appleUploadStatus: null,
+    };
+    if (lstatSync(abortedInputAttestationPath).isSymbolicLink()
+      || lstatSync(abortedInputManifestPath).isSymbolicLink()
+      || createHash('sha256').update(attestation).digest('hex')
+        !== exactHistoryManifest.buildInputAuthority.sha256
+      || !equalJson(historyManifest, exactHistoryManifest)
+      || historyManifestBytes.toString('utf8') !== `${JSON.stringify(historyManifest)}\n`) {
+      errors.push('Build 11 invalidated input authority history must retain the exact canonical archive');
+    }
+  } catch {
+    errors.push('Build 11 invalidated input authority history must retain the exact canonical archive');
   }
   if (!hasExactKeys(ascEvidence, [
     'observedAt',
@@ -1789,7 +1848,7 @@ function verifyHumanChecklists() {
   const completedVersionConfigurationGate = '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 11 after preserving exact build-8 built/uploaded history, hash-binding build 9 as aborted before any provider operation, and preserving build 10 as immutable processed internal-TestFlight history; no current build-11 input attestation, IPA, or TestFlight upload exists yet.';
   const completedBuild5BuildInputAttestationGate = '- [x] Regenerate, freeze, and independently review the build-5 canonical build-input attestation; bind the exact external mode-0600 production plist hash, sanitized resolved Expo config, `cabohealth-owner-prod`, source/lock/manifests/verifiers, recursive clean `node_modules` runtime, and Node executable bytes/version. Retain the build-4 attestation only as obsolete diagnostic evidence. Pin the new authority so `build:prod` can run with `--freeze-credentials` from a unique private snapshot outside Dropbox whose parent `node_modules` resolves every Expo plugin.';
   const completedBuild6BuildInputAttestationGate = '- [x] Generate, independently review, and pin the build-6 canonical build-input attestation against the rebaselined 3.0/build 6 source and exact external mode-0600 production plist before its EAS build; do not reuse either obsolete build-5 attestation.';
-  const pendingBuild11BuildInputAttestationGate = '- [ ] Generate, independently review, and pin the build-11 canonical build-input attestation against the frozen 3.0/build 11 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8, aborted build-9, or processed build-10 authority.';
+  const pendingBuild11BuildInputAttestationGate = '- [ ] Generate, independently review, and pin the replacement build-11 canonical build-input attestation against the refrozen 3.0/build 11 application-source commit, exact Node/EAS runtime authority, reviewed sanitized production EAS-variable inventory, and exact external mode-0600 production plist before any EAS build; do not reuse obsolete build-8, aborted build-9, immutable processed build-10 history, or invalidated build-11 attempt-1 authority.';
   const required = [
     'apple-review-remediation-2026-08-24.md',
     'testflight-what-to-test.md',
@@ -1900,8 +1959,8 @@ function verifyHumanChecklists() {
   const remediation = read('apple-review-remediation-2026-08-24.md');
   requireText(
     remediation,
-    /Build 4 was subsequently produced and inspected as diagnostic evidence, but it\s+predates the completed dynamic-catalog source and is obsolete for release\.\s+Build 5 was subsequently built, pinned by the exact build-input and build-artifact attestations, and processed in TestFlight as Ready to Submit, but it is obsolete for the rebaselined VIP source\.\s+Build 6 was subsequently built, exactly attested, processed, and activated for the internal TestFlight group, but it is obsolete for the full-screen VIP navigation source\.\s+Build 7 produced two FINISHED EAS builds; one is exactly attested and both are obsolete for the external-HTTPS miniapps source, with no App Store Connect processing inferred\.\s+Build 8 was built and attested, uploaded to TestFlight, observed as Ready to Submit, and available to the existing internal group, but is obsolete for the WebView subframe fix\.\s+Build 9 was input-attested, then aborted before any provider operation when mandatory post-pin tests exposed phase-stale release gates\.\s+Build 10 was built, attested, uploaded, and processed for internal TestFlight; its immutable history cannot authorize build 11\.\s+CaboHealth 3\.0 build 11 is the sole unbuilt candidate\./iu,
-    'Apple remediation record must retain builds 4 through 8 as obsolete history, build 9 as aborted pre-provider, build 10 as processed internal-TestFlight history, and build 11 as the sole unbuilt candidate',
+    /Build 4 was subsequently produced and inspected as diagnostic evidence, but it\s+predates the completed dynamic-catalog source and is obsolete for release\.\s+Build 5 was subsequently built, pinned by the exact build-input and build-artifact attestations, and processed in TestFlight as Ready to Submit, but it is obsolete for the rebaselined VIP source\.\s+Build 6 was subsequently built, exactly attested, processed, and activated for the internal TestFlight group, but it is obsolete for the full-screen VIP navigation source\.\s+Build 7 produced two FINISHED EAS builds; one is exactly attested and both are obsolete for the external-HTTPS miniapps source, with no App Store Connect processing inferred\.\s+Build 8 was built and attested, uploaded to TestFlight, observed as Ready to Submit, and available to the existing internal group, but is obsolete for the WebView subframe fix\.\s+Build 9 was input-attested, then aborted before any provider operation when mandatory post-pin tests exposed phase-stale release gates\.\s+Build 10 was built, attested, uploaded, and processed for internal TestFlight; its immutable history cannot authorize build 11\.\s+Build 11 input attempt 1 was invalidated by a tracked source drift before any provider operation, is separately archived as historical input authority only, and cannot authorize a build\.\s+CaboHealth 3\.0 build 11 remains the sole unbuilt candidate\./iu,
+    'Apple remediation record must retain obsolete builds 4 through 8, aborted build 9, processed build 10, and separate invalidated build 11 input history',
   );
   requireText(remediation, /Guideline 2\.1/iu, 'Apple remediation record missing the completeness and stability response');
   requireText(remediation, /Guideline 1\.4\.1/iu, 'Apple remediation record missing the medical citation response');

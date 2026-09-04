@@ -116,6 +116,14 @@
       "privateHistoryRoot": "release/private/rc-build-10"
     }
   ],
+  "historicalInputAuthorityEvidence": [
+    {
+      "attempt": 1,
+      "status": "input-attested-invalidated-pre-provider-source-drift",
+      "trackedHistoryRoot": "release/app-store/3.0/history/build-11-input-attempt-1-aborted",
+      "providerOperationInitiated": false
+    }
+  ],
   "ownerSeller": {
     "sellerType": "individual",
     "legalSeller": "Ivan Guaderrama",

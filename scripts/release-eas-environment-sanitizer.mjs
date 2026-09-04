@@ -14,7 +14,7 @@ import {
 
 const CODE = 'EAS_ENVIRONMENT_SANITIZATION_FAILED';
 const MAX_INPUT_BYTES = 1024 * 1024;
-const TASK_PARENT = '/.superpowers/sdd/2026-09-03-cabohealth-build11-app-store-release/task-3-evidence';
+const TASK_PARENT = '/.superpowers/sdd/2026-09-04-cabohealth-build11-input-authority-recovery/task-3-recovery-evidence';
 const UNICODE_WHITESPACE = /[\p{White_Space}\p{Pattern_White_Space}\uFEFF]/u;
 const SENSITIVE_VALUE = '***** (This is a sensitive env variable. To access it, run command with --include-sensitive flag. Learn more.)';
 const SECRET_VALUE = "***** (This is a secret env variable that can only be accessed on EAS builder and can't be read in any UI. Learn more.)";
