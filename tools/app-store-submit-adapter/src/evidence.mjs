@@ -14,7 +14,7 @@ import {
   TESTFLIGHT_BUILD_ID_PATTERN,
   UUID_PATTERN,
 } from './constants.mjs';
-import { readBoundJson } from './files.mjs';
+import { readBoundFile, readBoundJson } from './files.mjs';
 import { reject } from './errors.mjs';
 
 const RC_KEYS = Object.freeze([
@@ -27,6 +27,8 @@ const RC_KEYS = Object.freeze([
   'testFlightProcessedAt',
   'physicalIphoneQaSha256',
   'screenshotsManifestSha256',
+  'appPrivacySha256',
+  'reviewNotesSha256',
   'appStoreMetadataEvidenceSha256',
   'reviewedAt',
 ]);
@@ -302,6 +304,39 @@ export function validateScreenshotsManifest(value, bindings, { now = Date.now() 
   return value;
 }
 
+export function validateRcEvidenceChronology({
+  rcAttestation,
+  buildArtifact,
+  physicalIphoneQa,
+  appStoreConnectEvidence,
+  screenshotsManifest,
+}, { now = Date.now() } = {}) {
+  const code = 'RC_EVIDENCE_CHRONOLOGY_INVALID';
+  if (!Number.isFinite(now)
+    || !Array.isArray(screenshotsManifest?.captures)
+    || screenshotsManifest.captures.length === 0) reject(code);
+  const rcReviewedAt = Date.parse(rcAttestation?.reviewedAt);
+  if (!Number.isFinite(rcReviewedAt)
+    || new Date(rcReviewedAt).toISOString() !== rcAttestation.reviewedAt
+    || rcReviewedAt > now) reject(code);
+  const predecessors = [
+    buildArtifact?.reviewedAt,
+    rcAttestation?.testFlightProcessedAt,
+    physicalIphoneQa?.performedAt,
+    physicalIphoneQa?.reviewedAt,
+    appStoreConnectEvidence?.capturedAt,
+    appStoreConnectEvidence?.reviewedAt,
+    ...screenshotsManifest.captures.map((capture) => capture?.capturedAt),
+  ];
+  for (const predecessor of predecessors) {
+    const milliseconds = Date.parse(predecessor);
+    if (!Number.isFinite(milliseconds)
+      || new Date(milliseconds).toISOString() !== predecessor
+      || milliseconds > rcReviewedAt) reject(code);
+  }
+  return rcAttestation;
+}
+
 export function readAndValidateEvidence(args, { now = Date.now() } = {}) {
   const rcAttestation = validateRcAttestation(readBoundJson(args['rc-attestation'], {
     expectedSha256: args['rc-attestation-sha256'],
@@ -356,12 +391,31 @@ export function readAndValidateEvidence(args, { now = Date.now() } = {}) {
       sortKeys: true,
     },
   ), bindings, { now });
+  readBoundFile(args['app-privacy'], {
+    expectedSha256: args['app-privacy-sha256'],
+    privateFile: false,
+    code: 'APP_PRIVACY_FILE_INVALID',
+  });
+  readBoundFile(args['review-notes'], {
+    expectedSha256: args['review-notes-sha256'],
+    privateFile: false,
+    code: 'REVIEW_NOTES_FILE_INVALID',
+  });
   if (rcAttestation.physicalIphoneQaSha256 !== args['physical-iphone-qa-sha256']
     || rcAttestation.appStoreMetadataEvidenceSha256
       !== args['app-store-connect-evidence-sha256']
-    || rcAttestation.screenshotsManifestSha256 !== args['screenshots-manifest-sha256']) {
+    || rcAttestation.screenshotsManifestSha256 !== args['screenshots-manifest-sha256']
+    || rcAttestation.appPrivacySha256 !== args['app-privacy-sha256']
+    || rcAttestation.reviewNotesSha256 !== args['review-notes-sha256']) {
     reject('RC_EVIDENCE_CROSS_BINDING_INVALID');
   }
+  validateRcEvidenceChronology({
+    rcAttestation,
+    buildArtifact,
+    physicalIphoneQa,
+    appStoreConnectEvidence,
+    screenshotsManifest,
+  }, { now });
   return Object.freeze({
     rcAttestation,
     buildArtifact,

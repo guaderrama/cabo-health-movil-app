@@ -22,6 +22,10 @@ export const ARGUMENT_NAMES = Object.freeze([
   'physical-iphone-qa-sha256',
   'screenshots-manifest',
   'screenshots-manifest-sha256',
+  'app-privacy',
+  'app-privacy-sha256',
+  'review-notes',
+  'review-notes-sha256',
   'authorization-nonce',
 ]);
 

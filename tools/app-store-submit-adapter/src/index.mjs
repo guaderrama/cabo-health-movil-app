@@ -26,6 +26,7 @@ export {
   validateBuildArtifact,
   validatePhysicalIphoneQa,
   validateRcAttestation,
+  validateRcEvidenceChronology,
   validateScreenshotsManifest,
 } from './evidence.mjs';
 export { submitExactVersion, resolveLiveIdentity, apiPaths, requestBodies } from './api.mjs';

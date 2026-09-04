@@ -7,6 +7,8 @@ import {
   validateAppStoreConnectEvidence,
   validateBuildArtifact,
   validatePhysicalIphoneQa,
+  validateRcAttestation,
+  validateRcEvidenceChronology,
   validateScreenshotsManifest,
 } from '../src/index.mjs';
 import { QA_CHECK_IDS } from '../src/constants.mjs';
@@ -19,6 +21,7 @@ import {
   validAppStoreEvidence,
   validPhysicalQa,
   validScreenshots,
+  writeJson,
 } from './helpers.mjs';
 
 const bindings = {
@@ -75,8 +78,72 @@ test('accepts a fully cross-bound canonical evidence set', () => {
   const fixture = createEvidenceFixture();
   const evidence = readAndValidateEvidence(parseArguments(fixture.args), { now: NOW });
   assert.equal(evidence.rcAttestation.sourceTreeSha256, SOURCE_SHA);
+  assert.equal(
+    evidence.rcAttestation.appPrivacySha256,
+    fixture.values['app-privacy-sha256'],
+  );
+  assert.equal(
+    evidence.rcAttestation.reviewNotesSha256,
+    fixture.values['review-notes-sha256'],
+  );
   assert.equal(evidence.physicalIphoneQa.devices.length, 2);
   assert.equal(evidence.screenshotsManifest.captures.length, 16);
+});
+
+test('RC schema requires exact App Privacy and review-notes byte hashes', () => {
+  const fixture = createEvidenceFixture();
+  assert.doesNotThrow(() => validateRcAttestation(fixture.rc, { now: NOW }));
+
+  const missingPrivacy = structuredClone(fixture.rc);
+  delete missingPrivacy.appPrivacySha256;
+  assert.throws(
+    () => validateRcAttestation(missingPrivacy, { now: NOW }),
+    /RC_ATTESTATION_EVIDENCE_INVALID/u,
+  );
+
+  const invalidNotes = structuredClone(fixture.rc);
+  invalidNotes.reviewNotesSha256 = 'not-a-sha256';
+  assert.throws(
+    () => validateRcAttestation(invalidNotes, { now: NOW }),
+    /RC_ATTESTATION_EVIDENCE_INVALID/u,
+  );
+});
+
+test('adapter requires RC review after build, QA, metadata, and screenshot evidence', () => {
+  const fixture = createEvidenceFixture();
+  const evidence = {
+    rcAttestation: fixture.rc,
+    buildArtifact: fixture.buildArtifact,
+    physicalIphoneQa: fixture.physical,
+    appStoreConnectEvidence: fixture.appStore,
+    screenshotsManifest: fixture.screenshots,
+  };
+  assert.doesNotThrow(() => validateRcEvidenceChronology(evidence, { now: NOW }));
+
+  for (const [name, mutate] of [
+    ['build artifact', (value) => { value.buildArtifact.reviewedAt = '2026-08-25T19:30:00.001Z'; }],
+    ['TestFlight processing', (value) => { value.rcAttestation.testFlightProcessedAt = '2026-08-25T19:30:00.001Z'; }],
+    ['physical QA performance', (value) => { value.physicalIphoneQa.performedAt = '2026-08-25T19:30:00.001Z'; }],
+    ['physical QA review', (value) => { value.physicalIphoneQa.reviewedAt = '2026-08-25T19:30:00.001Z'; }],
+    ['App Store capture', (value) => { value.appStoreConnectEvidence.capturedAt = '2026-08-25T19:30:00.001Z'; }],
+    ['App Store review', (value) => { value.appStoreConnectEvidence.reviewedAt = '2026-08-25T19:30:00.001Z'; }],
+    ['latest screenshot', (value) => { value.screenshotsManifest.captures[15].capturedAt = '2026-08-25T19:30:00.001Z'; }],
+  ]) {
+    const reversed = structuredClone(evidence);
+    mutate(reversed);
+    assert.throws(
+      () => validateRcEvidenceChronology(reversed, { now: NOW }),
+      /RC_EVIDENCE_CHRONOLOGY_INVALID/u,
+      name,
+    );
+  }
+
+  const future = structuredClone(evidence);
+  future.rcAttestation.reviewedAt = new Date(NOW + 5 * 60 * 1000 + 1).toISOString();
+  assert.throws(
+    () => validateRcEvidenceChronology(future, { now: NOW }),
+    /RC_EVIDENCE_CHRONOLOGY_INVALID/u,
+  );
 });
 
 test('rejects evidence byte drift, noncanonical JSON, unsafe mode, and a stale RC binding', () => {
@@ -125,6 +192,48 @@ test('rejects evidence byte drift, noncanonical JSON, unsafe mode, and a stale R
     assert.throws(
       () => readAndValidateEvidence(parseArguments(changed), { now: NOW }),
       /PHYSICAL_IPHONE_QA_FILE_INVALID/u,
+    );
+  }
+  {
+    const fixture = createEvidenceFixture();
+    writeFileSync(fixture.values['app-privacy'], '{"status":"drifted"}\n');
+    assert.throws(
+      () => readAndValidateEvidence(parseArguments(fixture.args), { now: NOW }),
+      /APP_PRIVACY_FILE_INVALID/u,
+    );
+  }
+  {
+    const fixture = createEvidenceFixture();
+    writeFileSync(fixture.values['review-notes'], 'Drifted review notes.\n');
+    assert.throws(
+      () => readAndValidateEvidence(parseArguments(fixture.args), { now: NOW }),
+      /REVIEW_NOTES_FILE_INVALID/u,
+    );
+  }
+  {
+    const fixture = createEvidenceFixture();
+    const changed = [...fixture.args];
+    changed[changed.indexOf('--review-notes-sha256') + 1] = 'f'.repeat(64);
+    assert.throws(
+      () => readAndValidateEvidence(parseArguments(changed), { now: NOW }),
+      /REVIEW_NOTES_FILE_INVALID/u,
+    );
+  }
+  {
+    const fixture = createEvidenceFixture();
+    const forgedRc = structuredClone(fixture.rc);
+    forgedRc.appPrivacySha256 = 'f'.repeat(64);
+    const forgedRcSha256 = writeJson(
+      fixture.values['rc-attestation'],
+      forgedRc,
+      0o644,
+    );
+    const changed = [...fixture.args];
+    changed[changed.indexOf('--rc-attestation-sha256') + 1] = forgedRcSha256;
+    changed[changed.indexOf('--app-privacy-sha256') + 1] = forgedRc.appPrivacySha256;
+    assert.throws(
+      () => readAndValidateEvidence(parseArguments(changed), { now: NOW }),
+      /APP_PRIVACY_FILE_INVALID/u,
     );
   }
 });

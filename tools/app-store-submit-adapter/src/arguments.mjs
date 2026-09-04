@@ -14,6 +14,8 @@ const PATH_ARGUMENTS = new Set([
   'app-store-connect-evidence',
   'physical-iphone-qa',
   'screenshots-manifest',
+  'app-privacy',
+  'review-notes',
 ]);
 const HASH_ARGUMENTS = new Set([
   'rc-attestation-sha256',
@@ -21,6 +23,8 @@ const HASH_ARGUMENTS = new Set([
   'app-store-connect-evidence-sha256',
   'physical-iphone-qa-sha256',
   'screenshots-manifest-sha256',
+  'app-privacy-sha256',
+  'review-notes-sha256',
 ]);
 
 export function parseArguments(argv) {

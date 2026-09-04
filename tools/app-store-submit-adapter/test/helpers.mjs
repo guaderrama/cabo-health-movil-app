@@ -133,9 +133,18 @@ export function createEvidenceFixture() {
   const physicalPath = join(root, 'private', 'physical-iphone-qa.json');
   const appStorePath = join(root, 'private', 'app-store-connect-evidence.json');
   const screenshotsPath = join(root, 'public', 'screenshots-manifest.json');
+  const appPrivacyPath = join(root, 'public', 'app-privacy.json');
+  const reviewNotesPath = join(root, 'public', 'review-notes.md');
   const physicalHash = writeJson(physicalPath, physical, 0o600, true);
   const appStoreHash = writeJson(appStorePath, appStore, 0o600, true);
   const screenshotsHash = writeJson(screenshotsPath, screenshots, 0o644, true);
+  const appPrivacyHash = writeJson(appPrivacyPath, {
+    schemaVersion: 1,
+    status: 'final',
+  }, 0o644, true);
+  writeFileSync(reviewNotesPath, 'Final App Review notes.\n', { mode: 0o644 });
+  chmodSync(reviewNotesPath, 0o644);
+  const reviewNotesHash = hash(readFileSync(reviewNotesPath));
   const buildArtifact = {
     schemaVersion: 1,
     artifactKind: 'cabohealth-ios-build-artifact-attestation',
@@ -171,6 +180,8 @@ export function createEvidenceFixture() {
     testFlightProcessedAt: '2026-08-25T17:30:00.000Z',
     physicalIphoneQaSha256: physicalHash,
     screenshotsManifestSha256: screenshotsHash,
+    appPrivacySha256: appPrivacyHash,
+    reviewNotesSha256: reviewNotesHash,
     appStoreMetadataEvidenceSha256: appStoreHash,
     reviewedAt: '2026-08-25T19:30:00.000Z',
   };
@@ -193,6 +204,10 @@ export function createEvidenceFixture() {
     'physical-iphone-qa-sha256': physicalHash,
     'screenshots-manifest': screenshotsPath,
     'screenshots-manifest-sha256': screenshotsHash,
+    'app-privacy': appPrivacyPath,
+    'app-privacy-sha256': appPrivacyHash,
+    'review-notes': reviewNotesPath,
+    'review-notes-sha256': reviewNotesHash,
     'authorization-nonce': 'F'.repeat(32),
   };
   const args = Object.entries(values).flatMap(([key, value]) => [`--${key}`, value]);

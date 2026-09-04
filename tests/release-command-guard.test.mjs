@@ -55,6 +55,48 @@ test('build artifact review chronology follows terminal evidence and cannot be f
   ), /EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID/u);
 });
 
+test('RC review chronology follows every reviewed evidence source and cannot be future-dated', async () => {
+  const { validateRcReviewChronology } = await import(guardPath);
+  const chronology = {
+    buildArtifactReviewedAt: '2026-08-30T11:00:00.000Z',
+    testFlightProcessedAt: '2026-08-30T11:05:00.000Z',
+    physicalIphoneQaPerformedAt: '2026-08-30T11:10:00.000Z',
+    physicalIphoneQaReviewedAt: '2026-08-30T11:15:00.000Z',
+    appStoreConnectCapturedAt: '2026-08-30T11:20:00.000Z',
+    appStoreConnectReviewedAt: '2026-08-30T11:25:00.000Z',
+    screenshotCapturedAts: [
+      '2026-08-30T11:12:00.000Z',
+      '2026-08-30T11:30:00.000Z',
+    ],
+    rcReviewedAt: '2026-08-30T11:31:00.000Z',
+  };
+  const now = Date.parse('2026-08-30T12:00:00.000Z');
+  assert.doesNotThrow(() => validateRcReviewChronology(chronology, now));
+
+  for (const [name, mutate] of [
+    ['build artifact', (value) => { value.buildArtifactReviewedAt = '2026-08-30T11:31:00.001Z'; }],
+    ['TestFlight processing', (value) => { value.testFlightProcessedAt = '2026-08-30T11:31:00.001Z'; }],
+    ['physical QA performance', (value) => { value.physicalIphoneQaPerformedAt = '2026-08-30T11:31:00.001Z'; }],
+    ['physical QA review', (value) => { value.physicalIphoneQaReviewedAt = '2026-08-30T11:31:00.001Z'; }],
+    ['App Store capture', (value) => { value.appStoreConnectCapturedAt = '2026-08-30T11:31:00.001Z'; }],
+    ['App Store review', (value) => { value.appStoreConnectReviewedAt = '2026-08-30T11:31:00.001Z'; }],
+    ['latest screenshot', (value) => { value.screenshotCapturedAts.push('2026-08-30T11:31:00.001Z'); }],
+  ]) {
+    const reversed = structuredClone(chronology);
+    mutate(reversed);
+    assert.throws(
+      () => validateRcReviewChronology(reversed, now),
+      /EXACT_RC_ATTESTATION_INVALID/u,
+      name,
+    );
+  }
+
+  assert.throws(() => validateRcReviewChronology({
+    ...chronology,
+    rcReviewedAt: '2026-08-30T12:00:00.001Z',
+  }, now), /EXACT_RC_ATTESTATION_INVALID/u);
+});
+
 function currentReleasePins() {
   const source = readFileSync(guardPath, 'utf8');
   const optionalPin = (name, pattern, description) => {
@@ -662,6 +704,9 @@ test('tracked source includes guard behavior while normalizing only reviewed pin
     '',
   ].join('\n'));
   write(root, 'release/app-store/3.0/screenshots-manifest.json', '{"captures":[]}\n');
+  write(root, 'release/app-store/3.0/app-privacy.json', '{"status":"draft"}\n');
+  write(root, 'release/app-store/3.0/review-notes.md', 'Draft review notes.\n');
+  write(root, 'release/app-store/3.0/app-privacy.md', 'Binary-source privacy documentation.\n');
   git(root, 'init', '-q');
   git(root, 'add', '.');
   git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
@@ -677,6 +722,35 @@ test('tracked source includes guard behavior while normalizing only reviewed pin
     initial,
     'post-build screenshot evidence must not mutate the reviewed build-input digest',
   );
+
+  write(root, 'release/app-store/3.0/app-privacy.json', '{"status":"final"}\n');
+  write(root, 'release/app-store/3.0/review-notes.md', 'Final review notes.\n');
+  git(root, 'add',
+    'release/app-store/3.0/app-privacy.json',
+    'release/app-store/3.0/review-notes.md');
+  git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+    'commit', '-qm', 'finalize App Store metadata');
+  assert.equal(
+    computeTrackedSourceSha256(root),
+    initial,
+    'only the two post-build App Store metadata files are excluded from the binary digest',
+  );
+
+  write(root, 'release/app-store/3.0/app-privacy.md', 'Changed binary-source privacy documentation.\n');
+  git(root, 'add', 'release/app-store/3.0/app-privacy.md');
+  git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+    'commit', '-qm', 'change a similarly named source file');
+  assert.notEqual(
+    computeTrackedSourceSha256(root),
+    initial,
+    'similarly named metadata must remain in the binary digest',
+  );
+
+  write(root, 'release/app-store/3.0/app-privacy.md', 'Binary-source privacy documentation.\n');
+  git(root, 'add', 'release/app-store/3.0/app-privacy.md');
+  git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+    'commit', '-qm', 'restore similarly named source file');
+  assert.equal(computeTrackedSourceSha256(root), initial);
 
   const source = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
   write(root, 'scripts/release-command-guard.mjs', source.replace(
@@ -925,6 +999,8 @@ test('the final adapter receives every exact ASC build identity and reviewed evi
     testFlightBuildId: '987654321',
     physicalIphoneQaSha256: 'c'.repeat(64),
     screenshotsManifestSha256: 'd'.repeat(64),
+    appPrivacySha256: '1'.repeat(64),
+    reviewNotesSha256: '2'.repeat(64),
     appStoreMetadataEvidenceSha256: 'e'.repeat(64),
   };
   const authorization = { nonce: 'F'.repeat(32) };
@@ -959,6 +1035,10 @@ test('the final adapter receives every exact ASC build identity and reviewed evi
       'release/app-store/3.0/screenshots-manifest.json',
     ),
     '--screenshots-manifest-sha256', 'd'.repeat(64),
+    '--app-privacy', join(projectRoot, 'release/app-store/3.0/app-privacy.json'),
+    '--app-privacy-sha256', '1'.repeat(64),
+    '--review-notes', join(projectRoot, 'release/app-store/3.0/review-notes.md'),
+    '--review-notes-sha256', '2'.repeat(64),
     '--authorization-nonce', 'F'.repeat(32),
   ]);
 });
@@ -1126,6 +1206,9 @@ test('phase authority history permits one exact attestation and one exact pin pe
       '',
     ].join('\n'));
     write(root, 'app.json', '{}\n');
+    write(root, 'release/app-store/3.0/screenshots-manifest.json', '{"status":"pending"}\n');
+    write(root, 'release/app-store/3.0/app-privacy.json', '{"status":"draft"}\n');
+    write(root, 'release/app-store/3.0/review-notes.md', 'Draft review notes.\n');
     git(root, 'init', '-q');
     git(root, 'add', '.');
     git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
@@ -1145,8 +1228,58 @@ test('phase authority history permits one exact attestation and one exact pin pe
     git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
       'commit', '-qm', message);
   };
+  const advanceInputAndArtifact = (root, sourceCommit) => {
+    const inputBytes = Buffer.from('{"phase":"input"}\n');
+    const inputSha256 = hash(inputBytes);
+    write(root, 'release/app-store/3.0/build-input-attestation.json', inputBytes);
+    setPin(root, 'BUILD_INPUT_ATTESTATION_SHA256', 'null', inputSha256);
+    commit(root, 'review input authority',
+      'release/app-store/3.0/build-input-attestation.json',
+      'scripts/release-command-guard.mjs');
+    assert.doesNotThrow(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'input', {
+      buildInputSha256: inputSha256,
+    }));
 
-  await t.test('accepts exact ordered input, artifact, screenshot, RC, and submit-tool authority', () => {
+    const artifactBytes = Buffer.from('{"phase":"artifact"}\n');
+    const artifactSha256 = hash(artifactBytes);
+    write(root, 'release/app-store/3.0/build-artifact-attestation.json', artifactBytes);
+    setPin(root, 'BUILD_ARTIFACT_ATTESTATION_SHA256', 'null', artifactSha256);
+    commit(root, 'review artifact authority',
+      'release/app-store/3.0/build-artifact-attestation.json',
+      'scripts/release-command-guard.mjs');
+    assert.doesNotThrow(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'artifact', {
+      buildInputSha256: inputSha256,
+      buildArtifactSha256: artifactSha256,
+    }));
+    return { inputSha256, artifactSha256 };
+  };
+  const finalizeScreenshots = (root, suffix = 'final') => {
+    write(root, 'release/app-store/3.0/screenshots-manifest.json',
+      `{"status":"${suffix}"}\n`);
+    commit(root, `finalize screenshots ${suffix}`,
+      'release/app-store/3.0/screenshots-manifest.json');
+  };
+  const finalizeMetadata = (root, suffix = 'final', ...extraPaths) => {
+    write(root, 'release/app-store/3.0/app-privacy.json',
+      `{"status":"${suffix}"}\n`);
+    write(root, 'release/app-store/3.0/review-notes.md', `Review notes ${suffix}.\n`);
+    commit(root, `finalize metadata ${suffix}`,
+      'release/app-store/3.0/app-privacy.json',
+      'release/app-store/3.0/review-notes.md',
+      ...extraPaths);
+  };
+  const advanceRc = (root) => {
+    const rcBytes = Buffer.from('{"phase":"rc"}\n');
+    const rcSha256 = hash(rcBytes);
+    write(root, 'release/app-store/3.0/rc-attestation.json', rcBytes);
+    setPin(root, 'RC_ATTESTATION_SHA256', 'null', rcSha256);
+    commit(root, 'review RC authority',
+      'release/app-store/3.0/rc-attestation.json',
+      'scripts/release-command-guard.mjs');
+    return rcSha256;
+  };
+
+  await t.test('accepts exact ordered input, artifact, screenshot, metadata, RC, and submit-tool authority', () => {
     const { root, sourceCommit } = makeFixture();
     t.after(() => rmSync(root, { recursive: true, force: true }));
     const inputBytes = Buffer.from('{"phase":"input"}\n');
@@ -1169,6 +1302,12 @@ test('phase authority history permits one exact attestation and one exact pin pe
     commit(root, 'record screenshot evidence',
       'release/app-store/3.0/screenshots-manifest.json');
 
+    write(root, 'release/app-store/3.0/app-privacy.json', '{"status":"final"}\n');
+    write(root, 'release/app-store/3.0/review-notes.md', 'Final review notes.\n');
+    commit(root, 'finalize reviewed App Store metadata',
+      'release/app-store/3.0/app-privacy.json',
+      'release/app-store/3.0/review-notes.md');
+
     const rcBytes = Buffer.from('{"phase":"rc"}\n');
     const rcSha256 = hash(rcBytes);
     write(root, 'release/app-store/3.0/rc-attestation.json', rcBytes);
@@ -1187,6 +1326,143 @@ test('phase authority history permits one exact attestation and one exact pin pe
       rcSha256,
       submitAdapterPin,
     }));
+  });
+
+  await t.test('rejects RC authority when screenshot finalization is missing', () => {
+    const { root, sourceCommit } = makeFixture();
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const { inputSha256, artifactSha256 } = advanceInputAndArtifact(root, sourceCommit);
+    const rcSha256 = advanceRc(root);
+    assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'rc', {
+      buildInputSha256: inputSha256,
+      buildArtifactSha256: artifactSha256,
+      rcSha256,
+    }), /EXACT_RC_ATTESTATION_INVALID/u);
+  });
+
+  await t.test('rejects RC authority when metadata finalization is missing', () => {
+    const { root, sourceCommit } = makeFixture();
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const { inputSha256, artifactSha256 } = advanceInputAndArtifact(root, sourceCommit);
+    finalizeScreenshots(root);
+    const rcSha256 = advanceRc(root);
+    assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'rc', {
+      buildInputSha256: inputSha256,
+      buildArtifactSha256: artifactSha256,
+      rcSha256,
+    }), /EXACT_RC_ATTESTATION_INVALID/u);
+  });
+
+  await t.test('rejects screenshot or metadata finalization with a missing or extra path', () => {
+    {
+      const { root, sourceCommit } = makeFixture();
+      t.after(() => rmSync(root, { recursive: true, force: true }));
+      const { inputSha256, artifactSha256 } = advanceInputAndArtifact(root, sourceCommit);
+      finalizeScreenshots(root);
+      write(root, 'release/app-store/3.0/app-privacy.json', '{"status":"final"}\n');
+      commit(root, 'incomplete metadata finalization',
+        'release/app-store/3.0/app-privacy.json');
+      const rcSha256 = advanceRc(root);
+      assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'rc', {
+        buildInputSha256: inputSha256,
+        buildArtifactSha256: artifactSha256,
+        rcSha256,
+      }), /EXACT_RC_ATTESTATION_INVALID/u);
+    }
+    {
+      const { root, sourceCommit } = makeFixture();
+      t.after(() => rmSync(root, { recursive: true, force: true }));
+      const { inputSha256, artifactSha256 } = advanceInputAndArtifact(root, sourceCommit);
+      write(root, 'app.json', '{"unexpected":"screenshot-side-change"}\n');
+      write(root, 'release/app-store/3.0/screenshots-manifest.json', '{"status":"final"}\n');
+      commit(root, 'screenshot finalization with extra path',
+        'release/app-store/3.0/screenshots-manifest.json',
+        'app.json');
+      finalizeMetadata(root);
+      const rcSha256 = advanceRc(root);
+      assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'rc', {
+        buildInputSha256: inputSha256,
+        buildArtifactSha256: artifactSha256,
+        rcSha256,
+      }), /EXACT_RC_ATTESTATION_INVALID/u);
+    }
+    {
+      const { root, sourceCommit } = makeFixture();
+      t.after(() => rmSync(root, { recursive: true, force: true }));
+      const { inputSha256, artifactSha256 } = advanceInputAndArtifact(root, sourceCommit);
+      finalizeScreenshots(root);
+      write(root, 'app.json', '{"unexpected":"metadata-side-change"}\n');
+      finalizeMetadata(root, 'with-extra-path', 'app.json');
+      const rcSha256 = advanceRc(root);
+      assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'rc', {
+        buildInputSha256: inputSha256,
+        buildArtifactSha256: artifactSha256,
+        rcSha256,
+      }), /EXACT_RC_ATTESTATION_INVALID/u);
+    }
+  });
+
+  await t.test('rejects repeated screenshot or metadata finalization', () => {
+    {
+      const { root, sourceCommit } = makeFixture();
+      t.after(() => rmSync(root, { recursive: true, force: true }));
+      const { inputSha256, artifactSha256 } = advanceInputAndArtifact(root, sourceCommit);
+      finalizeScreenshots(root, 'first');
+      finalizeScreenshots(root, 'second');
+      finalizeMetadata(root);
+      const rcSha256 = advanceRc(root);
+      assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'rc', {
+        buildInputSha256: inputSha256,
+        buildArtifactSha256: artifactSha256,
+        rcSha256,
+      }), /EXACT_RC_ATTESTATION_INVALID/u);
+    }
+    {
+      const { root, sourceCommit } = makeFixture();
+      t.after(() => rmSync(root, { recursive: true, force: true }));
+      const { inputSha256, artifactSha256 } = advanceInputAndArtifact(root, sourceCommit);
+      finalizeScreenshots(root);
+      finalizeMetadata(root, 'first');
+      finalizeMetadata(root, 'second');
+      const rcSha256 = advanceRc(root);
+      assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'rc', {
+        buildInputSha256: inputSha256,
+        buildArtifactSha256: artifactSha256,
+        rcSha256,
+      }), /EXACT_RC_ATTESTATION_INVALID/u);
+    }
+  });
+
+  await t.test('rejects metadata before screenshots', () => {
+    const { root, sourceCommit } = makeFixture();
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const { inputSha256, artifactSha256 } = advanceInputAndArtifact(root, sourceCommit);
+    finalizeMetadata(root);
+    finalizeScreenshots(root);
+    const rcSha256 = advanceRc(root);
+    assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'rc', {
+      buildInputSha256: inputSha256,
+      buildArtifactSha256: artifactSha256,
+      rcSha256,
+    }), /EXACT_RC_ATTESTATION_INVALID/u);
+  });
+
+  await t.test('rejects screenshot or metadata finalization after RC pinning', () => {
+    for (const postRcKind of ['screenshots', 'metadata']) {
+      const { root, sourceCommit } = makeFixture();
+      t.after(() => rmSync(root, { recursive: true, force: true }));
+      const { inputSha256, artifactSha256 } = advanceInputAndArtifact(root, sourceCommit);
+      finalizeScreenshots(root);
+      finalizeMetadata(root);
+      const rcSha256 = advanceRc(root);
+      if (postRcKind === 'screenshots') finalizeScreenshots(root, 'post-rc');
+      else finalizeMetadata(root, 'post-rc');
+      assert.throws(() => verifyPhaseAuthorityCommitHistory(root, sourceCommit, 'rc', {
+        buildInputSha256: inputSha256,
+        buildArtifactSha256: artifactSha256,
+        rcSha256,
+      }), /EXACT_RC_ATTESTATION_INVALID/u, postRcKind);
+    }
   });
 
   await t.test('rejects one phase commit that advances two pins', () => {
@@ -1309,6 +1585,8 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
       '',
     ].join('\n'),
     'release/app-store/3.0/screenshots-manifest.json': '{"captures":[]}\n',
+    'release/app-store/3.0/app-privacy.json': '{"status":"draft"}\n',
+    'release/app-store/3.0/review-notes.md': 'Draft review notes.\n',
     'tool-runtime/eas-cli/package.json': '{"name":"eas-cli","version":"22.2.0"}\n',
     'tool-runtime/eas-cli/bin/run': '#!/usr/bin/env node\n',
   };
@@ -1519,6 +1797,13 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
   git(root, 'add', 'release/app-store/3.0/screenshots-manifest.json');
   git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
     'commit', '-qm', 'record screenshot evidence');
+  write(root, 'release/app-store/3.0/app-privacy.json', '{"status":"final"}\n');
+  write(root, 'release/app-store/3.0/review-notes.md', 'Final review notes.\n');
+  git(root, 'add',
+    'release/app-store/3.0/app-privacy.json',
+    'release/app-store/3.0/review-notes.md');
+  git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
+    'commit', '-qm', 'finalize App Store metadata');
   const rcAttestation = {
     schemaVersion: 1,
     artifactKind: 'cabohealth-ios-exact-rc-attestation',
@@ -1532,6 +1817,12 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     )),
     screenshotsManifestSha256: hash(readFileSync(
       join(root, 'release/app-store/3.0/screenshots-manifest.json'),
+    )),
+    appPrivacySha256: hash(readFileSync(
+      join(root, 'release/app-store/3.0/app-privacy.json'),
+    )),
+    reviewNotesSha256: hash(readFileSync(
+      join(root, 'release/app-store/3.0/review-notes.md'),
     )),
     appStoreMetadataEvidenceSha256: hash(readFileSync(
       join(root, 'release/private/rc-build-11/app-store-connect-evidence.json'),
@@ -1563,6 +1854,18 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     rcSha256,
   }), rcAttestation);
 
+  write(root, 'release/private/rc-build-11/CaboHealth-3.0-build-11.ipa', 'drifted ipa bytes');
+  assert.throws(() => verifyBuildArtifactAttestation(root, {
+    buildInputSha256,
+    buildArtifactSha256,
+  }, { phase: 'rc', phasePins: { rcSha256 } }), /EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID/u);
+  write(
+    root,
+    'release/private/rc-build-11/CaboHealth-3.0-build-11.ipa',
+    evidence['release/private/rc-build-11/CaboHealth-3.0-build-11.ipa'],
+  );
+  chmodSync(join(root, 'release/private/rc-build-11/CaboHealth-3.0-build-11.ipa'), 0o600);
+
   write(root, 'release/app-store/3.0/screenshots-manifest.json', '{"captures":["drift"]}\n');
   git(root, 'add', 'release/app-store/3.0/screenshots-manifest.json');
   git(root, '-c', 'user.name=CaboHealth Test', '-c', 'user.email=test@example.invalid',
@@ -1572,12 +1875,6 @@ test('phase attestations recompute tracked source and exact IPA bytes', async (t
     buildArtifactSha256,
     rcSha256,
   }), /EXACT_RC_ATTESTATION_INVALID/u);
-
-  write(root, 'release/private/rc-build-11/CaboHealth-3.0-build-11.ipa', 'drifted ipa bytes');
-  assert.throws(() => verifyBuildArtifactAttestation(root, {
-    buildInputSha256,
-    buildArtifactSha256,
-  }, { phase: 'rc', phasePins: { rcSha256 } }), /EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID/u);
 
   write(root, 'app.json', '{"expo":{"version":"9.9"}}\n');
   assert.throws(

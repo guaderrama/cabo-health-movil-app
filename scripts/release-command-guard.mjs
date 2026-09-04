@@ -53,6 +53,9 @@ const ATTESTATION_PATHS = Object.freeze({
   buildArtifact: 'release/app-store/3.0/build-artifact-attestation.json',
   rc: 'release/app-store/3.0/rc-attestation.json',
 });
+const SCREENSHOTS_MANIFEST_PATH = 'release/app-store/3.0/screenshots-manifest.json';
+const APP_PRIVACY_PATH = 'release/app-store/3.0/app-privacy.json';
+const REVIEW_NOTES_PATH = 'release/app-store/3.0/review-notes.md';
 const PRIVATE_EVIDENCE_PATHS = Object.freeze({
   ipa: 'release/private/rc-build-11/CaboHealth-3.0-build-11.ipa',
   signedEntitlements: 'release/private/rc-build-11/signed-entitlements.plist',
@@ -81,7 +84,12 @@ const SOURCE_DIGEST_EXCLUSIONS = new Set([
   // Exact-RC screenshots can only be captured after the immutable build is in
   // TestFlight. Their manifest is independently hashed by the RC attestation,
   // so it is evidence about the build rather than an input to that build.
-  'release/app-store/3.0/screenshots-manifest.json',
+  SCREENSHOTS_MANIFEST_PATH,
+  // App Privacy answers and App Review notes are finalized only after the
+  // immutable TestFlight build and physical QA exist. They are not binary
+  // inputs; the exact final bytes are instead bound by the RC attestation.
+  APP_PRIVACY_PATH,
+  REVIEW_NOTES_PATH,
 ]);
 const NORMALIZED_PIN_RULES = Object.freeze([
   ['BUILD_INPUT_ATTESTATION_SHA256', /^(?:null|'[a-f0-9]{64}')$/u],
@@ -146,6 +154,8 @@ const RC_KEYS = [
   'testFlightProcessedAt',
   'physicalIphoneQaSha256',
   'screenshotsManifestSha256',
+  'appPrivacySha256',
+  'reviewNotesSha256',
   'appStoreMetadataEvidenceSha256',
   'reviewedAt',
 ];
@@ -310,6 +320,36 @@ export function validateBuildArtifactReviewChronology(
 ) {
   const code = 'EXACT_BUILD_ARTIFACT_ATTESTATION_INVALID';
   if (!isValidReviewChronology(terminalReviewedAt, artifactReviewedAt, now)) reject(code);
+}
+
+const RC_REVIEW_CHRONOLOGY_KEYS = Object.freeze([
+  'buildArtifactReviewedAt',
+  'testFlightProcessedAt',
+  'physicalIphoneQaPerformedAt',
+  'physicalIphoneQaReviewedAt',
+  'appStoreConnectCapturedAt',
+  'appStoreConnectReviewedAt',
+  'screenshotCapturedAts',
+  'rcReviewedAt',
+]);
+
+export function validateRcReviewChronology(value, now = Date.now()) {
+  const code = 'EXACT_RC_ATTESTATION_INVALID';
+  if (!hasExactKeys(value, RC_REVIEW_CHRONOLOGY_KEYS)
+    || !Array.isArray(value.screenshotCapturedAts)
+    || value.screenshotCapturedAts.length === 0) reject(code);
+  const predecessors = [
+    value.buildArtifactReviewedAt,
+    value.testFlightProcessedAt,
+    value.physicalIphoneQaPerformedAt,
+    value.physicalIphoneQaReviewedAt,
+    value.appStoreConnectCapturedAt,
+    value.appStoreConnectReviewedAt,
+    ...value.screenshotCapturedAts,
+  ];
+  if (predecessors.some((predecessor) => (
+    !isValidReviewChronology(predecessor, value.rcReviewedAt, now)
+  ))) reject(code);
 }
 
 function assertCandidate(value, code) {
@@ -1105,7 +1145,15 @@ function easToolAuthorityFromBuildInput(attestation, code) {
 }
 
 const AUTHORITY_GUARD_PATH = 'scripts/release-command-guard.mjs';
-const SCREENSHOTS_MANIFEST_PATH = 'release/app-store/3.0/screenshots-manifest.json';
+const POST_ARTIFACT_FINALIZATION_RULES = Object.freeze([
+  Object.freeze([
+    Object.freeze({ status: 'M', relativePath: SCREENSHOTS_MANIFEST_PATH }),
+  ]),
+  Object.freeze([
+    Object.freeze({ status: 'M', relativePath: APP_PRIVACY_PATH }),
+    Object.freeze({ status: 'M', relativePath: REVIEW_NOTES_PATH }),
+  ]),
+]);
 const PHASE_AUTHORITY_RULES = Object.freeze([
   Object.freeze({
     phase: 'input',
@@ -1190,6 +1238,7 @@ export function verifyPhaseAuthorityCommitHistory(root, sourceCommit, phase, exp
     code,
   ).split('\n').filter(Boolean);
   let completedPhases = 0;
+  let completedFinalizations = 0;
   let previousGuardBytes = baseGuardBytes;
   let previousCommit = sourceCommit;
   for (const commit of commits) {
@@ -1200,17 +1249,23 @@ export function verifyPhaseAuthorityCommitHistory(root, sourceCommit, phase, exp
     const guardEntry = entries.find((entry) => entry.relativePath === AUTHORITY_GUARD_PATH);
 
     if (!guardEntry) {
-      const screenshotOnly = entries.length === 1
-        && entries[0].relativePath === SCREENSHOTS_MANIFEST_PATH
-        && completedPhases >= 2
-        && requestedIndex >= 2;
-      if (!screenshotOnly) reject(code);
+      if (completedPhases !== 2
+        || requestedIndex < 2
+        || completedFinalizations >= POST_ARTIFACT_FINALIZATION_RULES.length) reject(code);
+      const expectedEntries = POST_ARTIFACT_FINALIZATION_RULES[completedFinalizations];
+      if (!isDeepStrictEqual(
+        [...entries].sort((a, b) => a.relativePath.localeCompare(b.relativePath)),
+        [...expectedEntries].sort((a, b) => a.relativePath.localeCompare(b.relativePath)),
+      )) reject(code);
+      completedFinalizations += 1;
       previousCommit = commit;
       continue;
     }
 
     if (guardEntry.status !== 'M' || completedPhases > requestedIndex) reject(code);
     const rule = PHASE_AUTHORITY_RULES[completedPhases];
+    if (rule.phase === 'rc'
+      && completedFinalizations !== POST_ARTIFACT_FINALIZATION_RULES.length) reject(code);
     const expectedEntries = rule.attestationPath === null
       ? [{ status: 'M', relativePath: AUTHORITY_GUARD_PATH }]
       : [
@@ -1254,6 +1309,8 @@ export function verifyPhaseAuthorityCommitHistory(root, sourceCommit, phase, exp
   }
 
   if (completedPhases !== requestedIndex + 1) reject(code);
+  if (requestedIndex >= 2
+    && completedFinalizations !== POST_ARTIFACT_FINALIZATION_RULES.length) reject(code);
   const finalPins = parseAuthorityPins(guardBytesAtCommit(root, 'HEAD', code), code);
   for (let index = 0; index < PHASE_AUTHORITY_RULES.length; index += 1) {
     const rule = PHASE_AUTHORITY_RULES[index];
@@ -1495,39 +1552,67 @@ export function verifyRcAttestation(root, {
     },
   );
   const screenshotsManifestBytes = readBoundRegularFile(
-    join(root, 'release/app-store/3.0/screenshots-manifest.json'),
+    join(root, SCREENSHOTS_MANIFEST_PATH),
     {
       missingCode: code,
       invalidCode: code,
       maxBytes: 1024 * 1024,
     },
   );
+  const appPrivacyBytes = readBoundRegularFile(join(root, APP_PRIVACY_PATH), {
+    missingCode: code,
+    invalidCode: code,
+    maxBytes: 1024 * 1024,
+  });
+  const reviewNotesBytes = readBoundRegularFile(join(root, REVIEW_NOTES_PATH), {
+    missingCode: code,
+    invalidCode: code,
+    maxBytes: 1024 * 1024,
+  });
   if (attestation.buildArtifactAttestationSha256 !== buildArtifactSha256
     || attestation.sourceTreeSha256 !== buildArtifact.sourceTreeSha256
     || typeof attestation.testFlightBuildId !== 'string'
     || !/^\d+$/u.test(attestation.testFlightBuildId)
     || attestation.physicalIphoneQaSha256 !== sha256(physicalIphoneQaBytes)
     || attestation.screenshotsManifestSha256 !== sha256(screenshotsManifestBytes)
+    || attestation.appPrivacySha256 !== sha256(appPrivacyBytes)
+    || attestation.reviewNotesSha256 !== sha256(reviewNotesBytes)
     || attestation.appStoreMetadataEvidenceSha256 !== sha256(appStoreConnectEvidenceBytes)) {
     reject(code);
   }
+  const now = Date.now();
   try {
     const bindings = {
       testFlightBuildId: attestation.testFlightBuildId,
       sourceTreeSha256: attestation.sourceTreeSha256,
       testFlightProcessedAt: attestation.testFlightProcessedAt,
     };
-    validatePhysicalIphoneQaEvidence(parseExactJson(physicalIphoneQaBytes, code), bindings);
+    const physicalIphoneQa = parseExactJson(physicalIphoneQaBytes, code);
+    const appStoreConnectEvidence = parseExactJson(appStoreConnectEvidenceBytes, code);
+    const screenshotsManifest = parseExactJson(screenshotsManifestBytes, code);
+    validatePhysicalIphoneQaEvidence(physicalIphoneQa, bindings, { now });
     validateAppStoreConnectEvidence(
-      parseExactJson(appStoreConnectEvidenceBytes, code),
+      appStoreConnectEvidence,
       bindings,
+      { now },
     );
-    validateScreenshotsManifest(parseExactJson(screenshotsManifestBytes, code), {
+    validateScreenshotsManifest(screenshotsManifest, {
       phase: 'final',
       ...bindings,
+      now,
       evidenceRoot: join(root, 'release/private/rc-build-11'),
       requireFiles: true,
     });
+    validateRcReviewChronology({
+      buildArtifactReviewedAt: buildArtifact.reviewedAt,
+      testFlightProcessedAt: attestation.testFlightProcessedAt,
+      physicalIphoneQaPerformedAt: physicalIphoneQa.performedAt,
+      physicalIphoneQaReviewedAt: physicalIphoneQa.reviewedAt,
+      appStoreConnectCapturedAt: appStoreConnectEvidence.capturedAt,
+      appStoreConnectReviewedAt: appStoreConnectEvidence.reviewedAt,
+      screenshotCapturedAts: screenshotsManifest.captures.map((capture) => capture.capturedAt),
+      rcReviewedAt: attestation.reviewedAt,
+    }, now);
   } catch {
     reject(code);
   }
@@ -1772,6 +1857,8 @@ export function appStoreSubmitArguments(root, {
   assertSha256(rcAttestation.appStoreMetadataEvidenceSha256, code);
   assertSha256(rcAttestation.physicalIphoneQaSha256, code);
   assertSha256(rcAttestation.screenshotsManifestSha256, code);
+  assertSha256(rcAttestation.appPrivacySha256, code);
+  assertSha256(rcAttestation.reviewNotesSha256, code);
   if (!/^\d+$/u.test(rcAttestation.testFlightBuildId ?? '')
     || !NONCE_128_PATTERN.test(authorization?.nonce ?? '')) {
     reject(code);
@@ -1799,6 +1886,10 @@ export function appStoreSubmitArguments(root, {
       'release/app-store/3.0/screenshots-manifest.json',
     ),
     '--screenshots-manifest-sha256', rcAttestation.screenshotsManifestSha256,
+    '--app-privacy', join(absoluteRoot, APP_PRIVACY_PATH),
+    '--app-privacy-sha256', rcAttestation.appPrivacySha256,
+    '--review-notes', join(absoluteRoot, REVIEW_NOTES_PATH),
+    '--review-notes-sha256', rcAttestation.reviewNotesSha256,
     '--authorization-nonce', authorization.nonce,
   ];
 }
