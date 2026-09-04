@@ -219,9 +219,14 @@ async function currentLocalIpaAuthority(t, {
   git(project, ['config', 'user.name', 'CaboHealth Test']);
   git(project, ['config', 'user.email', 'cabohealth-test@example.invalid']);
   mkdirSync(join(project, 'scripts'), { recursive: true });
+  const releaseRoot = join(project, 'release/app-store/3.0');
+  mkdirSync(releaseRoot, { recursive: true, mode: 0o700 });
   writeFileSync(join(project, '.gitignore'), 'release/private/\n');
   writeFileSync(join(project, 'tracked-source.txt'), trackedSource);
   writeFileSync(join(project, 'scripts/release-command-guard.mjs'), authorityGuard());
+  writeFileSync(join(releaseRoot, 'screenshots-manifest.json'), '{"status":"pending"}\n');
+  writeFileSync(join(releaseRoot, 'app-privacy.json'), '{"status":"pending"}\n');
+  writeFileSync(join(releaseRoot, 'review-notes.md'), 'Pending review notes.\n');
   commitAll(project, 'freeze build 11 source');
   const sourceCommit = git(project, ['rev-parse', 'HEAD']);
   const { computeTrackedSourceSha256 } = await import('../scripts/release-command-guard.mjs');
@@ -278,9 +283,7 @@ async function currentLocalIpaAuthority(t, {
     embeddedProvisioningProfileSha256: '1'.repeat(64),
     reviewedAt: artifactReviewedAt,
   };
-  const releaseRoot = join(project, 'release/app-store/3.0');
   const privateRoot = join(project, 'release/private/rc-build-11');
-  mkdirSync(releaseRoot, { recursive: true, mode: 0o700 });
   mkdirSync(privateRoot, { recursive: true, mode: 0o700 });
   const inputBytes = Buffer.from(`${JSON.stringify(input)}\n`);
   const inputSha256 = hash(inputBytes);
@@ -305,6 +308,13 @@ async function currentLocalIpaAuthority(t, {
     ? 'forged combined build authority' : 'pin build 11 artifact authority');
   let rcSha256 = null;
   let submitAdapterPin = null;
+  if (['rc', 'submit-tool', 'gap-submit'].includes(laterPhase)) {
+    writeFileSync(join(releaseRoot, 'screenshots-manifest.json'), '{"status":"final"}\n');
+    commitAll(project, 'record screenshot evidence');
+    writeFileSync(join(releaseRoot, 'app-privacy.json'), '{"status":"final"}\n');
+    writeFileSync(join(releaseRoot, 'review-notes.md'), 'Final review notes.\n');
+    commitAll(project, 'finalize App Store metadata');
+  }
   if (laterPhase === 'rc' || laterPhase === 'submit-tool') {
     const rcBytes = Buffer.from('{"reviewed":"exact rc authority"}\n');
     rcSha256 = hash(rcBytes);
