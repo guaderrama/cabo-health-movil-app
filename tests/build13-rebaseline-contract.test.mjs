@@ -31,7 +31,7 @@ function withAuthorityPin(guard, name, value) {
   return guard.replace(declaration, `const ${name} = ${value};`);
 }
 
-function assertBuild12AuthorityPhase({ guard, attestations }) {
+function assertBuild13AuthorityPhase({ guard, attestations }) {
   const {
     buildInputPin,
     buildArtifactPin,
@@ -133,8 +133,8 @@ const STALE_BUILD_11_AUTHORITY = [
   /\b(?:3\.0\/)?build[- /]?11\s+is\s+the\s+current\s+candidate\b/iu,
   /\bbuild[- /]?11\s+freeze requirements\b/iu,
 ];
-const BUILD_12_SDD_ROOT = '/.superpowers/sdd/2026-09-04-cabohealth-build12-post-artifact-recovery';
-const BUILD_12_PHASE_TRUTH_PATHS = Object.freeze([
+const BUILD_13_SDD_ROOT = '/.superpowers/sdd/2026-09-25-cabohealth-build13-access-recovery';
+const BUILD_13_PHASE_TRUTH_PATHS = Object.freeze([
   'release/app-store/3.0/submission-gates.md',
   'release/app-store/3.0/apple-review-remediation-2026-08-24.md',
   'release/data-inventory.md',
@@ -144,16 +144,16 @@ const BUILD_12_PHASE_TRUTH_PATHS = Object.freeze([
   'docs/operations/protected-overlay-dynamic-activation-2026-08-26.md',
   'docs/operations/vip-showcase-production-activation-2026-08-26.md',
 ]);
-const BUILD_12_PHASE_NEUTRAL_CONTEXT = /live\s+authority\s+phase(?:\s|&mdash;|—|-)*pre-input,\s+input,\s+artifact,\s+RC,\s+or\s+submit-tool(?:\s|&mdash;|—|-)*must\s+be\s+determined\s+from\s+the\s+exact\s+current\s+pins\s+and\s+required\s+attestation\s+bytes/iu;
-const STALE_BUILD_12_PHASE_ASSERTIONS = Object.freeze([
-  /\bbuild[- /]?12\b[^.]{0,120}\bsole unbuilt\b/iu,
-  /\bsole unbuilt\b[^.]{0,120}\bbuild[- /]?12\b/iu,
-  /\bcurrent build-?12\b[^.]{0,100}\b(?:authority|attestation|IPA|TestFlight upload)\b[^.]{0,80}\b(?:absent|does not exist)\b/iu,
-  /\bno current build-?12\b[^.]{0,100}\b(?:authority|attestation|IPA|TestFlight upload)\b/iu,
-  /\bbuild[- /]?12\b[^.]{0,100}\bbuild-input authority\b[^.]{0,80}\bremain(?:s)? pending\b/iu,
-  /\bexact 3\.0\/build 12 signed RC\b[^.]{0,180}\bstill pending\b/iu,
-  /\bbuild 12 input freeze\b[^.]{0,240}\bremain pending\b/iu,
-  /\[[ ]\][^\n]*\bbuild-12 canonical build-input attestation\b/iu,
+const BUILD_13_PHASE_NEUTRAL_CONTEXT = /live\s+authority\s+phase(?:\s|&mdash;|—|-)*pre-input,\s+input,\s+artifact,\s+RC,\s+or\s+submit-tool(?:\s|&mdash;|—|-)*must\s+be\s+determined\s+from\s+the\s+exact\s+current\s+pins\s+and\s+required\s+attestation\s+bytes/iu;
+const STALE_BUILD_13_PHASE_ASSERTIONS = Object.freeze([
+  /\bbuild[- /]?13\b[^.]{0,120}\bsole unbuilt\b/iu,
+  /\bsole unbuilt\b[^.]{0,120}\bbuild[- /]?13\b/iu,
+  /\bcurrent build-?13\b[^.]{0,100}\b(?:authority|attestation|IPA|TestFlight upload)\b[^.]{0,80}\b(?:absent|does not exist)\b/iu,
+  /\bno current build-?13\b[^.]{0,100}\b(?:authority|attestation|IPA|TestFlight upload)\b/iu,
+  /\bbuild[- /]?13\b[^.]{0,100}\bbuild-input authority\b[^.]{0,80}\bremain(?:s)? pending\b/iu,
+  /\bexact 3\.0\/build 13 signed RC\b[^.]{0,180}\bstill pending\b/iu,
+  /\bbuild 13 input freeze\b[^.]{0,240}\bremain pending\b/iu,
+  /\[[ ]\][^\n]*\bbuild-13 canonical build-input attestation\b/iu,
 ]);
 
 function referenceLocalClause(source, referenceIndex) {
@@ -218,14 +218,14 @@ test('the refrozen current candidate has one valid contiguous phase while invali
   ));
 
   assert.equal(app.expo.version, '3.0');
-  assert.equal(app.expo.ios.buildNumber, '12');
-  assert.match(config, /buildNumber:\s*'12'/u);
-  assert.equal(manifest.candidate.buildNumber, '12');
+  assert.equal(app.expo.ios.buildNumber, '13');
+  assert.match(config, /buildNumber:\s*'13'/u);
+  assert.equal(manifest.candidate.buildNumber, '13');
   assert.deepEqual(manifest.candidate, {
     appleId: '6758285327',
     bundleIdentifier: 'com.cabohealth.app',
     marketingVersion: '3.0',
-    buildNumber: '12',
+    buildNumber: '13',
     status: 'authority-sequence-configured',
     appJsonUpdated: true,
     configUpdated: true,
@@ -233,15 +233,15 @@ test('the refrozen current candidate has one valid contiguous phase while invali
   });
   assert.equal(
     manifest.gates.exactReleaseCandidate,
-    'build-12-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
+    'build-13-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
   );
   assert.equal(
     manifest.gates.testFlight,
-    'builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-eas-finished-attested-not-uploaded-history-build-12-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
+    'builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-eas-finished-attested-not-uploaded-history-build-13-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
   );
   assert.equal(
     manifest.appStoreDraft.unresolvedExternalGates.exactReleaseCandidate,
-    'build-12-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
+    'build-13-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes',
   );
   const inputPath = join(root, 'release/app-store/3.0/build-input-attestation.json');
   const artifactPath = join(root, 'release/app-store/3.0/build-artifact-attestation.json');
@@ -249,7 +249,7 @@ test('the refrozen current candidate has one valid contiguous phase while invali
   const readOptionalAttestation = (path) => (
     existsSync(path) ? readFileSync(path) : null
   );
-  assert.match(assertBuild12AuthorityPhase({
+  assert.match(assertBuild13AuthorityPhase({
     guard,
     attestations: {
       input: readOptionalAttestation(inputPath),
@@ -273,7 +273,7 @@ test('the refrozen current candidate has one valid contiguous phase while invali
   ]);
 });
 
-test('build 12 authority accepts every contiguous phase and rejects partial or mismatched evidence', () => {
+test('build 13 authority accepts every contiguous phase and rejects partial or mismatched evidence', () => {
   const guard = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
   const input = Buffer.from('{"phase":"input"}\n');
   const artifact = Buffer.from('{"phase":"artifact"}\n');
@@ -304,9 +304,9 @@ test('build 12 authority accepts every contiguous phase and rejects partial or m
     ['rc', rcGuard, { input, artifact, rc }],
     ['submit-tool', submitGuard, { input, artifact, rc }],
   ]) {
-    assert.equal(assertBuild12AuthorityPhase({ guard: phaseGuard, attestations }), expected);
+    assert.equal(assertBuild13AuthorityPhase({ guard: phaseGuard, attestations }), expected);
   }
-  assert.throws(() => assertBuild12AuthorityPhase({
+  assert.throws(() => assertBuild13AuthorityPhase({
     guard: withAuthorityPin(
       preInputGuard,
       'BUILD_ARTIFACT_ATTESTATION_SHA256',
@@ -314,29 +314,29 @@ test('build 12 authority accepts every contiguous phase and rejects partial or m
     ),
     attestations: { input: null, artifact, rc: null },
   }), /every later phase must remain unpinned/u);
-  assert.throws(() => assertBuild12AuthorityPhase({
+  assert.throws(() => assertBuild13AuthorityPhase({
     guard: inputGuard,
     attestations: { input: artifact, artifact: null, rc: null },
   }), /input pin must bind exact bytes/u);
-  assert.throws(() => assertBuild12AuthorityPhase({
+  assert.throws(() => assertBuild13AuthorityPhase({
     guard: inputGuard,
     attestations: { input: null, artifact: null, rc: null },
   }), /input requires its attestation bytes/u);
-  assert.throws(() => assertBuild12AuthorityPhase({
+  assert.throws(() => assertBuild13AuthorityPhase({
     guard: artifactGuard,
     attestations: { input, artifact: null, rc: null },
   }), /artifact requires its attestation bytes/u);
-  assert.throws(() => assertBuild12AuthorityPhase({
+  assert.throws(() => assertBuild13AuthorityPhase({
     guard: rcGuard,
     attestations: { input, artifact, rc: null },
   }), /rc requires its attestation bytes/u);
-  assert.throws(() => assertBuild12AuthorityPhase({
+  assert.throws(() => assertBuild13AuthorityPhase({
     guard: withAuthorityPin(guard, 'PINNED_EAS_CLI', "'QQ=='"),
     attestations: { input: null, artifact: null, rc: null },
   }), /legacy EAS CLI pin/u);
 });
 
-test('current build 12 prose stays truthful in synthetic input and artifact phases', () => {
+test('current build 13 prose stays truthful in synthetic input and artifact phases', () => {
   const guard = readFileSync(join(root, 'scripts/release-command-guard.mjs'), 'utf8');
   const input = Buffer.from('{"phase":"input"}\n');
   const artifact = Buffer.from('{"phase":"artifact"}\n');
@@ -357,39 +357,39 @@ test('current build 12 prose stays truthful in synthetic input and artifact phas
     'BUILD_ARTIFACT_ATTESTATION_SHA256',
     `'${sha256(artifact)}'`,
   );
-  assert.equal(assertBuild12AuthorityPhase({
+  assert.equal(assertBuild13AuthorityPhase({
     guard: inputGuard,
     attestations: { input, artifact: null, rc: null },
   }), 'input');
-  assert.equal(assertBuild12AuthorityPhase({
+  assert.equal(assertBuild13AuthorityPhase({
     guard: artifactGuard,
     attestations: { input, artifact, rc: null },
   }), 'artifact');
 
-  for (const relativePath of BUILD_12_PHASE_TRUTH_PATHS) {
+  for (const relativePath of BUILD_13_PHASE_TRUTH_PATHS) {
     const source = readFileSync(join(root, relativePath), 'utf8');
     assert.match(
       source,
-      BUILD_12_PHASE_NEUTRAL_CONTEXT,
-      `${relativePath}: current build-12 prose must defer its phase to live authority`,
+      BUILD_13_PHASE_NEUTRAL_CONTEXT,
+      `${relativePath}: current build-13 prose must defer its phase to live authority`,
     );
-    for (const stalePattern of STALE_BUILD_12_PHASE_ASSERTIONS) {
+    for (const stalePattern of STALE_BUILD_13_PHASE_ASSERTIONS) {
       assert.doesNotMatch(
         source,
         stalePattern,
-        `${relativePath}: current build-12 prose is stale after input or artifact authority`,
+        `${relativePath}: current build-13 prose is stale after input or artifact authority`,
       );
     }
   }
 
   for (const relativePath of CURRENT_DOCUMENT_REVIEW_ALLOWLIST) {
     const source = readFileSync(join(root, relativePath), 'utf8');
-    if (!/build[- /]?12/iu.test(source)) continue;
-    for (const stalePattern of STALE_BUILD_12_PHASE_ASSERTIONS) {
+    if (!/build[- /]?13/iu.test(source)) continue;
+    for (const stalePattern of STALE_BUILD_13_PHASE_ASSERTIONS) {
       assert.doesNotMatch(
         source,
         stalePattern,
-        `${relativePath}: operational allowlist contains a stale build-12 phase claim`,
+        `${relativePath}: operational allowlist contains a stale build-13 phase claim`,
       );
     }
   }
@@ -480,7 +480,7 @@ test('build 10 is immutable processed internal-TestFlight history with its exact
   assert.equal(JSON.parse(artifactBytes).candidate.buildNumber, '10');
 });
 
-test('build 8 authority is immutable hash-bound history and never current build 12 authority', () => {
+test('build 8 authority is immutable hash-bound history and never current build 13 authority', () => {
   const history = join(root, 'release/app-store/3.0/history/build-8');
   const inputBytes = readFileSync(join(history, 'build-input-attestation.json'));
   const artifactBytes = readFileSync(join(history, 'build-artifact-attestation.json'));
@@ -684,7 +684,7 @@ test('every build-8 reference in the current-document allowlist is classified as
     if (relativePath === 'release/app-store/3.0/release-manifest.json') {
       assert.equal(references.length, 3, 'release manifest build-8 references drifted');
       const manifest = JSON.parse(source);
-      assert.equal(manifest.candidate.buildNumber, '12');
+      assert.equal(manifest.candidate.buildNumber, '13');
       assert.equal(manifest.ascEvidence.inspectionMode, 'read-only');
       assert.equal(manifest.ascEvidence.observedAt, '2026-08-27T20:35:04.000Z');
       assert.equal(manifest.ascEvidence.nextCandidateBuild, '8');
@@ -845,7 +845,7 @@ test('build-10 clause-local classification covers lower-case, hyphen, and slash 
   const historical = [
     'build 10 was built, attested, uploaded, and processed for internal TestFlight.',
     'build-10 is immutable processed internal-TestFlight history.',
-    '3.0/build 10 is processed internal-TestFlight history and cannot authorize build 12.',
+    '3.0/build 10 is processed internal-TestFlight history and cannot authorize build 13.',
   ].join('\n\n');
   assert.equal(assertBuild10ProseIsHistorical('fixture.md', historical), 3);
 
@@ -907,13 +907,13 @@ test('build-11 clause-local classification rejects the stale current-candidate w
   }
 });
 
-test('current build-12 evidence writers retain only their exact task-scoped SDD parents', () => {
+test('current build-13 evidence writers retain only their exact task-scoped SDD parents', () => {
   const expectedParents = new Map([
-    ['scripts/release-eas-environment-sanitizer.mjs', `${BUILD_12_SDD_ROOT}/task-2-evidence`],
-    ['scripts/create-build-input-attestation.mjs', `${BUILD_12_SDD_ROOT}/task-2-evidence`],
-    ['scripts/release-eas-artifact-downloader.mjs', `${BUILD_12_SDD_ROOT}/task-4-evidence`],
-    ['scripts/create-build-artifact-attestation.mjs', `${BUILD_12_SDD_ROOT}/task-4-evidence`],
-    ['scripts/release-eas-submission-sanitizer.mjs', `${BUILD_12_SDD_ROOT}/task-5-evidence`],
+    ['scripts/release-eas-environment-sanitizer.mjs', `${BUILD_13_SDD_ROOT}/task-2-evidence`],
+    ['scripts/create-build-input-attestation.mjs', `${BUILD_13_SDD_ROOT}/task-2-evidence`],
+    ['scripts/release-eas-artifact-downloader.mjs', `${BUILD_13_SDD_ROOT}/task-4-evidence`],
+    ['scripts/create-build-artifact-attestation.mjs', `${BUILD_13_SDD_ROOT}/task-4-evidence`],
+    ['scripts/release-eas-submission-sanitizer.mjs', `${BUILD_13_SDD_ROOT}/task-5-evidence`],
   ]);
   for (const [relativePath, parent] of expectedParents) {
     const source = readFileSync(join(root, relativePath), 'utf8');

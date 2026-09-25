@@ -59,7 +59,7 @@ No catalog migration was executed as part of this activation.
 
 ## Deliberately pending
 
-CaboHealth 3.0/build 12 is the current candidate. Its live authority
+CaboHealth 3.0/build 13 is the current candidate. Its live authority
 phase—pre-input, input, artifact, RC, or submit-tool—must be determined from the
 exact current pins and required attestation bytes. The rows below are immutable
 freeze-time RC evidence requirements, not mutable phase claims; final
@@ -77,7 +77,7 @@ private evidence.
   built, attested, uploaded, and processed for internal TestFlight; it is
   immutable history. Build 11 was built and exactly attested in EAS, then
   invalidated before upload by a mandatory post-artifact-pin gate failure; it
-  is immutable non-uploaded history and cannot authorize build 12. Build 12 carries the WebView
+  is immutable non-uploaded history and cannot authorize build 13. Build 13 carries the WebView
   subframe fix; neither hands an internal launch to Chrome,
   Safari, or another external browser.
 - Positive V2 catalog retrieval and complete VIP showcase QA require the exact

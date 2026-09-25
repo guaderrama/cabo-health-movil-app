@@ -384,7 +384,15 @@ export function createFirebaseClientAccessAdapter({
         ? await functions.call('createClientLaunchV2', { installationId, resourceId })
         : await functions.call('createAppReviewLaunch', { installationId });
       const launch = parseClientLaunchEnvelope(response, principal.realm, now());
-      if (!launch) return failAndSignOut();
+      if (!launch) {
+        if (hasValidLaunchStructure(response, principal.realm)) {
+          // An expired nonce or device/server clock mismatch is not evidence
+          // that the authenticated grant is invalid. Still deny this launch;
+          // preserve the principal so a retry can revalidate access normally.
+          throw new Error('client_launch_time_window_invalid');
+        }
+        return failAndSignOut();
+      }
       return launch;
     },
 
@@ -506,6 +514,18 @@ function isPermissionDenied(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const code = (value as Record<string, unknown>).code;
   return code === 'permission-denied' || code === 'functions/permission-denied';
+}
+
+function hasValidLaunchStructure(value: unknown, realm: ClientAccessRealm): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const expiresAtMs = (value as Record<string, unknown>).expiresAtMs;
+  if (typeof expiresAtMs !== 'number' || !Number.isSafeInteger(expiresAtMs) || expiresAtMs <= 0) {
+    return false;
+  }
+  // Reuse the strict realm/URL/method/nonce/schema validator at a reference
+  // instant inside its window ONLY to classify failure. Never return or open
+  // this envelope: the real device-time validation above has already denied it.
+  return parseClientLaunchEnvelope(value, realm, expiresAtMs - 1) !== null;
 }
 
 function isNotFound(value: unknown): boolean {

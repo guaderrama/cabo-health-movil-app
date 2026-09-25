@@ -462,6 +462,47 @@ test('review launch has no caller-selected resource and never calls the producti
   assert.equal(calls.some((entry) => entry.includes('createClientLaunch')), false);
 });
 
+test('a review launch outside the device clock window cannot destroy valid client access', async () => {
+  const harness = makeHarness({ signedInUid: 'review_abcdefghijklmnopqrstuvwxyz123456' });
+  const controller = createClientAccessController({
+    gateway: harness.adapter.gateway,
+    sessionStore: harness.adapter.sessionStore,
+    now: () => 1_900_000_000_000,
+  });
+  await controller.initialize();
+  assert.equal(await controller.redeem('AR-01234567-89ABCDEF-01234567-89ABCDEF'), true);
+  for (const expiresAtMs of [1_899_999_460_000, 1_900_000_660_000]) {
+    harness.replaceCall(async (name) => {
+      if (name === 'refreshAppReviewAccess') return { grant: REVIEW_GRANT };
+      assert.equal(name, 'createAppReviewLaunch');
+      return {
+        expiresAtMs,
+        launchUrl: 'https://cabohealth.org/apps/app-review/launch/',
+        method: 'POST',
+        nonce: 'abcdefghijklmnopqrstuvwxyz123456',
+      };
+    });
+    // The expired/future launch must stay blocked, but retrying a confirmed
+    // grant must not become an unrelated "access could not be verified" error.
+    assert.equal(await controller.createLaunch('review-sandbox-app-review-sample-v1'), null);
+    await controller.refresh();
+    assert.equal(controller.getSnapshot().status, 'unlocked');
+    assert.equal(controller.getSnapshot().error, null);
+  }
+  harness.replaceCall(async (name) => {
+    assert.equal(name, 'createAppReviewLaunch');
+    return {
+      expiresAtMs: 1_900_000_060_000,
+      launchUrl: 'https://cabohealth.org/apps/app-review/launch/',
+      method: 'POST',
+      nonce: 'abcdefghijklmnopqrstuvwxyz123456',
+    };
+  });
+  const recovered = await controller.createLaunch('review-sandbox-app-review-sample-v1');
+  assert.equal(recovered?.source.uri, 'https://cabohealth.org/apps/app-review/launch/');
+  assert.equal(recovered?.source.method, 'POST');
+});
+
 test('production uses only V2 callables and sends no URL to launch', async () => {
   const { adapter, calls } = makeHarness({
     currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456',
@@ -497,7 +538,6 @@ test('production accepts the exact external launch branch and rejects malformed 
     { ...valid, nonce: 'forbidden' },
     { ...valid, url: 'http://www.eightsleep.com/mx/' },
     { ...valid, url: 'https://WWW.eightsleep.com:443/mx/' },
-    { ...valid, expiresAtMs: 1_900_000_120_001 },
     { ...valid, kind: 'unknown' },
   ];
 
@@ -530,6 +570,20 @@ test('production accepts the exact external launch branch and rejects malformed 
       /invalid_backend_response/u,
     );
     assert.deepEqual(harness.calls.at(-1), ['signOut']);
+  }
+});
+
+test('an out-of-window production launch is rejected without signing out its valid principal', async () => {
+  for (const expiresAtMs of [1_900_000_000_000, 1_900_000_120_001]) {
+    const harness = makeHarness({ currentUid: 'client_abcdefghijklmnopqrstuvwxyz123456' });
+    harness.replaceCall(async () => ({
+      kind: 'external_https',
+      expiresAtMs,
+      url: 'https://www.eightsleep.com/mx/',
+    }));
+    const session = await harness.adapter.sessionStore.restore();
+    await assert.rejects(harness.adapter.gateway.createLaunch(session, 'test-resource'));
+    assert.equal(harness.auth.currentUser()?.uid, 'client_abcdefghijklmnopqrstuvwxyz123456');
   }
 });
 

@@ -46,7 +46,7 @@ for internal TestFlight. Build 11 input attempts 1 and 2 remain separately
 archived invalidated-pre-provider authority history. Its final source was then
 built and exactly attested in EAS, but a mandatory post-artifact-pin gate exposed
 a phase-stale synthetic test fixture before upload. Build 11 is immutable
-non-uploaded history and cannot authorize build 12. CaboHealth 3.0 build 12 is
+non-uploaded history and cannot authorize build 13. CaboHealth 3.0 build 13 is
 the current candidate. Its live authority phase—pre-input, input, artifact, RC,
 or submit-tool—must be determined from the exact current pins and required
 attestation bytes. This document does not assert a particular live phase or
@@ -54,7 +54,7 @@ infer any provider result, physical-device QA, submission, or Apple approval.
 
 ## Resolution mapping for the new candidate
 
-| Prior issue | New 3.0/build 12 candidate response | Remaining proof before resubmission |
+| Prior issue | New 3.0/build 13 candidate response | Remaining proof before resubmission |
 | --- | --- | --- |
 | Brand relationship / Guideline 4.1 | Truthfully identifies Ivan Guaderrama as the Individual seller and Cabo Health as his owner-operated trade brand. | Ivan signs the scoped ownership declaration and attaches current domain/content-rights evidence. |
 | Advisory resource failed to open | The legacy advisory resource is excluded from the release binary. The initial catalog contains Healthy Recipes, CaboHealth Clinic Guide, and protected Client Resources; the validated owner-managed catalog may also publish independently reviewed third-party HTTPS entries under the documented Guideline 4.7 policy. | Clean-install and update-path physical-device QA; verify every active reviewed destination from Mexico and the United States. |

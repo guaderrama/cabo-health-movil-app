@@ -37,7 +37,7 @@ const CANDIDATE = {
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '12',
+  buildNumber: '13',
 };
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const adapterRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -64,7 +64,7 @@ function expectations() {
       response: page([{
         type: 'builds', id: BUILD_RESOURCE_ID,
         attributes: {
-          version: '12', uploadedDate: '2026-08-30T11:00:00.000Z',
+          version: '13', uploadedDate: '2026-08-30T11:00:00.000Z',
           processingState: 'VALID', expired: false, buildAudienceType: 'APP_STORE_ELIGIBLE',
         },
       }]),
@@ -218,7 +218,7 @@ function preparedAssignment(value) {
   };
 }
 
-test('internal group argument grammar is exact, ordered, absolute, and build-12-bound', (t) => {
+test('internal group argument grammar is exact, ordered, absolute, and build-13-bound', (t) => {
   const value = fixture(t);
   const output = join(value.root, 'internal-testflight-group-observation.json');
   assert.equal(parseInternalGroupArguments([...value.baseArgs, '--output', output]).outputPath, output);

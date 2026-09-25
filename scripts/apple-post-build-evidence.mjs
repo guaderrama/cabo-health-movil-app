@@ -27,7 +27,7 @@ export const APPLE_RELEASE_CANDIDATE = Object.freeze({
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '12',
+  buildNumber: '13',
 });
 
 export const PHYSICAL_IPHONE_QA_CHECK_IDS = Object.freeze([
@@ -187,7 +187,7 @@ const PRIVACY_REPORT_KEYS = Object.freeze([
 const PRIVACY_CANDIDATE = Object.freeze({
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '12',
+  buildNumber: '13',
   teamIdentifier: 'DQ8PH2DZ3R',
   appAttestEnvironment: 'production',
   associatedDomains: ['applinks:cabohealth.org'],

@@ -8,8 +8,8 @@ mandatory post-pin gates exposed phase-stale release tests. Build 10 was built,
 attested, uploaded, and processed for internal TestFlight; it is immutable
 history. Build 11 was built and exactly attested in EAS, but mandatory
 post-artifact-pin gates exposed a phase-stale synthetic test fixture before
-upload; it is immutable non-uploaded history and cannot authorize build 12.
-Build 12 is the current candidate. Its
+upload; it is immutable non-uploaded history and cannot authorize build 13.
+Build 13 is the current candidate. Its
 live authority phase—pre-input, input, artifact, RC, or submit-tool—must be
 determined from the exact current pins and required attestation bytes. This
 document does not assert a particular live phase or infer any provider result,
@@ -114,10 +114,10 @@ input, and no Firebase Authentication:
 
 Installed build 7 continues using the legacy endpoints and therefore never
 receives an external record that would invalidate its parser. Build 8 introduced
-V3 and the isolated `@cabohealth_published_catalog_v3` cache; build 12 preserves
+V3 and the isolated `@cabohealth_published_catalog_v3` cache; build 13 preserves
 that compatibility while adding the reviewed WebView subframe fix. Neither
 reads nor overwrites the V1 cache. The additive backend and legacy responses
-were verified before build 8 distribution and remain required for build 12.
+were verified before build 8 distribution and remain required for build 13.
 
 The native parser rejects unknown fields, malformed copy, invalid/noncanonical
 URLs, mismatched ID classes, duplicate IDs, impossible times, preview
@@ -154,7 +154,7 @@ This change adds neither browser handoff nor any privacy relaxation.
 
 Locked previews contain only `access`, `id`, `icon`, `title`, and `summary`.
 They never expose URL, path, launch metadata, code, pricing, entitlement,
-timestamp, or owner identity. Production build 8 introduced, and build 12 preserves,
+timestamp, or owner identity. Production build 8 introduced, and build 13 preserves,
 `redeemClientAccessCodeV2` and `refreshClientAccessV2`; their exact
 schema-version-2 grants remain URL-free. Production V1 redeem/refresh and all
 legacy launch/broker operations use `legacy_cabohealth` resolution and filter
@@ -274,10 +274,10 @@ updated Staff artifact, or the successor iOS presentation has been deployed.
 7. **Completed:** Promote and verify the new AASA at origin and Apple's CDN.
 8. **Pending:** Verify public create/edit/deactivate/delete and one-code client expansion in
    production using non-sensitive test entries, then remove the test entries.
-9. **Build 8 complete and immutable; build 9 aborted; builds 10–11 historical; build 12 phase-controlled:** Build 8 was built,
+9. **Build 8 complete and immutable; build 9 aborted; builds 10–11 historical; build 13 phase-controlled:** Build 8 was built,
    attested, uploaded, and made available internally before becoming obsolete
    for the WebView subframe fix. Build 9 was input-attested and then aborted
-   before any EAS build or other provider operation. Build 10 was built, attested, uploaded, and processed for internal TestFlight. Build 11 was built and exactly attested in EAS, then invalidated before upload by a mandatory post-pin gate failure. Both are immutable history and cannot authorize build 12. Advance CaboHealth 3.0 build 12 only through the live
+   before any EAS build or other provider operation. Build 10 was built, attested, uploaded, and processed for internal TestFlight. Build 11 was built and exactly attested in EAS, then invalidated before upload by a mandatory post-pin gate failure. Both are immutable history and cannot authorize build 13. Advance CaboHealth 3.0 build 13 only through the live
    authority sequence: input, artifact, RC, and submit-tool pins must remain
    contiguous and bind their required exact evidence. Never infer a later phase
    or provider outcome from this catalog record.
@@ -289,7 +289,7 @@ Rollback is monotonic and compatibility-first:
 1. deactivate external entries with new owner mutations; never restore an old
    `_private_catalog/current` snapshot or decrement its revision;
 2. verify V1/V2 catalogs and V1 production access so build 7 remains usable;
-3. stop build 12 distribution and return to the prior native candidate when
+3. stop build 13 distribution and return to the prior native candidate when
    applicable, but retain the external-aware Functions and Staff artifacts
    while even one active or inactive external catalog record remains; and
 4. treat restoration of any pre-feature Functions or Staff artifact as blocked
