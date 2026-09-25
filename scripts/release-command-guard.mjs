@@ -73,7 +73,7 @@ const PRIVATE_EVIDENCE_PATHS = Object.freeze({
 // values, so advancing a reviewed pin is not circular while every executable
 // guard behavior remains part of the reviewed source. An unpinned checked-in
 // attestation is historical evidence only and cannot satisfy a current phase.
-const BUILD_INPUT_ATTESTATION_SHA256 = null;
+const BUILD_INPUT_ATTESTATION_SHA256 = 'a3e8d760f63e5216095573549fa95e55c52d4901a0add6c2b2c2e12ead8ca9f2';
 const BUILD_ARTIFACT_ATTESTATION_SHA256 = null;
 const RC_ATTESTATION_SHA256 = null;
 const PINNED_EAS_CLI = null;
