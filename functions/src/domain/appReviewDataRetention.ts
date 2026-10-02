@@ -99,6 +99,7 @@ export class AppReviewDataRetentionService {
       try {
         const result = await this.processPending(subjectUid);
         if (result === 'completed') completed += 1;
+        else if (result === 'failed') failed += 1;
         else pending += 1;
       } catch {
         failed += 1;
@@ -122,7 +123,7 @@ export class AppReviewDataRetentionService {
     return summary;
   }
 
-  async processPending(subjectUid: string): Promise<'completed' | 'pending'> {
+  async processPending(subjectUid: string): Promise<'completed' | 'pending' | 'failed'> {
     if (!REVIEW_SUBJECT_PATTERN.test(subjectUid)) return 'pending';
     const nowMs = this.#nowMs();
     const purge = await this.#store.purgeAppReviewDataArtifacts(subjectUid, nowMs);
@@ -131,7 +132,7 @@ export class AppReviewDataRetentionService {
       await this.#authAccounts.deleteUser(subjectUid);
     } catch {
       await this.#store.markAppReviewDataDeletionFailed(subjectUid, nowMs);
-      return 'pending';
+      return 'failed';
     }
     return await this.#store.completeAppReviewDataDeletion(subjectUid, this.#nowMs()) === 'completed'
       ? 'completed'

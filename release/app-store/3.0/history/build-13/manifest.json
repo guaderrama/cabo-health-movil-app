@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "cabohealth-ios-candidate-history",
+  "candidate": {
+    "appleId": "6758285327",
+    "bundleIdentifier": "com.cabohealth.app",
+    "marketingVersion": "3.0",
+    "buildNumber": "13"
+  },
+  "status": "eas-finished-attested-superseded-for-apple-readiness",
+  "input": {
+    "relativePath": "build-input-attestation.json",
+    "sha256": "a3e8d760f63e5216095573549fa95e55c52d4901a0add6c2b2c2e12ead8ca9f2"
+  },
+  "artifact": {
+    "relativePath": "build-artifact-attestation.json",
+    "sha256": "c562c3173d0da66283170676e9c78da6f0145a2b56d0aa7e96d9614a82da90ee"
+  },
+  "frozenSource": {
+    "commit": "e02270ffc6392632a610ab11cef8152f2ff64789",
+    "sourceTreeSha256": "71ae5908c57874f497f794fb8cbac5fcb618d9857df8b0cd1b44d0a4db4c30d5"
+  },
+  "authorityCommits": {
+    "inputPin": "bd1ea66c444567e9104c1e42a0bd5fbc988e8fc6",
+    "artifactPin": "96112ddf6c1eb5c969f426c378322cbde6785b5d"
+  },
+  "easArtifactAssociation": {
+    "buildId": "7970caac-4b8f-4c0e-82f3-ffd5146eb624",
+    "ipaSha256": "cc602edad62f013232ae80002e5195f8f9692dd1d5032848cd706c28a6d9cc97"
+  },
+  "appleObservation": {
+    "testFlightBuildId": null,
+    "basis": "Prior TestFlight installation was reported; this archival action does not independently verify App Store Connect processing or submission."
+  },
+  "supersession": {
+    "recordedOn": "2026-10-01",
+    "reason": "Native resilience, deletion maintenance, and dependency changes require a new candidate and new authority.",
+    "appleIncidentRootCauseConfirmed": false
+  }
+}

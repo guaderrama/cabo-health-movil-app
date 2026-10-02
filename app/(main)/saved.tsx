@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { BrandedBackground, PremiumResourceRow } from '../../components';
+import { CatalogRefreshError } from '../../components/CatalogRefreshError';
 import type { CatalogPublicMiniapp } from '../../constants/publicMiniapps';
 import { buildPublicMiniappRoute } from '../../features/catalog/publicMiniappRoute';
 import { useFavorites, useTheme, useTranslations, useWebApps } from '../../hooks';
@@ -13,7 +14,7 @@ export default function SavedScreen() {
   const { colors } = useTheme();
   const { language, t } = useTranslations();
   const { favorites, isFavorite, toggleFavorite } = useFavorites();
-  const { catalogMiniapps } = useWebApps();
+  const { catalogMiniapps, error: catalogError, isLoading, refresh } = useWebApps();
   const saved = catalogMiniapps.filter((miniapp) => favorites.includes(miniapp.slug));
   const openMiniapp = (miniapp: Readonly<CatalogPublicMiniapp>) => {
     router.push(buildPublicMiniappRoute(miniapp));
@@ -25,7 +26,16 @@ export default function SavedScreen() {
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 18 }]}>
         <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{t('saved.title')}</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{t('saved.subtitle')}</Text>
-        {saved.length === 0 ? (
+        {catalogError && (
+          <View style={styles.catalogError}>
+            <CatalogRefreshError
+              hasResources={saved.length > 0}
+              isRefreshing={isLoading}
+              onRetry={refresh}
+            />
+          </View>
+        )}
+        {saved.length === 0 ? !catalogError && (
           <View style={styles.empty}>
             <View
               style={[
@@ -76,6 +86,7 @@ const styles = StyleSheet.create({
   content: { flexGrow: 1, width: '100%', maxWidth: 620, alignSelf: 'center', paddingBottom: 30 },
   title: { fontFamily: 'Georgia', fontSize: 31, lineHeight: 37, fontWeight: '600', paddingHorizontal: 16 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 4, paddingHorizontal: 16 },
+  catalogError: { marginHorizontal: 16, marginTop: 18 },
   savedGroup: {
     marginHorizontal: 16,
     marginTop: 18,

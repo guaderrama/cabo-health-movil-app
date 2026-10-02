@@ -86,6 +86,7 @@ test('an Auth failure leaves a durable revoked deletion job that the client can 
     'status',
   ]);
   const polled = await new AccountDeletionReceiptStatusService({
+    nowMs: () => nowMs,
     receiptHasher: hasher('deletion-receipt'),
     store: harness.store,
   }).getStatus({ deletionReceipt });
@@ -122,6 +123,7 @@ test('an Auth failure leaves a durable revoked deletion job that the client can 
     nowMs + 30 * 24 * 60 * 60 * 1_000,
   );
   assert.deepEqual(await new AccountDeletionReceiptStatusService({
+    nowMs: () => nowMs,
     receiptHasher: hasher('deletion-receipt'),
     store: harness.store,
   }).getStatus({ deletionReceipt }), {
@@ -563,6 +565,109 @@ test('scheduled deletion isolates one subject failure and signals a sanitized ag
   assert.deepEqual(attemptedSubjects, [failingSubject, completingSubject]);
 });
 
+test('scheduled deletion reaches a newer job while four older Auth deletions keep failing', async () => {
+  const database = new InMemoryDocumentDatabase(
+    { [clientResourcePath(resourceId)]: resource },
+    { rejectDuplicateWrites: true, rejectReadsAfterWrites: true },
+  );
+  const subjects: string[] = [];
+  const store = new FirestoreClientAccessStore(database);
+  for (let index = 0; index < 5; index += 1) {
+    const client = await createRedeemedHarness(nowMs + 60_000, {
+      database,
+      randomByte: index + 1,
+    });
+    await store.revokeAccessCode(client.codeId, nowMs + index);
+    subjects.push(client.subjectUid);
+  }
+  const attempts: string[] = [];
+  let clock = nowMs + 1_000;
+  const deletion = new ClientAccountDeletionService({
+    authAccounts: {
+      async deleteUser(subjectUid) {
+        attempts.push(subjectUid);
+        if (subjectUid !== subjects[4]) throw new Error('persistent_auth_failure');
+      },
+    },
+    installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
+    nowMs: () => clock,
+    store,
+  });
+  const runBatch = async () => {
+    try {
+      await deletion.retryPending();
+    } catch (error) {
+      if (!(error instanceof AccountDeletionRetryBatchError)) throw error;
+    }
+  };
+
+  await runBatch();
+  assert.deepEqual(attempts, subjects.slice(0, 4));
+  clock += 5 * 60 * 1_000;
+  await runBatch();
+
+  assert.equal(attempts.length, 8, 'both retry batches remain bounded');
+  assert.equal(attempts[4], subjects[4], 'the unattempted job gets the next turn');
+  const jobs = await database.listCollection('_private_account_deletions');
+  assert.deepEqual(jobs.map(({ id }) => id), subjects.slice(0, 4));
+  const grants = await database.listCollection('_private_client_grants');
+  assert.equal(grants.some(({ id }) => id === subjects[4]), false);
+  assert.ok(grants.every(({ value }) => isRecord(value) && value.status === 'revoked'));
+});
+
+test('scheduled maintenance signals Auth deletion failure while receipt retries stay pending', async () => {
+  const harness = await createRedeemedHarness(nowMs + 60_000);
+  let authUnavailable = true;
+  let clock = nowMs;
+  const deletion = new ClientAccountDeletionService({
+    authAccounts: {
+      async deleteUser() {
+        if (authUnavailable) throw new Error(`private_auth_error:${harness.subjectUid}`);
+      },
+    },
+    installationHasher: hasher('installation'),
+    receiptHasher: hasher('deletion-receipt'),
+    nowMs: () => clock,
+    store: harness.store,
+  });
+  const maintenance = new ClientAccountDeletionMaintenanceService({
+    deletions: deletion,
+    nowMs: () => clock,
+    reconciler: harness.store,
+  });
+  const request = { deletionReceipt, installationId, subjectUid: harness.subjectUid };
+  assert.deepEqual(await deletion.request(request), pendingReceiptStatus(nowMs));
+
+  clock += 1_000;
+  await assert.rejects(maintenance.runScheduled(), (error: unknown) => {
+    if (!(error instanceof AccountDeletionMaintenanceBatchError)) return false;
+    assert.deepEqual(error.summary, {
+      completed: 0,
+      failed: 1,
+      malformed: 0,
+      pending: 0,
+      reconciliationFailed: 0,
+    });
+    assert.doesNotMatch(JSON.stringify(error), /client_|private_auth_error/u);
+    return true;
+  });
+  assert.deepEqual(await deletion.request(request), pendingReceiptStatus(nowMs));
+  const receipts = await harness.database.listCollection('_private_account_deletion_receipts');
+  assert.equal(receipts.length, 1, 'idempotent retries retain the original receipt');
+  assert.ok(isRecord(receipts[0]?.value) && receipts[0].value.status === 'pending');
+
+  authUnavailable = false;
+  clock += 1_000;
+  assert.deepEqual(await maintenance.runScheduled(), { completed: 1, pending: 0 });
+  assert.deepEqual(await maintenance.runScheduled(), { completed: 0, pending: 0 });
+  assert.deepEqual(await new AccountDeletionReceiptStatusService({
+    nowMs: () => clock,
+    receiptHasher: hasher('deletion-receipt'),
+    store: harness.store,
+  }).getStatus({ deletionReceipt }), completedReceiptStatus(nowMs, clock));
+});
+
 test('scheduled deletion reports malformed tombstones after valid jobs make progress', async () => {
   const harness = await createRedeemedHarness(nowMs + 30 * 24 * 60 * 60 * 1_000);
   let authUnavailable = true;
@@ -686,8 +791,11 @@ test('scheduled maintenance completes an existing deletion before reporting malf
   assert.deepEqual(await harness.database.listCollection('_private_account_deletions'), []);
 });
 
-async function createRedeemedHarness(expiresAtMs: number) {
-  const database = new InMemoryDocumentDatabase(
+async function createRedeemedHarness(expiresAtMs: number, options: Readonly<{
+  database?: InMemoryDocumentDatabase;
+  randomByte?: number;
+}> = {}) {
+  const database = options.database ?? new InMemoryDocumentDatabase(
     { [clientResourcePath(resourceId)]: resource },
     { rejectDuplicateWrites: true },
   );
@@ -695,7 +803,7 @@ async function createRedeemedHarness(expiresAtMs: number) {
   const issued = await new AccessCodeIssuer({
     codeHasher: hasher('code'),
     nowMs: () => nowMs,
-    randomSource: () => Buffer.alloc(16, 1),
+    randomSource: () => Buffer.alloc(16, options.randomByte ?? 1),
     store,
   }).issue({ expiresAtMs, resourceIds: [resourceId] });
   let subjectUid = '';

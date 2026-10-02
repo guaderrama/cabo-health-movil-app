@@ -23,7 +23,7 @@ function fixtures({
     builds: page([{
       type: 'builds', id: BUILD_ID,
       attributes: {
-        version: '13', uploadedDate: '2026-08-30T11:00:00.000Z',
+        version: '14', uploadedDate: '2026-08-30T11:00:00.000Z',
         processingState: 'VALID', expired: false, buildAudienceType: 'APP_STORE_ELIGIBLE',
       },
     }]),

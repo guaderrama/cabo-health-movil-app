@@ -40,7 +40,8 @@ export interface AuthAccountDeletionGateway {
 
 export interface PendingAccountDeletionProcessor {
   processPending(subjectUid: string): Promise<Readonly<{
-    status: 'completed' | 'pending';
+    // This is the internal attempt outcome, not the public receipt status.
+    status: 'completed' | 'pending' | 'failed';
   }>>;
 }
 
@@ -113,7 +114,7 @@ export class ClientAccountDeletionService {
 
   async processPending(
     subjectUid: string,
-  ): Promise<Readonly<{ status: 'completed' | 'pending' }>> {
+  ): Promise<Readonly<{ status: 'completed' | 'pending' | 'failed' }>> {
     if (!SUBJECT_UID_PATTERN.test(subjectUid)) return Object.freeze({ status: 'pending' });
     const nowMs = this.#nowMs();
     const purge = await this.#store.purgeAccountDeletionArtifacts(subjectUid, nowMs);
@@ -122,7 +123,7 @@ export class ClientAccountDeletionService {
       await this.#authAccounts.deleteUser(subjectUid);
     } catch {
       await this.#store.markAccountDeletionAttemptFailed(subjectUid, nowMs);
-      return Object.freeze({ status: 'pending' });
+      return Object.freeze({ status: 'failed' });
     }
     const completion = await this.#store.completeAccountDeletion(subjectUid, this.#nowMs());
     return Object.freeze({
@@ -142,6 +143,7 @@ export class ClientAccountDeletionService {
       try {
         const result = await this.processPending(subjectUid);
         if (result.status === 'completed') completed += 1;
+        else if (result.status === 'failed') failed += 1;
         else pending += 1;
       } catch {
         failed += 1;

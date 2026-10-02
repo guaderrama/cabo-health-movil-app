@@ -95,6 +95,8 @@ export function ClientResourceWebView({
     incognito: true,
     onError: handleLoadError,
     onHttpError: handleHttpError,
+    onContentProcessDidTerminate: showUnavailable,
+    onRenderProcessGone: showUnavailable,
     onLoadEnd: () => {
       setLoading(false);
       setLoadProgress(1);

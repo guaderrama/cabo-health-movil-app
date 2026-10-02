@@ -11,13 +11,13 @@ import { usePublicCatalog } from '../../context/PublicCatalogContext';
 
 export default function PublicMiniappRoute() {
   const { slug } = useLocalSearchParams<{ slug?: string | string[] }>();
-  const { miniapps, getMiniapp, isLoading } = usePublicCatalog();
+  const { miniapps, getMiniapp, isInitialLoading } = usePublicCatalog();
   const resolvedSlug = resolvePublicMiniappRouteSlug(slug, miniapps);
   const miniapp = resolvedSlug
     ? getMiniapp(resolvedSlug) ?? getPublicMiniapp(resolvedSlug)
     : undefined;
 
-  if (shouldWaitForPublicCatalogRoute(slug, isLoading)) return <LoadingIndicator />;
+  if (shouldWaitForPublicCatalogRoute(slug, isInitialLoading)) return <LoadingIndicator />;
   if (!miniapp) return <NotFoundScreen />;
   return <RestrictedWebView miniapp={miniapp} />;
 }

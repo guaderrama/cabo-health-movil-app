@@ -821,7 +821,7 @@ test('active-resource mutation matrix rejects every supported remote loading mec
   }
 });
 
-test('compliance facts preserve owner-confirmed facts while build-13 age review remains pending', () => {
+test('compliance facts preserve owner-confirmed facts while build-14 age review remains pending', () => {
   const facts = readJson('release/compliance-facts.json');
   assert.equal(facts.schemaVersion, 1);
   assert.equal(facts.brand, 'Cabo Health');
@@ -856,7 +856,7 @@ test('compliance facts preserve owner-confirmed facts while build-13 age review 
     status: 'verified',
   });
   assert.equal(facts.releaseReady, false);
-  assert.equal(facts.slice, 'build-13-age-rating-review-pending');
+  assert.equal(facts.slice, 'build-14-age-rating-review-pending');
 
   assert.deepEqual(facts.hosting, {
     provider: 'Hostinger',

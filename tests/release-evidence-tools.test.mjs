@@ -31,8 +31,8 @@ function ownedDirectory(prefix, mode = 0o700) {
 }
 
 function sddEvidenceRoot(task) {
-  const base = ownedDirectory('cabohealth-build13-sdd-');
-  const releaseTaskRoot = '2026-09-25-cabohealth-build13-access-recovery';
+  const base = ownedDirectory('cabohealth-build14-sdd-');
+  const releaseTaskRoot = '2026-10-01-cabohealth-apple-readiness';
   const path = join(
     base,
     `.superpowers/sdd/${releaseTaskRoot}`,
@@ -71,7 +71,7 @@ function buildView({ status = 'FINISHED', artifactUrl = 'https://example.invalid
     buildProfile: 'production',
     appIdentifier: 'com.cabohealth.app',
     appVersion: '3.0',
-    appBuildVersion: '13',
+    appBuildVersion: '14',
     createdAt: '2026-08-30T11:00:00.000Z',
     completedAt: status === 'FINISHED' ? '2026-08-30T11:10:00.000Z' : null,
     logFiles: ['https://provider.invalid/omitted'],
@@ -413,9 +413,9 @@ test('environment sanitizer rejects value-bearing, duplicate, extra, config-drif
   }
 });
 
-test('build status sanitizer validates exact build 13 identity and omits provider URLs and fields', async (t) => {
+test('build status sanitizer validates exact build 14 identity and omits provider URLs and fields', async (t) => {
   const { sanitizeBuildStatus } = await import('../scripts/release-eas-build-status-sanitizer.mjs');
-  const root = ownedDirectory('cabohealth-build13-external-');
+  const root = ownedDirectory('cabohealth-build14-external-');
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const output = join(root, 'build-reconciliation.json');
   sanitizeBuildStatus({
@@ -433,7 +433,7 @@ test('build status sanitizer validates exact build 13 identity and omits provide
     'errorPresent', 'errorCode', 'mutationPerformed', 'rawProviderResponseRetained',
     'providerUrlsOmitted', 'providerFieldsOmitted', 'credentialFieldsOmitted',
   ]);
-  assert.equal(value.buildNumber, '13');
+  assert.equal(value.buildNumber, '14');
   assert.equal(value.artifactAvailable, true);
   assert.equal(value.mutationPerformed, false);
   assert.equal(statSync(output).mode & 0o777, 0o600);
@@ -442,7 +442,7 @@ test('build status sanitizer validates exact build 13 identity and omits provide
 
 test('build status sanitizer normalizes an omitted EAS error and rejects malformed non-null errors', async (t) => {
   const { sanitizeBuildStatus } = await import('../scripts/release-eas-build-status-sanitizer.mjs');
-  const omittedRoot = ownedDirectory('cabohealth-build13-error-omitted-');
+  const omittedRoot = ownedDirectory('cabohealth-build14-error-omitted-');
   t.after(() => rmSync(omittedRoot, { recursive: true, force: true }));
   const omitted = buildView();
   delete omitted.error;
@@ -467,7 +467,7 @@ test('build status sanitizer normalizes an omitted EAS error and rejects malform
     ['non-string message', { errorCode: 'EAS_BUILD_FAILED', message: 1 }],
   ]) {
     await t.test(name, () => {
-      const invalidRoot = ownedDirectory(`cabohealth-build13-error-${name.replaceAll(' ', '-')}-`);
+      const invalidRoot = ownedDirectory(`cabohealth-build14-error-${name.replaceAll(' ', '-')}-`);
       t.after(() => rmSync(invalidRoot, { recursive: true, force: true }));
       const output = join(invalidRoot, 'build-reconciliation.json');
       assert.throws(() => sanitizeBuildStatus({
@@ -483,7 +483,7 @@ test('build status sanitizer normalizes an omitted EAS error and rejects malform
 
 test('nonterminal build polling cannot consume the exclusive terminal reconciliation output', async (t) => {
   const { sanitizeBuildStatus } = await import('../scripts/release-eas-build-status-sanitizer.mjs');
-  const root = ownedDirectory('cabohealth-build13-poll-');
+  const root = ownedDirectory('cabohealth-build14-poll-');
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const output = join(root, 'build-reconciliation.json');
   assert.throws(() => sanitizeBuildStatus({
@@ -506,8 +506,8 @@ test('nonterminal build polling cannot consume the exclusive terminal reconcilia
 
 test('artifact downloader validates identity before a bounded ZIP download and hashes final bytes', async (t) => {
   const { downloadEasArtifact } = await import('../scripts/release-eas-artifact-downloader.mjs');
-  const privateRoot = ownedDirectory('cabohealth-build13-private-');
-  const rcRoot = join(privateRoot, 'rc-build-13');
+  const privateRoot = ownedDirectory('cabohealth-build14-private-');
+  const rcRoot = join(privateRoot, 'rc-build-14');
   mkdirSync(rcRoot, { mode: 0o700 });
   chmodSync(rcRoot, 0o700);
   const evidence = sddEvidenceRoot('task-4');
@@ -517,7 +517,7 @@ test('artifact downloader validates identity before a bounded ZIP download and h
   });
   const ipaBytes = Buffer.from('504b030414000000', 'hex');
   let fetchCount = 0;
-  const output = join(rcRoot, 'CaboHealth-3.0-build-13.ipa');
+  const output = join(rcRoot, 'CaboHealth-3.0-build-14.ipa');
   const associationOutput = join(evidence.path, 'eas-artifact-association.json');
   await downloadEasArtifact({
     stdinBytes: Buffer.from(JSON.stringify(buildView())),
@@ -563,7 +563,7 @@ test('artifact downloader validates identity before a bounded ZIP download and h
   );
   assert.equal(invalidFetchCount, 0);
 
-  const invalidZipOutput = join(rcRoot, 'CaboHealth-3.0-build-13.ipa');
+  const invalidZipOutput = join(rcRoot, 'CaboHealth-3.0-build-14.ipa');
   rmSync(output);
   rmSync(associationOutput);
   await assert.rejects(
@@ -600,8 +600,8 @@ test('artifact downloader accepts omitted EAS error but rejects every non-null e
   const ipaBytes = Buffer.from('504b030414000000', 'hex');
 
   const fixture = (prefix) => {
-    const privateRoot = ownedDirectory(`cabohealth-build13-${prefix}-private-`);
-    const rcRoot = join(privateRoot, 'rc-build-13');
+    const privateRoot = ownedDirectory(`cabohealth-build14-${prefix}-private-`);
+    const rcRoot = join(privateRoot, 'rc-build-14');
     mkdirSync(rcRoot, { mode: 0o700 });
     chmodSync(rcRoot, 0o700);
     const evidence = sddEvidenceRoot('task-4');
@@ -610,7 +610,7 @@ test('artifact downloader accepts omitted EAS error but rejects every non-null e
       rmSync(evidence.base, { recursive: true, force: true });
     });
     return {
-      outputPath: join(rcRoot, 'CaboHealth-3.0-build-13.ipa'),
+      outputPath: join(rcRoot, 'CaboHealth-3.0-build-14.ipa'),
       associationOutputPath: join(evidence.path, 'eas-artifact-association.json'),
     };
   };
@@ -657,10 +657,10 @@ test('artifact downloader accepts omitted EAS error but rejects every non-null e
   }
 });
 
-test('artifact producer binds the canonical association and exact six-file build 13 inventory', async (t) => {
+test('artifact producer binds the canonical association and exact six-file build 14 inventory', async (t) => {
   const { createBuildArtifactAttestation } = await import('../scripts/create-build-artifact-attestation.mjs');
   const privateRoot = ownedDirectory('cabohealth-artifact-private-');
-  const evidenceDir = join(privateRoot, 'rc-build-13');
+  const evidenceDir = join(privateRoot, 'rc-build-14');
   mkdirSync(evidenceDir, { mode: 0o700 });
   chmodSync(evidenceDir, 0o700);
   const fixture = sddEvidenceRoot('task-4');
@@ -669,7 +669,7 @@ test('artifact producer binds the canonical association and exact six-file build
     rmSync(fixture.base, { recursive: true, force: true });
   });
   const files = {
-    'CaboHealth-3.0-build-13.ipa': Buffer.from('504b030414000000', 'hex'),
+    'CaboHealth-3.0-build-14.ipa': Buffer.from('504b030414000000', 'hex'),
     'signed-entitlements.plist': Buffer.from('<plist/>'),
     'privacy-report.json': Buffer.from('{"status":"passed"}\n'),
     'embedded-GoogleService-Info.plist': Buffer.from('<plist/>'),
@@ -684,7 +684,7 @@ test('artifact producer binds the canonical association and exact six-file build
   const association = {
     schemaVersion: 1,
     evidenceKind: 'cabohealth-eas-artifact-association',
-    candidate: { appleId: '6758285327', bundleIdentifier: 'com.cabohealth.app', marketingVersion: '3.0', buildNumber: '13' },
+    candidate: { appleId: '6758285327', bundleIdentifier: 'com.cabohealth.app', marketingVersion: '3.0', buildNumber: '14' },
     easBuildId: BUILD_ID,
     account: 'guaderrama',
     projectSlug: 'cabohealth',
@@ -693,8 +693,8 @@ test('artifact producer binds the canonical association and exact six-file build
     buildProfile: 'production',
     buildStatus: 'FINISHED',
     artifactAvailable: true,
-    downloadedIpaByteCount: files['CaboHealth-3.0-build-13.ipa'].length,
-    downloadedIpaSha256: sha256(files['CaboHealth-3.0-build-13.ipa']),
+    downloadedIpaByteCount: files['CaboHealth-3.0-build-14.ipa'].length,
+    downloadedIpaSha256: sha256(files['CaboHealth-3.0-build-14.ipa']),
     associationGuardProven: false,
     providerUrlsOmitted: true,
     credentialFieldsOmitted: true,
@@ -720,7 +720,7 @@ test('artifact producer binds the canonical association and exact six-file build
     'embeddedGoogleServicesPlistSha256', 'signingCertificateSha256',
     'embeddedProvisioningProfileSha256', 'reviewedAt',
   ]);
-  assert.equal(value.candidate.buildNumber, '13');
+  assert.equal(value.candidate.buildNumber, '14');
   assert.equal(value.ipaSha256, association.downloadedIpaSha256);
   assert.equal(statSync(output).mode & 0o777, 0o600);
 
@@ -795,7 +795,7 @@ test('submission sanitizer emits the exact build-bound read-only status for both
     'appleId', 'account', 'projectSlug', 'submittedBuildIdentityAvailable',
     'bundleIdentifier', 'marketingVersion', 'buildNumber', 'easBuildId',
   ]);
-  assert.equal(value.app.buildNumber, '13');
+  assert.equal(value.app.buildNumber, '14');
   assert.equal(value.appleProcessingStatus, 'not-proven-by-eas-submission');
   assert.equal(value.mutationPerformed, false);
   assert.equal(statSync(taskOutput).mode & 0o777, 0o600);

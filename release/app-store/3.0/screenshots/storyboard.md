@@ -1,8 +1,8 @@
 # Screenshot storyboard — exact RC only
 
-Authority: **IMMUTABLE FREEZE-TIME BASELINE.** The scenes and empty review boxes below define capture requirements for the exact build-13 candidate; they are never toggled after the input pin. Final screenshot completion exists only in the finalized screenshot manifest, its file-backed images, and the RC hash binding.
+Authority: **IMMUTABLE FREEZE-TIME BASELINE.** The scenes and empty review boxes below define capture requirements for the exact build-14 candidate; they are never toggled after the input pin. Final screenshot completion exists only in the finalized screenshot manifest, its file-backed images, and the RC hash binding.
 
-Status: Planning only. Capture `en-US` and `es-MX` from the processed CaboHealth 3.0 (build 13) TestFlight RC on a 6.9-inch iPhone class. Never use prototypes, localhost, browser chrome, or obsolete builds 2–8.
+Status: Planning only. Capture `en-US` and `es-MX` from the processed CaboHealth 3.0 (build 14) TestFlight RC on a 6.9-inch iPhone class. Never use prototypes, localhost, browser chrome, or obsolete builds 2–8.
 
 | Order / file stem | Exact in-app state | EN presentation line | es-MX presentation line | Evidence gate |
 | --- | --- | --- | --- | --- |

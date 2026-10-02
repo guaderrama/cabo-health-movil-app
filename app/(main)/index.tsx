@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandedBackground, PremiumMiniappTile } from '../../components';
+import { CatalogRefreshError } from '../../components/CatalogRefreshError';
 import type { CatalogPublicMiniapp } from '../../constants/publicMiniapps';
 import { resolveCatalogCardColumns } from '../../features/catalog/catalogPresentation';
 import { buildPublicMiniappRoute } from '../../features/catalog/publicMiniappRoute';
@@ -42,6 +43,7 @@ export default function HomeScreen() {
     catalogMiniapps,
     clientPreviews,
     isLoading,
+    error: catalogError,
     isOffline,
     refresh: refreshPublicCatalog,
   } = useWebApps();
@@ -154,6 +156,13 @@ export default function HomeScreen() {
 
         <View style={styles.body}>
           <SectionLabel label={t('home.resources')} color={colors.primary} />
+          {catalogError && (
+            <CatalogRefreshError
+              hasResources={catalogMiniapps.length > 0}
+              isRefreshing={isLoading}
+              onRetry={refreshPublicCatalog}
+            />
+          )}
           <View style={styles.miniappGrid}>
             {model.resources.map((miniapp, index) => (
               <View

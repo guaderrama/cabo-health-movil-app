@@ -735,7 +735,10 @@ export class FirestoreClientAccessStore implements AccessCodeStore, RedemptionSt
     });
     const subjectUids = parsed
       .filter((value): value is Readonly<StoredAccountDeletion> => value !== null)
-      .sort((left, right) => left.createdAtMs - right.createdAtMs)
+      .sort((left, right) => (
+        (left.lastAttemptAtMs ?? -1) - (right.lastAttemptAtMs ?? -1)
+        || left.createdAtMs - right.createdAtMs
+      ))
       .slice(0, limit)
       .map(({ subjectUid }) => subjectUid);
     return Object.freeze({

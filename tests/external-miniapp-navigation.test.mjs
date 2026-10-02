@@ -13,8 +13,14 @@ import {
   handleExternalPopup,
 } from '../.test-build/features/launch/externalHttpsNavigationPolicy.js';
 import {
+  applyNavigationDecision,
+  applyPopupNavigation,
+  getRestrictedSharePayload,
+  getRestrictedWebViewPolicyProps,
   RESTRICTED_WEBVIEW_SECURITY_PROPS,
 } from '../.test-build/features/launch/restrictedWebViewBehavior.js';
+import { classifyMiniappNavigation } from '../.test-build/features/launch/navigationPolicy.js';
+import { getPublicMiniapp } from '../.test-build/constants/publicMiniapps.js';
 
 const destination = Object.freeze({
   canonicalUrl: 'https://www.eightsleep.com/mx/?locale=es#sleep',
@@ -72,8 +78,8 @@ function loadPinnedSharedWrapper(platform) {
   };
 }
 
-function loadExternalHttpsWebView() {
-  const source = readFileSync('features/launch/ExternalHttpsWebView.tsx', 'utf8');
+function loadExternalHttpsWebView(component = 'ExternalHttpsWebView') {
+  const source = readFileSync(`features/launch/${component}.tsx`, 'utf8');
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       esModuleInterop: true,
@@ -98,8 +104,11 @@ function loadExternalHttpsWebView() {
     };
     if (specifier === 'react-native') return {
       ActivityIndicator: 'ActivityIndicator',
+      Linking: { openURL: async () => assert.fail('termination must not open a browser') },
+      Platform: { OS: 'ios' },
       Pressable: 'Pressable',
       ScrollView: 'ScrollView',
+      Share: { share: async () => assert.fail('termination must not share content') },
       StyleSheet: { create: (styles) => styles },
       Text: 'Text',
       View: 'View',
@@ -112,11 +121,12 @@ function loadExternalHttpsWebView() {
     if (specifier === 'react-native-webview') return { WebView: 'WebView' };
     if (specifier === '../../hooks') return {
       useFavorites: () => ({ isFavorite: () => false, toggleFavorite: () => {} }),
+      usePreferences: () => ({ reduceMotion: false }),
       useTheme: () => ({ colors: {
         accent: 'accent', background: 'background', border: 'border', cardBackground: 'card',
         error: 'error', favorite: 'favorite', primary: 'primary', text: 'text', textSecondary: 'secondary', white: 'white',
       } }),
-      useTranslations: () => ({ language: 'en-US', t: (key) => key }),
+      useTranslations: () => ({ language: 'en', t: (key) => key }),
     };
     if (specifier === './externalHttpsNavigationPolicy') return {
       applyExternalHttpsNavigationDecision,
@@ -125,8 +135,13 @@ function loadExternalHttpsWebView() {
       handleExternalPopup: () => false,
     };
     if (specifier === './restrictedWebViewBehavior') return {
+      applyNavigationDecision,
+      applyPopupNavigation,
+      getRestrictedSharePayload,
+      getRestrictedWebViewPolicyProps,
       handleRestrictedWebViewBack: () => {},
     };
+    if (specifier === './navigationPolicy') return { classifyMiniappNavigation };
     return require(specifier);
   };
   new Function('require', 'module', 'exports', compiled)(
@@ -137,7 +152,7 @@ function loadExternalHttpsWebView() {
   return {
     render(props) {
       cursor = 0;
-      return runtimeModule.exports.ExternalHttpsWebView(props);
+      return runtimeModule.exports[component](props);
     },
   };
 }
@@ -154,6 +169,59 @@ function getPublicWebView(view) {
   const webView = descendants(view).find((node) => node.type === 'WebView');
   assert.ok(webView, 'WebView did not render');
   return webView;
+}
+
+function hasPublicLoadingProgress(view) {
+  return descendants(view).some((node) => node.type === 'View'
+    && Array.isArray(node.props?.style)
+    && node.props.style.some((style) => style?.height === 3));
+}
+
+for (const component of ['RestrictedWebView', 'ExternalHttpsWebView']) {
+  for (const terminationEvent of ['onContentProcessDidTerminate', 'onRenderProcessGone']) {
+    test(`${component} presents process termination without auto reload and retries the same public destination manually (${terminationEvent})`, () => {
+      const runtime = loadExternalHttpsWebView(component);
+      const miniapp = component === 'RestrictedWebView'
+        ? getPublicMiniapp('healthy-recipes')
+        : {
+          slug: 'profound-health',
+          title: { en: 'ProFound Health', es: 'ProFound Health' },
+          destinationKind: 'external_https',
+          destinationUrl: 'https://profound-health.com/products/page/4/',
+          destinationOrigin: 'https://profound-health.com',
+        };
+      const initial = runtime.render({ miniapp });
+      const webView = getPublicWebView(initial);
+      assert.equal(hasPublicLoadingProgress(initial), true);
+      assert.equal(typeof webView.props[terminationEvent], 'function', 'process death needs a recovery handler');
+      webView.props[terminationEvent]({ nativeEvent: { didCrash: true } });
+
+      const failed = runtime.render({ miniapp });
+      const alert = descendants(failed).find((node) => node.props?.accessibilityRole === 'alert');
+      assert.ok(alert, 'a terminated page must not stay blank');
+      assert.ok(descendants(alert).some((node) => node.type === 'Text'
+        && node.props.children === 'settings.openLinkError'));
+      assert.equal(hasPublicLoadingProgress(failed), false, 'termination stops the loading indicator');
+      assert.equal(getPublicWebView(failed).key, webView.key, 'termination does not auto-remount');
+      assert.deepEqual(getPublicWebView(failed).props.source, webView.props.source);
+
+      const retry = descendants(alert).find((node) => node.type === 'Pressable'
+        && descendants(node).some((child) => child.type === 'Text' && child.props.children === 'common.retry'));
+      assert.ok(retry, 'public resources offer manual retry');
+      retry.props.onPress();
+      const retried = runtime.render({ miniapp });
+      assert.equal(descendants(retried).some((node) => node.props?.accessibilityRole === 'alert'), false);
+      assert.equal(hasPublicLoadingProgress(retried), true);
+      assert.notEqual(getPublicWebView(retried).key, webView.key, 'manual retry recreates the dead process');
+      assert.deepEqual(getPublicWebView(retried).props.source, webView.props.source);
+      getPublicWebView(retried).props.onLoadEnd();
+      const loaded = runtime.render({ miniapp });
+      assert.equal(hasPublicLoadingProgress(loaded), false);
+      getPublicWebView(loaded).props[terminationEvent]({ nativeEvent: { didCrash: true } });
+      assert.ok(descendants(runtime.render({ miniapp })).some((node) => node.props?.accessibilityRole === 'alert'),
+        'a process killed after loading also offers recovery');
+    });
+  }
 }
 
 test('external WebView loads the exact URL and allows only safe same-origin top-frame navigation', () => {

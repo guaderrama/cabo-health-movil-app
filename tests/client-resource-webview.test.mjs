@@ -132,6 +132,52 @@ const externalLaunch = Object.freeze({
   origin: 'https://www.eightsleep.com',
 });
 
+for (const launch of [brokerLaunch, externalLaunch]) {
+  for (const terminationEvent of ['onContentProcessDidTerminate', 'onRenderProcessGone']) {
+    test(`${launch.kind} process termination stops loading and preserves the authorized recovery path (${terminationEvent})`, () => {
+      const runtime = loadClientResourceWebView();
+      const effects = [];
+      const props = {
+        launch,
+        title: 'Client Resource',
+        onClose: () => effects.push('back'),
+        onRetry: () => effects.push('retry'),
+      };
+      const initial = runtime.render(props);
+      const webView = getWebView(initial);
+      assert.equal(typeof webView.props[terminationEvent], 'function', 'process death needs a recovery handler');
+      webView.props[terminationEvent]({ nativeEvent: { didCrash: true } });
+
+      const failed = runtime.render(props);
+      const alert = descendants(failed).find((node) => node.props?.accessibilityRole === 'alert');
+      assert.ok(alert, 'a terminated page must not stay blank');
+      assert.ok(descendants(alert).some((node) => node.type === 'Text'
+        && node.props.children === 'clientAccess.launchUnavailable'));
+      assert.equal(descendants(failed).some((node) => node.type === 'ActivityIndicator'
+        || node.props?.accessibilityRole === 'progressbar'), false);
+      assert.deepEqual(effects, [], 'termination neither retries nor closes an active session automatically');
+      assert.equal(getWebView(failed).key, webView.key, 'do not remount a consumed broker launch');
+      assert.equal(getWebView(failed).props.source, launch.source, 'do not replace the authorized launch');
+
+      const retry = descendants(alert).find((node) => node.type === 'Pressable'
+        && descendants(node).some((child) => child.type === 'Text' && child.props.children === 'common.retry'));
+      if (launch.kind === 'external_https') {
+        assert.ok(retry, 'external VIP retry requests a fresh launch from the route');
+        retry.props.onPress();
+        assert.deepEqual(effects, ['retry']);
+      } else {
+        assert.equal(retry, undefined, 'a broker nonce cannot be replayed');
+      }
+      const back = descendants(alert).find((node) => node.type === 'Pressable'
+        && descendants(node).some((child) => child.type === 'Text'
+          && child.props.children === 'clientAccess.backToResources'));
+      assert.ok(back);
+      back.props.onPress();
+      assert.deepEqual(effects, launch.kind === 'external_https' ? ['retry', 'back'] : ['back']);
+    });
+  }
+}
+
 test('external VIP error renders Retry and Back actions and invokes route retry', () => {
   const runtime = loadClientResourceWebView();
   const effects = [];

@@ -85,6 +85,8 @@ test('the fail-closed install hook retains the exact reviewed native patches', (
     [
       '@react-native-firebase+app+26.3.2.patch',
       '@react-native-firebase+auth+26.3.2.patch',
+      'metro+0.83.3.patch',
+      'query-string+7.1.3.patch',
       'react-native-webview+13.15.0.patch',
     ],
   );

@@ -155,6 +155,8 @@ export function ExternalHttpsWebView({
           }}
           onError={handleLoadError}
           onHttpError={handleHttpError}
+          onContentProcessDidTerminate={showGenericError}
+          onRenderProcessGone={showGenericError}
           startInLoadingState
           renderLoading={() => (
             <View style={[styles.loading, { backgroundColor: colors.background }]}>

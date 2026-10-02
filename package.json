@@ -94,14 +94,33 @@
   "overrides": {
     "eas-cli": {
       "ajv": "8.20.0",
-      "joi": "17.13.6",
+      "joi": "17.13.7",
       "minimatch@5.1.2": "npm:minimatch@5.1.8",
       "nanoid": "3.3.18",
       "tar": "7.5.22",
       "yaml": "2.9.0"
     },
     "postcss": "8.5.26",
-    "tar": "7.5.22"
+    "tar": "7.5.22",
+    "@grpc/grpc-js": "1.14.5",
+    "baseline-browser-mapping": "2.11.0",
+    "brace-expansion@^1.0.0": "1.1.21",
+    "brace-expansion@^2.0.0": "2.1.7",
+    "brace-expansion@^5.0.0": "5.0.12",
+    "browserslist": "4.29.3",
+    "decode-uri-component": "0.5.0",
+    "fast-uri@^3.0.0": "3.1.8",
+    "js-yaml@^3.0.0": "3.15.2",
+    "js-yaml@^4.0.0": "4.3.2",
+    "undici@^6.0.0": "6.28.1",
+    "uuid@>=3 <10": "11.1.1",
+    "hono@^4.0.0": "4.13.7",
+    "ip-address@^10.0.0": "10.7.1",
+    "moment@^2.0.0": "2.31.0",
+    "morgan@^1.0.0": "1.12.1",
+    "qs@^6.0.0": "6.16.0",
+    "undici@^8.0.0": "8.10.2",
+    "image-size": "2.0.4"
   },
   "expo": {
     "autolinking": {

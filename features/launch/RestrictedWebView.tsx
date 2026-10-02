@@ -194,6 +194,8 @@ export function RestrictedWebView({
           }}
           onError={handleLoadError}
           onHttpError={handleHttpError}
+          onContentProcessDidTerminate={showGenericError}
+          onRenderProcessGone={showGenericError}
           allowsBackForwardNavigationGestures
           startInLoadingState
           renderLoading={() => (

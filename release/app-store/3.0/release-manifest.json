@@ -18,7 +18,7 @@
     "appleId": "6758285327",
     "bundleIdentifier": "com.cabohealth.app",
     "marketingVersion": "3.0",
-    "buildNumber": "13",
+    "buildNumber": "14",
     "status": "authority-sequence-configured",
     "appJsonUpdated": true,
     "configUpdated": true,
@@ -142,6 +142,14 @@
       "appStoreObserved": true,
       "trackedHistoryRoot": "release/app-store/3.0/history/build-12",
       "privateHistoryRoot": "release/private/rc-build-12"
+    },
+    {
+      "marketingVersion": "3.0",
+      "buildNumber": "13",
+      "status": "eas-finished-attested-superseded-for-apple-readiness",
+      "appStoreObserved": false,
+      "trackedHistoryRoot": "release/app-store/3.0/history/build-13",
+      "privateHistoryRoot": "release/private/rc-build-13"
     }
   ],
   "historicalInputAuthorityEvidence": [
@@ -348,7 +356,7 @@
       "appReviewCredential": "pending-credential-valid-flow-and-device-e2e",
       "staffReviewAccess": "owner-portal-not-consumer-reachable-pending-exact-ipa-proof-and-apple-direction-if-requested",
       "clientAccessModel": "pending-apple-review-determination",
-      "exactReleaseCandidate": "build-13-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes",
+      "exactReleaseCandidate": "build-14-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes",
       "screenshots": "pending-exact-rc-capture",
       "appStoreConnectSave": "pending-final-save"
     }
@@ -375,8 +383,8 @@
     "ageRating": "pending-owner-reconfirmation-and-app-store-recalculation",
     "privacyMapping": "pending-final-linkage-category-review-and-save",
     "brandAndContentRights": "pending-owner-reconfirmation-signed-declaration-and-per-family-rights-basis",
-    "exactReleaseCandidate": "build-13-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes",
-    "testFlight": "builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-eas-finished-attested-not-uploaded-history-build-13-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes",
+    "exactReleaseCandidate": "build-14-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes",
+    "testFlight": "builds-4-through-8-obsolete-source-build-9-aborted-pre-provider-build-10-processed-internal-testflight-history-build-11-eas-finished-attested-not-uploaded-history-build-14-live-phase-defined-by-exact-current-pins-and-required-attestation-bytes",
     "screenshots": "pending-exact-rc-capture",
     "accessibilityLabels": "pending-exact-rc-evidence",
     "appStoreConnect": "pending-final-save",

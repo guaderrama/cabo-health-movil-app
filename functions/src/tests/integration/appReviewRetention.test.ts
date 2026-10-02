@@ -209,12 +209,16 @@ test('an Auth outage leaves review access denied and a durable job that succeeds
     store,
   });
 
-  assert.deepEqual(await retention.runScheduled(), {
-    completed: 0,
-    failed: 0,
-    malformed: 0,
-    pending: 1,
-    queued: 1,
+  await assert.rejects(retention.runScheduled(), (error: unknown) => {
+    if (!(error instanceof AppReviewRetentionBatchError)) return false;
+    assert.deepEqual(error.summary, {
+      completed: 0,
+      failed: 1,
+      malformed: 0,
+      pending: 0,
+      queued: 1,
+    });
+    return true;
   });
   assert.equal((await database.listCollection('review_sandbox_account_deletions')).length, 1);
   await assert.rejects(
@@ -275,12 +279,16 @@ test('review cleanup completes an existing job before reporting malformed candid
     nowMs: () => clock,
     store,
   });
-  assert.deepEqual(await unavailableRetention.runScheduled(), {
-    completed: 0,
-    failed: 0,
-    malformed: 0,
-    pending: 1,
-    queued: 1,
+  await assert.rejects(unavailableRetention.runScheduled(), (error: unknown) => {
+    if (!(error instanceof AppReviewRetentionBatchError)) return false;
+    assert.deepEqual(error.summary, {
+      completed: 0,
+      failed: 1,
+      malformed: 0,
+      pending: 0,
+      queued: 1,
+    });
+    return true;
   });
   await database.runTransaction(async (transaction) => {
     transaction.set('review_sandbox_credentials/current', {
@@ -404,20 +412,28 @@ test('persistently failing review deletions cannot starve a later eligible ident
     store,
   });
 
-  assert.deepEqual(await retention.runScheduled(), {
-    completed: 0,
-    failed: 0,
-    malformed: 0,
-    pending: 20,
-    queued: 20,
+  await assert.rejects(retention.runScheduled(), (error: unknown) => {
+    if (!(error instanceof AppReviewRetentionBatchError)) return false;
+    assert.deepEqual(error.summary, {
+      completed: 0,
+      failed: 20,
+      malformed: 0,
+      pending: 0,
+      queued: 20,
+    });
+    return true;
   });
   clock += 1;
-  assert.deepEqual(await retention.runScheduled(), {
-    completed: 1,
-    failed: 0,
-    malformed: 0,
-    pending: 19,
-    queued: 1,
+  await assert.rejects(retention.runScheduled(), (error: unknown) => {
+    if (!(error instanceof AppReviewRetentionBatchError)) return false;
+    assert.deepEqual(error.summary, {
+      completed: 1,
+      failed: 19,
+      malformed: 0,
+      pending: 0,
+      queued: 1,
+    });
+    return true;
   });
   assert.deepEqual(deletedSubjects, [subjects[20]]);
   assert.equal((await database.listCollection('review_sandbox_account_deletions')).length, 20);

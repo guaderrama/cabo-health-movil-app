@@ -14,7 +14,7 @@ import {
 
 const adapterRoot = fileURLToPath(new URL('..', import.meta.url));
 
-test('the adapter README identifies the exact build 13 candidate', () => {
+test('the adapter README identifies the exact build 14 candidate', () => {
   const source = readFileSync(join(adapterRoot, 'README.md'), 'utf8');
   const fields = Object.fromEntries(
     [...source.matchAll(/^- ([^:]+): `([^`]+)`$/gmu)].map((match) => [match[1], match[2]]),
@@ -24,7 +24,7 @@ test('the adapter README identifies the exact build 13 candidate', () => {
     'Apple app resource ID': '6758285327',
     'bundle ID': 'com.cabohealth.app',
     'marketing version': '3.0',
-    'build number': '13',
+    'build number': '14',
   });
 });
 
