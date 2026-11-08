@@ -24,7 +24,7 @@ export const CANDIDATE = Object.freeze({
   appleId: '6758285327',
   bundleIdentifier: 'com.cabohealth.app',
   marketingVersion: '3.0',
-  buildNumber: '14',
+  buildNumber: '15',
 });
 export const EAS_ACCOUNT = 'guaderrama';
 export const EAS_PROJECT_SLUG = 'cabohealth';

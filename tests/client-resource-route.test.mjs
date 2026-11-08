@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  beginClientResourceRouteExternalRetry,
+  beginClientResourceRouteRetry,
   buildClientResourceRoute,
   getClientResourceRouteExpiryDelay,
   normalizeClientResourceRouteParam,
@@ -213,7 +213,7 @@ test('external retry clears the descriptor, invalidates its generation, and refr
   });
   await Promise.resolve();
 
-  const retry = beginClientResourceRouteExternalRetry({
+  const retry = beginClientResourceRouteRetry({
     activeLaunch: externalLaunch,
     attempt: 2,
     operationGeneration,
@@ -252,6 +252,37 @@ test('external retry clears the descriptor, invalidates its generation, and refr
   assert.deepEqual(effects, ['refresh', 'launch']);
   assert.equal(result, freshLaunch);
   assert.notEqual(result?.source.uri, externalLaunch.source.uri);
+});
+
+test('broker retry discards the consumed nonce and refreshes before requesting its replacement', async () => {
+  const retry = beginClientResourceRouteRetry({
+    activeLaunch: launch,
+    attempt: 0,
+    operationGeneration: 7,
+  });
+  assert.deepEqual(retry, { activeLaunch: null, attempt: 1, operationGeneration: 8 });
+  assert.equal(JSON.stringify(retry).includes('nonce'), false);
+  const effects = [];
+  const replacement = { ...launch, source: { ...launch.source, body: 'nonce=fresh' } };
+  const result = await requestClientResourceRouteLaunch({
+    resourceId: resource.id,
+    refresh: async () => { effects.push('refresh'); },
+    createLaunch: async () => { effects.push('launch'); return replacement; },
+    isCurrent: () => true,
+  });
+  assert.deepEqual(effects, ['refresh', 'launch']);
+  assert.equal(result, replacement);
+  assert.notEqual(result.source.body, launch.source.body);
+});
+
+test('a broker retry cannot reuse its old nonce when revalidation fails', async () => {
+  beginClientResourceRouteRetry({ activeLaunch: launch, attempt: 0, operationGeneration: 7 });
+  assert.equal(await requestClientResourceRouteLaunch({
+    resourceId: resource.id,
+    refresh: async () => { throw new Error('access revoked'); },
+    createLaunch: async () => assert.fail('must not launch after failed revalidation'),
+    isCurrent: () => true,
+  }), null);
 });
 
 test('VIP destination never enters the URL-free route or grant state', () => {

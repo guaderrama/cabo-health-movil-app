@@ -4,7 +4,7 @@ Authority: **IMMUTABLE FREEZE-TIME BASELINE.** This exact source-and-requirement
 
 Status: **REVISED ITEMIZED DRAFT — OWNER RECONFIRMATION, PER-FAMILY BASIS, SIGNED DECLARATION, AND PRIVATE EVIDENCE PENDING.** On 2026-08-22 Ivan Guaderrama confirmed the earlier itemized scope for app, website, App Store metadata, screenshots, distribution, and updates in Mexico and the United States. The 2026-08-24 revision removes unsupported original-authorship wording, updates editorial citations, and adds previously omitted exact source families. Ivan has not yet reconfirmed these revised bytes. This inventory is not a signed declaration, trademark registration, licence, assignment, or proof that a third party granted rights.
 
-Release scope: Apple ID `6758285327`; bundle ID `com.cabohealth.app`; marketing version `3.0`; build `14`; initial territories Mexico and United States.
+Release scope: Apple ID `6758285327`; bundle ID `com.cabohealth.app`; marketing version `3.0`; build `15`; initial territories Mexico and United States.
 
 External catalog entries are not CaboHealth-authored by default and receive no CaboHealth editorial-source attribution or fixed per-item age rating. Before activation, each destination requires a private record of the exact URL, operator, suitability review, content-rights basis, territory, reviewer, date, and any attribution limits. VIP gating controls only the in-app entry point and does not make third-party content private.
 
@@ -68,7 +68,7 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 
 | Material | Exact source | SHA-256 / boundary | Final basis/evidence |
 | --- | --- | --- | --- |
-| Native bilingual interface copy | `i18n/messages.ts` | `0fde1fee7a9c2391675024841a44a9b68cae0127b836dd9ce053c7c51ced6355` | Pending |
+| Native bilingual interface copy | `i18n/messages.ts` | `a93ffc53b231b795b71252eb1fa3d398cf622ea1e8ccd5d49160145dc8300aa9` | Pending |
 | Native introduction copy | `features/onboarding/IntroScreen.tsx` | `799f6e4b91b763c0fdf585b7f7a4d512cf85de3ad503c422e16900fa3f7b3d42` | Pending |
 | Native public catalog/editorial labels and internal/external destination type boundary | `constants/publicMiniapps.ts` | `7306d82fd7de694b16de85401a8aab431c5408037f5038ce95fc5f79edef9dda` | Pending |
 | Native reviewed-citation presentation and exact-link boundary | `features/resources/CitationList.tsx` | `12cf2bef93d1155370b1d8030f8dd1099e7d2d73e96ec7669e8b40ee0249b8bf` | Pending |
@@ -81,12 +81,12 @@ The Government of Mexico 9-1-1 page is an editorial source citation only: `https
 | Client Resources, es-MX | `client-resources-private/content/es-MX.json` | `e29960ae5490c90ffb3e869a040d3c2bf970465215065cb4debc4f97b1363555` | Pending |
 | Fixed non-client App Review sample | `app-review-private/content/sample.json` | `03b558d9c0afc6a405f6fddf1d06fd67915170444baa596b713a150e9e8d0911` | Pending |
 | Staff Access interface copy, including external-link rights/privacy guidance, owner catalog controls, and audit labels | `staff-portal/src/i18n/messages.ts` | `1999940156e2def03b1ce970fd948b253da2d26968bc0413bd86f60f7bde0eeb` | Pending |
-| Public Marketing URL copy | `web-hosting/cabohealth.org/app/index.html` | `8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147` | Pending |
+| Public Marketing URL copy | `web-hosting/cabohealth.org/app/index.html` | `192879c4588af7fe1af07b91c908acc6f017b766e0b61a4108b27eb718ca1532` | Pending |
 | Hosted Privacy copy | `web-hosting/cabohealth.org/app/privacy/index.html` | `560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125` | Verified unchanged in live dynamic-AASA release `web-v1-40869f4a540a56c420b198aea0fdf58a21053646d280d89ad64d105fd1808948` |
-| Hosted Terms copy | `web-hosting/cabohealth.org/app/terms/index.html` | `b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22` | Pending final owner reconfirmation |
-| Hosted Support copy | `web-hosting/cabohealth.org/app/support/index.html` | `06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa` | Pending final owner reconfirmation |
+| Hosted Terms copy | `web-hosting/cabohealth.org/app/terms/index.html` | `44b864b2a76bcffe03de8f752c910a888c1047522459d762fb399943b0cde604` | Pending final owner reconfirmation |
+| Hosted Support copy | `web-hosting/cabohealth.org/app/support/index.html` | `4e6bd2d43b7d7b3ec7f3c1d69f592d02fe6798a28a99fd27eba8a3d3e454a69d` | Pending final owner reconfirmation |
 | Hosted Report Content copy | `web-hosting/cabohealth.org/app/report-content/index.html` | `f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c` | Pending final owner reconfirmation |
-| App Store metadata and Review Notes | `release/app-store/3.0/` | Must be reconciled to the exact 3.0 (14) RC and saved ASC record | Pending |
+| App Store metadata and Review Notes | `release/app-store/3.0/` | Must be reconciled to the exact 3.0 (15) RC and saved ASC record | Pending |
 | App Store screenshots | Exact RC captures | Not captured | Pending |
 
 `Firebase`, `Google Cloud`, `Hostinger`, `Apple`, `App Store`, `App Attest`, and `DeviceCheck` appear only to identify actual providers, platform features, review processes, or contractual disclosures. No ownership or endorsement is claimed.

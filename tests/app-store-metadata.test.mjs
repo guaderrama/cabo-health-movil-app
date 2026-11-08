@@ -160,7 +160,7 @@ function reviewNotesBody() {
 }
 
 function pendingReviewNotesAuthority() {
-  const wrapper = '# App Review Notes — CaboHealth 3.0 (build 14)\n\nFreeze role: **PHASE-CONTROLLED PENDING FORM — DO NOT PASTE YET.** This wrapper is the exact pending baseline for pre-input/input and the pre-finalization artifact phase. The final two-file metadata transition removes this wrapper and the heading below without changing one byte of the build-14 body. Final live completion comes only from the RC-bound App Store Connect evidence and `reviewNotesSha256`, never from this pending wording.\n\n## Paste-ready body after all gates are resolved\n\n';
+  const wrapper = '# App Review Notes — CaboHealth 3.0 (build 15)\n\nFreeze role: **PHASE-CONTROLLED PENDING FORM — DO NOT PASTE YET.** This wrapper is the exact pending baseline for pre-input/input and the pre-finalization artifact phase. The final two-file metadata transition removes this wrapper and the heading below without changing one byte of the build-15 body. Final live completion comes only from the RC-bound App Store Connect evidence and `reviewNotesSha256`, never from this pending wording.\n\n## Paste-ready body after all gates are resolved\n\n';
   return `${wrapper}${reviewNotesBody()}\n`;
 }
 
@@ -169,7 +169,7 @@ function pendingScreenshotsAuthority() {
     schemaVersion: 2,
     status: 'pending-exact-rc-capture',
     marketingVersion: '3.0',
-    buildNumber: '14',
+    buildNumber: '15',
     deviceClass: 'iPhone 6.9-inch',
     locales: [...screenshotLocales],
     sceneIds: [...screenshotSceneIds],
@@ -191,7 +191,7 @@ function writeFinalScreenshotAuthority(root) {
   for (const locale of screenshotLocales) {
     for (const sceneId of screenshotSceneIds) {
       const relativePath = `screenshots/${locale}/iphone-6.9/${sceneId}.png`;
-      const absolutePath = join(root, 'release/private/rc-build-14', relativePath);
+      const absolutePath = join(root, 'release/private/rc-build-15', relativePath);
       mkdirSync(dirname(absolutePath), { recursive: true, mode: 0o700 });
       const bytes = screenshotPng(1320, 2868, `${locale}:${sceneId}`);
       writeFileSync(absolutePath, bytes, { mode: 0o600 });
@@ -213,7 +213,7 @@ function writeFinalScreenshotAuthority(root) {
     schemaVersion: 2,
     status: 'exact-rc-captured-and-approved',
     marketingVersion: '3.0',
-    buildNumber: '14',
+    buildNumber: '15',
     deviceClass: 'iPhone 6.9-inch',
     locales: [...screenshotLocales],
     sceneIds: [...screenshotSceneIds],
@@ -236,7 +236,7 @@ function writeRcPrivateEvidence(root, { sourceTreeSha256, testFlightBuildId }) {
     appleId: '6758285327',
     bundleIdentifier: 'com.cabohealth.app',
     marketingVersion: '3.0',
-    buildNumber: '14',
+    buildNumber: '15',
   };
   const physical = {
     schemaVersion: 1,
@@ -322,7 +322,7 @@ function writeRcPrivateEvidence(root, { sourceTreeSha256, testFlightBuildId }) {
     failures: [],
     evidenceSnapshotSha256: '5'.repeat(64),
   };
-  const privateRoot = join(root, 'release/private/rc-build-14');
+  const privateRoot = join(root, 'release/private/rc-build-15');
   mkdirSync(privateRoot, { recursive: true, mode: 0o700 });
   const physicalBytes = Buffer.from(`${JSON.stringify(physical, null, 2)}\n`);
   const appStoreBytes = Buffer.from(`${JSON.stringify(appStore, null, 2)}\n`);
@@ -458,13 +458,13 @@ function withReleaseFixture(mutate, assertion) {
   }
 }
 
-test('versioned App Store metadata has a valid phase-neutral 3.0 build 14 authority contract', () => {
+test('versioned App Store metadata has a valid phase-neutral 3.0 build 15 authority contract', () => {
   const result = verify(projectRoot);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /metadata authority verified; submission remains blocked/i);
 });
 
-test('metadata verifier scans build-14-only operational prose for stale phase assertions', () => {
+test('metadata verifier scans build-15-only operational prose for stale phase assertions', () => {
   withReleaseFixture(
     (root) => {
       const path = join(
@@ -473,11 +473,11 @@ test('metadata verifier scans build-14-only operational prose for stale phase as
       );
       const source = readFileSync(path, 'utf8');
       assert.doesNotMatch(source, /build[- /]?11/iu);
-      writeFileSync(path, `${source}\nCaboHealth build 14 is the sole unbuilt candidate.\n`);
+      writeFileSync(path, `${source}\nCaboHealth build 15 is the sole unbuilt candidate.\n`);
     },
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /contains a stale build-14 phase assertion/i);
+      assert.match(result.stderr, /contains a stale build-15 phase assertion/i);
     },
   );
 });
@@ -544,7 +544,7 @@ test('metadata verifier keeps the candidate identity and phase-source schema exa
       (root) => mutateJson(root, `${releasePath}/release-manifest.json`, (manifest) => mutate(manifest.candidate)),
       (result) => {
         assert.equal(result.status, 1, `${name} bypassed candidate phase validation`);
-        assert.match(result.stderr, /phase-neutral 3\.0 build 14 candidate configuration/i);
+        assert.match(result.stderr, /phase-neutral 3\.0 build 15 candidate configuration/i);
       },
     ));
   }
@@ -574,13 +574,13 @@ test('metadata verifier binds the exact content-rights inventory to every listed
     (root) => writeFileSync(
       join(root, releasePath, 'content-rights-inventory.md'),
       readFileSync(join(root, releasePath, 'content-rights-inventory.md'), 'utf8')
-        .replace('build `14`', 'build `10`'),
+        .replace('build `15`', 'build `10`'),
     ),
     (result) => {
       assert.equal(result.status, 1, 'stale content-rights candidate build bypassed verifier');
       assert.match(
         result.stderr,
-        /Content-rights inventory must target Apple ID 6758285327, bundle com\.cabohealth\.app, version 3\.0, and build 14/iu,
+        /Content-rights inventory must target Apple ID 6758285327, bundle com\.cabohealth\.app, version 3\.0, and build 15/iu,
       );
     },
   ));
@@ -601,13 +601,13 @@ test('metadata verifier binds the exact content-rights inventory to every listed
     (root) => {
       const path = join(root, releasePath, 'content-rights-inventory.md');
       writeFileSync(path, readFileSync(path, 'utf8').replace(
-        'exact 3.0 (14) RC',
+        'exact 3.0 (15) RC',
         'exact 3.0 (6) RC',
       ));
     },
     (result) => {
       assert.equal(result.status, 1, 'stale exact build-6 RC bypassed verifier');
-      assert.match(result.stderr, /exact RC must be build 14/iu);
+      assert.match(result.stderr, /exact RC must be build 15/iu);
     },
   ));
 
@@ -685,11 +685,11 @@ test('Review Notes retain the prior-review resolution, current privacy facts, an
   const pasteReadyBody = reviewNotesBody();
   const finalReviewNotesBytes = Buffer.from(`${pasteReadyBody}\n`);
 
-  assert.equal([...pasteReadyBody].length, 4000, 'paste-ready Review Notes must contain exactly 4,000 characters');
+  assert.ok([...pasteReadyBody].length > 0 && [...pasteReadyBody].length <= 4000, 'Review Notes must fit the App Store character limit');
   assert.equal(
     sha256(finalReviewNotesBytes),
-    'd85bfb58ddbfdc1c2a80ecfcf8552bbb628bc363fd6930633091d594b18f9cbf',
-    'final Review Notes must retain the exact 4,000-character body plus one newline',
+    'e0a3086a42a297c0bc2a98a62f1febff2cbc7cc872411d0f3f5030174ba5cd91',
+    'final Review Notes must retain the reviewed, at-most-4,000-character body plus one newline',
   );
   assert.match(pasteReadyBody, /two public wellness\/editorial resources plus protected Client Resources/i);
   assert.match(
@@ -705,7 +705,7 @@ test('Review Notes retain the prior-review resolution, current privacy facts, an
   assert.match(notes, /No camera, Photos, HealthKit, microphone, or location access; WebViews deny media\/geolocation/i);
   assert.match(notes, /Both public resources show dated Sources\/Fuentes with official links/i);
   assert.match(notes, /remains on the introduction until the reviewer taps “Enter CaboHealth”/i);
-  assert.match(notes, /On Home, confirm two public resources and locked Client Resources/i);
+  assert.match(notes, /Confirm two public resources and locked Client Resources/i);
   assert.match(notes, /Hostinger verification observed IP, timestamp, method, resource, device\/user-agent, country, bytes, and latency/i);
   assert.match(notes, /Authorized logs include IP, user-agent, URL, and errors for delivery\/security\/troubleshooting/i);
   assert.match(notes, /hPanel shows up to 7 days/i);
@@ -1131,8 +1131,8 @@ test('metadata verifier keeps the live-reconciled version configuration gate com
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 14 after preserving build 13 as exact EAS-finished, attested history; this completed configuration gate neither asserts nor negates a later live build-14 authority phase.',
-        '- [ ] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 14 after preserving build 13 as exact EAS-finished, attested history; this completed configuration gate neither asserts nor negates a later live build-14 authority phase.',
+        '- [x] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 15 after preserving build 13 as exact EAS-finished, attested history; this completed configuration gate neither asserts nor negates a later live build-15 authority phase.',
+        '- [ ] Rebaseline `app.json` and `constants/config.ts` together to 3.0/build 15 after preserving build 13 as exact EAS-finished, attested history; this completed configuration gate neither asserts nor negates a later live build-15 authority phase.',
       ));
     },
     (result) => {
@@ -1176,19 +1176,19 @@ test('metadata verifier keeps the build-6 build-input attestation gate completed
   );
 });
 
-test('metadata verifier keeps the phase-neutral build-14 authority sequence completed', () => {
+test('metadata verifier keeps the phase-neutral build-15 authority sequence completed', () => {
   withReleaseFixture(
     (root) => {
       const file = join(root, releasePath, 'submission-gates.md');
       const source = readFileSync(file, 'utf8');
       writeFileSync(file, source.replace(
-        '- [x] Establish and verify the fail-closed build-14 authority-sequence design and guards. This checked row records the pre-build contract only; it does not claim that input, build artifact, RC, or submit-tool authority exists. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no historical build-8 through build-13 authority may be reused.',
-        '- [ ] Establish and verify the fail-closed build-14 authority-sequence design and guards. This checked row records the pre-build contract only; it does not claim that input, build artifact, RC, or submit-tool authority exists. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no historical build-8 through build-13 authority may be reused.',
+        '- [x] Establish and verify the fail-closed build-15 authority-sequence design and guards. This checked row records the pre-build contract only; it does not claim that input, build artifact, RC, or submit-tool authority exists. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no historical build-8 through build-13 authority may be reused.',
+        '- [ ] Establish and verify the fail-closed build-15 authority-sequence design and guards. This checked row records the pre-build contract only; it does not claim that input, build artifact, RC, or submit-tool authority exists. Exact current pins and required attestation bytes determine the live phase; each phase must bind its reviewed predecessor, and no historical build-8 through build-13 authority may be reused.',
       ));
     },
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /must retain the exact completed phase-neutral build-14 authority-sequence checkbox/i);
+      assert.match(result.stderr, /must retain the exact completed phase-neutral build-15 authority-sequence checkbox/i);
     },
   );
 });
@@ -1725,7 +1725,7 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured app
     ['configured app rolled back', (root) => mutateJson(root, 'app.json', (app) => {
       app.expo.version = '2.0.0';
       app.expo.ios.buildNumber = '3';
-    }), /manifest says appJsonUpdated=true.*3\.0\/build 14/i],
+    }), /manifest says appJsonUpdated=true.*3\.0\/build 15/i],
     ['premature release-ready saved age authority', (root) => mutateJson(
       root,
       'release/compliance-facts.json',
@@ -1733,7 +1733,7 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured app
         facts.releaseReady = true;
         facts.slice = 'task-7f-age-rating-saved';
       },
-    ), /pending build-14 age-review root\/legal facts/i],
+    ), /pending build-15 age-review root\/legal facts/i],
     ['third actual catalog slug', (root) => {
       const file = join(root, 'constants/publicMiniapps.ts');
       const source = readFileSync(file, 'utf8');
@@ -1755,14 +1755,14 @@ test('metadata verifier reconciles authoritative Task 7 facts and configured app
   }
 });
 
-test('current release instructions retain build 11 history and the current build-14 candidate', () => {
+test('current release instructions retain build 11 history and the current build-15 candidate', () => {
   const dataInventory = readFileSync(join(projectRoot, 'release/data-inventory.md'), 'utf8');
-  assert.match(dataInventory, /exact signed 3\.0\/build 14 RC must independently confirm/iu);
-  assert.match(dataInventory, /Final Apple App Privacy answers must be reconciled against the exact 3\.0\/build 14 signed RC/iu);
+  assert.match(dataInventory, /exact signed 3\.0\/build 15 RC must independently confirm/iu);
+  assert.match(dataInventory, /Final Apple App Privacy answers must be reconciled against the exact 3\.0\/build 15 signed RC/iu);
   assert.match(dataInventory, /live authority phase—pre-input, input, artifact, RC, or submit-tool—must be determined from the exact current pins and required attestation bytes/iu);
   assert.match(dataInventory, /Build 10 is immutable processed internal-TestFlight history/iu);
   assert.match(dataInventory, /Build 11 input attempts 1 and 2 are separately archived invalidated-pre-provider authority history:[\s\S]{0,260}Neither attempt contacted EAS or authorized a build/iu);
-  assert.match(dataInventory, /The final build 11 source was built and exactly attested in EAS[\s\S]{0,240}before upload[\s\S]{0,160}cannot authorize build 14/iu);
+  assert.match(dataInventory, /The final build 11 source was built and exactly attested in EAS[\s\S]{0,240}before upload[\s\S]{0,160}cannot authorize build 15/iu);
   assert.doesNotMatch(dataInventory, /exact signed 3\.0\/build [67] RC must/iu);
   assert.doesNotMatch(dataInventory, /exact 3\.0\/build [67] signed RC.*still pending/iu);
 
@@ -1770,11 +1770,11 @@ test('current release instructions retain build 11 history and the current build
     join(projectRoot, 'docs/operations/dynamic-miniapp-production-activation-2026-08-25.md'),
     'utf8',
   );
-  assert.match(activation, /CaboHealth 3\.0 build 14 is the current\s+candidate/iu);
+  assert.match(activation, /CaboHealth 3\.0 build 15 is the current\s+candidate/iu);
   assert.match(activation, /live authority phase—pre-input, input, artifact, RC, or submit-tool—must be determined\s+from the exact current pins and required attestation bytes/iu);
   assert.match(activation, /Build 9 was input-attested and then aborted before any\s+provider operation/iu);
   assert.match(activation, /Build 10 was built, attested, uploaded, and processed for internal\s+TestFlight/iu);
-  assert.match(activation, /Build 11 was built and exactly attested in EAS[\s\S]{0,220}before upload[\s\S]{0,160}cannot authorize build 14/iu);
+  assert.match(activation, /Build 11 was built and exactly attested in EAS[\s\S]{0,220}before upload[\s\S]{0,160}cannot authorize build 15/iu);
   assert.doesNotMatch(activation, /build [67] is the next candidate/iu);
 
   for (const relativePath of [
@@ -1794,14 +1794,14 @@ test('metadata verifier rejects build 6 or 7 as the next exact RC authority', as
     ['build 7 in primary Firebase mapping gate', (root) => {
       const path = join(root, 'release/data-inventory.md');
       writeFileSync(path, readFileSync(path, 'utf8').replace(
-        'exact signed 3.0/build 14 RC must independently confirm',
+        'exact signed 3.0/build 15 RC must independently confirm',
         'exact signed 3.0/build 7 RC must independently confirm',
       ));
     }],
     ['build 6 in reconciliation gate', (root) => {
       const path = join(root, 'release/data-inventory.md');
       writeFileSync(path, readFileSync(path, 'utf8').replace(
-        'against the exact 3.0/build 14 signed RC',
+        'against the exact 3.0/build 15 signed RC',
         'against the exact 3.0/build 6 signed RC',
       ));
     }],
@@ -1809,7 +1809,7 @@ test('metadata verifier rejects build 6 or 7 as the next exact RC authority', as
   for (const [name, mutate] of mutations) {
     await t.test(name, () => withReleaseFixture(mutate, (result) => {
       assert.equal(result.status, 1, `${name} bypassed exact-RC validation`);
-      assert.match(result.stderr, /must name build 14 as the phase-neutral exact RC, with build 11 preserved as EAS-finished, attested, non-uploaded history and both earlier build 11 input attempts separately invalidated/iu);
+      assert.match(result.stderr, /must name build 15 as the phase-neutral exact RC, with build 11 preserved as EAS-finished, attested, non-uploaded history and both earlier build 11 input attempts separately invalidated/iu);
     }));
   }
 });
@@ -2195,7 +2195,7 @@ test('metadata verifier binds screenshot planning to the exact candidate build',
     }),
     (result) => {
       assert.equal(result.status, 1, result.stdout || result.stderr);
-      assert.match(result.stderr, /screenshot manifest must target 3\.0 build 14/i);
+      assert.match(result.stderr, /screenshot manifest must target 3\.0 build 15/i);
     },
   );
 });
@@ -2269,7 +2269,7 @@ test('metadata verifier accepts exact file-backed screenshot evidence and reject
     (root) => {
       const { finalScreenshot } = writePhaseAuthority(root, 'rc');
       writeFileSync(
-        join(root, 'release/private/rc-build-14', finalScreenshot.captures[0].relativePath),
+        join(root, 'release/private/rc-build-15', finalScreenshot.captures[0].relativePath),
         screenshotPng(1320, 2868, 'drifted'),
         { mode: 0o600 },
       );

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Pinned fail-closed App Store Connect release adapters for CaboHealth 3.0 build 14.",
+  "description": "Pinned fail-closed App Store Connect release adapters for CaboHealth 3.0 build 15.",
   "engines": {
     "node": "22.22.3"
   },

@@ -77,7 +77,7 @@ function writeOwnedCanonicalInventory(path) {
   return inventoryPath;
 }
 
-test('build-input producer assembles the exact canonical build 14 authority with inventory digest', () => {
+test('build-input producer assembles the exact canonical build 15 authority with inventory digest', () => {
   const value = assembleBuildInputAttestation({
     reviewedAt: '2026-08-26T07:00:00.000Z',
     sourceCommit,
@@ -99,7 +99,7 @@ test('build-input producer assembles the exact canonical build 14 authority with
   });
 
   assert.deepEqual(value.candidate, BUILD_INPUT_CANDIDATE);
-  assert.equal(value.candidate.buildNumber, '14');
+  assert.equal(value.candidate.buildNumber, '15');
   assert.equal(value.firebaseProjectId, 'cabohealth-owner-prod');
   assert.equal(`${JSON.stringify(value)}\n`.endsWith('\n'), true);
   assert.deepEqual(Object.keys(value), [
@@ -181,7 +181,7 @@ test('build-input producer accepts only the current task-2 inventory parent', (c
 
   const currentEvidenceParent = join(
     temporaryRoot,
-    '.superpowers/sdd/2026-10-01-cabohealth-apple-readiness/task-2-evidence',
+    '.superpowers/sdd/2026-11-08-cabohealth-build15-recovery/task-2-evidence',
   );
   const obsoleteEvidenceParent = join(
     temporaryRoot,

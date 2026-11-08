@@ -161,19 +161,17 @@ for (const launch of [brokerLaunch, externalLaunch]) {
 
       const retry = descendants(alert).find((node) => node.type === 'Pressable'
         && descendants(node).some((child) => child.type === 'Text' && child.props.children === 'common.retry'));
-      if (launch.kind === 'external_https') {
-        assert.ok(retry, 'external VIP retry requests a fresh launch from the route');
-        retry.props.onPress();
-        assert.deepEqual(effects, ['retry']);
-      } else {
-        assert.equal(retry, undefined, 'a broker nonce cannot be replayed');
-      }
+      assert.ok(retry, 'retry must ask the route for fresh authorization and a new launch');
+      retry.props.onPress();
+      assert.deepEqual(effects, ['retry']);
+      assert.equal(getWebView(runtime.render(props)).props.source, launch.source,
+        'the WebView must delegate recovery instead of replaying the POST itself');
       const back = descendants(alert).find((node) => node.type === 'Pressable'
         && descendants(node).some((child) => child.type === 'Text'
           && child.props.children === 'clientAccess.backToResources'));
       assert.ok(back);
       back.props.onPress();
-      assert.deepEqual(effects, launch.kind === 'external_https' ? ['retry', 'back'] : ['back']);
+      assert.deepEqual(effects, ['retry', 'back']);
     });
   }
 }
@@ -206,22 +204,28 @@ test('external VIP error renders Retry and Back actions and invokes route retry'
   assert.deepEqual(effects, ['retry', 'back']);
 });
 
-test('broker error keeps the unchanged Back-only behavior', () => {
+test('broker HTTP rejection offers a fresh route launch without replaying the consumed POST', () => {
   const runtime = loadClientResourceWebView();
+  const effects = [];
   const props = {
     launch: brokerLaunch,
     title: 'Broker Resource',
     onClose: () => {},
-    onRetry: () => assert.fail('broker exposed retry'),
+    onRetry: () => effects.push('fresh-launch'),
   };
-  triggerLoadError(runtime.render(props));
+  getWebView(runtime.render(props)).props.onHttpError({ nativeEvent: { statusCode: 403 } });
   const failedView = runtime.render(props);
   const actionLabels = descendants(failedView)
     .filter((node) => node.type === 'Pressable')
     .map((node) => descendants(node).find((child) => child.type === 'Text')?.props.children)
     .filter((label) => label === 'common.retry' || label === 'clientAccess.backToResources');
 
-  assert.deepEqual(actionLabels, ['clientAccess.backToResources']);
+  assert.deepEqual(actionLabels, ['common.retry', 'clientAccess.backToResources']);
+  const retry = descendants(failedView).find((node) => node.type === 'Pressable'
+    && descendants(node).some((child) => child.props?.children === 'common.retry'));
+  retry.props.onPress();
+  assert.deepEqual(effects, ['fresh-launch']);
+  assert.equal(getWebView(runtime.render(props)).props.source, brokerLaunch.source);
 });
 
 test('external VIP loading shows nonblocking accessible progress and removes it on load end', () => {

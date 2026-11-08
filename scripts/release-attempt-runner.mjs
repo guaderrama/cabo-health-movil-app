@@ -490,7 +490,7 @@ function verifyCommittedAuthority(projectRoot, sourceCommit, sourceTreeSha256, p
 }
 
 function hashCurrentIpa(projectRoot) {
-  const relativePath = 'release/private/rc-build-14/CaboHealth-3.0-build-14.ipa';
+  const relativePath = 'release/private/rc-build-15/CaboHealth-3.0-build-15.ipa';
   const path = join(projectRoot, relativePath);
   let descriptor;
   try {

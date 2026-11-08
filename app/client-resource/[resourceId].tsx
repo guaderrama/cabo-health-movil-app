@@ -14,7 +14,7 @@ import { useClientAccess } from '../../context/ClientAccessContext';
 import { useTheme, useTranslations } from '../../hooks';
 import type { ClientResourceLaunch } from '../../features/clientAccess/clientAccessController';
 import {
-  beginClientResourceRouteExternalRetry,
+  beginClientResourceRouteRetry,
   describeClientResourceLaunchFailure,
   getClientResourceRouteExpiryDelay,
   normalizeClientResourceRouteParam,
@@ -200,9 +200,9 @@ export default function ClientResourceRoute() {
     setAttempt((value) => value + 1);
   }, []);
 
-  const retryExternalLaunch = useCallback(() => {
-    if (activeLaunch?.kind !== 'external_https' || launchAttemptPending.current) return;
-    const retry = beginClientResourceRouteExternalRetry({
+  const retryActiveLaunch = useCallback(() => {
+    if (activeLaunch === null || launchAttemptPending.current) return;
+    const retry = beginClientResourceRouteRetry({
       activeLaunch,
       attempt,
       operationGeneration: operationGeneration.current,
@@ -228,7 +228,7 @@ export default function ClientResourceRoute() {
         launch={activeLaunch}
         title={title}
         onClose={closeToResources}
-        onRetry={retryExternalLaunch}
+        onRetry={retryActiveLaunch}
       />
     );
   }

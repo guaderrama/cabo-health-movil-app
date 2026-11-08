@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "cabohealth-ios-candidate-history",
+  "candidate": {
+    "appleId": "6758285327",
+    "bundleIdentifier": "com.cabohealth.app",
+    "marketingVersion": "3.0",
+    "buildNumber": "14"
+  },
+  "status": "app-review-rejected-2.1a-superseded-for-launch-recovery",
+  "input": {
+    "relativePath": "build-input-attestation.json",
+    "sha256": "8cbfe18960023c5242161ead7991adf5e65a96e9524f5401349c9195a3ac731f"
+  },
+  "artifact": {
+    "relativePath": "build-artifact-attestation.json",
+    "sha256": "fd0b36028e0ee8f4e0f3d2ddc0c21224c6e3f6c8b763f14858b4bc7561147be9"
+  },
+  "frozenSource": {
+    "commit": "0c3f476020c42a5b981f0c12270b813cfb65035c",
+    "sourceTreeSha256": "1ca903555060f4061e111d831c1b11ce26a54b4727dce89377d99c578644cc3a"
+  },
+  "appleObservation": {
+    "testFlightBuildId": "539282ff-7b42-49a3-959d-4b574d45b468",
+    "rejectionDate": "2026-11-05",
+    "guideline": "2.1(a)",
+    "issue": "App Review Sample unavailable on iPhone and iPad"
+  },
+  "supersession": {
+    "recordedOn": "2026-11-08",
+    "reason": "Monotonic launch freshness and fresh-nonce recovery replace the rejected binary.",
+    "appleIncidentRootCauseConfirmed": false
+  }
+}

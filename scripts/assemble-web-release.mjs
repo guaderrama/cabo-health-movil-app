@@ -63,8 +63,8 @@ const DRAFT_LEGAL_SHA256 = Object.freeze({
 const REVIEWED_MARKETING_LANDING = Object.freeze({
   source: 'web-hosting/cabohealth.org/app/index.html',
   output: 'app/index.html',
-  size: 15798,
-  sha256: '8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147',
+  size: 15838,
+  sha256: '192879c4588af7fe1af07b91c908acc6f017b766e0b61a4108b27eb718ca1532',
 });
 
 // Pinned after owner-authorized fact reconciliation and independent byte review.
@@ -72,12 +72,12 @@ const REVIEWED_MARKETING_LANDING = Object.freeze({
 export const FINAL_LEGAL_SHA256 = Object.freeze({
   privacy: '560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125',
   'report-content': 'f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c',
-  support: '06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa',
-  terms: 'b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22',
+  support: '4e6bd2d43b7d7b3ec7f3c1d69f592d02fe6798a28a99fd27eba8a3d3e454a69d',
+  terms: '44b864b2a76bcffe03de8f752c910a888c1047522459d762fb399943b0cde604',
 });
 // Set only after the final legal/AASA/Firebase/Hostinger staging evidence receives
 // a separate byte review. A null pin makes every materialization path fail closed.
-export const WEB_DEPLOYMENT_READINESS_SHA256 = 'bf2e2326d057a60131db535b57000f69f2b96a812929f1e6e27286e9a4f9522c';
+export const WEB_DEPLOYMENT_READINESS_SHA256 = 'e5e395242a8b7d6479b3a91b33ab8cac5078a2c3f896f0b8b0e1c6d186576f61';
 export const WEB_RELEASE_PATHS = Object.freeze([
   '.well-known/apple-app-site-association',
   'app/index.html',
@@ -162,7 +162,7 @@ export function assertWebDeploymentReadiness(complianceBuffers) {
   if (readiness.schemaVersion !== 2
     || readiness.artifactKind !== 'cabohealth-web-deployment-readiness-v2'
     || readiness.status !== 'ready'
-    || readiness.reviewedAt !== '2026-08-25'
+    || readiness.reviewedAt !== '2026-11-08'
     || JSON.stringify(readiness.reviewedInputs) !== JSON.stringify({
       miniappCapsuleSha256: CAPSULE_SHA256,
       privacySha256: FINAL_LEGAL_SHA256.privacy,

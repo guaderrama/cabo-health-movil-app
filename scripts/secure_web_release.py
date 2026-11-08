@@ -77,8 +77,8 @@ APP_ID = "DQ8PH2DZ3R.com.cabohealth.app"
 CAPSULE_SIZE = 721307
 CAPSULE_SHA256 = "b569107971f2db55f900e595e08e4d9a8daa54ef4588850424d60a9a8c089929"
 APACHE_SECURITY_SHA256 = "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"
-MARKETING_LANDING_SIZE = 15798
-MARKETING_LANDING_SHA256 = "8ca9c36be228bbcc96234e1ee228debfa423de11924b7f1adc8384bfad15d147"
+MARKETING_LANDING_SIZE = 15838
+MARKETING_LANDING_SHA256 = "192879c4588af7fe1af07b91c908acc6f017b766e0b61a4108b27eb718ca1532"
 MINIAPP_MIME_OVERLAY = (
     b"Options -Indexes\n"
     b"<FilesMatch \"\\.html$\">\n"
@@ -148,12 +148,12 @@ DRAFT_LEGAL_SHA256 = {
 FINAL_LEGAL_SHA256: dict[str, str | None] = {
     "privacy": "560f781d4e1d2b6bd65797aaa27dc499b1f74954f548507da78053887ac6c125",
     "report-content": "f38f162f51aa4f882da4fa8f35e03bf0efa37308b3a1e4c7e2a6bc1d31886f7c",
-    "support": "06fa373c7c59a705348e7bd236f02dec221223577018db161c249428db6883fa",
-    "terms": "b1c2a7f2ab3bc1907d8d64b9eda2f712b2810270345f91b8e96033561e5adb22",
+    "support": "4e6bd2d43b7d7b3ec7f3c1d69f592d02fe6798a28a99fd27eba8a3d3e454a69d",
+    "terms": "44b864b2a76bcffe03de8f752c910a888c1047522459d762fb399943b0cde604",
 }
 # This remains unset until an independently reviewed legal/AASA/Firebase/
 # Hostinger readiness record is pinned in both release authorities.
-WEB_DEPLOYMENT_READINESS_SHA256: str | None = "bf2e2326d057a60131db535b57000f69f2b96a812929f1e6e27286e9a4f9522c"
+WEB_DEPLOYMENT_READINESS_SHA256: str | None = "e5e395242a8b7d6479b3a91b33ab8cac5078a2c3f896f0b8b0e1c6d186576f61"
 MINIAPP_FILE_PINS = (
     ("apps/.htaccess", 568, "0057e73870fe6fc6e71887020c4ffad3db76b3ddc12a0c922ae0eaf6ac5b08da"),
     ("apps/clinic-guide/app.js", 3868, "f9b6b5284574ff3dfd3856a30b59b9d6ffe546550bce6f7595cd82eaa6e8ddd7"),
@@ -4302,7 +4302,7 @@ def validate_web_deployment_readiness_bound(root_fd: int) -> None:
         "schemaVersion": 2,
         "artifactKind": "cabohealth-web-deployment-readiness-v2",
         "status": "ready",
-        "reviewedAt": "2026-08-25",
+        "reviewedAt": "2026-11-08",
         "reviewedInputs": {
             "miniappCapsuleSha256": CAPSULE_SHA256,
             "privacySha256": FINAL_LEGAL_SHA256["privacy"],

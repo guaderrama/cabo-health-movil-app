@@ -1,6 +1,6 @@
 # Localización de App Store — es-MX
 
-Estado: Borrador para CaboHealth 3.0 (build 14). No pegar en App Store Connect hasta resolver cada gate de `release-manifest.json` contra el RC exacto.
+Estado: Borrador para CaboHealth 3.0 (build 15). No pegar en App Store Connect hasta resolver cada gate de `release-manifest.json` contra el RC exacto.
 
 ## Name
 CaboHealth

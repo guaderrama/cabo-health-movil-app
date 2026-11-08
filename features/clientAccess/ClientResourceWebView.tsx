@@ -198,37 +198,33 @@ export function ClientResourceWebView({
               <Ionicons name="shield-outline" size={54} color={colors.error} />
               <Text style={[styles.errorTitle, { color: colors.text }]}>{t('common.error')}</Text>
               <Text style={[styles.errorBody, { color: colors.textSecondary }]}>{errorMessage}</Text>
-              {launch.kind === 'external_https' && (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={onRetry}
-                  style={({ pressed }) => [
-                    styles.retryButton,
-                    { backgroundColor: colors.primary },
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Ionicons name="refresh" size={20} color={colors.white} />
-                  <Text style={[styles.retryLabel, { color: colors.white }]}>
-                    {t('common.retry')}
-                  </Text>
-                </Pressable>
-              )}
+              <Pressable
+                accessibilityRole="button"
+                onPress={onRetry}
+                style={({ pressed }) => [
+                  styles.retryButton,
+                  { backgroundColor: colors.primary },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons name="refresh" size={20} color={colors.white} />
+                <Text style={[styles.retryLabel, { color: colors.white }]}>
+                  {t('common.retry')}
+                </Text>
+              </Pressable>
               <Pressable
                 accessibilityRole="button"
                 onPress={onClose}
                 style={({ pressed }) => [
                   styles.returnButton,
-                  launch.kind === 'external_https' && styles.externalReturnButton,
-                  launch.kind === 'external_https'
-                    ? { borderColor: colors.border }
-                    : { backgroundColor: colors.primary },
+                  styles.externalReturnButton,
+                  { borderColor: colors.border },
                   pressed && styles.pressed,
                 ]}
               >
                 <Text style={[
                   styles.returnLabel,
-                  { color: launch.kind === 'external_https' ? colors.primary : colors.white },
+                  { color: colors.primary },
                 ]}>
                   {t('clientAccess.backToResources')}
                 </Text>

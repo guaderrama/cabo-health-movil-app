@@ -38,6 +38,7 @@ const {
   createClientAccessController,
 } = await load('.test-build/features/clientAccess/clientAccessController.js');
 const {
+  beginClientResourceRouteRetry,
   describeClientResourceLaunchFailure,
   requestClientResourceRouteLaunch,
   resolveClientResourceRouteLaunchFailure,
@@ -272,6 +273,34 @@ test('the server rejects a reused nonce', async () => {
   assert.ok((await world.postNonceToBroker(outcome.launch, 'r')).sessionId);
   await assert.rejects(world.postNonceToBroker(outcome.launch, 's'));
 });
+
+for (const failure of ['consumed', 'expired']) {
+  test(`retry recovers a ${failure} review launch with a fresh server nonce`, async () => {
+    const world = await createWorld({ skewMs: 120_000 });
+    const first = await world.openFromRoute();
+    assert.equal(first.kind, 'open-webview');
+    if (failure === 'consumed') {
+      assert.ok((await world.postNonceToBroker(first.launch, 'a')).sessionId);
+    } else {
+      world.advance(60_001);
+    }
+    await assert.rejects(world.postNonceToBroker(first.launch, 'b'));
+    const retry = beginClientResourceRouteRetry({
+      activeLaunch: first.launch,
+      attempt: 0,
+      operationGeneration: 1,
+    });
+    assert.equal(retry.activeLaunch, null, 'unmount the failed POST before requesting another');
+    const refreshedBefore = world.counters.refreshes;
+    const replacement = await world.openFromRoute();
+    assert.equal(replacement.kind, 'open-webview');
+    assert.equal(world.counters.refreshes, refreshedBefore + 1);
+    assert.notEqual(replacement.launch.source.body, first.launch.source.body);
+    assert.ok((await world.postNonceToBroker(replacement.launch, 'c')).sessionId);
+    await assert.rejects(world.postNonceToBroker(first.launch, 'd'));
+    assert.equal(world.counters.signOuts, 0);
+  });
+}
 
 test('a refresh that overlaps the first launch is reported and the retry opens', async () => {
   const world = await createWorld({ skewMs: 75_000 });

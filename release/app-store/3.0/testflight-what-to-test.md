@@ -1,6 +1,6 @@
 # TestFlight — What to Test
 
-Candidate: CaboHealth 3.0 (build 14)
+Candidate: CaboHealth 3.0 (build 15)
 
 Status: Draft; use only after App Store Connect shows this exact processed build.
 
@@ -23,3 +23,7 @@ Status: Draft; use only after App Store Connect shows this exact processed build
 13. Scope audit: no price, checkout, IAP, subscription, paid tier, unreviewed destination, cross-origin navigation, UGC catalog entry, patient/health form, unexpected permission, plaintext code, client identity, or secret in logs.
 
 Record device, iOS, TestFlight build ID, source SHA, date, result, and evidence for every row. Any functional or hosted-content change invalidates affected evidence and may require a new build.
+
+## Build 15 launch-recovery regression
+
+On both iPhone and iPad, verify the App Review Sample using the separate review credential. Test a clean installation and an upgrade from build 14. Confirm the sample opens, survives a brief Control Center interruption, revalidates after backgrounding, and recovers after losing the network. If a hosted session fails, tap Retry and confirm that the new launch succeeds; it must never replay a consumed POST. Check status-bar readability on Home, Saved, and Settings in English and Spanish. Record device, OS, exact build, result, and any visible L-* reference. No credentials in screenshots or logs. These checks are pending until observed on the signed build.

@@ -67,8 +67,8 @@ export type ClientResourceRouteAuthorizationTransition = Readonly<{
   activeLaunch: Readonly<ClientResourceLaunch> | null;
 }>;
 
-export function beginClientResourceRouteExternalRetry({
-  activeLaunch,
+/** Discard a failed descriptor; the route must refresh and obtain a fresh launch. */
+export function beginClientResourceRouteRetry({
   attempt,
   operationGeneration,
 }: Readonly<{
@@ -80,9 +80,6 @@ export function beginClientResourceRouteExternalRetry({
   attempt: number;
   operationGeneration: number;
 }> {
-  if (activeLaunch.kind !== 'external_https') {
-    throw new TypeError('external_launch_required');
-  }
   return Object.freeze({
     activeLaunch: null,
     attempt: attempt + 1,

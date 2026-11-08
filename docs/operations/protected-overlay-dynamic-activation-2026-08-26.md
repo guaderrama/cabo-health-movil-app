@@ -96,7 +96,7 @@ negative live probes or PHP harnesses:
 - two-device App Review and Universal Link QA;
 - build 9 remains input-attested, aborted-pre-provider history and cannot
   authorize a release; and
-- exact signed 3.0/build 14 candidate audit, TestFlight processing, screenshots, final App
+- exact signed 3.0/build 15 candidate audit, TestFlight processing, screenshots, final App
   Store metadata/privacy reconciliation, and Apple review submission.
 
 Completion is authoritative only through the RC attestation and its bound
