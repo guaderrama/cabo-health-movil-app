@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "brand": "Cabo Health",
-  "releaseReady": false,
-  "slice": "build-15-age-rating-review-pending",
+  "releaseReady": true,
+  "slice": "public-web-age-rating-reconfirmed-2026-11-08",
   "legalEntity": {
     "name": "Ivan Guaderrama",
     "nameStatus": "owner-confirmed",
@@ -32,7 +32,12 @@
   "hosting": {
     "provider": "Hostinger",
     "logTypes": {
-      "value": ["IP address", "browser or user-agent", "requested URL", "technical errors"],
+      "value": [
+        "IP address",
+        "browser or user-agent",
+        "requested URL",
+        "technical errors"
+      ],
       "status": "verified"
     },
     "retention": {
@@ -84,11 +89,17 @@
       "legacyOperatingSystemsValue": 17,
       "unrestrictedWebAccess": true,
       "previousSavedValue": 9,
-      "status": "projected-pending-app-store-recalculation"
+      "status": "verified"
     },
     "miniapps": {
-      "healthy-recipes": { "value": 9, "status": "verified" },
-      "clinic-guide": { "value": 9, "status": "verified" }
+      "healthy-recipes": {
+        "value": 9,
+        "status": "verified"
+      },
+      "clinic-guide": {
+        "value": 9,
+        "status": "verified"
+      }
     },
     "externalCatalogItems": {
       "fixedAgeRating": null,
