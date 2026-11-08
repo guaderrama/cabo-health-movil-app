@@ -2,7 +2,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { BrandedBackground, PremiumResourceRow } from '../../components';
+import { BrandedBackground, PremiumResourceRow, StatusBarScrim } from '../../components';
 import { CatalogRefreshError } from '../../components/CatalogRefreshError';
 import type { CatalogPublicMiniapp } from '../../constants/publicMiniapps';
 import { buildPublicMiniappRoute } from '../../features/catalog/publicMiniappRoute';
@@ -77,6 +77,7 @@ export default function SavedScreen() {
           </View>
         )}
       </ScrollView>
+      <StatusBarScrim />
     </View>
   );
 }

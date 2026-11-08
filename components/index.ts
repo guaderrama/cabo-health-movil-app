@@ -12,6 +12,7 @@ export type { PremiumIconName } from './icons/PremiumIcon';
 export { AnimatedMolecules } from './AnimatedMolecules';
 export { EditorialMiniappCover } from './EditorialMiniappCover';
 export { BrandedBackground } from './BrandedBackground';
+export { StatusBarScrim } from './StatusBarScrim';
 export { PremiumMiniappTile } from './PremiumMiniappTile';
 export { PremiumResourceRow } from './PremiumResourceRow';
 export type { AnimatedMoleculesProps } from './AnimatedMolecules';

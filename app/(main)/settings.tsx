@@ -14,7 +14,7 @@ import * as Network from 'expo-network';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { BrandedBackground } from '../../components';
+import { BrandedBackground, StatusBarScrim } from '../../components';
 import { config } from '../../constants';
 import { classifyMiniappNavigation } from '../../features/launch/navigationPolicy';
 import { usePreferences, useTheme, useTranslations } from '../../hooks';
@@ -135,6 +135,7 @@ export default function SettingsScreen() {
           <Text style={[styles.version, { color: colors.textSecondary }]}>v{config.app.version}</Text>
         </View>
       </ScrollView>
+      <StatusBarScrim />
     </View>
   );
 }
