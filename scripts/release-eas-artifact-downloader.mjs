@@ -35,7 +35,7 @@ import {
 const CODE = 'EAS_ARTIFACT_DOWNLOAD_FAILED';
 const MAX_INPUT_BYTES = 4 * 1024 * 1024;
 const MAX_IPA_BYTES = 1024 * 1024 * 1024;
-const TASK_PARENT = '/.superpowers/sdd/2026-10-01-cabohealth-apple-readiness/task-4-evidence';
+const TASK_PARENT = '/.superpowers/sdd/2026-11-08-cabohealth-build15-recovery/task-4-evidence';
 const IPA_NAME = 'CaboHealth-3.0-build-15.ipa';
 
 function fail() {

@@ -1783,7 +1783,7 @@ test('current release instructions retain build 11 history and the current build
     'docs/operations/vip-showcase-production-activation-2026-08-26.md',
   ]) {
     const source = readFileSync(join(projectRoot, relativePath), 'utf8');
-    assert.match(source, /3\.0(?:\/build\s+|\s+build\s+)14/iu, relativePath);
+    assert.match(source, /3\.0(?:\/build\s+|\s+build\s+)15/iu, relativePath);
     assert.match(source, /build 9[^.]*aborted(?:-pre-provider| before any provider operation)/iu, relativePath);
     assert.doesNotMatch(source, /exact signed 3\.0\/build [67]|source for CaboHealth 3\.0 build [67]/iu, relativePath);
   }

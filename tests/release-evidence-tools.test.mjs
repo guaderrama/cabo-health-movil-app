@@ -32,7 +32,7 @@ function ownedDirectory(prefix, mode = 0o700) {
 
 function sddEvidenceRoot(task) {
   const base = ownedDirectory('cabohealth-build15-sdd-');
-  const releaseTaskRoot = '2026-10-01-cabohealth-apple-readiness';
+  const releaseTaskRoot = '2026-11-08-cabohealth-build15-recovery';
   const path = join(
     base,
     `.superpowers/sdd/${releaseTaskRoot}`,

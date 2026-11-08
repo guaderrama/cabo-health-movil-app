@@ -133,7 +133,7 @@ const STALE_BUILD_11_AUTHORITY = [
   /\b(?:3\.0\/)?build[- /]?11\s+is\s+the\s+current\s+candidate\b/iu,
   /\bbuild[- /]?11\s+freeze requirements\b/iu,
 ];
-const BUILD_15_SDD_ROOT = '/.superpowers/sdd/2026-10-01-cabohealth-apple-readiness';
+const BUILD_15_SDD_ROOT = '/.superpowers/sdd/2026-11-08-cabohealth-build15-recovery';
 const BUILD_15_PHASE_TRUTH_PATHS = Object.freeze([
   'release/app-store/3.0/submission-gates.md',
   'release/app-store/3.0/apple-review-remediation-2026-08-24.md',

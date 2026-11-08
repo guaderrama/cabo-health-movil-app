@@ -545,7 +545,7 @@ test('the real assembler binds materialization to the independently reviewed dep
   });
 
   assert.equal(result.status, 0, result.stdout || result.stderr);
-  assert.match(result.stdout, /Checked web-v1-40869f4a540a56c420b198aea0fdf58a21053646d280d89ad64d105fd1808948/u);
+  assert.match(result.stdout, /Checked web-v1-b478ccac592d05398b3be31ec26f5a34b3cbe61e44fd97d29ceb4d4e85e622d9/u);
   assert.deepEqual(readFileSync(artifactPath), artifactBefore);
   assert.deepEqual(existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : null, bundlesBefore);
 });

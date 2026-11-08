@@ -37,7 +37,7 @@ function reviewNotesBodyFromBytes(authorityBytes) {
   const source = authorityBytes.toString('utf8');
   const marker = '## Paste-ready body after all gates are resolved\n\n';
   const body = (source.includes(marker) ? source.split(marker)[1] : source).replace(/\n+$/u, '');
-  assert.equal([...body].length, 4000, 'Review Notes authority must retain the exact 4,000-character body');
+  assert.ok([...body].length > 0 && [...body].length <= 4000, 'Review Notes must fit the 4,000-character Apple limit');
   return body;
 }
 

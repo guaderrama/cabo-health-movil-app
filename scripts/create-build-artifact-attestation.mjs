@@ -24,7 +24,7 @@ const ARGUMENT = 'BUILD_ARTIFACT_PRODUCER_ARGUMENT_INVALID';
 const ASSOCIATION = 'BUILD_ARTIFACT_PRODUCER_ASSOCIATION_INVALID';
 const FILE = 'BUILD_ARTIFACT_PRODUCER_FILE_INVALID';
 const OUTPUT = 'BUILD_ARTIFACT_PRODUCER_OUTPUT_INVALID';
-const TASK_PARENT = '/.superpowers/sdd/2026-10-01-cabohealth-apple-readiness/task-4-evidence';
+const TASK_PARENT = '/.superpowers/sdd/2026-11-08-cabohealth-build15-recovery/task-4-evidence';
 const FILES = Object.freeze([
   'CaboHealth-3.0-build-15.ipa',
   'signed-entitlements.plist',
