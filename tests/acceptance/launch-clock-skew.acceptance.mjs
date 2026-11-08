@@ -13,6 +13,7 @@
 //   node node_modules/typescript/bin/tsc --project tsconfig.node-tests.json
 //   npm --prefix functions test   (produces functions/test-build)
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
