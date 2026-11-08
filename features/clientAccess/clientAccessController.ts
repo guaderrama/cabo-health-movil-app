@@ -9,6 +9,21 @@ const OPAQUE_SESSION = Symbol('cabohealth.clientAccess.session');
 export const CLIENT_RESOURCE_LAUNCH_URL = 'https://cabohealth.org/apps/client-resources/launch/' as const;
 export const APP_REVIEW_LAUNCH_URL = 'https://cabohealth.org/apps/app-review/launch/' as const;
 export const APP_REVIEW_RESOURCE_ID = 'review-sandbox-app-review-sample-v1' as const;
+/**
+ * Local budget for a launch response, measured with a monotonic clock from the
+ * moment the request is sent. The server issues nonces with a 60 s TTL and is
+ * the only authority on expiry and single use (it rejects expired or reused
+ * nonces at the broker). The device never compares the server's absolute
+ * `expiresAtMs` with its own wall clock, so a skewed or changed device clock
+ * cannot block a fresh launch.
+ */
+export const CLIENT_LAUNCH_RESPONSE_BUDGET_MS = 45_000;
+export type ClientLaunchFailureReason =
+  | 'not_authorized'
+  | 'call_failed'
+  | 'invalid_response'
+  | 'stale_response'
+  | 'superseded';
 export type ClientAccessRealm = 'production_client' | 'review_sandbox';
 export type ClientAccountDeletionStatus = 'pending' | 'completed';
 export type ClientAccountDeletionStatusResult = Readonly<{
@@ -167,6 +182,7 @@ export interface ClientAccessController {
   redeem(code: string): Promise<boolean>;
   refresh(): Promise<void>;
   createLaunch(resourceId: string): Promise<Readonly<ClientResourceLaunch> | null>;
+  getLastLaunchFailure(): ClientLaunchFailureReason | null;
   removeAccess(): Promise<boolean>;
   deleteAccount(): Promise<Readonly<ClientAccountDeletionResult> | null>;
 }
@@ -386,28 +402,22 @@ function clientGrantIsActive(grant: Readonly<ClientGrantView>, nowMs: number): b
 export function parseClientLaunchEnvelope(
   value: unknown,
   realm: ClientAccessRealm,
-  nowMs: number,
 ): Readonly<ClientLaunchEnvelope> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  if (
-    (realm !== 'production_client' && realm !== 'review_sandbox')
-    || !Number.isSafeInteger(nowMs)
-    || nowMs < 0
-    || Object.is(nowMs, -0)
-  ) return null;
+  if (realm !== 'production_client' && realm !== 'review_sandbox') return null;
 
   if (realm === 'review_sandbox') {
     if (!hasExactKeys(record, ['expiresAtMs', 'launchUrl', 'method', 'nonce'])) return null;
     if (
       record.launchUrl !== APP_REVIEW_LAUNCH_URL
       || record.method !== 'POST'
-      || !isCurrentLaunchExpiry(record.expiresAtMs, nowMs)
+      || !isServerLaunchExpiry(record.expiresAtMs)
       || typeof record.nonce !== 'string'
       || !/^[A-Za-z0-9_-]{32}$/u.test(record.nonce)
     ) return null;
     return Object.freeze({
-      expiresAtMs: record.expiresAtMs as number,
+      expiresAtMs: record.expiresAtMs,
       launchUrl: APP_REVIEW_LAUNCH_URL,
       method: 'POST',
       nonce: record.nonce,
@@ -416,13 +426,13 @@ export function parseClientLaunchEnvelope(
 
   if (record.kind === 'external_https') {
     if (!hasExactKeys(record, ['expiresAtMs', 'kind', 'url'])) return null;
-    if (!isCurrentLaunchExpiry(record.expiresAtMs, nowMs) || typeof record.url !== 'string') {
+    if (!isServerLaunchExpiry(record.expiresAtMs) || typeof record.url !== 'string') {
       return null;
     }
     const destination = parseSafeExternalHttpsDestination(record.url);
     if (!destination || destination.canonicalUrl !== record.url) return null;
     return Object.freeze({
-      expiresAtMs: record.expiresAtMs as number,
+      expiresAtMs: record.expiresAtMs,
       kind: 'external_https',
       url: destination.canonicalUrl,
     });
@@ -435,12 +445,12 @@ export function parseClientLaunchEnvelope(
     record.kind !== 'broker'
     || record.launchUrl !== CLIENT_RESOURCE_LAUNCH_URL
     || record.method !== 'POST'
-    || !isCurrentLaunchExpiry(record.expiresAtMs, nowMs)
+    || !isServerLaunchExpiry(record.expiresAtMs)
     || typeof record.nonce !== 'string'
     || !/^[A-Za-z0-9_-]{32,256}$/u.test(record.nonce)
   ) return null;
   return Object.freeze({
-    expiresAtMs: record.expiresAtMs as number,
+    expiresAtMs: record.expiresAtMs,
     kind: 'broker',
     launchUrl: CLIENT_RESOURCE_LAUNCH_URL,
     method: 'POST',
@@ -448,18 +458,27 @@ export function parseClientLaunchEnvelope(
   });
 }
 
-function isCurrentLaunchExpiry(value: unknown, nowMs: number): value is number {
-  return Number.isSafeInteger(value)
-    && (value as number) > nowMs
-    && (value as number) - nowMs <= 120_000;
+/**
+ * `expiresAtMs` is the server's own clock. It is kept for diagnostics only and
+ * is deliberately NOT compared with the device clock (see
+ * CLIENT_LAUNCH_RESPONSE_BUDGET_MS).
+ */
+function isServerLaunchExpiry(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+/** True when a response received `elapsedMs` (monotonic) after its request may still be opened. */
+export function isClientLaunchResponseFresh(elapsedMs: number): boolean {
+  return Number.isFinite(elapsedMs)
+    && elapsedMs >= 0
+    && elapsedMs <= CLIENT_LAUNCH_RESPONSE_BUDGET_MS;
 }
 
 function parseClientResourceLaunch(
   value: unknown,
-  nowMs: number,
   realm: ClientAccessRealm,
 ): Readonly<ClientResourceLaunch> | null {
-  const envelope = parseClientLaunchEnvelope(value, realm, nowMs);
+  const envelope = parseClientLaunchEnvelope(value, realm);
   if (!envelope) return null;
   if ('kind' in envelope && envelope.kind === 'external_https') {
     const destination = parseSafeExternalHttpsDestination(envelope.url);
@@ -498,10 +517,13 @@ export function createClientAccessController({
   gateway,
   sessionStore,
   now = Date.now,
+  monotonicNow = defaultMonotonicNow,
 }: {
   gateway: ClientAccessGateway;
   sessionStore: ClientSessionStore;
   now?: () => number;
+  /** Monotonic milliseconds, unaffected by wall-clock changes. */
+  monotonicNow?: () => number;
 }): ClientAccessController {
   let snapshot: Readonly<ClientAccessSnapshot> = Object.freeze({
     status: 'locked',
@@ -513,6 +535,7 @@ export function createClientAccessController({
   let redemptionPending = false;
   let deletionPending = false;
   let accountDeletionCleanupPending = false;
+  let lastLaunchFailure: ClientLaunchFailureReason | null = null;
   const listeners = new Set<(snapshot: Readonly<ClientAccessSnapshot>) => void>();
   const publish = (next: ClientAccessSnapshot) => {
     snapshot = Object.freeze(next);
@@ -648,34 +671,48 @@ export function createClientAccessController({
   };
 
   const createLaunch = async (resourceId: string) => {
+    const fail = (reason: ClientLaunchFailureReason) => {
+      lastLaunchFailure = reason;
+      return null;
+    };
     const session = currentSession;
     const activeGrant = snapshot.status === 'unlocked' ? snapshot.grant : null;
     if (
       !session
       || !activeGrant
       || !activeGrant.resources.some((resource) => resource.id === resourceId)
-    ) return null;
+    ) return fail('not_authorized');
     if (!clientGrantIsActive(activeGrant, now())) {
       ++generation;
       await clearLocalSession();
       publish({ status: 'locked', grant: null, error: null });
-      return null;
+      return fail('not_authorized');
     }
     const operationGeneration = generation;
+    const requestedAtMono = monotonicNow();
     let response: unknown;
     try {
       response = await gateway.createLaunch(session, resourceId);
-    } catch {
-      return null;
+    } catch (error) {
+      return fail(
+        error instanceof Error && error.message === 'invalid_backend_response'
+          ? 'invalid_response'
+          : 'call_failed',
+      );
     }
+    const elapsedMs = monotonicNow() - requestedAtMono;
     if (
       operationGeneration !== generation
       || currentSession !== session
       || snapshot.status !== 'unlocked'
       || snapshot.grant !== activeGrant
-      || !clientGrantIsActive(activeGrant, now())
-    ) return null;
-    return parseClientResourceLaunch(response, now(), clientGrantRealm(activeGrant));
+    ) return fail('superseded');
+    if (!clientGrantIsActive(activeGrant, now())) return fail('not_authorized');
+    if (!isClientLaunchResponseFresh(elapsedMs)) return fail('stale_response');
+    const launch = parseClientResourceLaunch(response, clientGrantRealm(activeGrant));
+    if (!launch) return fail('invalid_response');
+    lastLaunchFailure = null;
+    return launch;
   };
 
   return {
@@ -796,7 +833,13 @@ export function createClientAccessController({
     },
     refresh,
     createLaunch,
+    getLastLaunchFailure: () => lastLaunchFailure,
     removeAccess,
     deleteAccount,
   };
+}
+
+function defaultMonotonicNow(): number {
+  const clock = (globalThis as { performance?: { now?: () => number } }).performance;
+  return typeof clock?.now === 'function' ? clock.now() : Date.now();
 }

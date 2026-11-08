@@ -14,10 +14,12 @@ import {
   type ClientAccessController,
   type ClientAccountDeletionResult,
   type ClientAccessGateway,
+  type ClientLaunchFailureReason,
   type ClientAccessSnapshot,
   type ClientResourceLaunch,
   type ClientSessionStore,
 } from '../features/clientAccess/clientAccessController';
+import { shouldRevalidateClientAccessOnAppStateChange } from '../features/clientAccess/clientAccessRevalidationPolicy';
 import type {
   ClientAccountDeletionTracker,
   ClientAccountDeletionTrackingState,
@@ -43,6 +45,8 @@ interface ClientAccessContextValue extends ClientAccessSnapshot {
   redeem(code: string): Promise<boolean>;
   refresh(): Promise<void>;
   createLaunch(resourceId: string): Promise<Readonly<ClientResourceLaunch> | null>;
+  /** Sanitized reason for the most recent failed launch; never contains secrets. */
+  getLastLaunchFailure(): ClientLaunchFailureReason | null;
   removeAccess(): Promise<boolean>;
   deleteAccount(): Promise<Readonly<ClientAccountDeletionResult> | null>;
   checkDeletionStatus(): Promise<void>;
@@ -130,8 +134,11 @@ export function ClientAccessProvider({
   }, [checkDeletionStatus, controller]);
 
   useEffect(() => {
+    let previousState = AppState.currentState ?? null;
     const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') void checkDeletionStatus();
+      const revalidate = shouldRevalidateClientAccessOnAppStateChange(previousState, nextState);
+      previousState = nextState;
+      if (revalidate) void checkDeletionStatus();
     });
     return () => subscription.remove();
   }, [checkDeletionStatus]);
@@ -142,16 +149,27 @@ export function ClientAccessProvider({
       : Promise.resolve(false)
   ), [controller]);
   const refresh = checkDeletionStatus;
+  const contextLaunchFailure = useRef<ClientLaunchFailureReason | null>(null);
   const createLaunch = useCallback(
     async (resourceId: string) => {
-      if (deletionTrackingRef.current.kind !== 'none') return null;
+      contextLaunchFailure.current = null;
+      if (deletionTrackingRef.current.kind !== 'none') {
+        contextLaunchFailure.current = 'not_authorized';
+        return null;
+      }
       const operationGeneration = synchronizationGeneration.current;
       const launch = await controller.createLaunch(resourceId);
-      return (
+      if (
         synchronizationGeneration.current === operationGeneration
         && deletionTrackingRef.current.kind === 'none'
-      ) ? launch : null;
+      ) return launch;
+      if (launch !== null) contextLaunchFailure.current = 'superseded';
+      return null;
     },
+    [controller],
+  );
+  const getLastLaunchFailure = useCallback(
+    () => contextLaunchFailure.current ?? controller.getLastLaunchFailure(),
     [controller],
   );
   const removeAccess = useCallback(() => controller.removeAccess(), [controller]);
@@ -180,12 +198,14 @@ export function ClientAccessProvider({
     redeem,
     refresh,
     createLaunch,
+    getLastLaunchFailure,
     removeAccess,
     deleteAccount,
     checkDeletionStatus,
     acknowledgeDeletionCompletion,
     archiveDeletionReceipt,
   }), [
+    getLastLaunchFailure,
     acknowledgeDeletionCompletion,
     archiveDeletionReceipt,
     checkDeletionStatus,

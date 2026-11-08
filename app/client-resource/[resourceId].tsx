@@ -15,6 +15,7 @@ import { useTheme, useTranslations } from '../../hooks';
 import type { ClientResourceLaunch } from '../../features/clientAccess/clientAccessController';
 import {
   beginClientResourceRouteExternalRetry,
+  describeClientResourceLaunchFailure,
   getClientResourceRouteExpiryDelay,
   normalizeClientResourceRouteParam,
   requestClientResourceRouteLaunch,
@@ -32,7 +33,14 @@ export default function ClientResourceRoute() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const { language, t } = useTranslations();
-  const { status, grant, deletionTracking, refresh, createLaunch } = useClientAccess();
+  const {
+    status,
+    grant,
+    deletionTracking,
+    refresh,
+    createLaunch,
+    getLastLaunchFailure,
+  } = useClientAccess();
   const resourceId = normalizeClientResourceRouteParam(params.resourceId);
   const [authorizationNowMs, setAuthorizationNowMs] = useState(() => Date.now());
   const resource = resolveClientResourceRouteResource(
@@ -45,6 +53,7 @@ export default function ClientResourceRoute() {
   const [activeLaunch, setActiveLaunch] = useState<Readonly<ClientResourceLaunch> | null>(null);
   const [phase, setPhase] = useState<RoutePhase>('loading');
   const [attempt, setAttempt] = useState(0);
+  const [failureReference, setFailureReference] = useState<string | null>(null);
   const operationGeneration = useRef(0);
   const resumeAfterRevalidation = useRef(false);
   const routeFlowStarted = useRef(false);
@@ -108,10 +117,12 @@ export default function ClientResourceRoute() {
           routeFlowStarted.current = false;
           router.replace('/(main)');
         } else {
+          setFailureReference(describeClientResourceLaunchFailure(getLastLaunchFailure()));
           setPhase('unavailable');
         }
         return;
       }
+      setFailureReference(null);
       automaticRetryUsed.current = false;
       resumeAfterRevalidation.current = false;
       setActiveLaunch(launch);
@@ -121,7 +132,7 @@ export default function ClientResourceRoute() {
       mounted = false;
       if (operationGeneration.current === operation) operationGeneration.current += 1;
     };
-  }, [attempt, createLaunch, refresh, resourceId, router]);
+  }, [attempt, createLaunch, getLastLaunchFailure, refresh, resourceId, router]);
 
   useEffect(() => {
     const transition = resolveClientResourceRouteAuthorizationTransition({
@@ -264,6 +275,11 @@ export default function ClientResourceRoute() {
             <Text style={[styles.errorTitle, { color: colors.text }]}>
               {t('clientAccess.launchUnavailable')}
             </Text>
+            {failureReference !== null && (
+              <Text selectable style={[styles.reference, { color: colors.textSecondary }]}>
+                {`Ref. ${failureReference}`}
+              </Text>
+            )}
             <Pressable
               accessibilityRole="button"
               onPress={retryLaunch}
@@ -292,6 +308,7 @@ const styles = StyleSheet.create({
   statusText: { textAlign: 'center', fontSize: 14, lineHeight: 20 },
   errorContent: { width: '100%', alignItems: 'center', justifyContent: 'center' },
   errorTitle: { maxWidth: 340, marginTop: 14, textAlign: 'center', fontFamily: 'Georgia', fontSize: 20, lineHeight: 28, fontWeight: '600' },
+  reference: { marginTop: 8, fontSize: 12, lineHeight: 16, letterSpacing: 0.4 },
   retryButton: { minHeight: 48, marginTop: 22, borderRadius: 999, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   retryLabel: { fontSize: 14, lineHeight: 19, fontWeight: '800' },
   pressed: { opacity: 0.76 },

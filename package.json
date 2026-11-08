@@ -18,6 +18,7 @@
     "submit": "node scripts/release-command-guard.mjs submit-review",
     "lint": "expo lint",
     "test": "node node_modules/typescript/bin/tsc --project tsconfig.node-tests.json && node --test tests/*.test.mjs",
+    "test:acceptance:launch": "node node_modules/typescript/bin/tsc --project tsconfig.node-tests.json && npm --prefix functions exec -- tsc --project tsconfig.test.json && node --test tests/acceptance/launch-clock-skew.acceptance.mjs",
     "test:scope": "npm run test:scope:rc-v3",
     "test:scope:rc-v3": "node scripts/verify-release-v3.mjs && node scripts/verify-app-store-metadata.mjs",
     "audit:scope:historical-v1": "node scripts/verify-minimal-v1.mjs",

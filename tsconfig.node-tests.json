@@ -35,6 +35,7 @@
     "features/clientAccess/nativeClientAccessRuntime.ts",
     "features/clientAccess/reactNativeFirebaseBridge.ts",
     "features/clientAccess/clientResourceNavigation.ts",
+    "features/clientAccess/clientAccessRevalidationPolicy.ts",
     "features/home/premiumHomePresentation.ts",
     "features/motion/editorialTileMotion.ts",
     "features/motion/moleculeMotionPolicy.ts",

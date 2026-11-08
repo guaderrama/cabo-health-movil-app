@@ -1175,7 +1175,9 @@ test('launches fail closed for unassigned resources and malformed or overlong re
       launchUrl: 'https://cabohealth.org/apps/client-resources/launch/',
       method: 'POST',
       nonce: '8m3Vtw10f7A0W6U7uDiRAHs6og3LL5dckSDzbOqrnDs',
-      expiresAtMs: future + 300_000,
+      expiresAtMs: future,
+      // Delivered after the local monotonic response budget (see below).
+      deliverAfterMs: 45_001,
     },
     {
       kind: 'broker',
@@ -1186,14 +1188,18 @@ test('launches fail closed for unassigned resources and malformed or overlong re
       targetUrl: 'https://private.example/resource',
     },
   ];
+  let monotonicMs = 1_000;
   const controller = createClientAccessController({
     now: () => future - 30_000,
+    monotonicNow: () => monotonicMs,
     gateway: {
       redeem: async () => null,
       refresh: async () => grant,
       createLaunch: async (_receivedSession, resourceId) => {
         effects.push(resourceId);
-        return responses.shift();
+        const { deliverAfterMs = 0, ...response } = responses.shift();
+        monotonicMs += deliverAfterMs;
+        return response;
       },
       removeAccess: async () => {},
       deleteAccount: async () => {},
@@ -1212,6 +1218,7 @@ test('launches fail closed for unassigned resources and malformed or overlong re
     assert.equal(await controller.createLaunch('microbiota-guide'), null);
   }
   assert.deepEqual(effects, Array(5).fill('microbiota-guide'));
+  assert.equal(controller.getLastLaunchFailure(), 'invalid_response');
   assert.equal(controller.getSnapshot().status, 'unlocked');
 });
 

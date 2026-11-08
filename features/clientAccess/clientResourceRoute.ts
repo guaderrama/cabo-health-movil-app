@@ -1,5 +1,6 @@
 import type {
   ClientAccessStatus,
+  ClientLaunchFailureReason,
   ClientGrantView,
   ClientResourceLaunch,
   ClientResourceView,
@@ -174,4 +175,24 @@ export async function requestClientResourceRouteLaunch({
   } catch {
     return null;
   }
+}
+
+const LAUNCH_FAILURE_REFERENCES: Readonly<Record<ClientLaunchFailureReason | 'unknown', string>> = Object.freeze({
+  not_authorized: 'L-A1',
+  call_failed: 'L-C1',
+  invalid_response: 'L-R1',
+  stale_response: 'L-T1',
+  superseded: 'L-S1',
+  unknown: 'L-U1',
+});
+
+/**
+ * Short, non-sensitive reference shown with the unavailable state so a tester
+ * can report which step failed (call, response format, response timing,
+ * superseded session) without logs, codes, nonces, tokens or identifiers.
+ */
+export function describeClientResourceLaunchFailure(
+  reason: ClientLaunchFailureReason | null,
+): string {
+  return LAUNCH_FAILURE_REFERENCES[reason ?? 'unknown'];
 }
