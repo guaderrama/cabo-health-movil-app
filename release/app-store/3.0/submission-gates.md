@@ -10,7 +10,7 @@ Build 13 input and signed-artifact attestations are preserved byte-for-byte unde
 
 The seller is Ivan Guaderrama, an **Individual** Apple Developer Program member. Cabo Health is his trade brand, not a separate legal entity or registered organization. D-U-N-S is not applicable to this individual seller.
 
-The app is educational/general wellness and starts with two reviewed public resources in an owner-managed CaboHealth catalog. It also verifies complimentary eligibility for a protected Client Resources area offered only to existing in-person clients individually authorized by the owner. Each client receives a separate revocable code; there is no shared master code or fixed four-client business limit. There is no sale, price, checkout, IAP, subscription, or paid digital tier.
+The app is educational/general wellness and starts with two reviewed public resources in an owner-managed CaboHealth catalog. It also verifies a free personal invitation code for a protected Client Resources area offered only to people the owner personally invites; it is not sold, and no purchase grants it. Each invited person receives a separate revocable code; there is no shared master code or fixed four-client business limit. There is no sale, price, checkout, IAP, subscription, or paid digital tier.
 
 This is a **high review risk** because Apple may treat an external eligibility code as a digital-unlock mechanism or may determine that the app provides healthcare services that should be submitted by a legal entity. The wellness wording does not resolve or guarantee Apple approval. Obtain written Apple direction before submission. If Apple rejects the model or seller status, revise the access model or later migrate to a registered organization.
 

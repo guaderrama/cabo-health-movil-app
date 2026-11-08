@@ -10,7 +10,7 @@ Status: Planning only. Capture `en-US` and `es-MX` from the processed CaboHealth
 | `02-resource-catalog` | Home folio cards: two public entries and locked Client Resources | Science-grounded resources in one calm experience | Recursos basados en ciencia en una experiencia clara | Exact scope; no dev/test cards |
 | `03-healthy-recipes` | Healthy Recipes with real search/filter/detail content | Practical recipes with useful details | Recetas prácticas con detalles útiles | Exact public canonical resource |
 | `04-clinic-guide` | Clinic Guide with verified public visit/contact facts | Helpful information for a CaboHealth visit | Información útil para una visita a CaboHealth | No appointment or health-data form |
-| `05-client-resources-locked` | Protected folio before eligibility verification | Complimentary resources for eligible existing clients | Recursos incluidos para clientes existentes elegibles | No price, purchase, or secret visible |
+| `05-client-resources-locked` | Protected folio before eligibility verification | Free access by personal invitation | Acceso gratuito por invitación personal | No price, purchase, or secret visible |
 | `06-eligibility-code-entry` | Empty eligibility-code modal with format guidance | Verify eligibility securely | Verifica tu elegibilidad de forma segura | Never show a real CH/AR credential |
 | `07-saved` | Saved screen with reviewed public cards | Keep your public resources close | Conserva cerca tus recursos públicos | Only approved public scope |
 | `08-settings-and-legal` | Settings with language/appearance/effects and the four public legal/support rows | Clear controls and transparent support | Controles claros y soporte transparente | No owner/admin portal, account, or secret visible |

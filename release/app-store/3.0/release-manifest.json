@@ -221,7 +221,7 @@
     ],
     "commercialModel": {
       "complimentary": true,
-      "existingInPersonClientsOnly": true,
+      "personalInvitationOnly": true,
       "maximumActiveClientCodes": null,
       "separatelySold": false,
       "sale": false,
@@ -392,7 +392,7 @@
   },
   "reviewRisk": {
     "level": "high",
-    "basis": "general-wellness/editorial content plus owner-managed third-party HTTPS resources and complimentary eligibility-gated resources for existing in-person clients",
+    "basis": "general-wellness/editorial content plus owner-managed third-party HTTPS resources and free invitation-only resources for people personally invited by the owner",
     "appleApprovalGuaranteed": false,
     "fallback": "Obtain written Apple direction before submission; if Apple treats the app as a healthcare-service or digital-unlock product, revise the model or later migrate to an eligible registered organization.",
     "healthcareSellerEntityRisk": "requires-honest-review-note-and-apple-determination",

@@ -698,7 +698,7 @@ export function verifyCapturedReleaseV3(files) {
     const commercial = manifest.scope?.commercialModel;
     if (!hasExactKeys(commercial, [
       'complimentary',
-      'existingInPersonClientsOnly',
+      'personalInvitationOnly',
       'maximumActiveClientCodes',
       'separatelySold',
       'sale',
@@ -709,7 +709,7 @@ export function verifyCapturedReleaseV3(files) {
       'digitalTier',
     ])
       || commercial.complimentary !== true
-      || commercial.existingInPersonClientsOnly !== true
+      || commercial.personalInvitationOnly !== true
       || commercial.separatelySold !== false
       || commercial.sale !== false
       || commercial.price !== null

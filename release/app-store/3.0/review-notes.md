@@ -33,7 +33,7 @@ REVIEW STEPS
 5. Last: Home > Client Resources > “Delete review access and data”. Confirm pending/completed; if pending, reopen it without signing in for completion confirmation.
 
 ACCESS, BUSINESS MODEL, AND DATA
-Client Resources is complimentary for existing in-person clients. Each client receives a separate revocable code; no shared master code or fixed four-client business limit. No price, checkout, in-app purchase, subscription, paid digital tier, advertising.
+Client Resources is free by personal invitation, and is not sold. Each client receives a separate revocable code; no shared master code or fixed four-client business limit. No price, checkout, in-app purchase, subscription, paid digital tier, advertising.
 
 The app does not ask clients for a name, email address, phone number, or profile registration. Pseudonymous Firebase UID, SecureStore ID, and App Check. Launch nonces and hosted sessions are short-lived. Durable deletion revokes access on acceptance; expiry/admin revocation queues cleanup. A random 256-bit receipt stays in SecureStore; the server keeps only a keyed-HMAC lookup and status timestamps, expects completion within 30 days, retries every five minutes, and confirms after reopening. Staff-audit deletion deadline is 30 days; Firestore TTL is asynchronous.
 

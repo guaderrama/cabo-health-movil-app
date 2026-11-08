@@ -11,7 +11,7 @@ This declaration concerns:
 - Apple ID `6758285327`;
 - bundle ID `com.cabohealth.app`;
 - the Cabo Health name, wordmark, logo, and `cabohealth.org` domain;
-- the owner-managed CaboHealth catalog, initially seeded with the public Healthy Recipes and CaboHealth Clinic Guide resources, the current server-protected Client Resources area for eligible existing in-person clients, and one isolated non-client App Review sample; all future active entries remain subject to the documented CaboHealth-owned content and rights schedule;
+- the owner-managed CaboHealth catalog, initially seeded with the public Healthy Recipes and CaboHealth Clinic Guide resources, the current server-protected Client Resources area for people personally invited by the owner at no cost, and one isolated non-client App Review sample; all future active entries remain subject to the documented CaboHealth-owned content and rights schedule;
 - initial App Store availability in Mexico and United States only; and
 - the separately hosted owner-only CaboHealth Staff Access portal, its direct-URL operation outside the consumer binary, submission, distribution, screenshots, metadata, updates, and supporting brand/logo/content rights schedules for that scope.
 

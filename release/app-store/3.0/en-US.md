@@ -9,7 +9,7 @@ CaboHealth
 Science-grounded longevity
 
 ## Promotional Text
-Explore science-grounded wellness resources. Eligible existing CaboHealth clients can verify a clinic-provided code for complimentary Client Resources.
+Explore science-grounded wellness resources. A free personal CaboHealth invitation code opens the protected Client Resources area.
 
 ## Description
 CaboHealth brings science-grounded general-wellness resources into one calm, bilingual experience.
@@ -21,7 +21,7 @@ CABOHEALTH CLINIC GUIDE
 Prepare for a clinic visit with public location, hours, contact options, language and accessibility guidance, an emergency limitation, and a practical checklist. The checklist stays on your device and has no free-text fields or uploads.
 
 CLIENT RESOURCES
-Eligible existing in-person CaboHealth clients may verify a clinic-provided code to access complimentary resources included with their services. These resources are not sold in the app. No price, checkout, subscription, or in-app purchase is offered.
+Client Resources is free access by personal CaboHealth invitation. Each invited person receives their own code. It is not sold, and no purchase grants it. No price, checkout, subscription, or in-app purchase is offered.
 
 CABOHEALTH CATALOG
 CaboHealth may publish, update, deactivate, or remove hosted wellness resources, including selected third-party HTTPS resources after suitability and rights review. The app lists the active catalog with localized details and opens validated destinations inside the app. VIP access controls only the in-app entry point; destination websites remain independently operated.

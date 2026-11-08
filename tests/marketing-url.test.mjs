@@ -22,8 +22,8 @@ test('the Marketing URL publishes the exact bilingual App Store scope', () => {
   assert.match(html, /<article\b[^>]*\blang="es-MX"/u);
   assert.match(html, /Two public editorial resources/u);
   assert.match(html, /Dos recursos editoriales públicos/u);
-  assert.match(html, /existing in-person clients individually authorized by the owner/u);
-  assert.match(html, /clientes presenciales existentes autorizados individualmente por el propietario/u);
+  assert.match(html, /people personally invited by CaboHealth\. Access is free and is not sold/u);
+  assert.match(html, /personas invitadas personalmente por CaboHealth\. El acceso es gratuito y no se vende/u);
 });
 
 test('the Marketing URL has no executable, tracking, form, or cookie surface', () => {

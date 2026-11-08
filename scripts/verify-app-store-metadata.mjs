@@ -104,7 +104,7 @@ const expectedOwnerSeller = Object.freeze({
 
 const expectedReviewRisk = Object.freeze({
   level: 'high',
-  basis: 'general-wellness/editorial content plus owner-managed third-party HTTPS resources and complimentary eligibility-gated resources for existing in-person clients',
+  basis: 'general-wellness/editorial content plus owner-managed third-party HTTPS resources and free invitation-only resources for people personally invited by the owner',
   appleApprovalGuaranteed: false,
   fallback: 'Obtain written Apple direction before submission; if Apple treats the app as a healthcare-service or digital-unlock product, revise the model or later migrate to an eligible registered organization.',
   healthcareSellerEntityRisk: 'requires-honest-review-note-and-apple-determination',
@@ -935,7 +935,7 @@ function verifyManifest() {
   const commercial = scope?.commercialModel;
   if (
     commercial?.complimentary !== true
-    || commercial?.existingInPersonClientsOnly !== true
+    || commercial?.personalInvitationOnly !== true
     || commercial?.maximumActiveClientCodes !== null
     || commercial?.separatelySold !== false
     || commercial?.sale !== false
@@ -1409,7 +1409,7 @@ function verifyReviewNotes() {
     [/Both public resources show dated Sources\/Fuentes with official links/iu, 'Review Notes missing official editorial-source disclosure'],
     [/does not ask clients for a name, email address, phone number, or profile registration/iu, 'Review Notes missing pseudonymous client-account disclosure'],
     [/separate multi-device App Review credential/iu, 'Review Notes missing isolated App Review credential disclosure'],
-    [/complimentary.*existing in-person clients/isu, 'Review Notes missing complimentary existing-client eligibility disclosure'],
+    [/Client Resources is free by personal invitation, and is not sold/iu, 'Review Notes missing free personal-invitation disclosure'],
     [/No price, checkout, in-app purchase, subscription, paid digital tier, advertising/iu, 'Review Notes missing monetization disclosure'],
     [/Each client receives a separate revocable code/iu, 'Review Notes missing individual revocable-code model'],
     [/no shared master code or fixed four-client business limit/iu, 'Review Notes missing no-master/no-fixed-limit disclosure'],

@@ -9,7 +9,7 @@ CaboHealth
 Longevidad basada en ciencia
 
 ## Promotional Text
-Explora bienestar basado en ciencia. Clientes existentes elegibles pueden verificar un código de la clínica para recursos incluidos sin costo adicional.
+Explora bienestar basado en ciencia. Un código de invitación personal gratuito de CaboHealth abre el área protegida de Recursos para Clientes.
 
 ## Description
 CaboHealth reúne recursos de bienestar general basados en ciencia en una experiencia tranquila y bilingüe.
@@ -21,7 +21,7 @@ GUÍA DE LA CLÍNICA CABOHEALTH
 Prepara una visita con ubicación, horario, opciones de contacto, orientación de idioma y accesibilidad, un límite para emergencias y una lista práctica. La lista permanece en el dispositivo y no contiene campos de texto libre ni cargas de archivos.
 
 RECURSOS PARA CLIENTES
-Los clientes existentes elegibles de los servicios presenciales de CaboHealth pueden verificar un código proporcionado por la clínica para abrir recursos incluidos sin costo adicional. No se venden dentro de la app y no hay precio, pago, suscripción ni compra dentro de la aplicación.
+Recursos para Clientes es acceso gratuito por invitación personal de CaboHealth. Cada persona invitada recibe su propio código. No se vende ni lo otorga ninguna compra, y no hay precio, pago, suscripción ni compra dentro de la aplicación.
 
 CATÁLOGO CABOHEALTH
 CaboHealth puede publicar, actualizar, desactivar o eliminar recursos de bienestar alojados, incluidos recursos HTTPS de terceros seleccionados después de revisar su idoneidad y derechos. La app muestra el catálogo activo con detalles localizados y abre destinos validados dentro de la app. El acceso VIP controla únicamente la entrada desde la app; los sitios de destino operan de forma independiente.
