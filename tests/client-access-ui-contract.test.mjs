@@ -68,7 +68,9 @@ test('client access refreshes on foreground and never stores the submitted code'
   const modal = read('features/clientAccess/ClientAccessModal.tsx');
 
   assert.match(provider, /AppState\.addEventListener\('change'/u);
-  assert.match(provider, /nextState === 'active'/u);
+  // Foreground revalidation happens only on background -> active; see
+  // tests/client-access-revalidation-policy.test.mjs for the behaviour.
+  assert.match(provider, /shouldRevalidateClientAccessOnAppStateChange\(previousState, nextState\)/u);
   assert.match(provider, /controller\.refresh\(\)/u);
   assert.match(modal, /const submittedCode = code;\s*setCode\(''\);/u);
   assert.match(controller, /commit\(session: OpaqueClientSession\)/u);
@@ -178,7 +180,7 @@ test('durable deletion receipts are polled before session restore and remain use
 
   assert.match(bootstrap, /deletionTracker=\{runtime\?\.deletionTracker\}/u);
   assert.match(provider, /deletionTracker\.check\(\)[^]*controller\.initialize\(\)/u);
-  assert.match(provider, /nextState === 'active'[^]*checkDeletionStatus/u);
+  assert.match(provider, /shouldRevalidateClientAccessOnAppStateChange\(previousState, nextState\)[^]*if \(revalidate\) void checkDeletionStatus\(\)/u);
   assert.match(modal, /clientAccess\.checkDeletionStatus/u);
   assert.match(modal, /expectedCompletionByMs/u);
   assert.match(modal, /clientAccess\.deletionOverdueBody/u);
