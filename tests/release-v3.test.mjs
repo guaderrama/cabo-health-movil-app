@@ -1181,7 +1181,7 @@ test('captured release verifier rejects unknown authority fields and public-alia
 test('captured release verifier rejects semantic drift across every release authority', async (t) => {
   const mutations = [
     ['native bridge', 'release/app-store/3.0/release-manifest.json', (value) => { value.scope.nativeWebBridge = true; }],
-    ['staff publishing', 'release/app-store/3.0/release-manifest.json', (value) => { value.scope.staffAdministration.directPublishing = true; }],
+    ['staff publishing', 'release/app-store/3.0/release-manifest.json', (value) => { value.scope.staffAdministration.directPublishing = false; }],
     ['staff URL', 'release/app-store/3.0/release-manifest.json', (value) => { value.urls.staff = 'https://evil.example/'; }],
     ['organization seller', 'release/app-store/3.0/release-manifest.json', (value) => { value.ownerSeller.registeredOrganization = true; }],
     ['Apple ID', 'release/app-store/3.0/release-manifest.json', (value) => { value.candidate.appleId = '1'; }],
